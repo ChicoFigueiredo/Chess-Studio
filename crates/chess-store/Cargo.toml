@@ -1,0 +1,15 @@
+[package]
+name = "chess-store"
+description = "Persistência SQLite: log de eventos, preferências, Exercícios e Engines"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+chess-game.workspace = true
+
+[lints]
+workspace = true
