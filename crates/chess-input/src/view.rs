@@ -135,8 +135,8 @@ impl CameraPose {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::board::{ray_to_square, square_center};
     use crate::board::all_squares;
+    use crate::board::{ray_to_square, square_center};
     use chess_core::Square;
 
     /// Raio da câmera da pose até um ponto da mesa.

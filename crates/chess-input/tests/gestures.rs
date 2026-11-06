@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)]
 //! Sequências de ponteiro até Comandos e Partida (INT-01..04, UX-02, UX-09).
 
 use chess_core::{Color, Piece, Square};
@@ -47,16 +48,21 @@ fn release(from: &str, to: &str) -> Command {
     }
 }
 
+/// Relógio falso monotônico (o domínio não lê relógio).
+fn now() -> chess_game::Timestamp {
+    static CLOCK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    chess_game::Timestamp::mono(CLOCK.fetch_add(1, std::sync::atomic::Ordering::SeqCst))
+}
+
 /// Alimenta os eventos em ordem, junta os Comandos emitidos e os aplica à Partida
 /// (como o app faz), avisando o intérprete com `Resolved` depois de cada Release.
 fn run(interp: &mut GestureInterpreter, game: &mut Game, events: &[GestureEvent]) -> Vec<Command> {
     let mut all = Vec::new();
-    for (i, event) in events.iter().enumerate() {
+    for event in events {
         let snap = game.snapshot();
         let commands = interp.handle(*event, &snap);
         for c in &commands {
-            game.handle(c.clone(), chess_game::Timestamp::mono(i as u64))
-                .unwrap();
+            game.handle(c.clone(), now()).unwrap();
         }
         if commands
             .iter()
@@ -138,7 +144,14 @@ fn both_allows_click_select_then_drag_of_another_piece() {
     let c = run(
         &mut i,
         &mut g,
-        &[press("e2"), up("e2"), press("d2"), mv("d3"), mv("d4"), up("d4")],
+        &[
+            press("e2"),
+            up("e2"),
+            press("d2"),
+            mv("d3"),
+            mv("d4"),
+            up("d4"),
+        ],
     );
     assert_eq!(c, vec![release("d2", "d4")]);
 }
@@ -152,7 +165,10 @@ fn illegal_destination_is_forwarded_verbatim_never_converted() {
         let c = run(&mut i, &mut g, &events);
         assert_eq!(c, vec![release("e2", "e5")]);
         let snap = g.snapshot();
-        assert!(snap.history.is_empty(), "lance ilegal não entra no histórico");
+        assert!(
+            snap.history.is_empty(),
+            "lance ilegal não entra no histórico"
+        );
         assert_eq!(snap.side_to_move, Color::White);
         assert_eq!(i.state(), GestureState::Idle);
     }
@@ -173,7 +189,11 @@ fn cancelers() -> Vec<(&'static str, GestureEvent)> {
 fn cancel_events_abort_drag_without_any_command() {
     for (name, cancel) in cancelers() {
         let (mut i, mut g) = fresh(MoveMethod::Both);
-        let c = run(&mut i, &mut g, &[press("e2"), mv("e3"), mv("e4"), cancel, up("e4")]);
+        let c = run(
+            &mut i,
+            &mut g,
+            &[press("e2"), mv("e3"), mv("e4"), cancel, up("e4")],
+        );
         assert!(c.is_empty(), "{name}: {c:?}");
         assert_eq!(i.state(), GestureState::Idle, "{name}");
         assert!(g.snapshot().history.is_empty(), "{name}");
@@ -220,14 +240,20 @@ fn escape_during_pending_promotion_retracts_in_assisted() {
     assert!(g.snapshot().provisional.is_none());
     // Escolher a peça é Comando do seletor (egui), não do intérprete.
     assert!(run(&mut i, &mut g, &two_taps("e7", "e8")).len() == 1);
-    g.handle(Command::ChoosePromotion { piece: Piece::Queen }, chess_game::Timestamp::mono(99)).unwrap();
+    g.handle(
+        Command::ChoosePromotion {
+            piece: Piece::Queen,
+        },
+        now(),
+    )
+    .unwrap();
 }
 
 // --- INT-04 -----------------------------------------------------------------
 
 #[test]
 fn dragging_emits_nothing_until_release_and_exposes_visual_state() {
-    let (mut i, mut g) = fresh(MoveMethod::Both);
+    let (mut i, g) = fresh(MoveMethod::Both);
     let before = g.snapshot();
     let world = Vec3::new(1.0, 0.0, 2.0);
     let mut cmds = Vec::new();
@@ -307,7 +333,11 @@ fn clicking_the_selected_piece_again_deselects() {
 #[test]
 fn clicking_another_own_piece_changes_selection() {
     let (mut i, mut g) = fresh(MoveMethod::Both);
-    let c = run(&mut i, &mut g, &[press("e2"), up("e2"), press("d2"), up("d2")]);
+    let c = run(
+        &mut i,
+        &mut g,
+        &[press("e2"), up("e2"), press("d2"), up("d2")],
+    );
     assert!(c.is_empty());
     assert_eq!(i.state(), GestureState::Selected { from: sq("d2") });
 }
@@ -349,8 +379,7 @@ fn pending_release_ignores_pointer_until_resolved() {
 fn selection_is_dropped_when_the_game_changes_underneath() {
     let (mut i, mut g) = fresh(MoveMethod::Both);
     run(&mut i, &mut g, &[press("e2"), up("e2")]);
-    g.handle(release("d2", "d4"), chess_game::Timestamp::mono(50))
-        .unwrap();
+    g.handle(release("d2", "d4"), now()).unwrap();
     i.handle(GestureEvent::Resync, &g.snapshot());
     assert_eq!(i.state(), GestureState::Idle);
 }
@@ -358,11 +387,8 @@ fn selection_is_dropped_when_the_game_changes_underneath() {
 #[test]
 fn nothing_is_selectable_after_the_game_ends() {
     let (mut i, mut g) = fresh(MoveMethod::Both);
-    g.handle(
-        Command::Resign { side: Color::White },
-        chess_game::Timestamp::mono(1),
-    )
-    .unwrap();
+    g.handle(Command::Resign { side: Color::White }, now())
+        .unwrap();
     assert!(run(&mut i, &mut g, &two_taps("e7", "e5")).is_empty());
     assert_eq!(i.state(), GestureState::Idle);
 }

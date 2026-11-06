@@ -57,7 +57,10 @@ mod tests {
     fn all_squares_cover_a1_to_h8() {
         let names: Vec<String> = all_squares().map(|s| s.to_string()).collect();
         assert_eq!(names.len(), 64);
-        assert_eq!((names[0].as_str(), names[7].as_str(), names[63].as_str()), ("a1", "h1", "h8"));
+        assert_eq!(
+            (names[0].as_str(), names[7].as_str(), names[63].as_str()),
+            ("a1", "h1", "h8")
+        );
     }
 
     #[test]
