@@ -100,6 +100,13 @@ impl Game {
         Snapshot::from_state(&self.setup, &self.state)
     }
 
+    /// Revisão: a Posição após `ply` meios-lances do histórico legal (0 = inicial),
+    /// também numa Partida terminada. Só lê: não gera Evento nem muda o resultado,
+    /// e por isso vale em qualquer Política (revisar não é desfazer, DEC-39).
+    pub fn review_at_ply(&self, ply: usize) -> Option<crate::ReviewView> {
+        crate::ReviewView::at(&self.state, ply)
+    }
+
     /// Log de Eventos desta Partida (a fonte de verdade).
     pub fn events(&self) -> &[Event] {
         &self.log

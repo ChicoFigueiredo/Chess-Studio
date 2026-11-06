@@ -22,8 +22,10 @@ mod event;
 mod fide;
 mod game;
 mod outcome;
+mod pgn;
 mod policy;
 mod rejection;
+mod review;
 mod setup;
 mod snapshot;
 mod state;
@@ -38,11 +40,13 @@ pub use event::{
 };
 pub use game::Game;
 pub use outcome::{EndReason, GameResult, Outcome};
+pub use pgn::{PgnOptions, pgn_date_from_unix_ms};
 pub use rejection::Rejection;
 pub use setup::{
     CLASSICAL_MIN_BASE_MS, CUSTOM_RULES_LABEL, FIDE_LAWS_VERSION, GameSetup, InfractionStage,
     PolicyKind,
 };
+pub use review::ReviewView;
 pub use snapshot::{
     HistoryEntry, MadeMove, ProvisionalRelease, ProvisionalView, Snapshot, TouchedPiece,
 };

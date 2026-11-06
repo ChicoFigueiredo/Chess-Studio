@@ -276,3 +276,59 @@ fn revisao_nas_politicas_competitivas_nao_e_desfazer() {
             .all(|e| !matches!(e.kind, chess_game::EventKind::MoveUndone { .. }))
     );
 }
+
+// ---- Validação por ferramenta independente (DB-03) -------------------------
+
+/// Reabre o PGN exportado com python-chess (GPL: só como ferramenta externa de
+/// teste, nunca dependência). Rode com:
+/// `PYTHON=/caminho/do/python cargo test -p chess-game --test pgn_export -- --ignored`
+/// (o Python precisa ter `pip install chess`; `PYTHON` padrão: `python3`).
+#[test]
+#[ignore = "exige python-chess instalado (ferramenta externa, DB-03)"]
+fn python_chess_reabre_o_pgn_exportado() {
+    let python = std::env::var("PYTHON").unwrap_or_else(|_| "python3".into());
+    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/../../scripts/validate_pgn.py");
+    let dir = std::env::temp_dir().join(format!("chess-studio-pgn-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let mut cases: Vec<(&str, Game, usize)> = Vec::new();
+    let mut clock = FakeClock::new();
+    let mut opera = assisted();
+    play_all(&mut opera, &mut clock, OPERA);
+    cases.push(("opera", opera, 33));
+
+    let mut fen = assisted_from("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
+    play_all(&mut fen, &mut clock, "c5 Nf3 d6");
+    cases.push(("fen", fen, 3));
+
+    let mut infraction = fide_timed_from(
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        90 * 60_000,
+        30_000,
+    );
+    let t = fide_play(&mut infraction, 0, "e4");
+    touch(&mut infraction, t, "a8").unwrap();
+    drop_piece(&mut infraction, t + 1, "a8", "a5").unwrap();
+    press(&mut infraction, t + 2).unwrap();
+    fide_play(&mut infraction, t + 3, "e5");
+    cases.push(("infracao", infraction, 2));
+
+    for (name, game, plies) in cases {
+        let file = dir.join(format!("{name}.pgn"));
+        std::fs::write(&file, game.to_pgn(&opts())).unwrap();
+        let out = std::process::Command::new(&python)
+            .args(["-I", script])
+            .arg(&file)
+            .arg(plies.to_string())
+            .arg(game.snapshot().position.to_fen())
+            .output()
+            .expect("python executável");
+        assert!(
+            out.status.success(),
+            "{name}: {}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
