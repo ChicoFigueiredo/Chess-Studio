@@ -28,21 +28,33 @@ pub fn square_center(square: Square) -> Vec3 {
     )
 }
 
-/// Casa atingida pelo raio contra o plano do tabuleiro; `None` se o raio não o
-/// intercepta à frente da origem ou atinge fora das 64 casas.
-pub fn ray_to_square(origin: Vec3, dir: Vec3) -> Option<Square> {
+/// Ponto em que o raio encontra o plano do tabuleiro (`y = 0`), mesmo fora das 64 casas
+/// (serve para desenhar a peça arrastada para além da borda). `None` se o raio não o
+/// intercepta à frente da origem.
+pub fn ray_to_board_plane(origin: Vec3, dir: Vec3) -> Option<Vec3> {
     if !(origin.is_finite() && dir.is_finite()) || dir.y >= 0.0 || origin.y <= 0.0 {
         return None;
     }
     let t = -origin.y / dir.y;
     let hit = origin + dir * t;
+    Some(Vec3::new(hit.x, 0.0, hit.z))
+}
+
+/// Casa de um ponto do plano do tabuleiro; `None` fora das 64 casas.
+pub fn point_to_square(point: Vec3) -> Option<Square> {
     let half = BOARD_SIZE / 2.0;
-    let file = ((hit.x + half) / SQUARE_SIZE).floor();
-    let rank = ((half - hit.z) / SQUARE_SIZE).floor();
+    let file = ((point.x + half) / SQUARE_SIZE).floor();
+    let rank = ((half - point.z) / SQUARE_SIZE).floor();
     if !(0.0..8.0).contains(&file) || !(0.0..8.0).contains(&rank) {
         return None;
     }
     Square::new(file as u8, rank as u8)
+}
+
+/// Casa atingida pelo raio contra o plano do tabuleiro; `None` se o raio não o
+/// intercepta à frente da origem ou atinge fora das 64 casas.
+pub fn ray_to_square(origin: Vec3, dir: Vec3) -> Option<Square> {
+    ray_to_board_plane(origin, dir).and_then(point_to_square)
 }
 
 #[cfg(test)]
@@ -93,5 +105,13 @@ mod tests {
         assert_eq!(ray_to_square(o, Vec3::Y), None); // para cima
         assert_eq!(ray_to_square(o, Vec3::X), None); // paralelo
         assert_eq!(ray_to_square(Vec3::new(0.0, -1.0, 0.0), -Vec3::Y), None); // origem abaixo
+    }
+
+    #[test]
+    fn plane_hit_exists_outside_the_board_but_has_no_square() {
+        let hit = ray_to_board_plane(Vec3::new(9.0, 5.0, 2.0), -Vec3::Y).unwrap();
+        assert_eq!(hit, Vec3::new(9.0, 0.0, 2.0));
+        assert_eq!(point_to_square(hit), None);
+        assert_eq!(point_to_square(Vec3::new(-3.9, 0.0, 3.9)), Some(sq("a1")));
     }
 }
