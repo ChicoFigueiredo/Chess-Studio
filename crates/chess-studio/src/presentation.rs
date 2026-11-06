@@ -273,18 +273,70 @@ fn apply_quality(
     quality: Res<GraphicsQuality>,
     mut commands: Commands,
     camera: Single<Entity, With<MainCamera>>,
+    cameras: Query<Entity, With<Camera>>,
     mut lights: Query<(&LightRole, &mut DirectionalLight)>,
     mut shadow_map: ResMut<DirectionalLightShadowMap>,
 ) {
     if !quality.is_changed() {
         return;
     }
-    commands
-        .entity(*camera)
-        .insert((quality.msaa(), quality.shadow_filter()));
+    // Todas as câmeras da janela (3D, 2D técnico e egui) precisam do mesmo MSAA: câmeras com
+    // MSAA diferente não compartilham a textura principal e, conforme a ordem das entidades,
+    // a Apresentação 3D sai preta (issue #82).
+    for entity in &cameras {
+        commands.entity(entity).insert(quality.msaa());
+    }
+    commands.entity(*camera).insert(quality.shadow_filter());
     shadow_map.size = quality.shadow_map_size();
     for (role, mut light) in &mut lights {
         // Só a luz principal projeta sombra.
         light.shadow_maps_enabled = *role == LightRole::Key;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::camera::MainCamera;
+    use bevy_egui::EguiGlobalSettings;
+
+    fn spawn_main_camera(mut commands: Commands) {
+        commands.spawn((Camera3d::default(), MainCamera));
+    }
+
+    /// Regressão da issue #82: câmeras da mesma janela com MSAA diferente não compartilham a
+    /// textura principal; conforme a ordem das entidades (que muda ao registrar qualquer
+    /// `Resource` extra), a Apresentação 3D saía toda preta nas capturas.
+    #[test]
+    fn all_window_cameras_share_one_msaa_setting() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<EguiWantsInput>()
+            .init_resource::<ClearColor>()
+            .init_resource::<GlobalAmbientLight>()
+            .init_resource::<DirectionalLightShadowMap>()
+            .init_resource::<EguiGlobalSettings>()
+            .add_plugins(PresentationPlugin)
+            .add_systems(
+                Startup,
+                (
+                    spawn_main_camera,
+                    crate::board2d::spawn_camera,
+                    crate::ui::spawn_ui_camera,
+                ),
+            );
+        for quality in GraphicsQuality::ALL {
+            app.insert_resource(quality);
+            app.update();
+            app.update();
+            let mut cameras = app.world_mut().query::<(&Camera, &Msaa)>();
+            let found: Vec<Msaa> = cameras.iter(app.world()).map(|(_, m)| *m).collect();
+            assert_eq!(found.len(), 3, "câmeras 3D, 2D técnico e egui");
+            assert!(
+                found.iter().all(|m| *m == quality.msaa()),
+                "{quality:?}: MSAA divergente entre câmeras: {found:?}"
+            );
+        }
     }
 }

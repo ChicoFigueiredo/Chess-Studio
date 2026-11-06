@@ -8,7 +8,6 @@ use crate::picking::{HoveredSquare, SelectedSquare};
 use crate::presentation::{TechnicalCamera, VisibleIn};
 use bevy::camera::ScalingMode;
 use bevy::prelude::*;
-use bevy::render::view::Msaa;
 use chess_core::Square;
 use chess_input::{BOARD_SIZE, all_squares, square_center};
 
@@ -56,7 +55,7 @@ pub fn cursor_to_world(cursor: Vec2, window: Vec2) -> Vec2 {
     )
 }
 
-fn spawn_camera(mut commands: Commands) {
+pub(crate) fn spawn_camera(mut commands: Commands) {
     let half = VIEW_SPAN;
     commands.spawn((
         Camera2d,
@@ -72,7 +71,7 @@ fn spawn_camera(mut commands: Commands) {
             },
             ..OrthographicProjection::default_2d()
         }),
-        Msaa::Off,
+        // MSAA igual ao das outras câmeras da janela: `presentation::apply_quality`.
     ));
 }
 

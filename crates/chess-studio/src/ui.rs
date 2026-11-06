@@ -10,7 +10,6 @@ use crate::presentation::{GraphicsQuality, Presentation};
 use crate::session::Session;
 use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
-use bevy::render::view::Msaa;
 use bevy_egui::{
     EguiContexts, EguiGlobalSettings, EguiPrimaryContextPass, PrimaryEguiContext, egui,
 };
@@ -56,7 +55,7 @@ fn install_fonts(mut contexts: EguiContexts, mut done: Local<bool>) -> Result {
 
 /// Câmera exclusiva do egui: o painel aparece em qualquer Apresentação (3D ou 2D), mesmo
 /// quando uma das câmeras de cena está inativa. A camada vazia impede que ela desenhe a cena.
-fn spawn_ui_camera(mut commands: Commands, mut settings: ResMut<EguiGlobalSettings>) {
+pub(crate) fn spawn_ui_camera(mut commands: Commands, mut settings: ResMut<EguiGlobalSettings>) {
     settings.auto_create_primary_context = false;
     commands.spawn((
         Camera2d,
@@ -67,7 +66,7 @@ fn spawn_ui_camera(mut commands: Commands, mut settings: ResMut<EguiGlobalSettin
             clear_color: ClearColorConfig::None,
             ..default()
         },
-        Msaa::Off,
+        // MSAA igual ao das outras câmeras da janela: `presentation::apply_quality`.
     ));
 }
 
