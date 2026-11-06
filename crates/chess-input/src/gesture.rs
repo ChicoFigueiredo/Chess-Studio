@@ -4,9 +4,16 @@
 //! Estados (prompt mestre §7.3): `Idle -> Selected -> Held / Dragging -> ReleasedPending`.
 //! O intérprete nunca muta a Partida (ADR-0001): só lê o [`Snapshot`] e emite intenções.
 //! Um destino nunca é "corrigido": o que o usuário soltou é o que vai no `Release`.
+//!
+//! **Políticas competitivas** (Simulação FIDE e Eliminação Imediata, DEC-31): pressionar o
+//! botão esquerdo sobre uma peça, própria ou do adversário, emite `Touch` (Toque
+//! intencional); Alt+clique emite `Adjust` (j'adoube). Casa vazia, botão do meio/direito,
+//! roda e hover nunca tocam (RULE-02). Esc, perda de foco, painel e órbita cancelam o
+//! gesto sem comando: a Obrigação de peça tocada vive na Partida e sobrevive (BDD-08).
+//! Com Lance feito, peça solta provisória ou Partida em Pausa, o tabuleiro não reage.
 
 use chess_core::Square;
-use chess_game::{Command, Snapshot};
+use chess_game::{Command, PolicyKind, Snapshot};
 use glam::Vec3;
 
 /// Método de movimento (preferência do usuário).
@@ -180,8 +187,16 @@ impl GestureInterpreter {
                 Vec::new()
             }
             GestureEvent::Resync | GestureEvent::Resolved => Vec::new(),
-            GestureEvent::PointerDown { button, square, .. } => {
-                self.pointer_down(button, square, snapshot)
+            GestureEvent::PointerDown {
+                button,
+                square,
+                modifiers,
+            } => {
+                if snapshot.policy == PolicyKind::Assisted {
+                    self.pointer_down(button, square, snapshot)
+                } else {
+                    self.competitive_down(button, square, modifiers, snapshot)
+                }
             }
             GestureEvent::PointerMove { world, square } => {
                 self.pointer_move(square, world);
@@ -243,6 +258,100 @@ impl GestureInterpreter {
                     }
                 };
                 Vec::new()
+            }
+            _ => {
+                self.state = GestureState::Idle;
+                Vec::new()
+            }
+        }
+    }
+
+    /// Pressionar nas Políticas competitivas: Toque intencional (DEC-31).
+    fn competitive_down(
+        &mut self,
+        button: PointerButton,
+        square: Option<Square>,
+        modifiers: Modifiers,
+        snapshot: &Snapshot,
+    ) -> Vec<Command> {
+        if matches!(self.state, GestureState::ReleasedPending { .. }) {
+            return Vec::new();
+        }
+        if button != PointerButton::Primary {
+            if matches!(
+                self.state,
+                GestureState::Held { .. } | GestureState::Dragging { .. }
+            ) {
+                self.state = GestureState::Idle;
+            }
+            return Vec::new();
+        }
+        // Vez fechada: Lance feito, peça solta provisória, Pausa ou fim da Partida.
+        let closed = snapshot.outcome.is_some()
+            || snapshot.paused
+            || snapshot.made_move.is_some()
+            || snapshot.provisional_release.is_some();
+        let Some(target) = square.filter(|_| !closed) else {
+            self.state = GestureState::Idle;
+            return Vec::new();
+        };
+        let piece = snapshot.position.piece_at(target);
+        let own = own_piece(snapshot, target);
+        let taps = self.method == MoveMethod::TwoTaps;
+        let selected = match self.state {
+            GestureState::Selected { from } => Some(from),
+            _ => None,
+        };
+
+        if piece.is_none() {
+            // Casa vazia nunca toca: é só destino de uma seleção, ou nada.
+            return self.destination_or_idle(selected, target, modifiers);
+        }
+        if modifiers.alt {
+            // Ajuste (art. 4.2): sem obrigação e sem arrasto.
+            self.state = GestureState::Idle;
+            return vec![Command::Adjust { square: target }];
+        }
+        if selected == Some(target) {
+            self.state = if taps {
+                GestureState::Idle
+            } else {
+                GestureState::Held {
+                    from: target,
+                    was_selected: true,
+                }
+            };
+            return Vec::new();
+        }
+        if selected.is_some() && !own {
+            // Peça do adversário depois de escolher a origem: é o destino (captura).
+            return self.destination_or_idle(selected, target, modifiers);
+        }
+        // Toque intencional (uma peça já tocada nesta vez não gera novo Toque).
+        let touch = (!snapshot.touched.iter().any(|t| t.square == target))
+            .then_some(Command::Touch { square: target });
+        self.state = match (own, taps) {
+            (true, true) => GestureState::Selected { from: target },
+            (true, false) => GestureState::Held {
+                from: target,
+                was_selected: false,
+            },
+            // Peça do adversário não se arrasta: o Toque obriga a capturá-la.
+            (false, _) => GestureState::Idle,
+        };
+        touch.into_iter().collect()
+    }
+
+    fn destination_or_idle(
+        &mut self,
+        selected: Option<Square>,
+        target: Square,
+        modifiers: Modifiers,
+    ) -> Vec<Command> {
+        match selected {
+            Some(from) if !modifiers.alt && from != target => {
+                self.state = GestureState::ReleasedPending { from, to: target };
+                vec![Command::Release { from, to: target }]
             }
             _ => {
                 self.state = GestureState::Idle;

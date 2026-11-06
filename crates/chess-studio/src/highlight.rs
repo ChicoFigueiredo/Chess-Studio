@@ -65,7 +65,12 @@ fn update_markers(
         Query<(&Dest2d, &mut Transform, &mut Visibility), Without<Dest3d>>,
     )>,
 ) {
-    let origin = session.gesture_visual().origin;
+    // Destinos legais são Auxílio do Assistido; nas Políticas competitivas não há aviso
+    // (DEC-32) até o B4 ligar o Perfil de auxílios (TODO(B4)).
+    let origin = session
+        .gesture_visual()
+        .origin
+        .filter(|_| !session.is_competitive());
     let key = (origin, Some(session.revision()));
     if (cache.0, cache.1) != key {
         cache.2 = origin.map_or_else(Vec::new, |o| session.snapshot().legal_destinations(o));

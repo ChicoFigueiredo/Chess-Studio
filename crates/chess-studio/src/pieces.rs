@@ -182,11 +182,24 @@ fn capture_templates(
     commands.entity(ready.entity).despawn();
 }
 
-/// Peças a desenhar: Posição visual provisória (promoção pendente) ou canônica.
+/// Peças a desenhar: Posição visual provisória (promoção pendente, peça solta em casa
+/// ilegal, DEC-32), Lance feito à espera do relógio (art. 4.7) ou a canônica.
 fn visible_pieces(session: &Session) -> HashMap<Square, (Side, Piece)> {
     let snapshot = session.snapshot();
     if let Some(view) = &snapshot.provisional {
         return view.pieces.iter().map(|&(s, c, p)| (s, (c, p))).collect();
+    }
+    if let Some(release) = &snapshot.provisional_release {
+        return release
+            .pieces
+            .iter()
+            .map(|&(s, c, p)| (s, (c, p)))
+            .collect();
+    }
+    if let Some(made) = &snapshot.made_move {
+        return chess_input::all_squares()
+            .filter_map(|s| made.position_after.piece_at(s).map(|cp| (s, cp)))
+            .collect();
     }
     chess_input::all_squares()
         .filter_map(|s| snapshot.position.piece_at(s).map(|cp| (s, cp)))

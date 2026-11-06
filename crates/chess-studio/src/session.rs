@@ -6,14 +6,37 @@
 //! (`Instant`), nunca do domínio. Sem dependência do Bevy além do atributo `Resource`:
 //! o fluxo inteiro (ponteiro -> Comando -> Partida) é testável sem janela.
 
+use crate::new_game::{NewGameConfig, Opponent};
 use bevy::prelude::{Resource, Vec3, warn};
-use chess_core::{Color, Piece, Square};
-use chess_game::{Command, EventKind, Game, GameSetup, PolicyKind, Snapshot, Timestamp};
+use chess_core::{Color, Move, Piece, Square};
+use chess_game::{
+    ClockReading, Command, EventKind, Game, PolicyKind, Rejection, Snapshot, Timestamp,
+};
 use chess_input::{DRAG_HEIGHT, GestureEvent, GestureInterpreter, GestureVisual, MoveMethod};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// Quanto tempo a mensagem de Lance ilegal fica no painel.
 const ILLEGAL_NOTICE: Duration = Duration::from_secs(3);
+/// Quanto tempo um aviso da arbitragem fica no painel.
+const NOTICE_SECS: Duration = Duration::from_secs(6);
+
+/// Aviso do árbitro (a Política) ao usuário nas Políticas competitivas.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Notice {
+    /// Infração registrada; `ended` se ela encerrou a Partida.
+    Infraction {
+        count: u8,
+        ended: bool,
+    },
+    ClaimAccepted,
+    ClaimRejected,
+    /// Retratar recusado: o Lance legal já foi feito (art. 4.7).
+    CannotRetract,
+    /// Lance recusado pela Obrigação de peça tocada (art. 4.3).
+    TouchObligation(Vec<Square>),
+    ClaimRightLost,
+    ClaimedMoveIllegal,
+}
 
 /// Onde a peça deve ser encaixada após um gesto e de onde a animação parte.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -34,6 +57,8 @@ pub struct Session {
     always_queen: bool,
     hint: Option<SettleHint>,
     illegal_at: Option<Instant>,
+    config: NewGameConfig,
+    notice: Option<(Notice, Instant)>,
 }
 
 impl Default for Session {
@@ -44,7 +69,12 @@ impl Default for Session {
 
 impl Session {
     pub fn new() -> Self {
-        let game = Game::new(GameSetup::standard(PolicyKind::Assisted));
+        Self::with_config(&NewGameConfig::default())
+    }
+
+    /// Partida nova com a configuração da tela de Nova Partida.
+    pub fn with_config(config: &NewGameConfig) -> Self {
+        let game = Game::new(config.to_setup());
         Self {
             snapshot: game.snapshot(),
             game,
@@ -54,7 +84,106 @@ impl Session {
             always_queen: false,
             hint: None,
             illegal_at: None,
+            config: config.clone(),
+            notice: None,
         }
+    }
+
+    /// Descarta a Partida e começa outra com `config`, mantendo a preferência de movimento.
+    pub fn start(&mut self, config: &NewGameConfig) {
+        let method = self.interpreter.method();
+        let always_queen = self.always_queen;
+        let revision = self.revision;
+        *self = Self::with_config(config);
+        self.interpreter.set_method(method);
+        // Sem dama automática nas Políticas competitivas (DEC-40).
+        self.always_queen = always_queen && config.policy == PolicyKind::Assisted;
+        self.revision = revision.wrapping_add(1);
+    }
+
+    pub fn config(&self) -> &NewGameConfig {
+        &self.config
+    }
+
+    pub fn user_side(&self) -> Color {
+        self.config.user_side
+    }
+
+    /// Adversário da Partida. Ponto de extensão do B9: com `Opponent::Engine`, o controlador da
+    /// Engine pede o Lance quando for a vez do lado que não é `user_side()`.
+    #[allow(dead_code)]
+    pub fn opponent(&self) -> Opponent {
+        self.config.opponent
+    }
+
+    pub fn is_competitive(&self) -> bool {
+        self.snapshot.policy != PolicyKind::Assisted
+    }
+
+    /// Aviso da arbitragem ainda visível.
+    pub fn notice(&self) -> Option<&Notice> {
+        self.notice
+            .as_ref()
+            .filter(|(_, at)| at.elapsed() < NOTICE_SECS)
+            .map(|(n, _)| n)
+    }
+
+    /// Relógio agora (tempo restante, quem corre, bandeira); `None` sem controle de tempo.
+    pub fn clock_reading(&self) -> Option<ClockReading> {
+        self.snapshot.clock_at(self.now())
+    }
+
+    /// O usuário pode acionar o relógio de `side` agora? Só nas Políticas competitivas,
+    /// com a Partida em curso e fora de Pausa; o relógio é o de quem tem a vez e, contra
+    /// a Engine, só na vez do usuário (a Engine aciona o dela, DEC-33).
+    pub fn can_press_clock(&self, side: Color) -> bool {
+        self.is_competitive()
+            && self.snapshot.outcome.is_none()
+            && !self.snapshot.paused
+            && self.snapshot.side_to_move == side
+            && (self.config.opponent == Opponent::TwoLocal || side == self.config.user_side)
+    }
+
+    /// Aciona o relógio do lado da vez (botão 3D, widget 2D, painel e Espaço). O gesto em
+    /// curso é cancelado antes: a peça não se solta sozinha.
+    pub fn press_clock(&mut self) {
+        if !self.can_press_clock(self.snapshot.side_to_move) {
+            return;
+        }
+        self.gesture(GestureEvent::Escape);
+        self.command(Command::PressClock);
+    }
+
+    /// Registra a bandeira caída: um Comando que chega com o tempo esgotado só grava
+    /// `FlagFell` e o resultado (o Comando em si é descartado).
+    pub fn tick(&mut self) {
+        if self.snapshot.outcome.is_none() && self.clock_reading().is_some_and(|r| r.flag.is_some())
+        {
+            self.command(Command::PressClock);
+        }
+    }
+
+    pub fn toggle_pause(&mut self) {
+        let command = if self.snapshot.paused {
+            Command::Resume
+        } else {
+            Command::Pause
+        };
+        self.gesture(GestureEvent::Escape);
+        self.command(command);
+    }
+
+    /// Reclamação de empate pelo lado da vez, com Lance anunciado opcional.
+    pub fn claim_draw(&mut self, announced: Option<Move>) {
+        self.command(match announced {
+            Some(mv) => Command::ClaimDrawWithMove { mv },
+            None => Command::ClaimDraw,
+        });
+    }
+
+    /// Retratar a peça solta (ou a promoção pendente). Lance legal feito não se retrata.
+    pub fn retract(&mut self) {
+        self.command(Command::RetractMove);
     }
 
     /// Estado atual da Partida (única fonte para desenhar).
@@ -89,6 +218,9 @@ impl Session {
     /// Opção "sempre dama" (só no Assistido, DEC-40). Ligada com o seletor aberto,
     /// promove a dama na hora.
     pub fn set_always_queen(&mut self, on: bool) {
+        if self.is_competitive() {
+            return;
+        }
         self.always_queen = on;
         if on && self.snapshot.provisional.is_some() {
             self.command(Command::ChoosePromotion {
@@ -148,16 +280,6 @@ impl Session {
             .handle(GestureEvent::Resync, &self.snapshot);
     }
 
-    /// Descarta a Partida e começa outra, com a mesma preferência de movimento.
-    pub fn new_game(&mut self) {
-        let method = self.interpreter.method();
-        let always_queen = self.always_queen;
-        *self = Self::new();
-        self.interpreter.set_method(method);
-        self.always_queen = always_queen;
-        self.revision = self.revision.wrapping_add(1);
-    }
-
     /// Lado da vez abandona (dois jogadores no mesmo computador).
     pub fn resign_side_to_move(&mut self) {
         let side: Color = self.snapshot.side_to_move;
@@ -173,10 +295,58 @@ impl Session {
                 if let (Command::Release { from, to }, Some(start)) = (&command, start) {
                     self.note_release(*from, *to, start, &events);
                 }
+                self.note_arbitration(&events);
                 self.snapshot = self.game.snapshot();
                 self.revision = self.revision.wrapping_add(1);
             }
-            Err(rejection) => warn!("Comando {:?} recusado: {rejection}", command.kind()),
+            Err(rejection) => self.note_rejection(&command, start, &rejection),
+        }
+    }
+
+    /// Comando recusado pela Partida: a peça arrastada volta à origem e o usuário é avisado
+    /// quando a arbitragem avisaria (obrigação de peça tocada, retratação, reclamação).
+    fn note_rejection(&mut self, command: &Command, start: Option<Vec3>, rejection: &Rejection) {
+        let notice = match (rejection, command) {
+            (Rejection::TouchedPieceObligation { must_move_from }, _) => {
+                Some(Notice::TouchObligation(must_move_from.clone()))
+            }
+            (Rejection::MoveAlreadyMade, Command::RetractMove) => Some(Notice::CannotRetract),
+            (Rejection::DrawClaimRightLost, _) => Some(Notice::ClaimRightLost),
+            (Rejection::ClaimedMoveIllegal, _) => Some(Notice::ClaimedMoveIllegal),
+            _ => None,
+        };
+        match notice {
+            Some(notice) => self.notice = Some((notice, Instant::now())),
+            None => warn!("Comando {:?} recusado: {rejection}", command.kind()),
+        }
+        if let (Command::Release { from, .. }, Some(start)) = (command, start) {
+            self.hint = Some(SettleHint {
+                square: *from,
+                from: start,
+            });
+            // A cena só se reconstrói quando a revisão muda: a peça precisa voltar.
+            self.revision = self.revision.wrapping_add(1);
+        }
+    }
+
+    /// Avisos da arbitragem competitiva, a partir dos Eventos.
+    fn note_arbitration(&mut self, events: &[chess_game::Event]) {
+        let ended = events
+            .iter()
+            .any(|e| matches!(e.kind, EventKind::GameEnded { .. }));
+        for event in events {
+            let notice = match &event.kind {
+                EventKind::InfractionRecorded { count, .. } => Some(Notice::Infraction {
+                    count: *count,
+                    ended,
+                }),
+                EventKind::DrawClaimAccepted { .. } => Some(Notice::ClaimAccepted),
+                EventKind::DrawClaimRejected { .. } => Some(Notice::ClaimRejected),
+                _ => None,
+            };
+            if let Some(notice) = notice {
+                self.notice = Some((notice, Instant::now()));
+            }
         }
     }
 
@@ -195,12 +365,23 @@ impl Session {
                 from: start,
             });
             self.illegal_at = Some(Instant::now());
+        } else if has(|k| {
+            matches!(
+                k,
+                EventKind::IllegalMoveReleased { .. } | EventKind::MoveMade { .. }
+            )
+        }) {
+            // Simulação FIDE: a peça fica onde foi solta (DEC-32) ou no Lance feito (art. 4.7).
+            self.hint = Some(SettleHint {
+                square: to,
+                from: start,
+            });
         } else if has(|k| matches!(k, EventKind::PromotionPending { .. })) {
             self.hint = Some(SettleHint {
                 square: to,
                 from: start,
             });
-            if self.always_queen {
+            if self.always_queen && self.snapshot.policy == PolicyKind::Assisted {
                 self.apply(
                     Command::ChoosePromotion {
                         piece: Piece::Queen,
@@ -225,7 +406,7 @@ fn lifted(p: Vec3) -> Vec3 {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use chess_game::{EndReason, GameResult};
+    use chess_game::{EndReason, GameResult, GameSetup};
     use chess_input::{Modifiers, PointerButton};
 
     fn sq(name: &str) -> Square {
@@ -391,8 +572,142 @@ mod tests {
             s.snapshot().outcome.unwrap().result,
             GameResult::WhiteWins // as pretas jogam e abandonam
         );
-        s.new_game();
+        s.start(&NewGameConfig::default());
         assert!(s.snapshot().history.is_empty());
         assert!(s.snapshot().outcome.is_none());
+    }
+
+    fn competitive(policy: PolicyKind) -> Session {
+        Session::with_config(&NewGameConfig::for_policy(policy))
+    }
+
+    #[test]
+    fn fide_illegal_drop_stays_where_it_was_dropped_until_the_clock() {
+        let mut s = competitive(PolicyKind::FideSimulation);
+        drag(&mut s, "e2", "e5");
+        let snap = s.snapshot();
+        let release = snap.provisional_release.as_ref().unwrap();
+        assert_eq!((release.from, release.to), (sq("e2"), sq("e5")));
+        assert_eq!(
+            s.take_hint().unwrap().square,
+            sq("e5"),
+            "fica onde foi solta"
+        );
+        assert!(!s.illegal_recently(), "sem aviso de Lance ilegal (DEC-32)");
+        // Espaço / botão: a Infração é concluída e a posição regular volta.
+        s.press_clock();
+        let snap = s.snapshot();
+        assert!(snap.provisional_release.is_none());
+        assert_eq!(snap.infractions_white, 1);
+        assert!(matches!(
+            s.notice(),
+            Some(Notice::Infraction {
+                count: 1,
+                ended: false
+            })
+        ));
+    }
+
+    #[test]
+    fn fide_retract_fixes_an_illegal_drop_but_not_a_legal_one() {
+        let mut s = competitive(PolicyKind::FideSimulation);
+        drag(&mut s, "e2", "e5");
+        s.retract();
+        assert!(s.snapshot().provisional_release.is_none());
+        assert_eq!(
+            s.snapshot().must_move_from,
+            vec![sq("e2")],
+            "obrigação mantida"
+        );
+        drag(&mut s, "e2", "e4");
+        s.retract();
+        assert!(
+            s.snapshot().made_move.is_some(),
+            "Lance legal não volta (art. 4.7)"
+        );
+        assert_eq!(s.notice(), Some(&Notice::CannotRetract));
+        s.press_clock();
+        assert_eq!(s.snapshot().history[0].san, "e4");
+        assert_eq!(s.snapshot().side_to_move, Color::Black);
+    }
+
+    #[test]
+    fn touch_obligation_rejects_the_drop_of_another_piece_and_the_piece_returns() {
+        let mut s = competitive(PolicyKind::FideSimulation);
+        feed(&mut s, &[down("e2"), up("e2")]);
+        feed(&mut s, &[GestureEvent::Escape]);
+        let rev = s.revision();
+        drag(&mut s, "d2", "d4");
+        assert!(s.snapshot().made_move.is_none());
+        assert!(matches!(s.notice(), Some(Notice::TouchObligation(sqs)) if sqs == &[sq("e2")]));
+        assert_eq!(s.take_hint().unwrap().square, sq("d2"), "volta à origem");
+        assert_ne!(s.revision(), rev, "a cena é reanimada");
+    }
+
+    #[test]
+    fn the_clock_is_pressed_by_the_side_to_move_only_and_never_by_itself() {
+        let mut s = competitive(PolicyKind::FideSimulation);
+        assert!(s.can_press_clock(Color::White));
+        assert!(
+            !s.can_press_clock(Color::Black),
+            "o relógio é de quem tem a vez"
+        );
+        s.tick();
+        assert!(s.snapshot().history.is_empty(), "nada acontece sozinho");
+        drag(&mut s, "e2", "e4");
+        s.press_clock();
+        assert!(!s.can_press_clock(Color::White));
+        assert!(s.can_press_clock(Color::Black));
+        // No Assistido o relógio não é acionado pelo usuário.
+        assert!(!Session::new().can_press_clock(Color::White));
+    }
+
+    #[test]
+    fn pause_blocks_the_clock_and_resume_restores_it() {
+        let mut s = competitive(PolicyKind::FideSimulation);
+        s.toggle_pause();
+        assert!(s.snapshot().paused && !s.can_press_clock(Color::White));
+        s.toggle_pause();
+        assert!(!s.snapshot().paused && s.can_press_clock(Color::White));
+    }
+
+    #[test]
+    fn claim_without_a_basis_is_rejected_with_the_penalty() {
+        let mut s = competitive(PolicyKind::FideSimulation);
+        s.claim_draw(None);
+        assert_eq!(s.notice(), Some(&Notice::ClaimRejected));
+        assert!(s.snapshot().outcome.is_none());
+        let mv: Move = "e2e4".parse().unwrap();
+        s.claim_draw(Some(mv));
+        assert!(s.snapshot().outcome.is_none());
+    }
+
+    #[test]
+    fn a_new_game_starts_with_the_configuration_and_competitive_has_no_auto_queen() {
+        let mut s = Session::new();
+        s.set_always_queen(true);
+        s.start(&NewGameConfig::for_policy(PolicyKind::FideSimulation));
+        assert_eq!(s.snapshot().policy, PolicyKind::FideSimulation);
+        assert!(!s.always_queen(), "sem dama automática nas competitivas");
+        s.set_always_queen(true);
+        assert!(!s.always_queen());
+        assert!(s.snapshot().clock.is_some(), "controle clássico padrão");
+    }
+
+    #[test]
+    fn same_policy_through_the_same_commands_regardless_of_presentation() {
+        // AC-02: a Partida só conhece Comandos; 2D e 3D enviam os mesmos.
+        let mut a = competitive(PolicyKind::FideSimulation);
+        let mut b = competitive(PolicyKind::FideSimulation);
+        drag(&mut a, "g1", "f3");
+        a.press_clock();
+        b.command(Command::Touch { square: sq("g1") });
+        b.command(Command::Release {
+            from: sq("g1"),
+            to: sq("f3"),
+        });
+        b.command(Command::PressClock);
+        assert_eq!(a.snapshot().position, b.snapshot().position);
+        assert_eq!(a.snapshot().history, b.snapshot().history);
     }
 }

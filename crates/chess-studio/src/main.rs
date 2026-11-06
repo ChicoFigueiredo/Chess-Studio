@@ -10,9 +10,12 @@ mod board;
 mod board2d;
 mod camera;
 mod capture;
+mod clock;
+mod fide_panel;
 mod highlight;
 mod i18n;
 mod layout;
+mod new_game;
 mod picking;
 mod pieces;
 mod play;
@@ -49,6 +52,12 @@ fn capture_script() -> capture::CaptureScript {
             .unwrap_or_default(),
         select: option_value("--select").and_then(|s| s.parse().ok()),
         show_panel: std::env::args().any(|a| a == "--panel"),
+        config: capture::parse_config(
+            option_value("--policy").as_deref(),
+            option_value("--time").as_deref(),
+            option_value("--side").as_deref(),
+        ),
+        show_new_game: std::env::args().any(|a| a == "--new-game"),
     }
 }
 
@@ -102,6 +111,8 @@ fn main() {
         camera::CameraPlugin,
         picking::PickingPlugin,
         ui::UiPlugin,
+        clock::ClockPlugin,
+        new_game::NewGamePlugin,
         capture::CapturePlugin,
     ));
     if let Some(dir) = capture {
