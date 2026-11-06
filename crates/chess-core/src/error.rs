@@ -106,3 +106,32 @@ impl fmt::Display for IllegalMoveError {
 }
 
 impl std::error::Error for IllegalMoveError {}
+
+/// Motivo pelo qual um texto SAN não resolve para um Lance legal.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SanError {
+    /// Texto vazio (ou só espaços e anotações).
+    Empty,
+    /// O texto não tem forma de SAN.
+    Syntax(String),
+    /// Nenhum Lance legal da Posição corresponde ao texto (inclui lances ilegais).
+    NoMatchingMove(String),
+    /// Mais de um Lance legal corresponde; desambiguação insuficiente.
+    Ambiguous(Vec<Move>),
+}
+
+impl fmt::Display for SanError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty => f.write_str("SAN vazio"),
+            Self::Syntax(s) => write!(f, "SAN malformado: {s:?}"),
+            Self::NoMatchingMove(s) => write!(f, "nenhum lance legal corresponde a {s:?}"),
+            Self::Ambiguous(moves) => {
+                let list: Vec<String> = moves.iter().map(ToString::to_string).collect();
+                write!(f, "SAN ambíguo: {}", list.join(", "))
+            }
+        }
+    }
+}
+
+impl std::error::Error for SanError {}
