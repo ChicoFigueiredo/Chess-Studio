@@ -7,7 +7,8 @@ fn pos(fen: &str) -> CanonicalPosition {
 
 fn play(p: &CanonicalPosition, moves: &[&str]) -> CanonicalPosition {
     moves.iter().fold(p.clone(), |acc, m| {
-        acc.play(m.parse::<Move>().unwrap()).unwrap()
+        acc.play(m.parse::<Move>().expect("UCI válido"))
+            .expect("lance legal")
     })
 }
 

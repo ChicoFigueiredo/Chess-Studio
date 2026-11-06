@@ -153,7 +153,8 @@ fn counter_constants_match_the_rules() {
 #[test]
 #[ignore = "limitação documentada: posição morta por bloqueio de peões (art. 5.2.2) não é detectada"]
 fn dead_position_by_pawn_blockade_is_not_detected() {
-    // Exemplo ilustrativo de travamento total (reis trancados atrás de peões bloqueados);
+    // Exemplo ilustrativo (cadeias de peões bloqueados; não é prova de posição morta, só
+    // marca a classe de caso). A posição morta de verdade seria travamento total;
     // o núcleo só reconhece posição morta por material.
     let p = pos("8/8/8/p1p1p1p1/P1P1P1P1/8/8/k6K w - - 0 1");
     assert!(p.is_insufficient_material());

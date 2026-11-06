@@ -49,10 +49,10 @@ fn disambiguates_by_rank_when_files_coincide() {
 
 #[test]
 fn disambiguates_three_queens_by_file_rank_or_both() {
-    let fen = "7k/8/8/8/8/Q7/8/Q1Q4K w - - 0 1";
-    assert_eq!(san(fen, "a1c3"), "Qa1c3+");
-    assert_eq!(san(fen, "a3c3"), "Q3c3+");
-    assert_eq!(san(fen, "c1c3"), "Qcc3+");
+    let fen = "8/7k/8/8/8/Q7/8/Q1Q4K w - - 0 1";
+    assert_eq!(san(fen, "a1c3"), "Qa1c3");
+    assert_eq!(san(fen, "a3c3"), "Q3c3");
+    assert_eq!(san(fen, "c1c3"), "Qcc3");
 }
 
 #[test]
@@ -85,7 +85,7 @@ fn writes_promotion_with_and_without_check() {
 #[test]
 fn writes_capture_promotion() {
     let fen = "1n5k/P7/8/8/8/8/8/K7 w - - 0 1";
-    assert_eq!(san(fen, "a7b8q"), "axb8=Q");
+    assert_eq!(san(fen, "a7b8q"), "axb8=Q+");
 }
 
 #[test]
@@ -153,7 +153,7 @@ fn parse_handles_disambiguation_forms() {
     let p = pos("4k3/8/8/8/8/8/8/1N2KN2 w - - 0 1");
     assert_eq!(p.parse_san("Nbd2"), Ok(mv("b1d2")));
     assert_eq!(p.parse_san("Nfd2"), Ok(mv("f1d2")));
-    let p = pos("7k/8/8/8/8/Q7/8/Q1Q4K w - - 0 1");
+    let p = pos("8/7k/8/8/8/Q7/8/Q1Q4K w - - 0 1");
     assert_eq!(p.parse_san("Qa1c3"), Ok(mv("a1c3")));
     assert_eq!(p.parse_san("Q3c3"), Ok(mv("a3c3")));
     assert_eq!(p.parse_san("Qcc3"), Ok(mv("c1c3")));
@@ -217,7 +217,7 @@ fn roundtrip(p: &CanonicalPosition, depth: u32) {
             "ida e volta falhou: {text} em {p}"
         );
         if depth > 1 {
-            roundtrip(&p.play(m).unwrap(), depth - 1);
+            roundtrip(&p.play(m).expect("lance legal"), depth - 1);
         }
     }
 }
