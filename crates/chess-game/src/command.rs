@@ -7,28 +7,43 @@ use chess_core::{Color, Piece, Square};
 #[non_exhaustive]
 pub enum Command {
     /// Botão sobre uma peça (Toque intencional nas Políticas competitivas).
-    Touch { square: Square },
+    Touch {
+        square: Square,
+    },
     /// Ajuste (j'adoube).
-    Adjust { square: Square },
+    Adjust {
+        square: Square,
+    },
     /// Soltar a peça de `from` em `to`. Quem joga é sempre o lado da vez.
-    Release { from: Square, to: Square },
+    Release {
+        from: Square,
+        to: Square,
+    },
     /// Peça escolhida para a promoção pendente (D/T/B/C).
-    ChoosePromotion { piece: Piece },
+    ChoosePromotion {
+        piece: Piece,
+    },
     /// Retratar/cancelar o Lance em curso (no Assistido, a promoção pendente).
     RetractMove,
     PressClock,
     ClaimDraw,
-    OfferDraw { side: Color },
+    OfferDraw {
+        side: Color,
+    },
     /// O adversário de quem propôs aceita/recusa.
     AcceptDraw,
     DeclineDraw,
-    Resign { side: Color },
+    Resign {
+        side: Color,
+    },
     Pause,
     Resume,
     Undo,
     Redo,
     /// Lance da Engine em UCI.
-    EngineMove { uci: String },
+    EngineMove {
+        uci: String,
+    },
 }
 
 /// Nome do Comando, sem payload (usado em [`crate::Rejection`]).

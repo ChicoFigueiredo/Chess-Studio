@@ -21,10 +21,7 @@ fn mate_do_pastor_encerra_com_vitoria_das_brancas() {
 
     assert!(matches!(
         kinds(&events).as_slice(),
-        [
-            EventKind::MoveCompleted { .. },
-            EventKind::GameEnded { .. }
-        ]
+        [EventKind::MoveCompleted { .. }, EventKind::GameEnded { .. }]
     ));
     assert_ended(&game, GameResult::WhiteWins, EndReason::Checkmate);
     assert_eq!(game.snapshot().history.len(), 7);

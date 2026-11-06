@@ -42,7 +42,9 @@ pub enum IllegalReason {
     SameSquare,
     /// A peça não faz esse Lance ou ele deixaria o rei em xeque; `in_check` diz se
     /// o lado da vez estava em xeque.
-    NotLegal { in_check: bool },
+    NotLegal {
+        in_check: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -27,7 +27,10 @@ pub enum Rejection {
     NoDrawOffer,
     DrawOfferPending,
     /// O instante injetado é anterior ao do último Evento.
-    TimeWentBackwards { last_ms: u64, got_ms: u64 },
+    TimeWentBackwards {
+        last_ms: u64,
+        got_ms: u64,
+    },
     /// Estado interno incoerente (bug); a Partida não mudou.
     Inconsistent,
 }

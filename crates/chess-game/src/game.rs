@@ -43,7 +43,8 @@ impl Game {
             // As Políticas só emitem Eventos coerentes com o estado; se não for
             // assim, é bug: a Partida é restaurada e o Comando é recusado.
             if apply(&mut self.state, event).is_err() {
-                self.state = rebuild(&self.setup, &self.log).map_err(|_| Rejection::Inconsistent)?;
+                self.state =
+                    rebuild(&self.setup, &self.log).map_err(|_| Rejection::Inconsistent)?;
                 return Err(Rejection::Inconsistent);
             }
         }
