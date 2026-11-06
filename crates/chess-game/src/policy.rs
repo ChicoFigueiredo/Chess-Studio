@@ -2,7 +2,7 @@
 //! acontecem. Pura: lê o estado, não o muda (quem aplica é `Game::handle`).
 //!
 //! Políticas: Assistido (aqui) e Simulação FIDE (`fide.rs`). A Eliminação Imediata
-//! (B8) usa o mesmo núcleo competitivo com outra etapa de Infração e outra
+//! usa o mesmo núcleo competitivo com outra etapa de Infração e outra
 //! consequência. O que é comum (encerramentos automáticos, Pausa, abandono,
 //! propostas de empate, Engine) fica neste módulo.
 
@@ -23,6 +23,7 @@ pub(crate) fn policy_for(kind: PolicyKind) -> &'static dyn ArbitrationPolicy {
     match kind {
         PolicyKind::Assisted => &Assisted,
         PolicyKind::FideSimulation => &fide::FIDE_SIMULATION,
+        PolicyKind::SuddenElimination => &fide::SUDDEN_ELIMINATION,
     }
 }
 

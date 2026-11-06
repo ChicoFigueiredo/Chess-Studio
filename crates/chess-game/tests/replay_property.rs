@@ -249,8 +249,8 @@ fn replay_reproduz_o_estado_da_eliminacao_imediata_nas_duas_etapas() {
         .enumerate()
     {
         for seed in 1..=40 {
-            let base = GameSetup::standard(PolicyKind::SuddenElimination)
-                .with_infraction_stage(stage);
+            let base =
+                GameSetup::standard(PolicyKind::SuddenElimination).with_infraction_stage(stage);
             run_fide_seed(seed + 5000 * (i as u64 + 1), base.clone());
             run_fide_seed(
                 seed + 5500 * (i as u64 + 1),
