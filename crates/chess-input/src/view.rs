@@ -19,16 +19,6 @@ pub enum CameraView {
 impl CameraView {
     pub const ALL: [CameraView; 4] = [Self::Top, Self::Oblique, Self::Standard, Self::Inverted];
 
-    /// Nome em pt-BR para a interface.
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Top => "Superior",
-            Self::Oblique => "Oblíqua",
-            Self::Standard => "Padrão",
-            Self::Inverted => "Invertida",
-        }
-    }
-
     /// Pose de câmera da Vista.
     pub fn pose(self) -> CameraPose {
         let (yaw, pitch, distance) = match self {

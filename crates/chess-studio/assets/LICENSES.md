@@ -13,6 +13,7 @@ Data de download de tudo: **2026-11-06**.
 | `textures/walnut_{diff,nor_gl,arm}_1k.jpg` | [Poly Haven — Black Walnut Veneer 01](https://polyhaven.com/a/black_walnut_veneer_01) (1k, JPG) | Jenelle van Heerden | CC0 1.0 | Casas escuras e moldura. Sem alteração. |
 | `textures/table_{diff,nor_gl,arm}_1k.jpg` | [Poly Haven — Wood Table 001](https://polyhaven.com/a/wood_table_001) (1k, JPG) | Dimitrios Savva (fotografia), Rico Cilliers (processamento) | CC0 1.0 | Mesa da Mesa imersiva. Sem alteração. |
 | `fonts/NotoSansSymbols2-chess.ttf` | [Noto Sans Symbols 2](https://github.com/notofonts/symbols) (`NotoSansSymbols2-Regular.ttf`) | The Noto Project Authors | SIL OFL 1.1 (`fonts/OFL.txt`) | Subconjunto com os glifos de xadrez U+2654–U+265F (`pyftsubset`), usado no 2D técnico. |
+| `fonts/NotoSans-Regular.ttf` | Noto Sans (pacote `fonts-noto-core`, 2020-12) | The Noto Project Authors | SIL OFL 1.1 (`fonts/OFL.txt`) | Fonte da interface egui (texto pt-BR com acentos), sem alteração. As fontes embutidas do egui usam a Ubuntu Font Licence e por isso não são ativadas. |
 
 `diff` = cor base (sRGB), `nor_gl` = normal (convenção OpenGL), `arm` = oclusão/rugosidade/metal.
 
