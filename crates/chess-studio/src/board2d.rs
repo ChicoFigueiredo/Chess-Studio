@@ -132,6 +132,7 @@ fn spawn_board(mut commands: Commands) {
 #[allow(clippy::type_complexity)]
 fn update_markers(
     hovered: Res<HoveredSquare>,
+    aids: Res<crate::aids::AidSettings>,
     clicked: Res<SelectedSquare>,
     mut sprites: ParamSet<(
         Single<(&mut Transform, &mut Visibility), With<HoverSprite>>,
@@ -139,7 +140,7 @@ fn update_markers(
     )>,
 ) {
     let (mut t, mut v) = sprites.p0().into_inner();
-    place(&mut t, &mut v, hovered.0);
+    place(&mut t, &mut v, hovered.0.filter(|_| aids.selected));
     let (mut t, mut v) = sprites.p1().into_inner();
     place(&mut t, &mut v, clicked.0);
 }

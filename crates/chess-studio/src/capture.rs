@@ -73,6 +73,11 @@ pub struct CaptureScript {
     pub select: Option<Square>,
     /// Mantém o painel egui visível.
     pub show_panel: bool,
+    /// Perfil de auxílios da captura: `physical`, `training` (padrão) ou `ghosts`
+    /// (Treinamento com peças fantasmas).
+    pub aids: Option<String>,
+    /// Entra na revisão neste meio-lance antes das fotos.
+    pub review: Option<usize>,
 }
 
 /// Presença deste recurso ativa o modo de captura (o painel egui fica oculto por padrão).
@@ -111,12 +116,14 @@ impl Plugin for CapturePlugin {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_capture(
     mut mode: ResMut<CaptureMode>,
     time: Res<Time>,
     mut presentation: ResMut<Presentation>,
     mut rig: ResMut<CameraRig>,
     mut session: ResMut<Session>,
+    mut aids: ResMut<crate::aids::AidSettings>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -131,6 +138,17 @@ fn run_capture(
     if !mode.scripted {
         mode.scripted = true;
         play_script(&mut session, &mode.script);
+        *aids = match mode.script.aids.as_deref() {
+            Some("physical") => crate::aids::AidSettings::physical(),
+            Some("ghosts") => crate::aids::AidSettings {
+                ghosts: true,
+                ..crate::aids::AidSettings::training()
+            },
+            _ => crate::aids::AidSettings::training(),
+        };
+        if let Some(ply) = mode.script.review {
+            session.set_review_ply(Some(ply));
+        }
     }
     if mode.frame == 0 {
         *presentation = step.presentation;

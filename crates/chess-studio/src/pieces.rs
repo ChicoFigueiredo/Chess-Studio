@@ -48,13 +48,26 @@ pub struct PieceTemplates {
 }
 
 impl PieceTemplates {
+    /// Malhas e posições relativas da peça (para as peças fantasmas dos Auxílios).
+    pub fn ghost_parts(&self, side: Side, piece: Piece) -> Vec<(Handle<Mesh>, Transform)> {
+        self.by_kind
+            .get(&(side, piece))
+            .map(|parts| {
+                parts
+                    .iter()
+                    .map(|p| (p.mesh.clone(), p.transform))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     fn complete(&self) -> bool {
         self.by_kind.len() == 12
     }
 }
 
 #[derive(Resource, Debug)]
-struct PieceFont(Handle<Font>);
+pub struct PieceFont(pub Handle<Font>);
 
 /// Peças já desenhadas (uma entidade 3D e uma 2D por casa ocupada).
 #[derive(Resource, Default, Debug)]
@@ -184,6 +197,12 @@ fn capture_templates(
 
 /// Peças a desenhar: Posição visual provisória (promoção pendente) ou canônica.
 fn visible_pieces(session: &Session) -> HashMap<Square, (Side, Piece)> {
+    // Revisão Lance a Lance: mostra a Posição revisada (somente leitura).
+    if let Some(review) = session.review() {
+        return chess_input::all_squares()
+            .filter_map(|s| review.position.piece_at(s).map(|cp| (s, cp)))
+            .collect();
+    }
     let snapshot = session.snapshot();
     if let Some(view) = &snapshot.provisional {
         return view.pieces.iter().map(|&(s, c, p)| (s, (c, p))).collect();

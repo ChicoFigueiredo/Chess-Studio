@@ -193,18 +193,14 @@ fn game_section(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session) {
                 Side::White => "game-turn-white",
                 Side::Black => "game-turn-black",
             }));
-            if snapshot.in_check {
-                ui.colored_label(egui::Color32::LIGHT_RED, i18n.t("game-check"));
-            }
+            // O alerta de xeque é um Auxílio visual: vive em `aids_panel`.
         }
     }
     match snapshot.history.last() {
         Some(last) => ui.label(i18n.t_with("game-last-move", &[("san", &last.san)])),
         None => ui.label(i18n.t("game-no-moves")),
     };
-    if session.illegal_recently() {
-        ui.colored_label(egui::Color32::YELLOW, i18n.t("game-illegal"));
-    }
+    // O aviso de Lance ilegal segue a política de explicação (`aids_panel`).
     ui.horizontal(|ui| {
         if ui
             .add_enabled(snapshot.can_undo, egui::Button::new(i18n.t("button-undo")))

@@ -7,13 +7,16 @@
 //! o fluxo inteiro (ponteiro -> Comando -> Partida) é testável sem janela.
 
 use bevy::prelude::{Resource, Vec3, warn};
-use chess_core::{Color, Piece, Square};
-use chess_game::{Command, EventKind, Game, GameSetup, PolicyKind, Snapshot, Timestamp};
+use chess_core::{Color, FenError, Piece, Square};
+use chess_game::{
+    Command, EventKind, Game, GameSetup, IllegalReason, PgnOptions, PolicyKind, ReviewView,
+    Snapshot, Timestamp,
+};
 use chess_input::{DRAG_HEIGHT, GestureEvent, GestureInterpreter, GestureVisual, MoveMethod};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// Quanto tempo a mensagem de Lance ilegal fica no painel.
-const ILLEGAL_NOTICE: Duration = Duration::from_secs(3);
+const ILLEGAL_NOTICE: Duration = Duration::from_secs(6);
 
 /// Onde a peça deve ser encaixada após um gesto e de onde a animação parte.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -22,6 +25,23 @@ pub struct SettleHint {
     pub square: Square,
     /// Ponto do mundo onde a peça estava na tela ao soltar.
     pub from: Vec3,
+}
+
+/// Último Lance ilegal recusado (para a explicação de erro, UX-04).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct IllegalNotice {
+    pub from: Square,
+    pub to: Square,
+    pub reason: IllegalReason,
+}
+
+/// Ocorrência ilegal do log, para a revisão (AC-08: fora do histórico legal).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct IllegalIncident {
+    /// Número de meios-lances legais já jogados quando ocorreu.
+    pub after_ply: usize,
+    pub side: Color,
+    pub notice: IllegalNotice,
 }
 
 #[derive(Resource, Debug)]
@@ -34,6 +54,16 @@ pub struct Session {
     always_queen: bool,
     hint: Option<SettleHint>,
     illegal_at: Option<Instant>,
+    illegal: Option<IllegalNotice>,
+    /// A explicação "após tentativa" foi pedida para o aviso atual.
+    illegal_revealed: bool,
+    /// Instante monotônico acumulado de sessões anteriores (Partida retomada): o tempo
+    /// dos Eventos nunca anda para trás.
+    mono_offset: u64,
+    /// Muda quando a Partida é trocada (Nova Partida, FEN); a persistência observa.
+    epoch: u64,
+    /// Revisão Lance a Lance em curso (somente leitura, DEC-39).
+    review: Option<ReviewView>,
 }
 
 impl Default for Session {
@@ -44,7 +74,12 @@ impl Default for Session {
 
 impl Session {
     pub fn new() -> Self {
-        let game = Game::new(GameSetup::standard(PolicyKind::Assisted));
+        Self::from_game(Game::new(GameSetup::standard(PolicyKind::Assisted)))
+    }
+
+    /// Sessão sobre uma Partida existente (nova, de FEN ou reaberta do log).
+    pub fn from_game(game: Game) -> Self {
+        let mono_offset = game.events().last().map_or(0, |e| e.at.mono_ms);
         Self {
             snapshot: game.snapshot(),
             game,
@@ -54,7 +89,121 @@ impl Session {
             always_queen: false,
             hint: None,
             illegal_at: None,
+            illegal: None,
+            illegal_revealed: false,
+            mono_offset,
+            epoch: 0,
+            review: None,
         }
+    }
+
+    /// A Partida em si (somente leitura: exportação e persistência).
+    pub fn game(&self) -> &Game {
+        &self.game
+    }
+
+    pub fn epoch(&self) -> u64 {
+        self.epoch
+    }
+
+    /// Revisão em curso, se houver. Durante a revisão a Partida não aceita gestos.
+    pub fn review(&self) -> Option<&ReviewView> {
+        self.review.as_ref()
+    }
+
+    /// Entra, navega ou sai (`None`) da revisão. `ply` além do histórico é ignorado.
+    pub fn set_review_ply(&mut self, ply: Option<usize>) {
+        let next = match ply {
+            Some(p) => match self.game.review_at_ply(p) {
+                Some(view) => Some(view),
+                None => return,
+            },
+            None => None,
+        };
+        if next != self.review {
+            self.review = next;
+            self.interpreter
+                .handle(GestureEvent::PanelInteraction, &self.snapshot);
+            self.revision = self.revision.wrapping_add(1);
+        }
+    }
+
+    /// Aviso do último Lance ilegal, enquanto recente.
+    pub fn illegal_notice(&self) -> Option<IllegalNotice> {
+        self.illegal.filter(|_| self.illegal_recently())
+    }
+
+    pub fn illegal_revealed(&self) -> bool {
+        self.illegal_revealed
+    }
+
+    /// "Por quê?": mostra o motivo no modo "após tentativa".
+    pub fn reveal_illegal(&mut self) {
+        self.illegal_revealed = true;
+        self.illegal_at = Some(Instant::now());
+    }
+
+    /// Ocorrências ilegais do log, em ordem (a Partida não as conta como Lances).
+    pub fn illegal_incidents(&self) -> Vec<IllegalIncident> {
+        let mut plies = 0usize;
+        let mut out = Vec::new();
+        for event in self.game.events() {
+            match &event.kind {
+                EventKind::MoveCompleted { .. } | EventKind::MoveRedone { .. } => plies += 1,
+                EventKind::MoveUndone { .. } => plies = plies.saturating_sub(1),
+                EventKind::IllegalMoveRejected {
+                    side,
+                    from,
+                    to,
+                    reason,
+                } => out.push(IllegalIncident {
+                    after_ply: plies,
+                    side: *side,
+                    notice: IllegalNotice {
+                        from: *from,
+                        to: *to,
+                        reason: *reason,
+                    },
+                }),
+                _ => {}
+            }
+        }
+        out
+    }
+
+    /// PGN da Partida (só Lances legais; comentários opcionais, DEC-44).
+    pub fn export_pgn(&self, include_comments: bool) -> String {
+        let wall = self.now().wall_ms;
+        self.game.to_pgn(&PgnOptions {
+            event: "Partida casual".into(),
+            site: "Chess Studio".into(),
+            date: wall.map(chess_game::pgn_date_from_unix_ms),
+            white: "Brancas".into(),
+            black: "Pretas".into(),
+            include_comments,
+            ..PgnOptions::default()
+        })
+    }
+
+    /// Carrega uma posição por FEN como nova Partida (mesma Política). FEN inválido
+    /// devolve o erro e **não altera nada** (DB-02).
+    pub fn load_fen(&mut self, fen: &str) -> Result<(), FenError> {
+        let setup = GameSetup::from_fen(self.snapshot.policy, fen.trim())?;
+        self.replace_game(Game::new(setup));
+        Ok(())
+    }
+
+    /// Troca a Partida preservando as preferências de entrada.
+    fn replace_game(&mut self, game: Game) {
+        let method = self.interpreter.method();
+        let always_queen = self.always_queen;
+        let epoch = self.epoch.wrapping_add(1);
+        let revision = self.revision.wrapping_add(1);
+        *self = Self::from_game(game);
+        self.interpreter.set_method(method);
+        self.always_queen = always_queen;
+        self.epoch = epoch;
+        self.revision = revision;
     }
 
     /// Estado atual da Partida (única fonte para desenhar).
@@ -108,7 +257,9 @@ impl Session {
     }
 
     fn now(&self) -> Timestamp {
-        let mono_ms = u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let mono_ms = u64::try_from(self.started.elapsed().as_millis())
+            .unwrap_or(u64::MAX)
+            .saturating_add(self.mono_offset);
         let wall_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .ok()
@@ -118,6 +269,9 @@ impl Session {
 
     /// Evento de gesto -> Comandos do intérprete -> Partida.
     pub fn gesture(&mut self, event: GestureEvent) {
+        if self.review.is_some() {
+            return;
+        }
         let visual = self.interpreter.visual();
         let commands = self.interpreter.handle(event, &self.snapshot);
         for command in commands {
@@ -143,6 +297,9 @@ impl Session {
 
     /// Comando vindo da interface (painel e seletor de promoção).
     pub fn command(&mut self, command: Command) {
+        if self.review.is_some() {
+            return;
+        }
         self.apply(command, None);
         self.interpreter
             .handle(GestureEvent::Resync, &self.snapshot);
@@ -150,12 +307,7 @@ impl Session {
 
     /// Descarta a Partida e começa outra, com a mesma preferência de movimento.
     pub fn new_game(&mut self) {
-        let method = self.interpreter.method();
-        let always_queen = self.always_queen;
-        *self = Self::new();
-        self.interpreter.set_method(method);
-        self.always_queen = always_queen;
-        self.revision = self.revision.wrapping_add(1);
+        self.replace_game(Game::new(GameSetup::standard(PolicyKind::Assisted)));
     }
 
     /// Lado da vez abandona (dois jogadores no mesmo computador).
@@ -195,6 +347,17 @@ impl Session {
                 from: start,
             });
             self.illegal_at = Some(Instant::now());
+            self.illegal_revealed = false;
+            self.illegal = events.iter().find_map(|e| match &e.kind {
+                EventKind::IllegalMoveRejected {
+                    from, to, reason, ..
+                } => Some(IllegalNotice {
+                    from: *from,
+                    to: *to,
+                    reason: *reason,
+                }),
+                _ => None,
+            });
         } else if has(|k| matches!(k, EventKind::PromotionPending { .. })) {
             self.hint = Some(SettleHint {
                 square: to,
@@ -394,5 +557,53 @@ mod tests {
         s.new_game();
         assert!(s.snapshot().history.is_empty());
         assert!(s.snapshot().outcome.is_none());
+    }
+
+    #[test]
+    fn review_is_read_only_and_does_not_create_events() {
+        let mut s = Session::new();
+        tap(&mut s, "e2", "e4");
+        drag(&mut s, "e7", "e5");
+        let events_before = s.game().events().len();
+        let snapshot = s.snapshot().clone();
+        s.set_review_ply(Some(1));
+        assert_eq!(s.review().unwrap().ply, 1);
+        assert_eq!(s.review().unwrap().last_move.as_ref().unwrap().san, "e4");
+        // Gestos e Comandos são ignorados enquanto revisa.
+        tap(&mut s, "g1", "f3");
+        s.command(Command::Undo);
+        assert_eq!(s.game().events().len(), events_before);
+        assert_eq!(s.snapshot(), &snapshot);
+        s.set_review_ply(Some(99));
+        assert_eq!(s.review().unwrap().ply, 1, "ply inválido é ignorado");
+        s.set_review_ply(None);
+        assert!(s.review().is_none());
+        tap(&mut s, "g1", "f3");
+        assert_eq!(s.snapshot().history.len(), 3);
+    }
+
+    #[test]
+    fn review_works_on_a_finished_game_without_changing_the_result() {
+        let mut s = Session::new();
+        tap(&mut s, "e2", "e4");
+        s.command(Command::Resign { side: Color::Black });
+        let outcome = s.snapshot().outcome;
+        s.set_review_ply(Some(0));
+        assert!(s.review().unwrap().is_start);
+        assert_eq!(s.snapshot().outcome, outcome);
+    }
+
+    #[test]
+    fn illegal_drop_is_recorded_with_its_reason_outside_the_legal_history() {
+        let mut s = Session::new();
+        tap(&mut s, "e2", "e4");
+        drag(&mut s, "e7", "e2"); // e7 -> e2 não é Lance de peão
+        let notice = s.illegal_notice().unwrap();
+        assert_eq!(notice.from, sq("e7"));
+        let incidents = s.illegal_incidents();
+        assert_eq!(incidents.len(), 1);
+        assert_eq!(incidents[0].after_ply, 1);
+        assert_eq!(s.snapshot().history.len(), 1);
+        assert!(!s.export_pgn(true).contains("e2"), "ilegal fora do PGN");
     }
 }
