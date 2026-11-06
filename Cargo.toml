@@ -1,0 +1,44 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ChicoFigueiredo/Chess-Studio"
+publish = false
+
+[workspace.dependencies]
+# Crates internos
+chess-core = { path = "crates/chess-core" }
+chess-game = { path = "crates/chess-game" }
+chess-input = { path = "crates/chess-input" }
+chess-store = { path = "crates/chess-store" }
+chess-uci = { path = "crates/chess-uci" }
+chess-training = { path = "crates/chess-training" }
+
+# Apenas chess-studio usa estes (ADR-0001: o domínio não depende de Bevy).
+bevy = { version = "0.20.1", default-features = false }
+bevy_egui = { version = "0.43.1", default-features = false }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"
+
+# Dev rápido: dependências otimizadas, código do projeto com pouca otimização.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

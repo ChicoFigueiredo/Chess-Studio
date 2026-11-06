@@ -1,0 +1,15 @@
+[package]
+name = "chess-uci"
+description = "Engine UCI como processo filho: handshake, go/stop, detecção e download fixado"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+chess-core.workspace = true
+
+[lints]
+workspace = true
