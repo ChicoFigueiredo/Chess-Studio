@@ -11,6 +11,7 @@ publish.workspace = true
 [dependencies]
 chess-core.workspace = true
 chess-game.workspace = true
+glam = "0.33"
 
 [lints]
 workspace = true
