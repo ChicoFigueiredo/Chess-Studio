@@ -14,13 +14,20 @@
 //! ```
 
 mod config;
+mod controller;
 mod engine;
 mod error;
+mod player;
 mod protocol;
 
 pub use config::{EngineConfig, Timeouts};
+pub use controller::{
+    ControllerEvent, EngineController, Failure, FailureKind, SearchRequest, Strength,
+    StrengthApplied,
+};
 pub use engine::{Engine, EngineMove, QuitOutcome};
 pub use error::{EngineError, Stage};
+pub use player::{DEFAULT_MOVETIME, EnginePlayer, PlayerStatus};
 pub use protocol::{
     BestMove, Clock, EngineInfo, EngineOption, GoParams, LogEntry, LogSource, PositionSpec,
 };

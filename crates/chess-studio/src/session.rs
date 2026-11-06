@@ -8,8 +8,11 @@
 
 use bevy::prelude::{Resource, Vec3, warn};
 use chess_core::{Color, Piece, Square};
-use chess_game::{Command, EventKind, Game, GameSetup, PolicyKind, Snapshot, Timestamp};
+use chess_game::{
+    Command, EngineSeat, EventKind, Game, GameSetup, PolicyKind, Snapshot, Timestamp,
+};
 use chess_input::{DRAG_HEIGHT, GestureEvent, GestureInterpreter, GestureVisual, MoveMethod};
+use chess_uci::{EngineConfig, EnginePlayer};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// Quanto tempo a mensagem de Lance ilegal fica no painel.
@@ -34,6 +37,8 @@ pub struct Session {
     always_queen: bool,
     hint: Option<SettleHint>,
     illegal_at: Option<Instant>,
+    /// Engine adversária (B9); `None` em Partida entre dois jogadores locais.
+    engine: Option<EnginePlayer>,
 }
 
 impl Default for Session {
@@ -54,6 +59,7 @@ impl Session {
             always_queen: false,
             hint: None,
             illegal_at: None,
+            engine: None,
         }
     }
 
@@ -118,6 +124,10 @@ impl Session {
 
     /// Evento de gesto -> Comandos do intérprete -> Partida.
     pub fn gesture(&mut self, event: GestureEvent) {
+        // Na vez da Engine o ponteiro não move nada (ela joga as próprias peças).
+        if self.engine_turn() {
+            return;
+        }
         let visual = self.interpreter.visual();
         let commands = self.interpreter.handle(event, &self.snapshot);
         for command in commands {
@@ -148,6 +158,15 @@ impl Session {
             .handle(GestureEvent::Resync, &self.snapshot);
     }
 
+    /// Desfazer. Contra a Engine desfaz também a resposta dela, senão ela jogaria de novo
+    /// na hora e o Lance do usuário nunca poderia ser desfeito (DEC-39).
+    pub fn undo(&mut self) {
+        self.command(Command::Undo);
+        if self.engine_turn() && self.snapshot.can_undo {
+            self.command(Command::Undo);
+        }
+    }
+
     /// Descarta a Partida e começa outra, com a mesma preferência de movimento.
     pub fn new_game(&mut self) {
         let method = self.interpreter.method();
@@ -158,10 +177,73 @@ impl Session {
         self.revision = self.revision.wrapping_add(1);
     }
 
-    /// Lado da vez abandona (dois jogadores no mesmo computador).
+    /// Abandona: o lado da vez (dois jogadores no mesmo computador) ou, contra a Engine,
+    /// sempre o lado do usuário.
     pub fn resign_side_to_move(&mut self) {
-        let side: Color = self.snapshot.side_to_move;
+        let side: Color = match &self.engine {
+            Some(engine) => engine.seat().color.opposite(),
+            None => self.snapshot.side_to_move,
+        };
         self.command(Command::Resign { side });
+    }
+
+    // --- Engine adversária (B9) ---------------------------------------------
+
+    /// Começa uma Partida Assistido contra a Engine em `config` (ponto de extensão da
+    /// tela de Nova Partida: ela só precisa chamar isto com o lado, o Elo e a Engine).
+    pub fn start_engine_game(&mut self, seat: EngineSeat, config: EngineConfig) {
+        let method = self.interpreter.method();
+        let always_queen = self.always_queen;
+        let game = Game::new(GameSetup::standard(PolicyKind::Assisted).with_engine(seat));
+        *self = Self::new();
+        self.interpreter.set_method(method);
+        self.always_queen = always_queen;
+        self.snapshot = game.snapshot();
+        self.game = game;
+        self.engine = Some(EnginePlayer::new(seat, config));
+        self.revision = self.revision.wrapping_add(1);
+    }
+
+    /// A Engine joga neste momento (a interface ignora o ponteiro)?
+    pub fn engine_turn(&self) -> bool {
+        self.engine.as_ref().is_some_and(|e| {
+            self.snapshot.outcome.is_none() && self.snapshot.side_to_move == e.seat().color
+        })
+    }
+
+    /// Há Engine adversária nesta Partida?
+    pub fn engine_active(&self) -> bool {
+        self.engine.is_some()
+    }
+
+    pub fn engine(&self) -> Option<&EnginePlayer> {
+        self.engine.as_ref()
+    }
+
+    pub fn engine_retry(&mut self) {
+        if let Some(engine) = &mut self.engine {
+            engine.retry();
+        }
+    }
+
+    pub fn engine_replace(&mut self, config: EngineConfig) {
+        if let Some(engine) = &mut self.engine {
+            engine.replace_engine(config);
+        }
+    }
+
+    /// Chamado a cada quadro: não bloqueia (a Engine vive em thread própria).
+    pub fn tick_engine(&mut self) {
+        let at = self.now();
+        let Some(engine) = &mut self.engine else {
+            return;
+        };
+        if engine.drive(&mut self.game, at) {
+            self.snapshot = self.game.snapshot();
+            self.revision = self.revision.wrapping_add(1);
+            self.interpreter
+                .handle(GestureEvent::Resync, &self.snapshot);
+        }
     }
 
     fn apply(&mut self, command: Command, start: Option<Vec3>) {
@@ -394,5 +476,30 @@ mod tests {
         s.new_game();
         assert!(s.snapshot().history.is_empty());
         assert!(s.snapshot().outcome.is_none());
+    }
+
+    #[test]
+    fn engine_turn_ignores_the_pointer_and_resign_is_the_users() {
+        let mut s = Session::new();
+        s.start_engine_game(
+            EngineSeat {
+                color: Color::Black,
+                elo: 1500,
+            },
+            EngineConfig::new("/nao/existe/engine"),
+        );
+        assert!(s.engine_active());
+        tap(&mut s, "e2", "e4");
+        assert!(s.engine_turn());
+        // Na vez da Engine, mexer nas peças pretas não vale.
+        drag(&mut s, "e7", "e5");
+        assert_eq!(s.snapshot().history.len(), 1);
+        s.resign_side_to_move();
+        let outcome = s.snapshot().outcome.unwrap();
+        assert_eq!(outcome.result, GameResult::BlackWins);
+        assert_eq!(outcome.reason, EndReason::Resignation);
+        // "Nova Partida" volta a dois jogadores.
+        s.new_game();
+        assert!(!s.engine_active());
     }
 }

@@ -44,8 +44,8 @@ pub use pgn::{PgnOptions, pgn_date_from_unix_ms};
 pub use rejection::Rejection;
 pub use review::ReviewView;
 pub use setup::{
-    CLASSICAL_MIN_BASE_MS, CUSTOM_RULES_LABEL, FIDE_LAWS_VERSION, GameSetup, InfractionStage,
-    PolicyKind,
+    CLASSICAL_MIN_BASE_MS, CUSTOM_RULES_LABEL, EngineSeat, FIDE_LAWS_VERSION, GameSetup,
+    InfractionStage, PolicyKind,
 };
 pub use snapshot::{
     HistoryEntry, MadeMove, ProvisionalRelease, ProvisionalView, Snapshot, TouchedPiece,

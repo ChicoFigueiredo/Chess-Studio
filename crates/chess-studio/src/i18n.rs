@@ -10,6 +10,10 @@ use unic_langid::LanguageIdentifier;
 const PT_BR: &[(&str, &str)] = &[
     ("app.ftl", include_str!("../assets/i18n/pt-BR/app.ftl")),
     ("game.ftl", include_str!("../assets/i18n/pt-BR/game.ftl")),
+    (
+        "engine.ftl",
+        include_str!("../assets/i18n/pt-BR/engine.ftl"),
+    ),
 ];
 
 /// Tradutor do idioma ativo. Chave ausente devolve a própria chave (visível, nunca pânico).

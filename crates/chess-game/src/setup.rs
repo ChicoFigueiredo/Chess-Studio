@@ -1,7 +1,8 @@
 //! Configuração imutável de uma Partida.
 
 use crate::time::TimeControl;
-use chess_core::{CanonicalPosition, FenError};
+use crate::wire;
+use chess_core::{CanonicalPosition, Color, FenError};
 use serde::{Deserialize, Serialize};
 
 /// Política de arbitragem escolhida antes da Partida.
@@ -39,6 +40,17 @@ pub enum InfractionStage {
     Release,
 }
 
+/// Quem joga contra o usuário: a Engine ocupa um dos lados com força por Elo
+/// simples (DEC-29). Metadado imutável da Partida, gravado no `GameSetup`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct EngineSeat {
+    /// Lado jogado pela Engine.
+    #[serde(with = "wire::color")]
+    pub color: Color,
+    /// Elo pedido (`UCI_Elo`, ou `Skill Level` derivado quando a Engine não anuncia Elo).
+    pub elo: u32,
+}
+
 /// Tudo o que, com o log de Eventos, reconstrói a Partida (ADR-0002).
 /// Serializa com a Posição inicial em FEN.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -48,6 +60,7 @@ pub struct GameSetup {
     start: CanonicalPosition,
     time_control: Option<TimeControl>,
     infraction_stage: InfractionStage,
+    engine: Option<EngineSeat>,
 }
 
 impl GameSetup {
@@ -58,6 +71,7 @@ impl GameSetup {
             start: CanonicalPosition::start(),
             time_control: None,
             infraction_stage: InfractionStage::Clock,
+            engine: None,
         }
     }
 
@@ -68,6 +82,7 @@ impl GameSetup {
             start: CanonicalPosition::from_fen(fen)?,
             time_control: None,
             infraction_stage: InfractionStage::Clock,
+            engine: None,
         })
     }
 
@@ -83,6 +98,17 @@ impl GameSetup {
     pub fn with_infraction_stage(mut self, stage: InfractionStage) -> Self {
         self.infraction_stage = stage;
         self
+    }
+
+    /// Partida contra a Engine: ela joga `seat.color` com o Elo pedido (DEC-29).
+    pub fn with_engine(mut self, seat: EngineSeat) -> Self {
+        self.engine = Some(seat);
+        self
+    }
+
+    /// A Engine adversária, se houver.
+    pub fn engine(&self) -> Option<EngineSeat> {
+        self.engine
     }
 
     pub fn infraction_stage(&self) -> InfractionStage {
@@ -127,6 +153,8 @@ struct SetupWire {
     time_control: Option<TimeControl>,
     #[serde(default)]
     infraction_stage: InfractionStage,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    engine: Option<EngineSeat>,
 }
 
 impl From<GameSetup> for SetupWire {
@@ -136,6 +164,7 @@ impl From<GameSetup> for SetupWire {
             start_fen: s.start.to_fen(),
             time_control: s.time_control,
             infraction_stage: s.infraction_stage,
+            engine: s.engine,
         }
     }
 }
@@ -149,6 +178,7 @@ impl TryFrom<SetupWire> for GameSetup {
             start: CanonicalPosition::from_fen(&w.start_fen)?,
             time_control: w.time_control,
             infraction_stage: w.infraction_stage,
+            engine: w.engine,
         })
     }
 }
