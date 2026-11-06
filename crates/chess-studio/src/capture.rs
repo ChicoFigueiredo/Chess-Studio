@@ -2,7 +2,7 @@
 //! salva um PNG de cada (captura do próprio Bevy, independente do compositor), registra o
 //! tempo de quadro médio em `<dir>/desempenho.txt` e encerra o aplicativo.
 
-use crate::camera::CameraRig;
+use crate::camera::{CameraMemory, CameraRig};
 use crate::new_game::{NewGameConfig, NewGameDialog};
 use crate::presentation::Presentation;
 use crate::session::Session;
@@ -129,6 +129,7 @@ fn run_capture(
     time: Res<Time>,
     mut presentation: ResMut<Presentation>,
     mut rig: ResMut<CameraRig>,
+    mut memory: ResMut<CameraMemory>,
     mut session: ResMut<Session>,
     mut aids: ResMut<crate::aids::AidSettings>,
     mut dialog: ResMut<NewGameDialog>,
@@ -165,9 +166,14 @@ fn run_capture(
         }
     }
     if mode.frame == 0 {
-        *presentation = step.presentation;
-        rig.pose = step.view.pose();
-        rig.view = Some(step.view);
+        // A câmera da Apresentação que entra vem da memória por Apresentação (B12).
+        if *presentation == step.presentation {
+            rig.pose = step.view.pose();
+            rig.view = Some(step.view);
+        } else {
+            memory.set(step.presentation, step.view.pose(), Some(step.view));
+            *presentation = step.presentation;
+        }
     }
     mode.frame += 1;
     if mode.frame == 10 {

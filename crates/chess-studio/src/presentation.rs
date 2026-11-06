@@ -10,7 +10,7 @@ use bevy::prelude::*;
 use bevy::render::view::Msaa;
 use bevy_egui::input::EguiWantsInput;
 
-#[derive(Resource, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Resource, Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum Presentation {
     #[default]
     Professional3d,
@@ -42,6 +42,19 @@ impl Presentation {
         }
     }
 
+    /// Chave estável usada na persistência das preferências.
+    pub fn key(self) -> &'static str {
+        match self {
+            Presentation::Professional3d => "professional3d",
+            Presentation::ImmersiveTable => "immersive",
+            Presentation::Technical2d => "technical2d",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|p| p.key() == key)
+    }
+
     pub fn is_3d(self) -> bool {
         self != Presentation::Technical2d
     }
@@ -49,13 +62,14 @@ impl Presentation {
     fn background(self) -> Color {
         match self {
             Presentation::Professional3d => Color::srgb(0.07, 0.075, 0.085),
-            Presentation::ImmersiveTable => Color::srgb(0.10, 0.10, 0.11),
-            Presentation::Technical2d => Color::srgb(0.13, 0.14, 0.15),
+            Presentation::ImmersiveTable => Color::srgb(0.12, 0.115, 0.11),
+            Presentation::Technical2d => Color::srgb(0.15, 0.14, 0.13),
         }
     }
 }
 
-/// Qualidade gráfica simples (sem efeitos Ultra).
+/// Qualidade gráfica. Nenhum preset toca na geometria de picking (matemática pura de
+/// `chess_input`): só MSAA, sombras e filtro.
 #[derive(Resource, Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum GraphicsQuality {
     /// MSAA 2x, sombras com mapa pequeno e filtro de hardware.
@@ -63,16 +77,36 @@ pub enum GraphicsQuality {
     /// MSAA 4x, sombras macias (filtro gaussiano) com mapa de 2048.
     #[default]
     Balanced,
+    /// MSAA 8x e sombras macias com mapa de 4096.
+    Ultra,
 }
 
 impl GraphicsQuality {
-    pub const ALL: [GraphicsQuality; 2] = [GraphicsQuality::Economic, GraphicsQuality::Balanced];
+    pub const ALL: [GraphicsQuality; 3] = [
+        GraphicsQuality::Economic,
+        GraphicsQuality::Balanced,
+        GraphicsQuality::Ultra,
+    ];
+
+    /// Chave estável usada na persistência das preferências.
+    pub fn key(self) -> &'static str {
+        match self {
+            GraphicsQuality::Economic => "economic",
+            GraphicsQuality::Balanced => "balanced",
+            GraphicsQuality::Ultra => "ultra",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|q| q.key() == key)
+    }
 
     /// Chave i18n do nome da qualidade.
     pub fn label_key(self) -> &'static str {
         match self {
             GraphicsQuality::Economic => "quality-economic",
             GraphicsQuality::Balanced => "quality-balanced",
+            GraphicsQuality::Ultra => "quality-ultra",
         }
     }
 
@@ -80,6 +114,7 @@ impl GraphicsQuality {
         match self {
             GraphicsQuality::Economic => Msaa::Sample2,
             GraphicsQuality::Balanced => Msaa::Sample4,
+            GraphicsQuality::Ultra => Msaa::Sample8,
         }
     }
 
@@ -87,13 +122,14 @@ impl GraphicsQuality {
         match self {
             GraphicsQuality::Economic => 1024,
             GraphicsQuality::Balanced => 2048,
+            GraphicsQuality::Ultra => 4096,
         }
     }
 
     pub fn shadow_filter(self) -> ShadowFilteringMethod {
         match self {
             GraphicsQuality::Economic => ShadowFilteringMethod::Hardware2x2,
-            GraphicsQuality::Balanced => ShadowFilteringMethod::Gaussian,
+            GraphicsQuality::Balanced | GraphicsQuality::Ultra => ShadowFilteringMethod::Gaussian,
         }
     }
 }
@@ -159,6 +195,7 @@ impl Plugin for PresentationPlugin {
                 Update,
                 (
                     cycle_with_tab,
+                    apply_visibility,
                     apply_presentation,
                     apply_quality,
                     show_new_entities,
@@ -178,7 +215,10 @@ fn cycle_with_tab(
     }
 }
 
-fn set_visibility(presentation: Presentation, items: &mut Query<(&VisibleIn, &mut Visibility)>) {
+pub(crate) fn set_visibility(
+    presentation: Presentation,
+    items: &mut Query<(&VisibleIn, &mut Visibility)>,
+) {
     for (rule, mut vis) in items {
         let want = if rule.shows(presentation) {
             Visibility::Inherited
@@ -204,10 +244,19 @@ fn show_new_entities(
     }
 }
 
+/// Mostra só o que a Apresentação atual pede (a Partida e as peças não mudam: ADR-0001).
+pub(crate) fn apply_visibility(
+    presentation: Res<Presentation>,
+    mut items: Query<(&VisibleIn, &mut Visibility)>,
+) {
+    if presentation.is_changed() {
+        set_visibility(*presentation, &mut items);
+    }
+}
+
 #[allow(clippy::type_complexity)]
 fn apply_presentation(
     presentation: Res<Presentation>,
-    mut items: Query<(&VisibleIn, &mut Visibility)>,
     mut cameras: ParamSet<(
         Single<&mut Camera, With<MainCamera>>,
         Single<&mut Camera, With<TechnicalCamera>>,
@@ -220,7 +269,6 @@ fn apply_presentation(
         return;
     }
     let p = *presentation;
-    set_visibility(p, &mut items);
     cameras.p0().is_active = p.is_3d();
     cameras.p1().is_active = !p.is_3d();
     clear.0 = p.background();

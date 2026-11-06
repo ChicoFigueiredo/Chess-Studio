@@ -3,7 +3,7 @@
 //! vêm da Partida, ver `pieces`). A geometria das 64 casas vem de `chess_input` (a mesma do picking).
 //!
 //! Assets (todos CC0, ver `assets/LICENSES.md`): peças do "Chess Set" da Poly Haven e
-//! texturas PBR de madeira (maple, nogueira negra e mesa) da Poly Haven.
+//! texturas PBR de madeira (maple, nogueira negra e carvalho) da Poly Haven.
 
 use crate::presentation::{LightRole, VisibleIn};
 use bevy::asset::RenderAssetUsages;
@@ -94,11 +94,41 @@ const WALNUT: WoodPaths = WoodPaths {
     normal: "textures/walnut_nor_gl_1k.jpg",
     arm: "textures/walnut_arm_1k.jpg",
 };
-const TABLE: WoodPaths = WoodPaths {
-    diffuse: "textures/table_diff_1k.jpg",
-    normal: "textures/table_nor_gl_1k.jpg",
-    arm: "textures/table_arm_1k.jpg",
+const OAK: WoodPaths = WoodPaths {
+    diffuse: "textures/oak_diff_1k.jpg",
+    normal: "textures/oak_nor_gl_1k.jpg",
+    arm: "textures/oak_arm_1k.jpg",
 };
+
+/// Madeira das peças (B19): buxo nas brancas e ébano nas pretas, materiais PBR próprios
+/// aplicados sobre o mesmo modelo Staunton CC0 no lugar dos materiais originais do glTF.
+#[derive(Resource, Clone, Debug)]
+pub struct PieceWood {
+    pub white: Handle<StandardMaterial>,
+    pub black: Handle<StandardMaterial>,
+}
+
+impl PieceWood {
+    pub fn for_side(&self, side: chess_core::Color) -> Handle<StandardMaterial> {
+        match side {
+            chess_core::Color::White => self.white.clone(),
+            chess_core::Color::Black => self.black.clone(),
+        }
+    }
+}
+
+fn piece_wood(assets: &AssetServer, materials: &mut Assets<StandardMaterial>) -> PieceWood {
+    // Buxo: madeira clara e amarelada, acabamento acetinado.
+    let mut boxwood = wood_material(assets, &MAPLE, Color::srgb(1.0, 0.92, 0.74), 1.6);
+    boxwood.perceptual_roughness = 0.75;
+    // Ébano: quase preto, com o veio apenas sugerido, mais polido.
+    let mut ebony = wood_material(assets, &WALNUT, Color::srgb(0.17, 0.14, 0.13), 1.6);
+    ebony.perceptual_roughness = 0.6;
+    PieceWood {
+        white: materials.add(boxwood),
+        black: materials.add(ebony),
+    }
+}
 
 /// Malha com um quadrado horizontal (normal +Y) por casa, no plano y = 0. As UVs seguem as
 /// coordenadas de mundo, com um deslocamento por casa: cada casa mostra um trecho
@@ -142,6 +172,7 @@ fn spawn_board(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    commands.insert_resource(piece_wood(&assets, &mut materials));
     // a1 é escura: coluna + fila par = escura.
     let (dark, light): (Vec<_>, Vec<_>) =
         all_squares().partition(|sq| (sq.file() + sq.rank()) % 2 == 0);
@@ -183,6 +214,10 @@ fn spawn_board(
     ));
 }
 
+/// Dimensões da mesa: bem maior que o enquadramento de qualquer Vista, para que nenhuma
+/// borda ou faixa de fundo apareça (DEC-04).
+const TABLE_SIZE: Vec3 = Vec3::new(90.0, 0.7, 70.0);
+
 /// Mesa discreta (Mesa imersiva) e fundo neutro com sombra suave (3D profissional).
 fn spawn_table(
     mut commands: Commands,
@@ -190,17 +225,15 @@ fn spawn_table(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let table_mat = materials.add(wood_material(
-        &assets,
-        &TABLE,
-        Color::srgb(0.70, 0.66, 0.62),
-        3.0,
-    ));
+    // Carvalho dessaturado e fosco: a mesa fica em segundo plano, sem brilho especular forte.
+    let mut table = wood_material(&assets, &OAK, Color::srgb(0.40, 0.39, 0.38), 9.0);
+    table.reflectance = 0.2;
+    let table_mat = materials.add(table);
     commands.spawn((
         Name::new("table"),
-        Mesh3d(meshes.add(Cuboid::new(26.0, 0.7, 17.0))),
+        Mesh3d(meshes.add(Cuboid::new(TABLE_SIZE.x, TABLE_SIZE.y, TABLE_SIZE.z))),
         MeshMaterial3d(table_mat),
-        Transform::from_xyz(0.0, TABLE_TOP - 0.35, 0.0),
+        Transform::from_xyz(0.0, TABLE_TOP - TABLE_SIZE.y / 2.0, 0.0),
         VisibleIn::IMMERSIVE,
     ));
 
