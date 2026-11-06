@@ -6,3 +6,5 @@
 /benchmarks/out/
 .DS_Store
 Thumbs.db
+.mcp.json
+.mcp copy.json
