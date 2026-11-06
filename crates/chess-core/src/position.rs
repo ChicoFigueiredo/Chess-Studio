@@ -15,26 +15,44 @@ use std::str::FromStr;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CanonicalPosition {
     board: cc::Board,
+    /// Contador próprio: o cozy-chess limita o seu a 100, a regra dos 75 lances precisa de 150.
+    halfmove_clock: u16,
 }
+
+/// Teto do relógio de meio-lance aceito pelo cozy-chess.
+const COZY_HALFMOVE_CAP: u16 = 100;
 
 impl CanonicalPosition {
     /// Posição inicial do xadrez.
     pub fn start() -> Self {
         Self {
             board: cc::Board::startpos(),
+            halfmove_clock: 0,
         }
     }
 
     /// Lê um FEN (seis campos). Espaços extras nas pontas e entre campos são tolerados.
     ///
-    /// Roque só em formato padrão (`KQkq`); o relógio de meio-lance aceita 0..=100.
+    /// Roque só em formato padrão (`KQkq`); o relógio de meio-lance aceita 0..=65535.
     pub fn from_fen(fen: &str) -> Result<Self, FenError> {
         let normalized = fen.split_whitespace().collect::<Vec<_>>().join(" ");
         if normalized.is_empty() {
             return Err(FenError::MissingField);
         }
-        cc::Board::from_fen(&normalized, false)
-            .map(|board| Self { board })
+        // O relógio de meio-lance é nosso; ao cozy-chess vai no máximo 100, só para validar.
+        let mut fields: Vec<&str> = normalized.split(' ').collect();
+        let mut halfmove_clock = 0;
+        let capped;
+        if let Some(parsed) = fields.get(4).and_then(|f| f.parse::<u16>().ok()) {
+            halfmove_clock = parsed;
+            capped = parsed.min(COZY_HALFMOVE_CAP).to_string();
+            fields[4] = &capped;
+        }
+        cc::Board::from_fen(&fields.join(" "), false)
+            .map(|board| Self {
+                board,
+                halfmove_clock,
+            })
             .map_err(|e| match e {
                 cc::FenParseError::InvalidBoard => FenError::InvalidBoard,
                 cc::FenParseError::InvalidSideToMove => FenError::InvalidSideToMove,
@@ -49,7 +67,11 @@ impl CanonicalPosition {
 
     /// Serializa em FEN padrão (casa de en passant sempre após avanço duplo).
     pub fn to_fen(&self) -> String {
-        self.board.to_string()
+        let text = self.board.to_string();
+        let mut fields: Vec<&str> = text.split(' ').collect();
+        let clock = self.halfmove_clock.to_string();
+        fields[4] = &clock;
+        fields.join(" ")
     }
 
     /// Lado a jogar.
@@ -65,9 +87,9 @@ impl CanonicalPosition {
         Some((color_from(color), piece_from(piece)))
     }
 
-    /// Meio-lances desde a última captura ou lance de peão (0..=100).
-    pub fn halfmove_clock(&self) -> u8 {
-        self.board.halfmove_clock()
+    /// Meio-lances desde a última captura ou lance de peão (sem teto em 100).
+    pub fn halfmove_clock(&self) -> u16 {
+        self.halfmove_clock
     }
 
     /// Número do lance completo (começa em 1, incrementa após o lance preto).
@@ -100,9 +122,19 @@ impl CanonicalPosition {
     /// Aplica o Lance e devolve a nova Posição; `self` não muda.
     pub fn play(&self, mv: Move) -> Result<Self, IllegalMoveError> {
         let mut board = self.board.clone();
+        let resets_clock = matches!(self.piece_at(mv.from()), Some((_, Piece::Pawn)))
+            || self.piece_at(mv.to()).is_some();
         let cozy_mv = self.cozy_move(mv).ok_or(IllegalMoveError(mv))?;
         board.try_play(cozy_mv).map_err(|_| IllegalMoveError(mv))?;
-        Ok(Self { board })
+        let halfmove_clock = if resets_clock {
+            0
+        } else {
+            self.halfmove_clock.saturating_add(1)
+        };
+        Ok(Self {
+            board,
+            halfmove_clock,
+        })
     }
 
     /// Conta as folhas da árvore de Lances legais à profundidade dada

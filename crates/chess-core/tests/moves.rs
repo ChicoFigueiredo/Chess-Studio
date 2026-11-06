@@ -334,8 +334,12 @@ fn halfmove_clock_counts_past_100_and_resets_on_capture_or_pawn_move() {
     assert_eq!(q.halfmove_clock(), 0);
 
     // captura zera
-    let c = pos("8/8/8/4k3/8/8/8/R3K3 w - - 130 90").play(mv("a1a5")).unwrap();
+    let c = pos("8/8/8/4k3/8/8/8/R3K3 w - - 130 90")
+        .play(mv("a1a5"))
+        .unwrap();
     assert_eq!(c.halfmove_clock(), 131);
-    let c = pos("8/8/8/r3k3/8/8/8/R3K3 w - - 130 90").play(mv("a1a5")).unwrap();
+    let c = pos("8/8/8/r3k3/8/8/8/R3K3 w - - 130 90")
+        .play(mv("a1a5"))
+        .unwrap();
     assert_eq!(c.halfmove_clock(), 0);
 }

@@ -19,7 +19,7 @@ pub enum FenError {
     InvalidCastlingRights,
     /// Casa de en passant malformada ou sem peão que tenha acabado de avançar duas casas.
     InvalidEnPassant,
-    /// Relógio de meio-lance não numérico ou acima de 100.
+    /// Relógio de meio-lance não numérico ou fora de 0..=65535.
     InvalidHalfmoveClock,
     /// Número do lance não numérico ou zero.
     InvalidFullmoveNumber,
@@ -41,7 +41,7 @@ impl fmt::Display for FenError {
                 "casa de en passant inválida: esperado '-' ou casa atrás de um peão que avançou duas casas"
             }
             Self::InvalidHalfmoveClock => {
-                "relógio de meio-lance inválido: esperado inteiro de 0 a 100"
+                "relógio de meio-lance inválido: esperado inteiro de 0 a 65535"
             }
             Self::InvalidFullmoveNumber => {
                 "número do lance inválido: esperado inteiro maior que zero"
