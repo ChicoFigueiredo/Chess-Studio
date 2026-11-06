@@ -6,7 +6,7 @@ Mesa pessoal de treinamento de xadrez: desktop nativo, offline e multiplataforma
 
 ## Rodar e testar
 
-Pré-requisito: [rustup](https://rustup.rs) (o toolchain certo é instalado sozinho pelo `rust-toolchain.toml`). Guias por sistema, com as dependências de cada um: [Linux](docs/build/linux.md) · [Windows](docs/build/windows.md) · [macOS](docs/build/macos.md).
+Pré-requisito: [rustup](https://rustup.rs) (o toolchain certo é instalado sozinho pelo `rust-toolchain.toml`). Guias por sistema, com as dependências de cada um: [Linux](docs/build/linux.md) · [Windows](docs/build/windows.md) · [macOS](docs/build/macos.md). Para instalar um pacote pronto: [docs/instalacao.md](docs/instalacao.md).
 
 ```bash
 git clone https://github.com/ChicoFigueiredo/Chess-Studio.git && cd Chess-Studio
