@@ -176,7 +176,7 @@ fn bandeira_e_consultavel_por_instante_sem_comando() {
 fn bandeira_sem_material_de_mate_do_adversario_e_empate() {
     // Art. 6.9: as brancas perdem por tempo, mas as pretas só têm o rei.
     let mut game = timed(
-        GameSetup::from_fen(PolicyKind::Assisted, "7k/8/8/8/8/8/8/K6R w - - 0 1").unwrap(),
+        GameSetup::from_fen(PolicyKind::Assisted, "7k/8/8/8/8/8/8/K5R1 w - - 0 1").unwrap(),
         10_000,
         0,
     );

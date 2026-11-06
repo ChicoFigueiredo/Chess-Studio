@@ -120,9 +120,14 @@ impl ArbitrationPolicy for Assisted {
     }
 }
 
-/// Em Pausa só valem Retomar e Abandonar (DEC-41/42).
+/// Em Pausa só valem Retomar e Abandonar (DEC-41/42); Pausar de novo é `AlreadyPaused`.
 pub(crate) fn gate_pause(state: &GameState, command: &Command) -> Result<(), Rejection> {
-    if state.paused && !matches!(command, Command::Resume | Command::Resign { .. }) {
+    if state.paused
+        && !matches!(
+            command,
+            Command::Resume | Command::Pause | Command::Resign { .. }
+        )
+    {
         return Err(Rejection::Paused);
     }
     Ok(())
