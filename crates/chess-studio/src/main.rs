@@ -1,8 +1,10 @@
 //! Chess Studio: binário Bevy. Só lê o estado da Partida e envia intenções (ADR-0001).
 //!
-//! Neste marco (A5) há cena com assets CC0, três Apresentações, câmera e picking: nenhuma
-//! lógica de jogo. `--screenshot <dir>` gera as capturas de evidência e encerra.
+//! Neste marco (Gate A) há cena com assets CC0, três Apresentações, câmera e picking: nenhuma
+//! lógica de jogo. `--screenshot <dir>` gera as capturas de evidência e encerra;
+//! `--benchmark` liga o modo benchmark (ver `benchmark`).
 
+mod benchmark;
 mod board;
 mod board2d;
 mod camera;
@@ -29,13 +31,33 @@ fn screenshot_dir() -> Option<PathBuf> {
 }
 
 fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let bench = match benchmark::parse_args(&args) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            eprintln!("Erro: {e}");
+            std::process::exit(2);
+        }
+    };
     let capture = screenshot_dir();
-    let (resolution, present_mode) = if capture.is_some() {
+    let no_vsync = bench.is_some() && args.iter().any(|a| a == "--no-vsync");
+
+    let (resolution, present_mode) = if let Some(cfg) = bench.as_ref() {
+        // Fator de escala 1.0 no benchmark: a resolução física é exatamente a pedida.
+        let res = WindowResolution::new(cfg.width, cfg.height).with_scale_factor_override(1.0);
+        let mode = if no_vsync {
+            PresentMode::AutoNoVsync
+        } else {
+            PresentMode::AutoVsync
+        };
+        (res, mode)
+    } else if capture.is_some() {
         // Evidência em 1080p, medindo sem o limite do vsync.
         (WindowResolution::new(1920, 1080), PresentMode::AutoNoVsync)
     } else {
         (WindowResolution::new(1280, 720), PresentMode::AutoVsync)
     };
+
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
@@ -61,6 +83,12 @@ fn main() {
             eprintln!("não foi possível criar {}: {err}", dir.display());
         }
         app.insert_resource(capture::CaptureMode::new(dir));
+    }
+    if let Some(config) = bench {
+        app.add_plugins(benchmark::BenchmarkPlugin {
+            config,
+            vsync: !no_vsync,
+        });
     }
     app.run();
 }
