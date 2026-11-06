@@ -118,6 +118,15 @@ fn escapa_aspas_e_barra_nas_tags() {
 }
 
 #[test]
+fn eliminacao_imediata_nunca_se_apresenta_como_fide() {
+    let game = Game::new(chess_game::GameSetup::standard(
+        PolicyKind::SuddenElimination,
+    ));
+    let pgn = game.to_pgn(&opts());
+    assert!(pgn.contains("[Arbitration \"Sudden Elimination (custom training rule, not FIDE)\"]"));
+}
+
+#[test]
 fn nomes_vazios_viram_interrogacao() {
     let o = PgnOptions {
         white: String::new(),

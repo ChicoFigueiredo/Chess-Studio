@@ -198,6 +198,9 @@ fn arbitration(game: &Game) -> String {
             "FIDE Simulation ({})",
             game.setup().rules_version().unwrap_or("FIDE Laws of Chess")
         ),
+        PolicyKind::SuddenElimination => {
+            "Sudden Elimination (custom training rule, not FIDE)".to_owned()
+        }
         _ => "Assisted".to_owned(),
     }
 }
