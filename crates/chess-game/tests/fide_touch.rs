@@ -325,7 +325,7 @@ fn lance_que_deixa_o_rei_em_xeque_e_roque_ilegal_ficam_provisorios() {
 
 #[test]
 fn promocao_exige_escolha_e_so_entao_o_lance_esta_feito() {
-    let mut game = fide_from("8/P6k/8/8/8/8/8/K7 w - - 0 1");
+    let mut game = fide_from("8/P6k/8/8/8/8/6r1/K7 w - - 0 1");
     touch(&mut game, 1, "a7").unwrap();
     let events = drop_piece(&mut game, 2, "a7", "a8").unwrap();
     assert!(matches!(
@@ -349,7 +349,7 @@ fn promocao_exige_escolha_e_so_entao_o_lance_esta_feito() {
 
 #[test]
 fn promocao_pendente_pode_ser_retratada_e_mantem_a_obrigacao() {
-    let mut game = fide_from("8/P6k/8/8/8/8/8/K7 w - - 0 1");
+    let mut game = fide_from("8/P6k/8/8/8/8/6r1/K7 w - - 0 1");
     touch(&mut game, 1, "a7").unwrap();
     drop_piece(&mut game, 2, "a7", "a8").unwrap();
     game.handle(Command::RetractMove, at(3)).unwrap();
@@ -411,6 +411,7 @@ fn release_sem_touch_previo_conta_como_toque_implicito_da_peca_solta() {
 fn desfazer_e_refazer_nao_existem_nas_politicas_competitivas() {
     let mut game = fide();
     fide_play(&mut game, 0, "e4");
+    assert!(!game.snapshot().can_undo && !game.snapshot().can_redo);
     for command in [Command::Undo, Command::Redo] {
         let kind = command.kind();
         assert_eq!(

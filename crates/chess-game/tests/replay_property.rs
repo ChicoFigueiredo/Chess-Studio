@@ -127,8 +127,7 @@ fn random_fide_command(rng: &mut Rng, game: &Game) -> Command {
     let any_square =
         |rng: &mut Rng| chess_core::Square::new(rng.below(8) as u8, rng.below(8) as u8).unwrap();
     match rng.below(24) {
-        0 => Command::PressClock,
-        1 | 2 => Command::PressClock,
+        0..=2 => Command::PressClock,
         3 => Command::RetractMove,
         4 => Command::Pause,
         5 | 6 => Command::Resume,
@@ -151,7 +150,7 @@ fn random_fide_command(rng: &mut Rng, game: &Game) -> Command {
         11 => Command::ChoosePromotion {
             piece: [Piece::Queen, Piece::Rook, Piece::Bishop, Piece::Knight][rng.below(4)],
         },
-        12 | 13 | 14 => Command::Touch {
+        12..=14 => Command::Touch {
             square: any_square(rng),
         },
         15 => Command::Release {

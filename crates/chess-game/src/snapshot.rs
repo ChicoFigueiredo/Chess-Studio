@@ -120,6 +120,8 @@ impl Snapshot {
                 pieces: pieces_with_moved(&position, r.from, r.to, color, piece),
             }
         });
+        // Desfazer/refazer só no Assistido (DEC-39).
+        let undo_allowed = setup.policy() == PolicyKind::Assisted;
         let open = state.outcome.is_none_or(|o| o.reason.is_positional());
         let touched: Vec<TouchedPiece> = state
             .touched
@@ -174,8 +176,14 @@ impl Snapshot {
             provisional,
             pending_draw_offer: state.draw_offer,
             with_undo: state.with_undo,
-            can_undo: !state.played.is_empty() && open && state.pending_promotion.is_none(),
-            can_redo: !state.redo.is_empty()
+            can_undo: undo_allowed
+                && !state.played.is_empty()
+                && open
+                && state.pending_promotion.is_none()
+                && !state.paused,
+            can_redo: undo_allowed
+                && !state.redo.is_empty()
+                && !state.paused
                 && state.outcome.is_none()
                 && state.pending_promotion.is_none(),
             clock,
