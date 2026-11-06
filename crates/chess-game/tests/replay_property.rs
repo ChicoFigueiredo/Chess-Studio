@@ -1,0 +1,115 @@
+//! ADR-0002 / critério do B2: `replay(setup, eventos)` == estado obtido pelos Comandos.
+//! Partidas pseudoaleatórias determinísticas por semente (xorshift, sem crate novo).
+
+mod common;
+use chess_core::{Color, Piece};
+use chess_game::{Command, Game, GameSetup, PolicyKind, Timestamp};
+use common::*;
+
+struct Rng(u64);
+
+impl Rng {
+    fn next(&mut self) -> u64 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        self.0
+    }
+
+    fn below(&mut self, n: usize) -> usize {
+        (self.next() % n as u64) as usize
+    }
+}
+
+fn random_command(rng: &mut Rng, game: &Game) -> Command {
+    let snap = game.snapshot();
+    let moves = snap.position.legal_moves();
+    match rng.below(20) {
+        0 => Command::Undo,
+        1 => Command::Redo,
+        2 => Command::OfferDraw {
+            side: if rng.below(2) == 0 { Color::White } else { Color::Black },
+        },
+        3 => Command::AcceptDraw,
+        4 => Command::DeclineDraw,
+        5 => Command::RetractMove,
+        6 => Command::ChoosePromotion {
+            piece: [Piece::Queen, Piece::Rook, Piece::Bishop, Piece::Knight][rng.below(4)],
+        },
+        7 => Command::Release {
+            // Possivelmente ilegal.
+            from: chess_core::Square::new(rng.below(8) as u8, rng.below(8) as u8).unwrap(),
+            to: chess_core::Square::new(rng.below(8) as u8, rng.below(8) as u8).unwrap(),
+        },
+        8 if rng.below(40) == 0 => Command::Resign { side: Color::White },
+        _ if !moves.is_empty() => {
+            let mv = moves[rng.below(moves.len())];
+            Command::Release {
+                from: mv.from(),
+                to: mv.to(),
+            }
+        }
+        _ => Command::Undo,
+    }
+}
+
+fn run_seed(seed: u64, setup: GameSetup) {
+    let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
+    let mut game = Game::new(setup.clone());
+    let mut at = 0;
+    for _ in 0..400 {
+        at += 1 + rng.below(500) as u64;
+        let _ = game.handle(random_command(&mut rng, &game), Timestamp::mono(at));
+    }
+
+    let replayed = Game::replay(setup.clone(), game.events());
+    assert_eq!(replayed.snapshot(), game.snapshot(), "semente {seed}");
+    assert_eq!(replayed.events(), game.events(), "semente {seed}");
+
+    let strict = Game::try_replay(setup, game.events()).expect("log coerente");
+    assert_eq!(strict.snapshot(), game.snapshot(), "semente {seed}");
+}
+
+#[test]
+fn replay_reproduz_o_estado_de_partidas_aleatorias_da_posicao_inicial() {
+    for seed in 1..=60 {
+        run_seed(seed, GameSetup::standard(PolicyKind::Assisted));
+    }
+}
+
+#[test]
+fn replay_reproduz_o_estado_a_partir_de_fens_com_promocao_e_relogio_alto() {
+    for (i, fen) in [
+        "8/P6k/8/8/8/8/p7/K7 w - - 0 1",
+        "r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 90 40",
+        "4k3/8/8/8/8/8/8/R3K3 w - - 140 100",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        for seed in 1..=15 {
+            run_seed(
+                seed + 100 * i as u64,
+                GameSetup::from_fen(PolicyKind::Assisted, fen).unwrap(),
+            );
+        }
+    }
+}
+
+#[test]
+fn log_truncado_reconstroi_o_prefixo_e_log_corrompido_e_detectado() {
+    let mut game = assisted();
+    let mut clock = FakeClock::new();
+    play_all(&mut game, &mut clock, "e4 e5 Nf3");
+    let setup = game.setup().clone();
+
+    let prefix = Game::replay(setup.clone(), &game.events()[..2]);
+    assert_eq!(prefix.snapshot().history.len(), 2);
+
+    // Pula o 2º evento: o 3º (Nf3 branco) não é a vez das brancas.
+    let mut broken = game.events().to_vec();
+    broken.remove(1);
+    let err = Game::try_replay(setup.clone(), &broken).unwrap_err();
+    assert_eq!(err.index, 1);
+    assert_eq!(Game::replay(setup, &broken).snapshot().history.len(), 1);
+}
