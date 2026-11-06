@@ -14,7 +14,8 @@ use bevy::image::{
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::world_serialization::WorldInstanceReady;
-use chess_input::{BOARD_SIZE, BoardSquare, SQUARE_SIZE, square_center};
+use chess_core::Square;
+use chess_input::{BOARD_SIZE, SQUARE_SIZE, all_squares, square_center};
 
 /// Escala do modelo glTF (metros) para o mundo (1 casa = 1 unidade): o "Chess Set" tem
 /// casas de 0,057888 m.
@@ -114,7 +115,7 @@ const TABLE: WoodPaths = WoodPaths {
 /// Malha com um quadrado horizontal (normal +Y) por casa, no plano y = 0. As UVs seguem as
 /// coordenadas de mundo, com um deslocamento por casa: cada casa mostra um trecho
 /// diferente do veio da madeira, como em peças de marchetaria.
-fn squares_mesh(squares: &[BoardSquare]) -> Mesh {
+fn squares_mesh(squares: &[Square]) -> Mesh {
     const GRAIN: f32 = 0.22;
     let mut positions = Vec::new();
     let mut uvs = Vec::new();
@@ -155,7 +156,7 @@ fn spawn_board(
 ) {
     // a1 é escura: coluna + fila par = escura.
     let (dark, light): (Vec<_>, Vec<_>) =
-        BoardSquare::all().partition(|sq| (sq.file() + sq.rank()) % 2 == 0);
+        all_squares().partition(|sq| (sq.file() + sq.rank()) % 2 == 0);
     let light_mat = materials.add(wood_material(
         &assets,
         &MAPLE,

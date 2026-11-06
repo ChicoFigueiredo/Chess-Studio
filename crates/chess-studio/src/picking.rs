@@ -8,15 +8,16 @@ use crate::presentation::Presentation;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_egui::input::EguiWantsInput;
-use chess_input::{BoardSquare, ray_to_square, square_center};
+use chess_core::Square;
+use chess_input::{ray_to_square, square_center};
 
 /// Casa sob o cursor (se houver).
 #[derive(Resource, Default, Debug)]
-pub struct HoveredSquare(pub Option<BoardSquare>);
+pub struct HoveredSquare(pub Option<Square>);
 
 /// Casa destacada por clique esquerdo (apenas visual; não é Seleção de jogo).
 #[derive(Resource, Default, Debug)]
-pub struct ClickedSquare(pub Option<BoardSquare>);
+pub struct ClickedSquare(pub Option<Square>);
 
 #[derive(Component)]
 struct HoverMarker;
@@ -141,7 +142,7 @@ fn update_markers(
 fn place(
     transform: &mut Transform,
     visibility: &mut Visibility,
-    square: Option<BoardSquare>,
+    square: Option<Square>,
     y: f32,
 ) {
     match square {

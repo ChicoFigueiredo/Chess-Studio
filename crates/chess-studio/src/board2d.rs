@@ -10,7 +10,8 @@ use crate::presentation::{TechnicalCamera, VisibleIn};
 use bevy::camera::ScalingMode;
 use bevy::prelude::*;
 use bevy::render::view::Msaa;
-use chess_input::{BOARD_SIZE, BoardSquare, square_center};
+use chess_core::Square;
+use chess_input::{BOARD_SIZE, all_squares, square_center};
 
 /// Unidades do mundo 2D por casa.
 pub const UNIT: f32 = 100.0;
@@ -20,7 +21,7 @@ pub fn to_board_plane(p: Vec2) -> Vec3 {
     Vec3::new(p.x / UNIT, 0.0, -p.y / UNIT)
 }
 
-fn square_pos(sq: BoardSquare) -> Vec2 {
+fn square_pos(sq: Square) -> Vec2 {
     let c = square_center(sq);
     Vec2::new(c.x * UNIT, -c.z * UNIT)
 }
@@ -78,7 +79,7 @@ fn spawn_camera(mut commands: Commands) {
 
 fn spawn_board(mut commands: Commands, assets: Res<AssetServer>) {
     let size = Vec2::splat(UNIT);
-    for sq in BoardSquare::all() {
+    for sq in all_squares() {
         let dark = (sq.file() + sq.rank()) % 2 == 0;
         let p = square_pos(sq);
         commands.spawn((
@@ -180,7 +181,7 @@ fn update_markers(
     place(&mut t, &mut v, clicked.0);
 }
 
-fn place(transform: &mut Transform, visibility: &mut Visibility, square: Option<BoardSquare>) {
+fn place(transform: &mut Transform, visibility: &mut Visibility, square: Option<Square>) {
     match square {
         Some(sq) => {
             let p = square_pos(sq);

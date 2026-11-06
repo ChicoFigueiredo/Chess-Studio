@@ -5,7 +5,7 @@
 //! (lado das brancas, perto da câmera da Vista padrão) e a fila 8 em -Z.
 //! A convenção é lógica: girar a câmera nunca altera o mapeamento casa <-> mundo (CAM-03).
 
-use crate::square::BoardSquare;
+use chess_core::Square;
 use glam::Vec3;
 
 /// Lado de uma casa, em unidades de mundo.
@@ -13,8 +13,13 @@ pub const SQUARE_SIZE: f32 = 1.0;
 /// Lado do tabuleiro (8 casas).
 pub const BOARD_SIZE: f32 = 8.0 * SQUARE_SIZE;
 
+/// As 64 casas, de a1 a h8 (fila a fila).
+pub fn all_squares() -> impl Iterator<Item = Square> {
+    (0..8u8).flat_map(|rank| (0..8u8).filter_map(move |file| Square::new(file, rank)))
+}
+
 /// Centro da casa, na superfície do tabuleiro (`y = 0`).
-pub fn square_center(square: BoardSquare) -> Vec3 {
+pub fn square_center(square: Square) -> Vec3 {
     let half = BOARD_SIZE / 2.0;
     Vec3::new(
         (f32::from(square.file()) + 0.5) * SQUARE_SIZE - half,
@@ -25,7 +30,7 @@ pub fn square_center(square: BoardSquare) -> Vec3 {
 
 /// Casa atingida pelo raio contra o plano do tabuleiro; `None` se o raio não o
 /// intercepta à frente da origem ou atinge fora das 64 casas.
-pub fn ray_to_square(origin: Vec3, dir: Vec3) -> Option<BoardSquare> {
+pub fn ray_to_square(origin: Vec3, dir: Vec3) -> Option<Square> {
     if !(origin.is_finite() && dir.is_finite()) || dir.y >= 0.0 || origin.y <= 0.0 {
         return None;
     }
@@ -37,15 +42,22 @@ pub fn ray_to_square(origin: Vec3, dir: Vec3) -> Option<BoardSquare> {
     if !(0.0..8.0).contains(&file) || !(0.0..8.0).contains(&rank) {
         return None;
     }
-    BoardSquare::new(file as u8, rank as u8)
+    Square::new(file as u8, rank as u8)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn sq(name: &str) -> BoardSquare {
-        BoardSquare::all().find(|s| s.to_string() == name).unwrap()
+    fn sq(name: &str) -> Square {
+        name.parse().unwrap()
+    }
+
+    #[test]
+    fn all_squares_cover_a1_to_h8() {
+        let names: Vec<String> = all_squares().map(|s| s.to_string()).collect();
+        assert_eq!(names.len(), 64);
+        assert_eq!((names[0].as_str(), names[7].as_str(), names[63].as_str()), ("a1", "h1", "h8"));
     }
 
     #[test]
@@ -56,7 +68,7 @@ mod tests {
 
     #[test]
     fn vertical_ray_over_each_center_returns_that_square() {
-        for s in BoardSquare::all() {
+        for s in all_squares() {
             let c = square_center(s);
             assert_eq!(ray_to_square(c + Vec3::Y * 5.0, -Vec3::Y), Some(s));
         }

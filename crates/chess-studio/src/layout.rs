@@ -3,7 +3,7 @@
 //! Hoje é a posição inicial fixa (a Partida real chega em marcos seguintes). Como as três
 //! Apresentações leem esta mesma lista, alternar entre elas nunca altera a posição exibida.
 
-use chess_input::BoardSquare;
+use chess_core::Square;
 
 /// Tipo de peça (apenas visual; as regras vivem em `chess-core`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -45,7 +45,7 @@ impl Kind {
 /// Uma peça exibida em uma casa.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PieceSlot {
-    pub square: BoardSquare,
+    pub square: Square,
     pub white: bool,
     pub kind: Kind,
 }
@@ -67,7 +67,7 @@ pub fn initial_layout() -> Vec<PieceSlot> {
     for (white, back, pawns) in [(true, 0u8, 1u8), (false, 7, 6)] {
         for file in 0..8u8 {
             for (rank, kind) in [(back, BACK_RANK[usize::from(file)]), (pawns, Kind::Pawn)] {
-                if let Some(square) = BoardSquare::new(file, rank) {
+                if let Some(square) = Square::new(file, rank) {
                     out.push(PieceSlot {
                         square,
                         white,

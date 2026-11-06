@@ -10,7 +10,8 @@ use bevy::render::view::Msaa;
 use bevy_egui::{
     EguiContexts, EguiGlobalSettings, EguiPrimaryContextPass, PrimaryEguiContext, egui,
 };
-use chess_input::{BoardSquare, CameraView};
+use chess_core::Square;
+use chess_input::CameraView;
 
 pub struct UiPlugin;
 
@@ -38,7 +39,7 @@ fn spawn_ui_camera(mut commands: Commands, mut settings: ResMut<EguiGlobalSettin
     ));
 }
 
-fn square_name(square: Option<BoardSquare>) -> String {
+fn square_name(square: Option<Square>) -> String {
     square.map_or_else(|| "—".to_owned(), |s| s.to_string())
 }
 
