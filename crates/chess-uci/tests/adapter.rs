@@ -115,14 +115,14 @@ fn search_returns_bestmove_for_the_given_position() {
     let mut engine = spawn("normal");
     engine.new_game().unwrap();
     engine.is_ready().unwrap();
-    // Depois de 1.a3 a7 o primeiro lance legal em ordem alfabética das Brancas é a3a4.
+    // Depois de 1.a3 a6 a torre a1 fica livre: a1a2 é o primeiro lance em ordem alfabética.
     let spec = start_spec().with_moves(["a2a3".parse().unwrap(), "a7a6".parse().unwrap()]);
     engine.set_position(&spec).unwrap();
     let best = engine.search(&GoParams::movetime(ms(50))).unwrap();
     assert_eq!(
         best,
         BestMove::Move {
-            text: "a3a4".into(),
+            text: "a1a2".into(),
             ponder: None
         }
     );
@@ -259,7 +259,11 @@ fn hung_engine_is_reported_as_timeout_without_blocking_and_is_killed() {
     let started = Instant::now();
     let err = engine.search(&GoParams::movetime(ms(50))).unwrap_err();
     // movetime 50 + folga 100 + stop_grace 150 = 300 ms de teto.
-    assert!(started.elapsed() < ms(1500), "demorou {:?}", started.elapsed());
+    assert!(
+        started.elapsed() < ms(1500),
+        "demorou {:?}",
+        started.elapsed()
+    );
     assert!(
         matches!(
             err,
@@ -286,7 +290,11 @@ fn crash_during_search_is_detected_and_reported() {
     let started = Instant::now();
     let err = engine.search(&GoParams::movetime(ms(2000))).unwrap_err();
     // Detecta pelo EOF, bem antes do prazo da busca.
-    assert!(started.elapsed() < ms(1000), "demorou {:?}", started.elapsed());
+    assert!(
+        started.elapsed() < ms(1000),
+        "demorou {:?}",
+        started.elapsed()
+    );
     match &err {
         EngineError::Crashed { exit } => {
             let status = exit.as_deref().unwrap_or_default();

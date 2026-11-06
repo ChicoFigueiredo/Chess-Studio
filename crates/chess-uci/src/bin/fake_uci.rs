@@ -99,6 +99,12 @@ fn main() {
             _ => {}
         }
     }
+    // `ignore-quit` também ignora o fechamento do stdin: só morre morto à força.
+    if mode == "ignore-quit" {
+        loop {
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    }
 }
 
 fn answer(mode: &str, position: &CanonicalPosition) {
