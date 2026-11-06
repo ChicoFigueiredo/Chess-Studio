@@ -9,6 +9,7 @@ Desktop nativo, offline, em Rust (Bevy 0.20 + bevy_egui + SQLite). Leia antes de
 - **Log de eventos (ADR-0002):** a Partida é reconstruída do log; não existe "Salvar". O tempo vem de instantes injetados (relógio falso nos testes), nunca de `Instant::now()` dentro do domínio.
 - **Licenças (ADR-0004):** MIT OR Apache-2.0. Nenhuma dependência GPL/AGPL/LGPL; `cargo deny check licenses` precisa passar. Assets só CC0 ou compatíveis, com licença registrada.
 - **Engines (ADR-0003):** nunca embutir binários de Engine; toda proposta da Engine é validada pelo núcleo de regras.
+- **Câmeras (issue #82):** todas as câmeras que renderizam na mesma janela (3D, 2D técnico, egui e futuras) precisam do **mesmo `Msaa`**; câmeras com MSAA diferente não compartilham a textura principal e o 3D pode sair preto conforme a ordem das entidades. Nova câmera não define `Msaa` própria: `presentation::apply_quality` aplica a de `GraphicsQuality` a todas.
 - **TDD:** teste primeiro, nas interfaces acordadas — `chess-core` (regras), `chess-game` (comando + instante → eventos; interface principal), intérprete de gestos, geometria/picking, `chess-store`, `chess-uci`. Teste comportamento externo, não detalhes internos.
 - **Não declarar pronto** sem evidência: cada critério da matriz (CORE-, INT-, AC-, UX-, DB-, UCI-, TRN-, PERF-…) termina como PASS/FAIL/UNVERIFIED/N/A com teste ou evidência.
 
