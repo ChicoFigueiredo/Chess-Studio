@@ -136,7 +136,11 @@ fn aids_survive_reopening_the_database() {
     {
         let mut store = Store::open(db.path()).unwrap();
         store
-            .upsert_exercises(&[Catalog::bundled().unwrap().get("roque-001").unwrap().clone()])
+            .upsert_exercises(&[Catalog::bundled()
+                .unwrap()
+                .get("roque-001")
+                .unwrap()
+                .clone()])
             .unwrap();
         record(&mut store, &summary);
     }
@@ -150,9 +154,9 @@ fn aids_survive_reopening_the_database() {
 #[test]
 fn metrics_by_kind_and_session_never_touch_competitive_games() {
     let mut store = seeded();
-    // Uma Partida competitiva encerrada, antes de qualquer treino.
+    // Uma Partida com resultado (mate do bobo), gravada antes de qualquer treino.
     let (game, events) = play(
-        GameSetup::standard(PolicyKind::FideSimulation),
+        GameSetup::standard(PolicyKind::Assisted),
         &[("f2", "f3"), ("e7", "e5"), ("g2", "g4"), ("d8", "h4")],
     );
     let id = store
@@ -176,7 +180,10 @@ fn metrics_by_kind_and_session_never_touch_competitive_games() {
     record(&mut store, &run("afogamento-001", &["e6f7"], none(), 2));
 
     let m = store.metrics(&RunQuery::default()).unwrap();
-    assert_eq!((m.total.runs, m.total.correct, m.total.incorrect), (4, 3, 1));
+    assert_eq!(
+        (m.total.runs, m.total.correct, m.total.incorrect),
+        (4, 3, 1)
+    );
     assert_eq!(m.total.errors, 1);
     assert_eq!(m.total.correct_without_aids, 2);
     assert_eq!(m.by_kind[&ExerciseKind::Castling].correct, 2);
@@ -193,7 +200,10 @@ fn metrics_by_kind_and_session_never_touch_competitive_games() {
     assert_eq!(only_s2.total.runs, 2);
 
     // Nenhuma Partida criada ou alterada pelo treino.
-    assert_eq!(store.list_games(&GameQuery::default()).unwrap(), games_before);
+    assert_eq!(
+        store.list_games(&GameQuery::default()).unwrap(),
+        games_before
+    );
 }
 
 /// DB-06: o banco da versão anterior (com Exercícios e Resoluções antigas) abre e
@@ -228,7 +238,11 @@ fn a_pre_training_api_database_migrates_keeping_old_exercise_rows() {
     assert_eq!(n, 1);
     drop(conn);
     store
-        .upsert_exercises(&[Catalog::bundled().unwrap().get("roque-001").unwrap().clone()])
+        .upsert_exercises(&[Catalog::bundled()
+            .unwrap()
+            .get("roque-001")
+            .unwrap()
+            .clone()])
         .unwrap();
     assert_eq!(store.list_exercises().unwrap().len(), 1);
 }

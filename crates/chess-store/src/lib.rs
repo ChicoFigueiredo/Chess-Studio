@@ -35,12 +35,14 @@
 mod error;
 pub mod migrations;
 mod store;
+mod training;
 
 pub use error::{Result, StoreError};
 pub use migrations::LATEST_VERSION as LATEST_SCHEMA_VERSION;
 pub use store::{
     GameId, GameMetadata, GameQuery, GameSummary, OpenedGame, Pragmas, ProfileId, Store,
 };
+pub use training::{RunId, RunQuery, StoredRun, UpsertReport};
 
 #[cfg(doc)]
 use chess_game::Game;
