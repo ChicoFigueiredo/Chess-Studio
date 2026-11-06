@@ -95,10 +95,8 @@ fn collect(game: &Game) -> Line {
                 }
             }
             kind => {
-                if let Some(text) = comment_for(kind) {
-                    if let Some(slot) = line.comments.last_mut() {
-                        slot.push(text);
-                    }
+                if let (Some(text), Some(slot)) = (comment_for(kind), line.comments.last_mut()) {
+                    slot.push(text);
                 }
             }
         }
@@ -114,7 +112,7 @@ fn side_name(side: Color) -> &'static str {
 }
 
 fn minutes_text(ms: u64) -> String {
-    if ms % 60_000 == 0 {
+    if ms.is_multiple_of(60_000) {
         format!("{} min", ms / 60_000)
     } else {
         format!("{} s", ms / 1_000)
