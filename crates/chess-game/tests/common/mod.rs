@@ -3,7 +3,9 @@
 #![allow(dead_code)]
 
 use chess_core::{Piece, Square};
-use chess_game::{Command, Event, EventKind, Game, GameSetup, PolicyKind, Rejection, Timestamp};
+use chess_game::{
+    Command, Event, EventKind, Game, GameSetup, PolicyKind, Rejection, TimeControl, Timestamp,
+};
 
 /// Relógio falso: cada chamada avança 1 s.
 pub struct FakeClock(u64);
@@ -76,3 +78,75 @@ pub fn kinds(events: &[Event]) -> Vec<&EventKind> {
 
 /// Ciclo de cavalos que devolve a mesma Posição (4 meio-lances).
 pub const KNIGHT_CYCLE: &str = "Nf3 Nf6 Ng1 Ng8";
+
+// ---- Simulação FIDE -------------------------------------------------------
+
+pub fn fide() -> Game {
+    Game::new(GameSetup::standard(PolicyKind::FideSimulation))
+}
+
+pub fn fide_from(fen: &str) -> Game {
+    Game::new(GameSetup::from_fen(PolicyKind::FideSimulation, fen).expect("FEN válido"))
+}
+
+pub fn timed(setup: GameSetup, base_ms: u64, increment_ms: u64) -> Game {
+    Game::new(setup.with_time_control(TimeControl {
+        base_ms,
+        increment_ms,
+    }))
+}
+
+pub fn fide_timed_from(fen: &str, base_ms: u64, increment_ms: u64) -> Game {
+    timed(
+        GameSetup::from_fen(PolicyKind::FideSimulation, fen).expect("FEN válido"),
+        base_ms,
+        increment_ms,
+    )
+}
+
+pub fn at(ms: u64) -> Timestamp {
+    Timestamp::mono(ms)
+}
+
+pub fn touch(game: &mut Game, ms: u64, square: &str) -> Result<Vec<Event>, Rejection> {
+    game.handle(Command::Touch { square: sq(square) }, at(ms))
+}
+
+pub fn drop_piece(game: &mut Game, ms: u64, from: &str, to: &str) -> Result<Vec<Event>, Rejection> {
+    game.handle(
+        Command::Release {
+            from: sq(from),
+            to: sq(to),
+        },
+        at(ms),
+    )
+}
+
+pub fn press(game: &mut Game, ms: u64) -> Result<Vec<Event>, Rejection> {
+    game.handle(Command::PressClock, at(ms))
+}
+
+/// Jogada FIDE completa: toca, solta (escolhe a promoção) e aciona o relógio.
+/// Cada passo avança 1 ms a partir de `ms`; devolve o instante seguinte.
+pub fn fide_play(game: &mut Game, ms: u64, san: &str) -> u64 {
+    let mv = game.snapshot().position.parse_san(san).expect("SAN válido");
+    touch(game, ms, &mv.from().to_string()).expect("toque");
+    drop_piece(game, ms + 1, &mv.from().to_string(), &mv.to().to_string()).expect("soltura");
+    let mut t = ms + 2;
+    if let Some(piece) = mv.promotion() {
+        game.handle(Command::ChoosePromotion { piece }, at(t))
+            .expect("promoção");
+        t += 1;
+    }
+    if game.snapshot().outcome.is_none() {
+        press(game, t).expect("relógio");
+    }
+    t + 1
+}
+
+pub fn fide_play_all(game: &mut Game, mut ms: u64, sans: &str) -> u64 {
+    for san in sans.split_whitespace() {
+        ms = fide_play(game, ms, san);
+    }
+    ms
+}

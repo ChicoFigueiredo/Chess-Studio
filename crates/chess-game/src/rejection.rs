@@ -4,7 +4,7 @@
 //! que fica no log (DB-04).
 
 use crate::command::CommandKind;
-use chess_core::Piece;
+use chess_core::{Piece, Square};
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,7 +14,7 @@ pub enum Rejection {
     GameOver,
     /// A Política ativa não tem esse Comando (ex.: Toque no Assistido).
     NotSupportedByPolicy(CommandKind),
-    /// Previsto para o P0, mas ainda não implementado (Pausa, Engine).
+    /// Previsto, mas ainda não implementado pela Política ativa.
     NotYetImplemented(CommandKind),
     /// Há promoção pendente: escolha a peça ou cancele antes.
     PromotionPending,
@@ -26,6 +26,25 @@ pub enum Rejection {
     NothingToRedo,
     NoDrawOffer,
     DrawOfferPending,
+    /// A Partida está em Pausa; só Retomar ou Abandonar (DEC-42).
+    Paused,
+    AlreadyPaused,
+    NotPaused,
+    /// Não há peça na casa tocada/ajustada/solta.
+    NoPieceAt(Square),
+    /// Obrigação de peça tocada (art. 4.3): o Lance precisa sair de uma destas casas
+    /// (e ser compatível com o toque); o Comando foi recusado.
+    TouchedPieceObligation {
+        must_move_from: Vec<Square>,
+    },
+    /// Há uma peça solta numa casa ilegal: retrate ou acione o relógio.
+    ProvisionalReleasePending,
+    /// O Lance legal já foi feito (art. 4.7): só resta acionar o relógio.
+    MoveAlreadyMade,
+    /// Perdeu o direito de reclamar nesta vez ao tocar uma peça (art. 9.4).
+    DrawClaimRightLost,
+    /// O Lance anunciado na Reclamação não é legal.
+    ClaimedMoveIllegal,
     /// O instante injetado é anterior ao do último Evento.
     TimeWentBackwards {
         last_ms: u64,
@@ -51,6 +70,25 @@ impl fmt::Display for Rejection {
             Self::NothingToRedo => f.write_str("não há Lance para refazer"),
             Self::NoDrawOffer => f.write_str("não há proposta de empate pendente"),
             Self::DrawOfferPending => f.write_str("já há proposta de empate pendente"),
+            Self::Paused => f.write_str("a Partida está em Pausa"),
+            Self::AlreadyPaused => f.write_str("a Partida já está em Pausa"),
+            Self::NotPaused => f.write_str("a Partida não está em Pausa"),
+            Self::NoPieceAt(sq) => write!(f, "não há peça em {sq}"),
+            Self::TouchedPieceObligation { must_move_from } => {
+                write!(f, "obrigação de peça tocada: mova a peça de ")?;
+                for (i, sq) in must_move_from.iter().enumerate() {
+                    write!(f, "{}{sq}", if i == 0 { "" } else { " ou " })?;
+                }
+                Ok(())
+            }
+            Self::ProvisionalReleasePending => {
+                f.write_str("há peça solta numa casa ilegal: retrate ou acione o relógio")
+            }
+            Self::MoveAlreadyMade => f.write_str("o Lance já foi feito: acione o relógio"),
+            Self::DrawClaimRightLost => {
+                f.write_str("o direito de reclamar empate nesta vez se perdeu ao tocar uma peça")
+            }
+            Self::ClaimedMoveIllegal => f.write_str("o Lance anunciado na Reclamação é ilegal"),
             Self::TimeWentBackwards { last_ms, got_ms } => write!(
                 f,
                 "instante {got_ms} ms anterior ao último evento ({last_ms} ms)"

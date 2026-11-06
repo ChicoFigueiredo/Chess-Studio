@@ -148,23 +148,6 @@ fn toque_ajuste_relogio_e_reclamacao_nao_existem_no_assistido() {
 }
 
 #[test]
-fn pausa_e_engine_ainda_nao_implementadas_sao_rejeicoes_tipadas() {
-    let mut game = assisted();
-    let mut clock = FakeClock::new();
-    for command in [
-        Command::Pause,
-        Command::Resume,
-        Command::EngineMove { uci: "e2e4".into() },
-    ] {
-        let kind = command.kind();
-        assert_eq!(
-            game.handle(command, clock.now()),
-            Err(Rejection::NotYetImplemented(kind))
-        );
-    }
-}
-
-#[test]
 fn controle_de_tempo_e_aceito_e_ignorado() {
     let setup = chess_game::GameSetup::standard(chess_game::PolicyKind::Assisted)
         .with_time_control(chess_game::TimeControl {

@@ -1,7 +1,7 @@
 //! Intenções enviadas à Partida. Cobre todo o P0; o que a Política ativa ou o
 //! escopo do ticket ainda não suporta volta como [`crate::Rejection`] tipada.
 
-use chess_core::{Color, Piece, Square};
+use chess_core::{Color, Move, Piece, Square};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -26,7 +26,14 @@ pub enum Command {
     /// Retratar/cancelar o Lance em curso (no Assistido, a promoção pendente).
     RetractMove,
     PressClock,
+    /// Reclamação de empate pelo lado da vez sobre a Posição atual (arts. 9.2.2 e
+    /// 9.3.2). Para a Engine (B9) é a mesma via.
     ClaimDraw,
+    /// Reclamação com Lance anunciado (arts. 9.2.1 e 9.3.1): o Lance ainda não foi
+    /// feito; precisa ser legal na Posição atual.
+    ClaimDrawWithMove {
+        mv: Move,
+    },
     OfferDraw {
         side: Color,
     },
@@ -57,6 +64,7 @@ pub enum CommandKind {
     RetractMove,
     PressClock,
     ClaimDraw,
+    ClaimDrawWithMove,
     OfferDraw,
     AcceptDraw,
     DeclineDraw,
@@ -78,6 +86,7 @@ impl Command {
             Self::RetractMove => CommandKind::RetractMove,
             Self::PressClock => CommandKind::PressClock,
             Self::ClaimDraw => CommandKind::ClaimDraw,
+            Self::ClaimDrawWithMove { .. } => CommandKind::ClaimDrawWithMove,
             Self::OfferDraw { .. } => CommandKind::OfferDraw,
             Self::AcceptDraw => CommandKind::AcceptDraw,
             Self::DeclineDraw => CommandKind::DeclineDraw,

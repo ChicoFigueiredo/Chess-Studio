@@ -2,10 +2,11 @@
 //! Os Eventos viajam como JSON versionado (o B5 grava no SQLite).
 
 mod common;
+use chess_core::Piece;
 use chess_core::{Color, Move};
 use chess_game::{
-    EndReason, Event, EventKind, GameResult, GameSetup, IllegalReason, Outcome, PAYLOAD_VERSION,
-    PolicyKind, TimeControl, Timestamp,
+    DrawBasis, EndReason, Event, EventKind, GameResult, GameSetup, IllegalReason, InfractionCause,
+    InfractionStage, Outcome, PAYLOAD_VERSION, PolicyKind, TimeControl, TimePenalty, Timestamp,
 };
 use common::sq;
 
@@ -56,6 +57,83 @@ fn every_kind() -> Vec<EventKind> {
                 result: GameResult::Draw,
                 reason: EndReason::ThreefoldRepetition,
             },
+        },
+        EventKind::PieceTouched {
+            side: Color::White,
+            square: sq("d5"),
+            owner: Color::Black,
+            piece: Piece::Knight,
+            implicit: false,
+        },
+        EventKind::PieceAdjusted {
+            side: Color::White,
+            square: sq("e2"),
+        },
+        EventKind::MoveMade {
+            side: Color::White,
+            mv: mv("e2e4"),
+            san: "e4".into(),
+        },
+        EventKind::IllegalMoveReleased {
+            side: Color::White,
+            from: sq("e2"),
+            to: sq("e5"),
+            reason: IllegalReason::NotLegal { in_check: false },
+        },
+        EventKind::ReleaseRetracted { side: Color::White },
+        EventKind::InfractionRecorded {
+            side: Color::White,
+            cause: InfractionCause::IllegalMove {
+                from: sq("e2"),
+                to: sq("e5"),
+                reason: IllegalReason::SameSquare,
+            },
+            count: 1,
+            stage: InfractionStage::Clock,
+            penalty: Some(TimePenalty {
+                to: Color::Black,
+                ms: 120_000,
+            }),
+        },
+        EventKind::InfractionRecorded {
+            side: Color::Black,
+            cause: InfractionCause::ClockPressedWithoutMove,
+            count: 2,
+            stage: InfractionStage::Release,
+            penalty: None,
+        },
+        EventKind::InfractionRecorded {
+            side: Color::White,
+            cause: InfractionCause::PromotionNotCompleted {
+                from: sq("a7"),
+                to: sq("a8"),
+            },
+            count: 1,
+            stage: InfractionStage::Clock,
+            penalty: None,
+        },
+        EventKind::Paused,
+        EventKind::Resumed,
+        EventKind::FlagFell {
+            side: Color::Black,
+            flag_at_ms: 61_000,
+        },
+        EventKind::DrawClaimAccepted {
+            by: Color::White,
+            basis: DrawBasis::FiftyMoveRule,
+            intended: Some(mv("a1a2")),
+        },
+        EventKind::DrawClaimRejected {
+            by: Color::Black,
+            intended: None,
+            penalty: TimePenalty {
+                to: Color::White,
+                ms: 120_000,
+            },
+        },
+        EventKind::EngineMoveRejected {
+            side: Color::Black,
+            uci: "e7e9".into(),
         },
     ]
 }
@@ -134,5 +212,49 @@ fn eventos_de_uma_partida_real_fazem_ida_e_volta() {
     let json = serde_json::to_string(game.events()).unwrap();
     let back: Vec<Event> = serde_json::from_str(&json).unwrap();
     let replayed = chess_game::Game::replay(game.setup().clone(), &back);
+    assert_eq!(replayed.snapshot(), game.snapshot());
+}
+
+#[test]
+fn eventos_do_b6_tem_tipo_estavel_e_setup_antigo_continua_legivel() {
+    let event = Event::new(Timestamp::mono(7), EventKind::Paused);
+    let value = serde_json::to_value(&event).unwrap();
+    assert_eq!(value["kind"]["type"], "paused");
+    assert_eq!(value["version"], PAYLOAD_VERSION);
+
+    // Setup gravado antes do B6 (sem `infraction_stage`) continua legível.
+    let old = r#"{"policy":"assisted","start_fen":"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1","time_control":null}"#;
+    let setup: GameSetup = serde_json::from_str(old).unwrap();
+    assert_eq!(setup.infraction_stage(), InfractionStage::Clock);
+
+    let fide = GameSetup::standard(PolicyKind::FideSimulation)
+        .with_infraction_stage(InfractionStage::Release);
+    let json = serde_json::to_string(&fide).unwrap();
+    assert!(json.contains("fide_simulation") && json.contains("release"));
+    assert_eq!(serde_json::from_str::<GameSetup>(&json).unwrap(), fide);
+}
+
+#[test]
+fn partida_fide_com_infracao_pausa_e_bandeira_faz_ida_e_volta() {
+    use common::*;
+    let mut game = fide_timed_from(
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        20_000,
+        1_000,
+    );
+    touch(&mut game, 100, "a1").unwrap();
+    drop_piece(&mut game, 200, "a1", "b2").unwrap();
+    press(&mut game, 300).unwrap();
+    game.handle(chess_game::Command::Pause, at(400)).unwrap();
+    game.handle(chess_game::Command::Resume, at(500)).unwrap();
+    // A bandeira cai: o Comando tardio só a registra.
+    drop_piece(&mut game, 60_000, "e2", "e4").unwrap();
+    assert!(game.snapshot().outcome.is_some());
+
+    let json = serde_json::to_string(game.events()).unwrap();
+    let back: Vec<Event> = serde_json::from_str(&json).unwrap();
+    let setup_json = serde_json::to_string(game.setup()).unwrap();
+    let setup: GameSetup = serde_json::from_str(&setup_json).unwrap();
+    let replayed = chess_game::Game::try_replay(setup, &back).unwrap();
     assert_eq!(replayed.snapshot(), game.snapshot());
 }

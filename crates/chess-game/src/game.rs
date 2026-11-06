@@ -1,7 +1,8 @@
 //! A Partida: Comando + instante injetado -> Eventos; `replay` reconstrói do log.
 
+use crate::clock::flag_events;
 use crate::command::Command;
-use crate::event::Event;
+use crate::event::{Event, EventKind};
 use crate::policy::policy_for;
 use crate::rejection::Rejection;
 use crate::setup::GameSetup;
@@ -37,7 +38,12 @@ impl Game {
                 got_ms: at.mono_ms,
             });
         }
-        let kinds = policy_for(self.setup.policy()).decide(&self.state, &command)?;
+        // Bandeira (art. 6.9): um Comando que chega com o tempo esgotado só registra
+        // a bandeira; o Comando em si não vale.
+        let kinds = match self.flag_fall(at) {
+            Some(kinds) => kinds,
+            None => policy_for(self.setup.policy()).decide(&self.state, &command)?,
+        };
         let events: Vec<Event> = kinds.into_iter().map(|k| Event::new(at, k)).collect();
         for event in &events {
             // As Políticas só emitem Eventos coerentes com o estado; se não for
@@ -50,6 +56,19 @@ impl Game {
         }
         self.log.extend(events.iter().cloned());
         Ok(events)
+    }
+
+    fn flag_fall(&self, at: Timestamp) -> Option<Vec<EventKind>> {
+        if self.state.outcome.is_some() {
+            return None;
+        }
+        let clock = self.state.clock.as_ref()?;
+        flag_events(
+            clock,
+            self.state.paused,
+            self.state.effective_position(),
+            at.mono_ms,
+        )
     }
 
     /// Reconstrói a Partida dos Eventos. Tolerante: para no primeiro Evento que não
@@ -78,7 +97,7 @@ impl Game {
 
     /// Leitura do estado atual.
     pub fn snapshot(&self) -> Snapshot {
-        Snapshot::from_state(self.setup.policy(), &self.state)
+        Snapshot::from_state(&self.setup, &self.state)
     }
 
     /// Log de Eventos desta Partida (a fonte de verdade).
@@ -97,4 +116,21 @@ fn rebuild(setup: &GameSetup, events: &[Event]) -> Result<GameState, ReplayError
         apply(&mut state, event).map_err(|reason| ReplayError { index, reason })?;
     }
     Ok(state)
+}
+
+impl Game {
+    /// Ao reabrir uma Partida do log, congela o relógio no último Evento gravado
+    /// (DEC-42). Idempotente: já pausada ou terminada, não gera Evento.
+    pub fn reopen_paused(&mut self) -> Result<Vec<Event>, Rejection> {
+        if self.state.paused || self.state.outcome.is_some() {
+            return Ok(Vec::new());
+        }
+        let at = Timestamp::mono(self.state.last_at_ms);
+        self.handle(Command::Pause, at)
+    }
+
+    /// Relógio em `at` (tempo restante, quem corre, bandeira). `None` sem controle de tempo.
+    pub fn clock_at(&self, at: Timestamp) -> Option<crate::ClockReading> {
+        self.snapshot().clock_at(at)
+    }
 }

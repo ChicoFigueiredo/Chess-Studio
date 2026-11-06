@@ -2,8 +2,9 @@
 //! devolve [`Event`]s; [`Game::replay`] reconstrói o estado do log (ADR-0001/0002).
 //!
 //! É a interface principal de testes do domínio: nenhum relógio do sistema é lido
-//! aqui, nada depende de Bevy ou SQLite. As Políticas de arbitragem são internas;
-//! hoje existe o Assistido. Leitura pela UI: [`Game::snapshot`].
+//! aqui, nada depende de Bevy ou SQLite. As Políticas de arbitragem são internas:
+//! Assistido e Simulação FIDE (Leis de 1/1/2023). Leitura pela UI: [`Game::snapshot`];
+//! o relógio por instante, em [`Game::clock_at`].
 //!
 //! ```
 //! use chess_game::{Command, Game, GameSetup, PolicyKind, Timestamp};
@@ -15,8 +16,10 @@
 //! assert_eq!(game.snapshot().history[0].san, "e4");
 //! ```
 
+mod clock;
 mod command;
 mod event;
+mod fide;
 mod game;
 mod outcome;
 mod policy;
@@ -25,14 +28,20 @@ mod setup;
 mod snapshot;
 mod state;
 mod time;
+mod touch;
 mod wire;
 
+pub use clock::{ClockReading, ClockView, FlagFall, TWO_MINUTES_MS};
 pub use command::{Command, CommandKind};
-pub use event::{Event, EventKind, IllegalReason, PAYLOAD_VERSION};
+pub use event::{
+    DrawBasis, Event, EventKind, IllegalReason, InfractionCause, PAYLOAD_VERSION, TimePenalty,
+};
 pub use game::Game;
 pub use outcome::{EndReason, GameResult, Outcome};
 pub use rejection::Rejection;
-pub use setup::{GameSetup, PolicyKind};
-pub use snapshot::{HistoryEntry, ProvisionalView, Snapshot};
+pub use setup::{CLASSICAL_MIN_BASE_MS, FIDE_LAWS_VERSION, GameSetup, InfractionStage, PolicyKind};
+pub use snapshot::{
+    HistoryEntry, MadeMove, ProvisionalRelease, ProvisionalView, Snapshot, TouchedPiece,
+};
 pub use state::{PendingPromotion, ReplayError};
 pub use time::{TimeControl, Timestamp};
