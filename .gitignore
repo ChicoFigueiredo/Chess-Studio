@@ -1,0 +1,8 @@
+/target/
+**/*.rs.bk
+*.pdb
+.scratch/
+*.sqlite3-journal
+/benchmarks/out/
+.DS_Store
+Thumbs.db
