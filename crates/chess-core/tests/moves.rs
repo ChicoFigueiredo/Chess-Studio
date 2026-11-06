@@ -69,7 +69,7 @@ fn play_returns_new_position_and_leaves_original_untouched() {
     assert_eq!(q.piece_at(sq("e2")), None);
     assert_eq!(
         q.to_fen(),
-        "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
+        "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"
     );
 }
 
@@ -127,7 +127,7 @@ fn castling_moves_both_king_and_rook() {
 
 #[test]
 fn castling_refused_when_king_in_check() {
-    let p = pos("4r2k/8/8/8/8/8/8/R3K2R w KQ - 0 1");
+    let p = pos("4r1k1/8/8/8/8/8/8/R3K2R w KQ - 0 1");
     assert!(p.is_check());
     assert!(!legal(&p, "e1g1"));
     assert!(!legal(&p, "e1c1"));
@@ -136,18 +136,18 @@ fn castling_refused_when_king_in_check() {
 #[test]
 fn castling_refused_when_king_passes_through_attacked_square() {
     // torre preta em f8 ataca f1 (casa de passagem do roque curto)
-    let p = pos("5r1k/8/8/8/8/8/8/R3K2R w KQ - 0 1");
+    let p = pos("5rk1/8/8/8/8/8/8/R3K2R w KQ - 0 1");
     assert!(!legal(&p, "e1g1"));
     assert!(legal(&p, "e1c1"));
     // torre preta em d8 ataca d1 (passagem do roque longo)
-    let p = pos("3r3k/8/8/8/8/8/8/R3K2R w KQ - 0 1");
+    let p = pos("3r2k1/8/8/8/8/8/8/R3K2R w KQ - 0 1");
     assert!(!legal(&p, "e1c1"));
     assert!(legal(&p, "e1g1"));
 }
 
 #[test]
 fn castling_refused_when_king_lands_on_attacked_square() {
-    let p = pos("6rk/8/8/8/8/8/8/R3K2R w KQ - 0 1");
+    let p = pos("1k4r1/8/8/8/8/8/8/R3K2R w KQ - 0 1");
     assert!(!legal(&p, "e1g1"));
     assert!(legal(&p, "e1c1"));
 }
@@ -155,7 +155,7 @@ fn castling_refused_when_king_lands_on_attacked_square() {
 #[test]
 fn long_castling_allowed_when_only_rook_path_square_is_attacked() {
     // b1 atacada pela torre em b8: o rei não passa por b1, então o roque longo vale.
-    let p = pos("1r5k/8/8/8/8/8/8/R3K2R w KQ - 0 1");
+    let p = pos("1r4k1/8/8/8/8/8/8/R3K2R w KQ - 0 1");
     assert!(legal(&p, "e1c1"));
 }
 
@@ -200,7 +200,7 @@ fn castling_refused_after_king_or_rook_moved() {
 
 #[test]
 fn capturing_a_rook_removes_the_castling_right() {
-    let p = pos("r3k2r/8/8/8/8/8/6b1/R3K2R b kq - 0 1");
+    let p = pos("r3k2r/8/8/8/8/8/6b1/R3K2R b KQkq - 0 1");
     let p = p.play(mv("g2h1")).unwrap();
     assert_eq!(p.to_fen(), "r3k2r/8/8/8/8/8/8/R3K2b w Qkq - 0 2");
 }
@@ -292,7 +292,10 @@ fn black_promotion_works() {
     let p = pos("k6K/8/8/8/8/8/3p4/8 b - - 0 1");
     assert!(legal(&p, "d2d1n"));
     let after = p.play(mv("d2d1n")).unwrap();
-    assert_eq!(after.piece_at(sq("d1")), Some((Color::Black, Piece::Knight)));
+    assert_eq!(
+        after.piece_at(sq("d1")),
+        Some((Color::Black, Piece::Knight))
+    );
 }
 
 #[test]

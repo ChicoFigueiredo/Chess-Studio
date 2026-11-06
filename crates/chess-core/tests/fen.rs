@@ -96,9 +96,15 @@ fn invalid_fens_return_typed_errors_without_panicking() {
             "4k3/8/8/8/8/8/8/4K3 w K - 0 1",
             FenError::InvalidCastlingRights,
         ),
-        (&START.replace(" - 0 1", " e9 0 1"), FenError::InvalidEnPassant),
+        (
+            &START.replace(" - 0 1", " e9 0 1"),
+            FenError::InvalidEnPassant,
+        ),
         // en passant sem peão que tenha avançado
-        (&START.replace(" - 0 1", " e3 0 1"), FenError::InvalidEnPassant),
+        (
+            &START.replace(" - 0 1", " e3 0 1"),
+            FenError::InvalidEnPassant,
+        ),
         (
             &START.replace(" 0 1", " abc 1"),
             FenError::InvalidHalfmoveClock,
