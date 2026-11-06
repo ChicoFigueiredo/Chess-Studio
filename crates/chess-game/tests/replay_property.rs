@@ -28,7 +28,11 @@ fn random_command(rng: &mut Rng, game: &Game) -> Command {
         0 => Command::Undo,
         1 => Command::Redo,
         2 => Command::OfferDraw {
-            side: if rng.below(2) == 0 { Color::White } else { Color::Black },
+            side: if rng.below(2) == 0 {
+                Color::White
+            } else {
+                Color::Black
+            },
         },
         3 => Command::AcceptDraw,
         4 => Command::DeclineDraw,

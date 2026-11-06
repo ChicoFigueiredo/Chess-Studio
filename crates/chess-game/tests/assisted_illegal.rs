@@ -28,7 +28,11 @@ fn e2_e5_e_recusado_sem_virar_e4() {
     assert_eq!(after, before, "Posição e histórico inalterados");
     assert_eq!(after.position.to_fen(), START_FEN);
     assert!(after.history.is_empty());
-    assert_eq!(after.side_to_move, Color::White, "sem penalidade: a vez é a mesma");
+    assert_eq!(
+        after.side_to_move,
+        Color::White,
+        "sem penalidade: a vez é a mesma"
+    );
 }
 
 #[test]
@@ -48,15 +52,27 @@ fn o_evento_de_lance_ilegal_fica_no_log_e_distingue_do_legal() {
 fn motivos_de_recusa_sao_explicaveis() {
     let mut game = assisted();
     let mut clock = FakeClock::new();
-    let reason = |game: &mut chess_game::Game, clock: &mut FakeClock, f: &str, t: &str| {
-        match &release(game, clock, f, t)[0].kind {
+    let reason =
+        |game: &mut chess_game::Game, clock: &mut FakeClock, f: &str, t: &str| match &release(
+            game, clock, f, t,
+        )[0]
+        .kind
+        {
             EventKind::IllegalMoveRejected { reason, .. } => *reason,
             other => panic!("esperava lance ilegal, veio {other:?}"),
-        }
-    };
-    assert_eq!(reason(&mut game, &mut clock, "e4", "e5"), IllegalReason::EmptyOrigin);
-    assert_eq!(reason(&mut game, &mut clock, "e7", "e5"), IllegalReason::OpponentPiece);
-    assert_eq!(reason(&mut game, &mut clock, "e2", "e2"), IllegalReason::SameSquare);
+        };
+    assert_eq!(
+        reason(&mut game, &mut clock, "e4", "e5"),
+        IllegalReason::EmptyOrigin
+    );
+    assert_eq!(
+        reason(&mut game, &mut clock, "e7", "e5"),
+        IllegalReason::OpponentPiece
+    );
+    assert_eq!(
+        reason(&mut game, &mut clock, "e2", "e2"),
+        IllegalReason::SameSquare
+    );
     assert_eq!(
         reason(&mut game, &mut clock, "b1", "b3"),
         IllegalReason::NotLegal { in_check: false }
@@ -84,16 +100,22 @@ fn rei_nao_pode_entrar_em_casa_atacada() {
     let mut game = assisted_from("7k/8/8/8/8/8/r7/4K3 w - - 0 1");
     let mut clock = FakeClock::new();
     let events = release(&mut game, &mut clock, "e1", "e2");
-    assert!(matches!(&events[0].kind, EventKind::IllegalMoveRejected { .. }));
+    assert!(matches!(
+        &events[0].kind,
+        EventKind::IllegalMoveRejected { .. }
+    ));
     assert!(game.snapshot().history.is_empty());
 }
 
 #[test]
 fn roque_atravessando_casa_atacada_e_ilegal() {
-    let mut game = assisted_from("5r1k/8/8/8/8/8/8/4K2R w K - 0 1");
+    let mut game = assisted_from("5r2/6k1/8/8/8/8/8/4K2R w K - 0 1");
     let mut clock = FakeClock::new();
     let events = release(&mut game, &mut clock, "e1", "g1");
-    assert!(matches!(&events[0].kind, EventKind::IllegalMoveRejected { .. }));
+    assert!(matches!(
+        &events[0].kind,
+        EventKind::IllegalMoveRejected { .. }
+    ));
 }
 
 #[test]

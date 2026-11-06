@@ -83,12 +83,7 @@ fn bad(reason: &str) -> String {
     reason.to_owned()
 }
 
-fn move_into(
-    state: &mut GameState,
-    side: Color,
-    mv: Move,
-    san: &str,
-) -> Result<Played, String> {
+fn move_into(state: &mut GameState, side: Color, mv: Move, san: &str) -> Result<Played, String> {
     let before = state.position();
     if before.side_to_move() != side {
         return Err(bad("lado do evento não é o lado da vez"));
