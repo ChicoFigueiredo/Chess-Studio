@@ -240,3 +240,25 @@ fn replay_reproduz_fide_a_partir_de_fens_especiais() {
         }
     }
 }
+
+#[test]
+fn replay_reproduz_o_estado_da_eliminacao_imediata_nas_duas_etapas() {
+    use chess_game::{InfractionStage, TimeControl};
+    for (i, stage) in [InfractionStage::Clock, InfractionStage::Release]
+        .into_iter()
+        .enumerate()
+    {
+        for seed in 1..=40 {
+            let base = GameSetup::standard(PolicyKind::SuddenElimination)
+                .with_infraction_stage(stage);
+            run_fide_seed(seed + 5000 * (i as u64 + 1), base.clone());
+            run_fide_seed(
+                seed + 5500 * (i as u64 + 1),
+                base.with_time_control(TimeControl {
+                    base_ms: 60_000,
+                    increment_ms: 2_000,
+                }),
+            );
+        }
+    }
+}
