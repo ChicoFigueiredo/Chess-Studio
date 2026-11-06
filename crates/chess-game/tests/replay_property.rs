@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)]
 //! ADR-0002 / critério do B2: `replay(setup, eventos)` == estado obtido pelos Comandos.
 //! Partidas pseudoaleatórias determinísticas por semente (xorshift, sem crate novo).
 

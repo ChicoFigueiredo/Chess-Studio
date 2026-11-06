@@ -238,6 +238,7 @@ fn redo(state: &GameState) -> Result<Vec<EventKind>, Rejection> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

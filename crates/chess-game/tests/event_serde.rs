@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)]
 //! Os Eventos viajam como JSON versionado (o B5 grava no SQLite).
 
 mod common;

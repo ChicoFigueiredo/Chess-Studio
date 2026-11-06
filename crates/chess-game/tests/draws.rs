@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)]
 //! Empates e abandono: automáticos no Assistido (DEC-38), propostas (DEC-41).
 
 mod common;
