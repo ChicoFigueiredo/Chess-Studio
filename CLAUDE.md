@@ -18,6 +18,8 @@ Desktop nativo, offline, em Rust (Bevy 0.20 + bevy_egui + SQLite). Leia antes de
 - `cargo test -p <crate> --test <arquivo>` — um arquivo de teste
 - `cargo clippy --workspace --all-targets -- -D warnings` — lint (precisa passar)
 - `cargo fmt --all --check`
+- `cargo deny check licenses` — licenças (ADR-0004; instalar com `cargo install cargo-deny --locked`)
+- `cargo run -p chess-studio` — abre a janela (`--features dynamic_linking` acelera a recompilação em dev)
 
 ## Fluxo de trabalho
 

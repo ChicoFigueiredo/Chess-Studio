@@ -1,0 +1,30 @@
+# cargo-deny — ADR-0004: licença MIT OR Apache-2.0, nenhuma dependência GPL/AGPL/LGPL.
+# Execute: cargo deny check licenses
+
+[graph]
+all-features = false
+
+[licenses]
+# Qualquer licença fora desta lista é negada (inclui GPL, AGPL e LGPL).
+allow = [
+    "MIT",
+    "MIT-0", # variante permissiva do MIT, sem exigência de atribuição (usada por transitivas do Bevy)
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "BSL-1.0",
+    "OFL-1.1", # fontes
+]
+confidence-threshold = 0.9
+
+# Exceções por crate, só quando inevitáveis e justificadas aqui.
+exceptions = []
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
