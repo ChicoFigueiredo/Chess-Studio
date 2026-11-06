@@ -2,7 +2,9 @@
 //! pura), não o picking de mesh do Bevy. Só o botão esquerdo destaca: arrastar com o
 //! botão do meio (órbita) nunca seleciona nem move peça (CAM-01).
 
+use crate::board2d::{cursor_to_world, to_board_plane};
 use crate::camera::{CameraSet, MainCamera};
+use crate::presentation::Presentation;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_egui::input::EguiWantsInput;
@@ -21,6 +23,10 @@ struct HoverMarker;
 #[derive(Component)]
 struct ClickMarker;
 
+/// Sistemas de picking (o 2D técnico atualiza seus marcadores depois deste conjunto).
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PickSet;
+
 pub struct PickingPlugin;
 
 impl Plugin for PickingPlugin {
@@ -28,7 +34,13 @@ impl Plugin for PickingPlugin {
         app.init_resource::<HoveredSquare>()
             .init_resource::<ClickedSquare>()
             .add_systems(Startup, spawn_markers)
-            .add_systems(Update, (pick, update_markers).chain().after(CameraSet));
+            .add_systems(
+                Update,
+                (pick, update_markers)
+                    .chain()
+                    .in_set(PickSet)
+                    .after(CameraSet),
+            );
     }
 }
 
@@ -72,9 +84,11 @@ fn spawn_markers(
     ));
 }
 
+#[allow(clippy::too_many_arguments)]
 fn pick(
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Camera, &Transform), With<MainCamera>>,
+    presentation: Res<Presentation>,
     buttons: Res<ButtonInput<MouseButton>>,
     egui: Res<EguiWantsInput>,
     mut hovered: ResMut<HoveredSquare>,
@@ -85,14 +99,19 @@ fn pick(
     let square = if over_ui {
         None
     } else {
-        window
-            .cursor_position()
-            .and_then(|cursor| {
-                camera
+        window.cursor_position().and_then(|cursor| {
+            // Em todas as Apresentações a casa vem de `ray_to_square` (geometria pura).
+            if presentation.is_3d() {
+                let ray = camera
                     .viewport_to_world(&GlobalTransform::from(*transform), cursor)
-                    .ok()
-            })
-            .and_then(|ray| ray_to_square(ray.origin, *ray.direction))
+                    .ok()?;
+                ray_to_square(ray.origin, *ray.direction)
+            } else {
+                // 2D técnico: raio vertical sobre o ponto do tabuleiro sob o cursor.
+                let world = cursor_to_world(cursor, window.size());
+                ray_to_square(to_board_plane(world) + Vec3::Y, -Vec3::Y)
+            }
+        })
     };
     if hovered.0 != square {
         hovered.0 = square;

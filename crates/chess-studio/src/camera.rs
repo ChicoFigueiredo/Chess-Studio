@@ -9,6 +9,7 @@
 //! winit não os emite; dois dedos chegam como `MouseWheel` com unidade `Pixel` (tratado
 //! como órbita/pan) e a roda do mouse, com unidade `Line`, é zoom.
 
+use crate::presentation::Presentation;
 use bevy::input::gestures::{PanGesture, PinchGesture};
 use bevy::input::mouse::{AccumulatedMouseMotion, MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
@@ -53,13 +54,20 @@ impl Plugin for CameraPlugin {
                 Update,
                 (view_keys, pointer_controls, apply_pose)
                     .chain()
-                    .in_set(CameraSet),
+                    .in_set(CameraSet)
+                    // O 2D técnico tem câmera fixa de cima: sem órbita, pan nem Vistas.
+                    .run_if(|p: Res<Presentation>| p.is_3d()),
             );
     }
 }
 
 fn spawn_camera(mut commands: Commands, rig: Res<CameraRig>) {
-    commands.spawn((Camera3d::default(), MainCamera, pose_transform(&rig.pose)));
+    commands.spawn((
+        Camera3d::default(),
+        MainCamera,
+        pose_transform(&rig.pose),
+        // Qualidade (MSAA/sombras) é aplicada por `presentation::apply_quality`.
+    ));
 }
 
 fn pose_transform(pose: &CameraPose) -> Transform {
