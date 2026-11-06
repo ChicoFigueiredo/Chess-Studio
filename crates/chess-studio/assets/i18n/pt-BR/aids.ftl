@@ -1,0 +1,64 @@
+## Auxílios visuais, Perfis de auxílios, explicação de erro, revisão, FEN e PGN.
+
+aid-window-title = Auxílios e revisão
+aid-heading = Auxílios visuais
+
+aid-profile-label = Perfil
+aid-profile-physical = Jogo físico
+aid-profile-training = Treinamento
+aid-profile-custom = Personalizado
+
+aid-destinations = Destinos legais (pontos)
+aid-ghosts = Peças fantasmas nos destinos
+aid-selected = Destaque da peça selecionada
+aid-last-move = Destaque do último lance
+aid-check = Indicação de xeque
+
+aid-explanation-label = Explicação de erro
+aid-explanation-immediate = Imediata
+aid-explanation-after-attempt = Após tentativa
+aid-explanation-review-only = Só na revisão
+
+aid-check-alert = Xeque!
+aid-illegal-brief = Lance ilegal: a peça voltou à origem.
+aid-illegal-with-reason = Lance ilegal ({ $from }-{ $to }): { $reason }
+aid-why = Por quê?
+
+aid-reason-empty-origin = não há peça na casa de origem.
+aid-reason-opponent-piece = a peça é do adversário.
+aid-reason-same-square = a peça ficou na mesma casa.
+aid-reason-in-check = seu rei está em xeque e o lance não o tira do xeque.
+aid-reason-not-legal = a peça não se move assim ou deixaria o rei em xeque.
+
+aid-side-white = Brancas
+aid-side-black = Pretas
+
+review-heading = Revisão
+review-first = Início da Partida
+review-prev = Lance anterior
+review-next = Próximo lance
+review-last = Posição atual
+review-start = posição inicial
+review-position = Revisão: meio-lance { $ply } de { $total } ({ $san })
+review-readonly = Somente leitura: a Partida não muda enquanto você revisa.
+review-back = Voltar à Partida
+review-live = Partida em andamento ({ $total } meios-lances)
+review-incidents = Ocorrências ilegais ({ $count })
+review-incident = Após o meio-lance { $ply } ({ $side }): { $text }
+
+fen-heading = Carregar FEN…
+fen-hint = Cole o FEN aqui
+fen-load = Carregar
+fen-loaded = Posição carregada: nova Partida iniciada.
+fen-error = FEN inválido: { $detail }
+fen-unchanged = Nada foi alterado: a Partida atual continua como estava.
+
+pgn-heading = Exportar PGN…
+pgn-comments = Incluir comentários (Infrações e penalidades)
+pgn-export = Exportar para Documentos
+pgn-saved = PGN salvo em { $path }
+pgn-error = Não foi possível salvar o PGN: { $detail }
+
+resume-title = Partida retomada
+resume-text = A Partida anterior voltou em Pausa, no mesmo lance em que você parou.
+resume-button = Retomar

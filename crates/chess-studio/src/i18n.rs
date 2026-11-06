@@ -14,6 +14,7 @@ const PT_BR: &[(&str, &str)] = &[
         "engine.ftl",
         include_str!("../assets/i18n/pt-BR/engine.ftl"),
     ),
+    ("aids.ftl", include_str!("../assets/i18n/pt-BR/aids.ftl")),
 ];
 
 /// Tradutor do idioma ativo. Chave ausente devolve a própria chave (visível, nunca pânico).
@@ -139,7 +140,7 @@ mod tests {
     /// Todo literal do código que parece um identificador de mensagem existe no .ftl.
     #[test]
     fn every_message_id_used_in_the_source_exists() {
-        const PREFIXES: [&str; 11] = [
+        const PREFIXES: [&str; 17] = [
             "app-",
             "presentation-",
             "quality-",
@@ -151,6 +152,12 @@ mod tests {
             "move-method-",
             "promotion-",
             "status-",
+            "aid-",
+            "review-",
+            "fen-",
+            "pgn-",
+            "resume-",
+            "persist-",
         ];
         let i18n = I18n::pt_br();
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
