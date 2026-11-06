@@ -43,6 +43,10 @@ pub enum EndReason {
     SecondIllegalMove,
     /// Segundo Lance ilegal, mas o adversário não podia dar mate (art. 7.5.5).
     SecondIllegalMoveDraw,
+    /// Eliminação Imediata: a primeira Infração concluída encerrou a Partida.
+    EliminatedByInfraction,
+    /// Eliminação Imediata, mas o adversário não podia dar mate (DEC-35).
+    EliminatedByInfractionDraw,
 }
 
 impl EndReason {
@@ -56,6 +60,8 @@ impl EndReason {
                 | Self::TimeoutDraw
                 | Self::SecondIllegalMove
                 | Self::SecondIllegalMoveDraw
+                | Self::EliminatedByInfraction
+                | Self::EliminatedByInfractionDraw
         )
     }
 }

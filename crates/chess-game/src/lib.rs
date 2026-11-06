@@ -3,7 +3,7 @@
 //!
 //! É a interface principal de testes do domínio: nenhum relógio do sistema é lido
 //! aqui, nada depende de Bevy ou SQLite. As Políticas de arbitragem são internas:
-//! Assistido e Simulação FIDE (Leis de 1/1/2023). Leitura pela UI: [`Game::snapshot`];
+//! Assistido, Simulação FIDE (Leis de 1/1/2023) e Eliminação Imediata (regra personalizada). Leitura pela UI: [`Game::snapshot`];
 //! o relógio por instante, em [`Game::clock_at`].
 //!
 //! ```
@@ -39,7 +39,10 @@ pub use event::{
 pub use game::Game;
 pub use outcome::{EndReason, GameResult, Outcome};
 pub use rejection::Rejection;
-pub use setup::{CLASSICAL_MIN_BASE_MS, FIDE_LAWS_VERSION, GameSetup, InfractionStage, PolicyKind};
+pub use setup::{
+    CLASSICAL_MIN_BASE_MS, CUSTOM_RULES_LABEL, FIDE_LAWS_VERSION, GameSetup, InfractionStage,
+    PolicyKind,
+};
 pub use snapshot::{
     HistoryEntry, MadeMove, ProvisionalRelease, ProvisionalView, Snapshot, TouchedPiece,
 };

@@ -12,7 +12,13 @@ pub enum PolicyKind {
     Assisted,
     /// Simulação FIDE (Leis de 1/1/2023, partidas clássicas).
     FideSimulation,
+    /// Eliminação Imediata (`SuddenElimination`): regra **personalizada** de
+    /// treinamento, nunca FIDE. A primeira Infração concluída encerra a Partida.
+    SuddenElimination,
 }
+
+/// Rótulo exposto no snapshot da Eliminação Imediata (AC-06): nunca "FIDE".
+pub const CUSTOM_RULES_LABEL: &str = "Regra personalizada de treinamento — Eliminação Imediata";
 
 /// Versão das Leis do Xadrez simulada (RULE-01).
 pub const FIDE_LAWS_VERSION: &str = "FIDE Laws of Chess, 1 Jan 2023";
@@ -22,7 +28,7 @@ pub const FIDE_LAWS_VERSION: &str = "FIDE Laws of Chess, 1 Jan 2023";
 pub const CLASSICAL_MIN_BASE_MS: u64 = 60 * 60 * 1000;
 
 /// Em que momento um Lance ilegal vira Infração (DEC-36). A Simulação FIDE é
-/// sempre `Clock` (art. 7.5.1); a Eliminação Imediata (B8) poderá escolher.
+/// sempre `Clock` (art. 7.5.1); a Eliminação Imediata escolhe antes da Partida.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InfractionStage {
@@ -72,8 +78,8 @@ impl GameSetup {
         self
     }
 
-    /// Etapa em que o Lance ilegal vira Infração. Parâmetro para a Eliminação
-    /// Imediata (B8, DEC-36); a Simulação FIDE o ignora e usa sempre o relógio.
+    /// Etapa em que o Lance ilegal vira Infração. Vale na Eliminação
+    /// Imediata (DEC-36); a Simulação FIDE o ignora e usa sempre o relógio.
     pub fn with_infraction_stage(mut self, stage: InfractionStage) -> Self {
         self.infraction_stage = stage;
         self
@@ -87,6 +93,7 @@ impl GameSetup {
     pub fn rules_version(&self) -> Option<&'static str> {
         match self.policy {
             PolicyKind::FideSimulation => Some(FIDE_LAWS_VERSION),
+            PolicyKind::SuddenElimination => Some(CUSTOM_RULES_LABEL),
             _ => None,
         }
     }

@@ -5,9 +5,9 @@
 //! **conclusão** pelo relógio (art. 6.2.1), exceto quando o Lance encerra a Partida
 //! (art. 6.2.1.1). Lance ilegal concluído é Infração (art. 7.5).
 //!
-//! A Eliminação Imediata (B8) reaproveitará este núcleo: `configurable_stage`
-//! habilita a etapa de Infração do setup (relógio | soltura, DEC-36) e a
-//! consequência da Infração é a única outra peça a trocar. A Simulação FIDE tem a
+//! A Eliminação Imediata (B8) reaproveita este núcleo: `configurable_stage`
+//! habilita a etapa de Infração do setup (relógio | soltura, DEC-36) e `eliminates`
+//! troca a consequência (a 1ª Infração encerra, DEC-35). A Simulação FIDE tem a
 //! etapa fixa no relógio e as consequências do art. 7.5.5.
 //!
 //! Simplificação assumida: o árbitro é a própria Política, que detecta a Infração
@@ -37,10 +37,18 @@ const FIDE_AUTO: AutoDraws = AutoDraws {
 pub(crate) struct Competitive {
     /// Se verdadeiro, a etapa de Infração vem do setup (Eliminação Imediata, B8).
     pub configurable_stage: bool,
+    /// Se verdadeiro, a primeira Infração concluída encerra a Partida.
+    pub eliminates: bool,
 }
 
 pub(crate) static FIDE_SIMULATION: Competitive = Competitive {
     configurable_stage: false,
+    eliminates: false,
+};
+
+pub(crate) static SUDDEN_ELIMINATION: Competitive = Competitive {
+    configurable_stage: true,
+    eliminates: true,
 };
 
 impl ArbitrationPolicy for Competitive {
@@ -262,16 +270,17 @@ impl Competitive {
         self.infraction(state, InfractionCause::ClockPressedWithoutMove)
     }
 
-    /// Infração (art. 7.5.5): a 1ª dá 2 minutos ao adversário; a 2ª perde a Partida,
+    /// Infração. Simulação FIDE (art. 7.5.5): a 1ª dá 2 minutos ao adversário; a 2ª perde a Partida,
     /// salvo se o adversário não puder dar mate por nenhuma série de Lances legais
-    /// (empate). A posição regular é a da última vez concluída; não há o que restaurar
+    /// (empate). Eliminação Imediata: a 1ª já encerra, com a mesma exceção de
+    /// material (DEC-35). A posição regular é a da última vez concluída; não há o que restaurar
     /// além de descartar a peça provisória (aplicado em `apply`).
     fn infraction(&self, state: &GameState, cause: InfractionCause) -> Vec<EventKind> {
         let position = state.position();
         let side = position.side_to_move();
         let count = state.infractions[usize::from(side == Color::Black)] + 1;
         let stage = self.stage(state);
-        if count == 1 {
+        if count == 1 && !self.eliminates {
             return vec![EventKind::InfractionRecorded {
                 side,
                 cause,
@@ -284,16 +293,27 @@ impl Competitive {
             }];
         }
         let winner = side.opposite();
+        let (win, draw) = if self.eliminates {
+            (
+                EndReason::EliminatedByInfraction,
+                EndReason::EliminatedByInfractionDraw,
+            )
+        } else {
+            (
+                EndReason::SecondIllegalMove,
+                EndReason::SecondIllegalMoveDraw,
+            )
+        };
         let (result, reason) = if position.can_checkmate(winner) {
             (
                 match winner {
                     Color::White => GameResult::WhiteWins,
                     Color::Black => GameResult::BlackWins,
                 },
-                EndReason::SecondIllegalMove,
+                win,
             )
         } else {
-            (GameResult::Draw, EndReason::SecondIllegalMoveDraw)
+            (GameResult::Draw, draw)
         };
         vec![
             EventKind::InfractionRecorded {
@@ -465,6 +485,7 @@ mod tests {
         };
         let eliminate_on_release = Competitive {
             configurable_stage: true,
+            eliminates: false,
         };
         let state = state_for(InfractionStage::Release);
         let events = eliminate_on_release.decide(&state, &rook_to_b2).unwrap();
