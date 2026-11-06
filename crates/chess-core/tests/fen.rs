@@ -132,3 +132,17 @@ fn fen_errors_have_descriptive_messages() {
     let err = CanonicalPosition::from_fen("lixo").unwrap_err();
     assert!(!err.to_string().is_empty());
 }
+
+#[test]
+fn halfmove_clock_above_100_is_accepted_and_round_trips() {
+    for fen in [
+        "8/8/8/4k3/8/8/8/4K3 w - - 120 200",
+        "8/8/8/4k3/8/8/8/4K3 b - - 149 300",
+    ] {
+        let pos = CanonicalPosition::from_fen(fen).unwrap();
+        assert_eq!(pos.to_fen(), fen);
+    }
+    let pos = CanonicalPosition::from_fen("8/8/8/4k3/8/8/8/4K3 w - - 120 200").unwrap();
+    assert_eq!(pos.halfmove_clock(), 120);
+    assert_eq!(pos.fullmove_number(), 200);
+}

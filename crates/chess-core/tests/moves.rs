@@ -316,3 +316,26 @@ fn halfmove_clock_and_fullmove_number_advance() {
     let p = p.play(mv("e2e4")).unwrap();
     assert_eq!(p.halfmove_clock(), 0);
 }
+
+#[test]
+fn halfmove_clock_counts_past_100_and_resets_on_capture_or_pawn_move() {
+    let mut p = pos("8/8/8/4k3/8/8/8/4K3 w - - 0 1");
+    for m in ["e1e2", "e5e6", "e2e1", "e6e5"].iter().cycle().take(101) {
+        p = p.play(mv(m)).unwrap();
+    }
+    assert_eq!(p.halfmove_clock(), 101);
+    assert!(p.to_fen().contains(" 101 "));
+
+    // a partir de 120 (vindo de FEN) segue contando e zera em lance de peão
+    let q = pos("8/8/8/4k3/8/8/4P3/4K3 w - - 149 200");
+    let q = q.play(mv("e1d1")).unwrap();
+    assert_eq!(q.halfmove_clock(), 150);
+    let q = q.play(mv("e5e6")).unwrap().play(mv("e2e4")).unwrap();
+    assert_eq!(q.halfmove_clock(), 0);
+
+    // captura zera
+    let c = pos("8/8/8/4k3/8/8/8/R3K3 w - - 130 90").play(mv("a1a5")).unwrap();
+    assert_eq!(c.halfmove_clock(), 131);
+    let c = pos("8/8/8/r3k3/8/8/8/R3K3 w - - 130 90").play(mv("a1a5")).unwrap();
+    assert_eq!(c.halfmove_clock(), 0);
+}
