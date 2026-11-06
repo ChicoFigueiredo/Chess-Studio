@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)]
 //! Apoio dos testes: relógio falso e atalhos por SAN. Nenhum relógio do sistema.
 #![allow(dead_code)]
 

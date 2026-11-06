@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)]
 //! CORE-01: partidas completas por Comandos, até mate e até afogamento.
 
 mod common;

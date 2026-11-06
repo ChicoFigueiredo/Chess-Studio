@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)]
 //! AC-03 / UX-04 / BDD-01 (domínio) / DB-04: o Assistido recusa o Lance ilegal sem
 //! penalidade; o ilegal nunca entra no histórico legal.
 

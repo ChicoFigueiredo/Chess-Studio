@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)]
 //! DEC-39: desfazer/refazer no Assistido, registrados, marcando a Partida "com desfazer".
 
 mod common;
