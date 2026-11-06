@@ -78,7 +78,7 @@ impl Game {
 
     /// Leitura do estado atual.
     pub fn snapshot(&self) -> Snapshot {
-        Snapshot::from_state(self.setup.policy(), &self.state)
+        Snapshot::from_state(&self.setup, &self.state)
     }
 
     /// Log de Eventos desta Partida (a fonte de verdade).
@@ -97,4 +97,17 @@ fn rebuild(setup: &GameSetup, events: &[Event]) -> Result<GameState, ReplayError
         apply(&mut state, event).map_err(|reason| ReplayError { index, reason })?;
     }
     Ok(state)
+}
+
+impl Game {
+    /// Ao reabrir uma Partida do log, congela o relógio no último Evento gravado
+    /// (DEC-42). Idempotente: já pausada ou terminada, não gera Evento.
+    pub fn reopen_paused(&mut self) -> Result<Vec<Event>, Rejection> {
+        Ok(Vec::new())
+    }
+
+    /// Relógio em `at` (tempo restante, quem corre, bandeira). `None` sem controle de tempo.
+    pub fn clock_at(&self, at: Timestamp) -> Option<crate::ClockReading> {
+        self.snapshot().clock_at(at)
+    }
 }

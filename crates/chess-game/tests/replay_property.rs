@@ -118,3 +118,126 @@ fn log_truncado_reconstroi_o_prefixo_e_log_corrompido_e_detectado() {
     assert_eq!(err.index, 1);
     assert_eq!(Game::replay(setup, &broken).snapshot().history.len(), 1);
 }
+
+/// Comandos aleatórios para as Políticas competitivas: toques, ajustes, relógio,
+/// retratação, Pausa, Reclamações e Engine (UCI aleatório, às vezes inválido).
+fn random_fide_command(rng: &mut Rng, game: &Game) -> Command {
+    let snap = game.snapshot();
+    let moves = snap.position.legal_moves();
+    let any_square =
+        |rng: &mut Rng| chess_core::Square::new(rng.below(8) as u8, rng.below(8) as u8).unwrap();
+    match rng.below(24) {
+        0 => Command::PressClock,
+        1 | 2 => Command::PressClock,
+        3 => Command::RetractMove,
+        4 => Command::Pause,
+        5 | 6 => Command::Resume,
+        7 => Command::ClaimDraw,
+        8 if !moves.is_empty() => Command::ClaimDrawWithMove {
+            mv: moves[rng.below(moves.len())],
+        },
+        9 => Command::Adjust {
+            square: any_square(rng),
+        },
+        10 => Command::EngineMove {
+            uci: if rng.below(3) == 0 {
+                "zz99".to_owned()
+            } else if moves.is_empty() {
+                "e2e4".to_owned()
+            } else {
+                moves[rng.below(moves.len())].to_string()
+            },
+        },
+        11 => Command::ChoosePromotion {
+            piece: [Piece::Queen, Piece::Rook, Piece::Bishop, Piece::Knight][rng.below(4)],
+        },
+        12 | 13 | 14 => Command::Touch {
+            square: any_square(rng),
+        },
+        15 => Command::Release {
+            from: any_square(rng),
+            to: any_square(rng),
+        },
+        16 if rng.below(40) == 0 => Command::Resign { side: Color::Black },
+        _ if !moves.is_empty() => {
+            let mv = moves[rng.below(moves.len())];
+            Command::Release {
+                from: mv.from(),
+                to: mv.to(),
+            }
+        }
+        _ => Command::PressClock,
+    }
+}
+
+fn run_fide_seed(seed: u64, setup: GameSetup) {
+    let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
+    let mut game = Game::new(setup.clone());
+    let mut at = 0;
+    for _ in 0..500 {
+        at += 1 + rng.below(400) as u64;
+        let command = random_fide_command(&mut rng, &game);
+        let _ = game.handle(command, Timestamp::mono(at));
+    }
+    let replayed = Game::replay(setup.clone(), game.events());
+    assert_eq!(replayed.snapshot(), game.snapshot(), "semente {seed}");
+    assert_eq!(replayed.events(), game.events(), "semente {seed}");
+    let strict = Game::try_replay(setup, game.events()).expect("log coerente");
+    assert_eq!(strict.snapshot(), game.snapshot(), "semente {seed}");
+    // O estado reconstruído também lê o mesmo relógio em qualquer instante.
+    for probe in [at, at + 1_000, at + 10_000_000] {
+        assert_eq!(
+            replayed.clock_at(Timestamp::mono(probe)),
+            game.clock_at(Timestamp::mono(probe)),
+            "semente {seed}"
+        );
+    }
+}
+
+#[test]
+fn replay_reproduz_o_estado_da_simulacao_fide_com_e_sem_relogio() {
+    use chess_game::TimeControl;
+    for seed in 1..=60 {
+        run_fide_seed(seed, GameSetup::standard(PolicyKind::FideSimulation));
+        run_fide_seed(
+            seed + 1000,
+            GameSetup::standard(PolicyKind::FideSimulation).with_time_control(TimeControl {
+                base_ms: 60_000,
+                increment_ms: 2_000,
+            }),
+        );
+    }
+}
+
+#[test]
+fn replay_reproduz_o_estado_do_assistido_com_relogio_e_pausa() {
+    use chess_game::TimeControl;
+    for seed in 1..=30 {
+        run_fide_seed(
+            seed + 2000,
+            GameSetup::standard(PolicyKind::Assisted).with_time_control(TimeControl {
+                base_ms: 30_000,
+                increment_ms: 500,
+            }),
+        );
+    }
+}
+
+#[test]
+fn replay_reproduz_fide_a_partir_de_fens_especiais() {
+    for (i, fen) in [
+        "8/P6k/8/8/8/8/6r1/K7 w - - 0 1",
+        "r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 90 40",
+        "4k3/8/8/8/8/8/8/R3K3 w - - 98 100",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        for seed in 1..=20 {
+            run_fide_seed(
+                seed + 3000 * (i as u64 + 1),
+                GameSetup::from_fen(PolicyKind::FideSimulation, fen).unwrap(),
+            );
+        }
+    }
+}

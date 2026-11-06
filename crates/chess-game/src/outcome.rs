@@ -21,7 +21,7 @@ impl GameResult {
     }
 }
 
-/// Por que a Partida terminou. O B6 acrescenta bandeira, Infração e Reclamação.
+/// Por que a Partida terminou. Inclui bandeira e Infração (B6); Reclamação reaproveita tripla/50 lances.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
@@ -35,12 +35,28 @@ pub enum EndReason {
     SeventyFiveMoveRule,
     Resignation,
     DrawAgreement,
+    /// Bandeira caiu (art. 6.9).
+    Timeout,
+    /// Bandeira caiu, mas o adversário não podia dar mate (art. 6.9).
+    TimeoutDraw,
+    /// Segundo Lance ilegal concluído (art. 7.5.5).
+    SecondIllegalMove,
+    /// Segundo Lance ilegal, mas o adversário não podia dar mate (art. 7.5.5).
+    SecondIllegalMoveDraw,
 }
 
 impl EndReason {
     /// Encerramentos que decorrem só da Posição e do histórico (desfazer os reabre).
     pub fn is_positional(self) -> bool {
-        !matches!(self, Self::Resignation | Self::DrawAgreement)
+        !matches!(
+            self,
+            Self::Resignation
+                | Self::DrawAgreement
+                | Self::Timeout
+                | Self::TimeoutDraw
+                | Self::SecondIllegalMove
+                | Self::SecondIllegalMoveDraw
+        )
     }
 }
 
