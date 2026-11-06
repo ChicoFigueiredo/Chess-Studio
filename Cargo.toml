@@ -19,6 +19,9 @@ chess-store = { path = "crates/chess-store" }
 chess-uci = { path = "crates/chess-uci" }
 chess-training = { path = "crates/chess-training" }
 
+# Regras de xadrez (MIT) — sempre atrás da API própria de chess-core.
+cozy-chess = "0.3"
+
 # Apenas chess-studio usa estes (ADR-0001: o domínio não depende de Bevy).
 bevy = { version = "0.20.1", default-features = false }
 bevy_egui = { version = "0.43.1", default-features = false }
