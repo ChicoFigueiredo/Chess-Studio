@@ -4,6 +4,14 @@
 //! Toda espera tem prazo: nenhuma chamada bloqueia quem a invoca indefinidamente.
 //! Todo Lance devolvido pela Engine é só uma proposta; [`Engine::search_legal_move`]
 //! a valida pelo `chess-core` e rejeita Lance ilegal como erro recuperável.
+//!
+//! # Rodar com Stockfish real (nunca versionado, ADR-0003)
+//!
+//! ```text
+//! export CHESS_STUDIO_STOCKFISH=~/.cache/chess-studio-dev/stockfish/stockfish
+//! cargo test -p chess-uci --test stockfish -- --ignored
+//! cargo run -p chess-uci --bin uci-probe -- --engine "$CHESS_STUDIO_STOCKFISH" --movetime 50 --max-plies 40
+//! ```
 
 mod config;
 mod engine;
