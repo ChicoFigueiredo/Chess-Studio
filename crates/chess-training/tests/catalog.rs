@@ -47,7 +47,7 @@ fn invalid_fen_is_rejected() {
 
 #[test]
 fn an_illegal_solution_line_is_rejected() {
-    let json = one(MATE_FEN, r#"{"type":"moves","line":["a1a5"]}"#);
+    let json = one(MATE_FEN, r#"{"type":"moves","line":["a1b3"]}"#);
     assert!(matches!(
         Catalog::from_json(&json),
         Err(CatalogError::Invalid { .. })

@@ -17,7 +17,7 @@ const STALEMATE: &str = "afogamento-001";
 #[test]
 fn stalemate_exercise_ends_in_a_draw_and_review_explains_it_is_not_checkmate() {
     let (mut run, mut game) = start(STALEMATE, no_aids());
-    release(&mut run, &mut game, "f6f7", 4_000);
+    release(&mut run, &mut game, "e6f7", 4_000);
     assert_eq!(run.status(), RunStatus::Solved);
     let summary = run.finish(&game, 5_000);
     let outcome = summary.outcome.unwrap();
@@ -31,7 +31,7 @@ fn stalemate_exercise_ends_in_a_draw_and_review_explains_it_is_not_checkmate() {
     assert!(!why.king_in_check, "o rei não está em xeque");
     assert_eq!(why.legal_moves, 0, "sem Lances legais");
     assert!(review.explanation.to_lowercase().contains("xeque-mate"));
-    assert_eq!(review.solution_san, ["Qf7"]);
+    assert_eq!(review.solution_san, ["Qf7"], "o Lance que a pessoa fez");
 }
 
 /// Dar mate no lugar de afogar é um erro, o Lance é desfeito e a Posição volta.
@@ -39,13 +39,13 @@ fn stalemate_exercise_ends_in_a_draw_and_review_explains_it_is_not_checkmate() {
 fn a_move_that_misses_the_objective_is_an_error_and_is_reverted() {
     let ex = exercise(STALEMATE);
     let (mut run, mut game) = start(STALEMATE, no_aids());
-    release(&mut run, &mut game, "f6g7", 1_000); // dá mate: não é o objetivo
+    release(&mut run, &mut game, "e6e8", 1_000); // dá mate (Qe8#): não é o objetivo
     assert_eq!(run.status(), RunStatus::InProgress);
     assert_eq!(game.snapshot().position.to_fen(), ex.fen);
     assert_eq!(run.errors().len(), 1);
     assert!(matches!(
         &run.errors()[0].cause,
-        ErrorCause::OffObjective { uci } if uci == "f6g7"
+        ErrorCause::OffObjective { uci } if uci == "e6e8"
     ));
     assert_eq!(run.errors()[0].fen, ex.fen, "registra a posição do erro");
 }
@@ -55,7 +55,7 @@ fn a_move_that_misses_the_objective_is_an_error_and_is_reverted() {
 fn repeating_after_an_error_starts_from_the_original_position_and_keeps_the_first_run() {
     let ex = exercise(STALEMATE);
     let (mut run1, mut game1) = start(STALEMATE, no_aids());
-    release(&mut run1, &mut game1, "f6g7", 1_000);
+    release(&mut run1, &mut game1, "e6e8", 1_000);
     let first = run1.finish(&game1, 2_000);
     assert_eq!(first.result, RunResult::Incorrect);
     assert_eq!(first.errors.len(), 1);
@@ -64,7 +64,7 @@ fn repeating_after_an_error_starts_from_the_original_position_and_keeps_the_firs
     let mut game2 = ex.new_game().unwrap();
     assert_eq!(game2.snapshot().position.to_fen(), ex.fen);
     let mut run2 = ExerciseRun::start(&ex, no_aids(), 10_000);
-    release(&mut run2, &mut game2, "f6f7", 14_000);
+    release(&mut run2, &mut game2, "e6f7", 14_000);
     let second = run2.finish(&game2, 15_000);
 
     assert_eq!(second.result, RunResult::Correct);
@@ -139,7 +139,11 @@ fn aids_used_and_disabled_are_recorded() {
     release(&mut run, &mut game, "e1g1", 1);
     let summary = run.finish(&game, 2);
     assert!(summary.aids.without_aids());
-    assert_eq!(summary.aids.off, Aid::ALL, "todos desligados ficam registrados");
+    assert_eq!(
+        summary.aids.off,
+        Aid::ALL,
+        "todos desligados ficam registrados"
+    );
     assert_eq!(summary.aids.feedback, Feedback::Immediate);
 
     // Ligar um Auxílio no meio da Resolução conta como usado.
@@ -173,7 +177,10 @@ fn metrics_count_hits_errors_and_no_aid_runs_by_kind_and_session() {
         giveup,
     ];
     let m = Metrics::from_runs(&runs);
-    assert_eq!((m.total.runs, m.total.correct, m.total.incorrect), (3, 2, 1));
+    assert_eq!(
+        (m.total.runs, m.total.correct, m.total.incorrect),
+        (3, 2, 1)
+    );
     assert_eq!(m.total.errors, 1);
     assert_eq!(m.total.correct_without_aids, 1);
     assert_eq!(m.total.first_try_correct, 1);

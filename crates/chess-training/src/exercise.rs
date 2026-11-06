@@ -1,0 +1,213 @@
+//! O Exercício: posição inicial, objetivo, solução verificável e explicação.
+
+use chess_core::{CanonicalPosition, FenError, GameStatus, Move};
+use chess_game::{Game, GameSetup, PolicyKind};
+use serde::{Deserialize, Serialize};
+use std::fmt;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExerciseKind {
+    Stalemate,
+    Mate,
+    Check,
+    IllegalPawn,
+    Castling,
+    Promotion,
+    /// Memória de sequência (B15).
+    Memory,
+}
+
+impl ExerciseKind {
+    pub const ALL: [ExerciseKind; 7] = [
+        ExerciseKind::Stalemate,
+        ExerciseKind::Mate,
+        ExerciseKind::Check,
+        ExerciseKind::IllegalPawn,
+        ExerciseKind::Castling,
+        ExerciseKind::Promotion,
+        ExerciseKind::Memory,
+    ];
+
+    /// Identificador estável (coluna `kind` do banco).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Stalemate => "stalemate",
+            Self::Mate => "mate",
+            Self::Check => "check",
+            Self::IllegalPawn => "illegal_pawn",
+            Self::Castling => "castling",
+            Self::Promotion => "promotion",
+            Self::Memory => "memory",
+        }
+    }
+}
+
+/// Como saber que o Exercício foi cumprido. O lado do usuário é o da vez no FEN.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Solution {
+    /// Sequência aceita em UCI, intercalando Lances do usuário (posições pares) e as
+    /// respostas do adversário (ímpares), que a Resolução joga sozinha. Tamanho ímpar.
+    Moves { line: Vec<String> },
+    /// Qualquer Lance que dê xeque-mate.
+    MateInOne,
+    /// Qualquer Lance que deixe o adversário sem Lances legais e fora de xeque.
+    ForceStalemate,
+    /// Qualquer Lance que dê xeque.
+    GiveCheck,
+    /// Tentar o Lance ilegal `uci` e vê-lo recusado cumpre o objetivo.
+    RefuseIllegal { uci: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Exercise {
+    /// Identificador estável entre versões do catálogo.
+    pub id: String,
+    pub kind: ExerciseKind,
+    pub title: String,
+    pub fen: String,
+    pub objective: String,
+    pub solution: Solution,
+    pub explanation: String,
+    pub version: u32,
+}
+
+/// Por que um Exercício não passa na validação do chess-core.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ExerciseError {
+    EmptyField(&'static str),
+    BadVersion,
+    InvalidFen(FenError),
+    BadMove(String),
+    IllegalLine { index: usize, uci: String },
+    LineLength(usize),
+    NoSolutionFound(&'static str),
+    MoveIsLegal(String),
+}
+
+impl fmt::Display for ExerciseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EmptyField(name) => write!(f, "campo `{name}` vazio"),
+            Self::BadVersion => f.write_str("a versão do Exercício começa em 1"),
+            Self::InvalidFen(e) => write!(f, "FEN inválido: {e}"),
+            Self::BadMove(m) => write!(f, "Lance UCI inválido: {m}"),
+            Self::IllegalLine { index, uci } => {
+                write!(f, "o Lance {} da solução ({uci}) é ilegal", index + 1)
+            }
+            Self::LineLength(n) => write!(f, "a sequência precisa ter tamanho ímpar (tem {n})"),
+            Self::NoSolutionFound(what) => write!(f, "nenhum Lance legal cumpre: {what}"),
+            Self::MoveIsLegal(m) => write!(f, "o Lance {m} é legal, mas devia ser ilegal"),
+        }
+    }
+}
+
+impl std::error::Error for ExerciseError {}
+
+fn parse_move(uci: &str) -> Result<Move, ExerciseError> {
+    uci.parse::<Move>()
+        .map_err(|_| ExerciseError::BadMove(uci.to_owned()))
+}
+
+impl Exercise {
+    pub fn position(&self) -> Result<CanonicalPosition, FenError> {
+        CanonicalPosition::from_fen(&self.fen)
+    }
+
+    /// Partida nova do Exercício: Política Assistido, desfazer permitido (DEC-39), a
+    /// partir da posição **original** (TRN-02).
+    pub fn new_game(&self) -> Result<Game, FenError> {
+        Ok(Game::new(GameSetup::from_fen(
+            PolicyKind::Assisted,
+            &self.fen,
+        )?))
+    }
+
+    /// Valida o Exercício com o chess-core: FEN, solução legal e objetivo alcançável.
+    pub fn validate(&self) -> Result<(), ExerciseError> {
+        for (name, value) in [
+            ("id", &self.id),
+            ("title", &self.title),
+            ("objective", &self.objective),
+            ("explanation", &self.explanation),
+        ] {
+            if value.trim().is_empty() {
+                return Err(ExerciseError::EmptyField(name));
+            }
+        }
+        if self.version == 0 {
+            return Err(ExerciseError::BadVersion);
+        }
+        let start = self.position().map_err(ExerciseError::InvalidFen)?;
+        match &self.solution {
+            Solution::Moves { line } => {
+                if line.len() % 2 == 0 {
+                    return Err(ExerciseError::LineLength(line.len()));
+                }
+                let mut position = start;
+                for (index, uci) in line.iter().enumerate() {
+                    let mv = parse_move(uci)?;
+                    position = position.play(mv).map_err(|_| ExerciseError::IllegalLine {
+                        index,
+                        uci: uci.clone(),
+                    })?;
+                }
+            }
+            Solution::MateInOne => {
+                require(
+                    first_solution(&start, &self.solution),
+                    "xeque-mate em um Lance",
+                )?;
+            }
+            Solution::ForceStalemate => {
+                require(first_solution(&start, &self.solution), "afogamento")?;
+            }
+            Solution::GiveCheck => {
+                require(first_solution(&start, &self.solution), "xeque")?;
+            }
+            Solution::RefuseIllegal { uci } => {
+                let mv = parse_move(uci)?;
+                if start.is_legal(mv) {
+                    return Err(ExerciseError::MoveIsLegal(uci.clone()));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Lances da solução: a sequência dada, ou o primeiro Lance que cumpre o objetivo
+    /// (para a revisão mostrar uma resposta). Vazio para "recusar o Lance ilegal".
+    pub fn solution_line(&self) -> Vec<Move> {
+        let Ok(start) = self.position() else {
+            return Vec::new();
+        };
+        match &self.solution {
+            Solution::Moves { line } => line.iter().filter_map(|m| m.parse().ok()).collect(),
+            Solution::RefuseIllegal { .. } => Vec::new(),
+            other => first_solution(&start, other).into_iter().collect(),
+        }
+    }
+}
+
+fn require(found: Option<Move>, what: &'static str) -> Result<Move, ExerciseError> {
+    found.ok_or(ExerciseError::NoSolutionFound(what))
+}
+
+/// A posição `after` (depois do Lance do usuário) cumpre o objetivo "de critério"?
+pub(crate) fn satisfied(solution: &Solution, after: &CanonicalPosition) -> bool {
+    match solution {
+        Solution::MateInOne => matches!(after.status(), GameStatus::Checkmate { .. }),
+        Solution::ForceStalemate => matches!(after.status(), GameStatus::Stalemate),
+        Solution::GiveCheck => after.is_check(),
+        Solution::Moves { .. } | Solution::RefuseIllegal { .. } => false,
+    }
+}
+
+fn first_solution(start: &CanonicalPosition, solution: &Solution) -> Option<Move> {
+    start
+        .legal_moves()
+        .into_iter()
+        .find(|mv| start.play(*mv).is_ok_and(|p| satisfied(solution, &p)))
+}
