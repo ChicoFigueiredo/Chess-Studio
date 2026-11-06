@@ -34,6 +34,17 @@ bevy = { workspace = true, features = [
     "x11",
     "wayland",
     "tonemapping_luts",
+    "bevy_gltf",
+    "bevy_scene",
+    "bevy_world_serialization",
+    "bevy_text",
+    "bevy_sprite",
+    "bevy_sprite_render",
+    "bevy_anti_alias",
+    "default_font",
+    "reflect_auto_register",
+    "jpeg",
+    "png",
 ] }
 bevy_egui = { workspace = true, features = ["render"] }
 
