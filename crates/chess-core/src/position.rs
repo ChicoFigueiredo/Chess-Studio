@@ -2,7 +2,7 @@
 //!
 //! O cozy-chess codifica o roque como "rei captura a própria torre"; aqui o
 //! roque é sempre o rei andando duas casas (`e1g1`), então a tradução acontece
-//! nas fronteiras `to_cozy_move` / `from_cozy_move`.
+//! nas fronteiras `cozy_move` / `public_move`.
 
 use crate::error::{FenError, IllegalMoveError};
 use crate::types::{Color, Move, Piece, Square};
@@ -85,7 +85,7 @@ impl CanonicalPosition {
     pub fn legal_moves(&self) -> Vec<Move> {
         let mut moves = Vec::with_capacity(48);
         self.board.generate_moves(|piece_moves| {
-            moves.extend(piece_moves.into_iter().map(|m| self.from_cozy_move(m)));
+            moves.extend(piece_moves.into_iter().map(|m| self.public_move(m)));
             false
         });
         moves
@@ -93,14 +93,14 @@ impl CanonicalPosition {
 
     /// O Lance é legal nesta Posição?
     pub fn is_legal(&self, mv: Move) -> bool {
-        self.to_cozy_move(mv)
+        self.cozy_move(mv)
             .is_some_and(|cozy_mv| self.board.is_legal(cozy_mv))
     }
 
     /// Aplica o Lance e devolve a nova Posição; `self` não muda.
     pub fn play(&self, mv: Move) -> Result<Self, IllegalMoveError> {
         let mut board = self.board.clone();
-        let cozy_mv = self.to_cozy_move(mv).ok_or(IllegalMoveError(mv))?;
+        let cozy_mv = self.cozy_move(mv).ok_or(IllegalMoveError(mv))?;
         board.try_play(cozy_mv).map_err(|_| IllegalMoveError(mv))?;
         Ok(Self { board })
     }
@@ -113,7 +113,7 @@ impl CanonicalPosition {
 
     /// `None` quando o destino tem peça do próprio lado e não é roque: o cozy-chess
     /// leria isso como roque ("rei captura torre"), que aqui não é notação válida.
-    fn to_cozy_move(&self, mv: Move) -> Option<cc::Move> {
+    fn cozy_move(&self, mv: Move) -> Option<cc::Move> {
         let from = square_to(mv.from());
         let mut to = square_to(mv.to());
         let side = self.board.side_to_move();
@@ -140,7 +140,7 @@ impl CanonicalPosition {
         })
     }
 
-    fn from_cozy_move(&self, mv: cc::Move) -> Move {
+    fn public_move(&self, mv: cc::Move) -> Move {
         let side = self.board.side_to_move();
         let mut to = mv.to;
         // Roque: rei "captura" a própria torre.

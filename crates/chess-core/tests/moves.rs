@@ -1,15 +1,15 @@
 use chess_core::{CanonicalPosition, Color, IllegalMoveError, Move, MoveParseError, Piece, Square};
 
 fn pos(fen: &str) -> CanonicalPosition {
-    CanonicalPosition::from_fen(fen).unwrap()
+    CanonicalPosition::from_fen(fen).expect("FEN válido")
 }
 
 fn mv(uci: &str) -> Move {
-    uci.parse().unwrap()
+    uci.parse().expect("UCI válido")
 }
 
 fn sq(s: &str) -> Square {
-    s.parse().unwrap()
+    s.parse().expect("casa válida")
 }
 
 fn legal(p: &CanonicalPosition, uci: &str) -> bool {

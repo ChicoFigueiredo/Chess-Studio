@@ -3,7 +3,7 @@ use chess_core::{CanonicalPosition, Color, FenError, Piece, Square};
 const START: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 fn sq(s: &str) -> Square {
-    s.parse().unwrap()
+    s.parse().expect("casa válida")
 }
 
 #[test]
