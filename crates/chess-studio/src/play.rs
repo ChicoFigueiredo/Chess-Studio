@@ -125,8 +125,13 @@ fn gesture_input(
 }
 
 /// Espelha a origem do gesto para os marcadores de seleção.
-fn mirror_selection(session: Res<Session>, mut selected: ResMut<crate::picking::SelectedSquare>) {
-    let origin = session.gesture_visual().origin;
+/// Sem o Auxílio "destaque da peça selecionada" o marcador não aparece (UX-01).
+fn mirror_selection(
+    session: Res<Session>,
+    aids: Res<crate::aids::AidSettings>,
+    mut selected: ResMut<crate::picking::SelectedSquare>,
+) {
+    let origin = session.gesture_visual().origin.filter(|_| aids.selected);
     if selected.0 != origin {
         selected.0 = origin;
     }

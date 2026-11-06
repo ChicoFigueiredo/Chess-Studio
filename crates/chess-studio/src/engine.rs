@@ -69,6 +69,10 @@ pub fn resolve_engine() -> Option<PathBuf> {
     )
 }
 
+/// Faixa de Elo do controle do painel.
+pub const MIN_ELO: u32 = 800;
+pub const MAX_ELO: u32 = 3190;
+
 /// Escolhas do painel (lado, Elo, caminho).
 #[derive(Resource, Debug)]
 pub struct EngineUi {
@@ -92,6 +96,21 @@ impl Default for EngineUi {
 }
 
 impl EngineUi {
+    /// Escolhas gravadas (lado do usuário e Elo) sobre o padrão.
+    pub fn with_saved(mut self, user_side: Side, elo: u32) -> Self {
+        self.user_side = user_side;
+        self.elo = elo.clamp(MIN_ELO, MAX_ELO);
+        self
+    }
+
+    pub fn user_side(&self) -> Side {
+        self.user_side
+    }
+
+    pub fn elo(&self) -> u32 {
+        self.elo
+    }
+
     fn config(&self) -> Option<EngineConfig> {
         let text = self.path_text.trim();
         (!text.is_empty()).then(|| EngineConfig::new(text))
@@ -129,7 +148,7 @@ pub fn engine_section(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session, sta
             i18n.t("engine-side-black"),
         );
     });
-    ui.add(egui::Slider::new(&mut state.elo, 800..=3190).text(i18n.t("engine-elo-label")));
+    ui.add(egui::Slider::new(&mut state.elo, MIN_ELO..=MAX_ELO).text(i18n.t("engine-elo-label")));
     ui.horizontal(|ui| {
         ui.label(i18n.t("engine-path-label"));
         ui.add(

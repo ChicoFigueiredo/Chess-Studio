@@ -3,17 +3,22 @@
 //! Partida a dois no mesmo computador (Assistido): o intérprete de gestos (`chess_input`)
 //! traduz ponteiro em Comandos, a `Session` os envia à Partida e a cena é reconstruída do
 //! `snapshot()`. `--screenshot <dir>` gera as capturas de evidência e encerra (com
-//! `--moves`, `--select` e `--panel` opcionais); `--benchmark` liga o modo benchmark.
+//! `--moves`, `--select`, `--panel`, `--aids physical|training|ghosts` e `--review <n>` opcionais); `--benchmark` liga o modo benchmark.
 
+mod aids;
+mod aids_panel;
 mod benchmark;
 mod board;
 mod board2d;
 mod camera;
 mod capture;
 mod engine;
+mod fen_pgn;
 mod highlight;
 mod i18n;
 mod layout;
+mod paths;
+mod persistence;
 mod picking;
 mod pieces;
 mod play;
@@ -50,6 +55,8 @@ fn capture_script() -> capture::CaptureScript {
             .unwrap_or_default(),
         select: option_value("--select").and_then(|s| s.parse().ok()),
         show_panel: std::env::args().any(|a| a == "--panel"),
+        aids: option_value("--aids"),
+        review: option_value("--review").and_then(|s| s.parse().ok()),
     }
 }
 
@@ -81,6 +88,13 @@ fn main() {
         (WindowResolution::new(1280, 720), PresentMode::AutoVsync)
     };
 
+    // Banco do usuário (`--db <arquivo>` troca o caminho). Capturas e benchmark não gravam.
+    let db_path = if capture.is_some() || bench.is_some() {
+        None
+    } else {
+        persistence::database_location(option_value("--db").map(PathBuf::from))
+    };
+
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
@@ -94,6 +108,8 @@ fn main() {
     .add_plugins(EguiPlugin::default())
     .add_plugins((
         i18n::I18nPlugin,
+        persistence::PersistencePlugin { db_path },
+        aids::AidsPlugin,
         presentation::PresentationPlugin,
         board::BoardPlugin,
         pieces::PiecesPlugin,
@@ -103,6 +119,7 @@ fn main() {
         camera::CameraPlugin,
         picking::PickingPlugin,
         ui::UiPlugin,
+        aids_panel::AidsPanelPlugin,
         capture::CapturePlugin,
         engine::EnginePlugin,
     ));

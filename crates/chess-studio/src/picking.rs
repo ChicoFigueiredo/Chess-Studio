@@ -129,6 +129,7 @@ fn pick(
 #[allow(clippy::type_complexity)]
 fn update_markers(
     hovered: Res<HoveredSquare>,
+    aids: Res<crate::aids::AidSettings>,
     selected: Res<SelectedSquare>,
     mut markers: ParamSet<(
         Single<(&mut Transform, &mut Visibility), With<HoverMarker>>,
@@ -136,7 +137,7 @@ fn update_markers(
     )>,
 ) {
     let (mut t, mut v) = markers.p0().into_inner();
-    place(&mut t, &mut v, hovered.0, 0.011);
+    place(&mut t, &mut v, hovered.0.filter(|_| aids.selected), 0.011);
     let (mut t, mut v) = markers.p1().into_inner();
     place(&mut t, &mut v, selected.0, 0.012);
 }
