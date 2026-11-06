@@ -54,7 +54,10 @@ fn opening_a_previous_version_database_migrates_and_preserves_data() {
             )
         })
         .collect();
-    let rows: Vec<(i64, &str, &str)> = rows.iter().map(|(a, b, c)| (*a, b.as_str(), c.as_str())).collect();
+    let rows: Vec<(i64, &str, &str)> = rows
+        .iter()
+        .map(|(a, b, c)| (*a, b.as_str(), c.as_str()))
+        .collect();
     legacy_db(&db, &serde_json::to_string(&setup).unwrap(), &rows);
 
     let store = Store::open(db.path()).unwrap();
@@ -70,9 +73,16 @@ fn opening_a_previous_version_database_migrates_and_preserves_data() {
     );
     // Tabelas novas disponíveis.
     let conn = rusqlite::Connection::open(db.path()).unwrap();
-    for table in ["exercises", "exercise_runs", "engine_installations", "positions"] {
-        conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get::<_, i64>(0))
-            .unwrap();
+    for table in [
+        "exercises",
+        "exercise_runs",
+        "engine_installations",
+        "positions",
+    ] {
+        conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| {
+            r.get::<_, i64>(0)
+        })
+        .unwrap();
     }
     // E o banco migrado continua gravável.
     drop(conn);
@@ -86,7 +96,8 @@ fn database_from_a_newer_app_is_refused_with_a_clear_error() {
     let db = TempDb::new("newer");
     drop(Store::open(db.path()).unwrap());
     let conn = rusqlite::Connection::open(db.path()).unwrap();
-    conn.pragma_update(None, "user_version", LATEST_SCHEMA_VERSION + 1).unwrap();
+    conn.pragma_update(None, "user_version", LATEST_SCHEMA_VERSION + 1)
+        .unwrap();
     drop(conn);
     let err = Store::open(db.path()).unwrap_err();
     assert!(matches!(err, StoreError::SchemaTooNew { .. }));
@@ -98,7 +109,8 @@ fn a_failing_migration_rolls_back_and_keeps_the_previous_version() {
     let mut conn = rusqlite::Connection::open_in_memory().unwrap();
     migrations::migrate_to(&mut conn, 1).unwrap();
     // Sabota a migração 2: uma tabela homônima já existe, o DDL falha no meio.
-    conn.execute_batch("CREATE TABLE engine_installations (x)").unwrap();
+    conn.execute_batch("CREATE TABLE engine_installations (x)")
+        .unwrap();
     assert!(migrations::migrate(&mut conn).is_err());
     assert_eq!(migrations::current_version(&conn).unwrap(), 1);
     let leftovers: i64 = conn

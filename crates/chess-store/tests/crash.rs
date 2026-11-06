@@ -20,11 +20,11 @@ const ENV_GAME: &str = "CHESS_STORE_CRASH_GAME";
 /// Grande o bastante para a transação durar o suficiente para ser interrompida.
 const BATCH: usize = 3_000;
 
-fn batch() -> Vec<Event> {
-    (0..BATCH)
+fn batch(round: u64) -> Vec<Event> {
+    (0..BATCH as u64)
         .map(|i| {
             Event::new(
-                Timestamp::mono(i as u64),
+                Timestamp::mono(round * BATCH as u64 + i),
                 EventKind::IllegalMoveRejected {
                     side: Color::White,
                     from: "e2".parse().unwrap(),
@@ -44,24 +44,33 @@ fn crash_child_writer() {
     };
     let game = GameId(std::env::var(ENV_GAME).unwrap().parse().unwrap());
     let mut store = Store::open(path).unwrap();
-    let events = batch();
     println!("READY");
+    let mut round = 0;
     loop {
-        store.append_events(game, &events).unwrap();
+        store.append_events(game, &batch(round)).unwrap();
+        round += 1;
     }
 }
 
-fn run_and_kill(delay: Duration) {
+fn run_and_kill(delay: Duration) -> usize {
     let db = TempDb::new("crash");
     let game = {
         let mut store = Store::open(db.path()).unwrap();
         store
-            .create_game(&GameSetup::standard(PolicyKind::Assisted), &GameMetadata::default())
+            .create_game(
+                &GameSetup::standard(PolicyKind::Assisted),
+                &GameMetadata::default(),
+            )
             .unwrap()
     };
 
     let mut child = Command::new(std::env::current_exe().unwrap())
-        .args(["crash_child_writer", "--exact", "--nocapture", "--test-threads=1"])
+        .args([
+            "crash_child_writer",
+            "--exact",
+            "--nocapture",
+            "--test-threads=1",
+        ])
         .env(ENV_DB, db.path())
         .env(ENV_GAME, game.0.to_string())
         .stdout(Stdio::piped())
@@ -69,8 +78,11 @@ fn run_and_kill(delay: Duration) {
         .unwrap();
     let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
     loop {
-        let line = lines.next().expect("filho encerrou antes de gravar").unwrap();
-        if line.trim() == "READY" {
+        let line = lines
+            .next()
+            .expect("filho encerrou antes de gravar")
+            .unwrap();
+        if line.contains("READY") {
             break;
         }
     }
@@ -93,11 +105,18 @@ fn run_and_kill(delay: Duration) {
     let count = loaded.events().len();
     assert_eq!(count % BATCH, 0, "evento parcial no banco: {count} eventos");
     println!("eventos após a queda ({delay:?}): {count}");
+    count
 }
 
 #[test]
 fn killing_the_writer_mid_batch_leaves_whole_batches_or_nothing() {
-    for ms in [0, 15, 60, 150] {
-        run_and_kill(Duration::from_millis(ms));
-    }
+    let counts: Vec<usize> = [0, 30, 120, 400, 900]
+        .into_iter()
+        .map(|ms| run_and_kill(Duration::from_millis(ms)))
+        .collect();
+    // Prova de que o laço realmente gravou antes da queda em alguma rodada.
+    assert!(
+        counts.iter().any(|&c| c > 0),
+        "nenhuma rodada gravou: {counts:?}"
+    );
 }

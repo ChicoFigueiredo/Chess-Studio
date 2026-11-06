@@ -26,7 +26,9 @@ fn save_close_reopen_restores_identical_snapshot() {
             setup(),
             &[("e2", "e4"), ("e7", "e5"), ("e2", "e5"), ("g1", "f3")],
         );
-        let id = store.create_game(game.setup(), &GameMetadata::default()).unwrap();
+        let id = store
+            .create_game(game.setup(), &GameMetadata::default())
+            .unwrap();
         store.append_events(id, &events).unwrap();
         (id, game.snapshot())
     };
@@ -48,7 +50,9 @@ fn save_close_reopen_restores_identical_snapshot() {
 fn appends_in_several_calls_keep_sequence_order() {
     let mut store = Store::open_in_memory().unwrap();
     let (game, events) = play(setup(), &[("e2", "e4"), ("e7", "e5"), ("g1", "f3")]);
-    let id = store.create_game(game.setup(), &GameMetadata::default()).unwrap();
+    let id = store
+        .create_game(game.setup(), &GameMetadata::default())
+        .unwrap();
     for chunk in events.chunks(1) {
         store.append_events(id, chunk).unwrap();
     }
@@ -70,7 +74,9 @@ fn append_to_unknown_game_is_a_typed_error() {
 #[test]
 fn load_game_reports_log_that_does_not_replay() {
     let mut store = Store::open_in_memory().unwrap();
-    let id = store.create_game(&setup(), &GameMetadata::default()).unwrap();
+    let id = store
+        .create_game(&setup(), &GameMetadata::default())
+        .unwrap();
     // Lance das pretas como primeiro Evento: lado errado.
     let (_, events) = play(setup(), &[("e2", "e4"), ("e7", "e5")]);
     store.append_events(id, &events[1..]).unwrap();
@@ -85,7 +91,9 @@ fn unknown_event_version_is_rejected_on_read_with_clear_error() {
     let db = TempDb::new("version");
     let mut store = Store::open(db.path()).unwrap();
     let (game, events) = play(setup(), &[("e2", "e4")]);
-    let id = store.create_game(game.setup(), &GameMetadata::default()).unwrap();
+    let id = store
+        .create_game(game.setup(), &GameMetadata::default())
+        .unwrap();
     store.append_events(id, &events).unwrap();
     drop(store);
 
@@ -106,7 +114,9 @@ fn unknown_event_version_is_rejected_on_read_with_clear_error() {
 #[test]
 fn refuses_to_write_an_event_with_unknown_version() {
     let mut store = Store::open_in_memory().unwrap();
-    let id = store.create_game(&setup(), &GameMetadata::default()).unwrap();
+    let id = store
+        .create_game(&setup(), &GameMetadata::default())
+        .unwrap();
     let (_, mut events) = play(setup(), &[("e2", "e4")]);
     events[0] = Event {
         version: PAYLOAD_VERSION + 1,
@@ -123,7 +133,9 @@ fn refuses_to_write_an_event_with_unknown_version() {
 #[test]
 fn failed_batch_leaves_nothing_behind() {
     let mut store = Store::open_in_memory().unwrap();
-    let id = store.create_game(&setup(), &GameMetadata::default()).unwrap();
+    let id = store
+        .create_game(&setup(), &GameMetadata::default())
+        .unwrap();
     let (_, mut events) = play(setup(), &[("e2", "e4"), ("e7", "e5")]);
     events[1].version = PAYLOAD_VERSION + 7;
     assert!(store.append_events(id, &events).is_err());
@@ -146,7 +158,9 @@ fn custom_fen_start_survives_reopen() {
     let (game, events) = play(setup, &[("e1", "g1"), ("e8", "c8")]);
     let id = {
         let mut store = Store::open(db.path()).unwrap();
-        let id = store.create_game(game.setup(), &GameMetadata::default()).unwrap();
+        let id = store
+            .create_game(game.setup(), &GameMetadata::default())
+            .unwrap();
         store.append_events(id, &events).unwrap();
         id
     };
@@ -161,16 +175,23 @@ fn game_end_is_recorded_and_unfinished_lookup_skips_it() {
         setup(),
         &[("f2", "f3"), ("e7", "e5"), ("g2", "g4"), ("d8", "h4")],
     );
-    let done = store.create_game(mated.setup(), &GameMetadata::default()).unwrap();
+    let done = store
+        .create_game(mated.setup(), &GameMetadata::default())
+        .unwrap();
     store.append_events(done, &mated_events).unwrap();
-    let open = store.create_game(&setup(), &GameMetadata::default()).unwrap();
+    let open = store
+        .create_game(&setup(), &GameMetadata::default())
+        .unwrap();
 
     assert_eq!(store.latest_unfinished_game().unwrap(), Some(open));
     let games = store.list_games(&GameQuery::default()).unwrap();
     assert_eq!(games.len(), 2);
     let finished = games.iter().find(|g| g.id == done).unwrap();
     assert!(finished.finished);
-    assert!(finished.outcome.is_some(), "AC-07: resultado e motivo guardados");
+    assert!(
+        finished.outcome.is_some(),
+        "AC-07: resultado e motivo guardados"
+    );
     assert_eq!(finished.event_count, mated_events.len() as u64);
     let only_open = store
         .list_games(&GameQuery {
@@ -194,7 +215,9 @@ fn reopen_reports_clean_or_abrupt_close_and_returns_paused() {
     let (game, events) = play(setup(), &[("e2", "e4")]);
     let id = {
         let mut store = Store::open(db.path()).unwrap();
-        let id = store.create_game(game.setup(), &GameMetadata::default()).unwrap();
+        let id = store
+            .create_game(game.setup(), &GameMetadata::default())
+            .unwrap();
         store.append_events(id, &events).unwrap();
         id // sem close_game: como um processo que morreu
     };
@@ -221,7 +244,9 @@ fn preferences_persist_across_opens() {
     {
         let store = Store::open(db.path()).unwrap();
         let p = store.default_profile().unwrap();
-        store.set_pref(p, "board.view", &json!({"camera": "white", "fov": 45.5})).unwrap();
+        store
+            .set_pref(p, "board.view", &json!({"camera": "white", "fov": 45.5}))
+            .unwrap();
         store.set_pref(p, "input.method", &json!("click")).unwrap();
         store.set_pref(p, "input.method", &json!("drag")).unwrap();
     }
@@ -231,7 +256,10 @@ fn preferences_persist_across_opens() {
         store.get_pref(p, "board.view").unwrap(),
         Some(json!({"camera": "white", "fov": 45.5}))
     );
-    assert_eq!(store.get_pref(p, "input.method").unwrap(), Some(json!("drag")));
+    assert_eq!(
+        store.get_pref(p, "input.method").unwrap(),
+        Some(json!("drag"))
+    );
     assert_eq!(store.get_pref(p, "nada").unwrap(), None);
 }
 
