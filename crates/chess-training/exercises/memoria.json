@@ -1,0 +1,35 @@
+{
+  "format": 1,
+  "exercises": [
+    {
+      "id": "memoria-italiana-001",
+      "kind": "memory",
+      "title": "Memória: abertura italiana",
+      "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "objective": "Veja os 6 Lances da abertura italiana e reproduza-os, os dois lados, a partir da posição inicial.",
+      "solution": { "type": "memorize", "line": ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5"], "speed_ms": 1400 },
+      "explanation": "1.e4 e5 2.Cf3 Cc6 3.Bc4 Bc5: as Brancas ocupam o centro, desenvolvem o cavalo contra o peão de e5 e apontam o bispo para f7; as Pretas respondem com a mesma ideia. Agrupar os Lances em pares (peão, cavalo, bispo) ajuda a lembrar.",
+      "version": 1
+    },
+    {
+      "id": "memoria-pastor-001",
+      "kind": "memory",
+      "title": "Memória: mate do pastor",
+      "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "objective": "Veja os 7 meios-lances do mate do pastor e reproduza-os, os dois lados.",
+      "solution": { "type": "memorize", "line": ["e2e4", "e7e5", "f1c4", "b8c6", "d1h5", "g8f6", "h5f7"], "speed_ms": 1300 },
+      "explanation": "1.e4 e5 2.Bc4 Cc6 3.Dh5 Cf6?? 4.Dxf7#: bispo e dama miram f7, protegido só pelo rei, e a dama dá xeque-mate. O tempo perdido pelas Pretas é o que torna a sequência possível.",
+      "version": 1
+    },
+    {
+      "id": "memoria-tatica-001",
+      "kind": "memory",
+      "title": "Memória: armadilha de Légal",
+      "fen": "rnbqkbnr/ppp2ppp/3p4/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 1 3",
+      "objective": "Veja os 8 meios-lances da armadilha de Légal, começando pelas Pretas, e reproduza-os.",
+      "solution": { "type": "memorize", "line": ["c8g4", "b1c3", "g7g6", "f3e5", "g4d1", "c4f7", "e8e7", "c3d5"], "speed_ms": 1200 },
+      "explanation": "As Pretas cravam o cavalo com Bg4 e, ao capturarem a dama (Bxd1), permitem Bxf7+ Re7 Cd5#: três peças menores dão o mate. O sacrifício da dama das Brancas é a ideia a guardar.",
+      "version": 1
+    }
+  ]
+}
