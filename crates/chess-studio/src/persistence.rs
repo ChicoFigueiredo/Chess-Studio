@@ -12,6 +12,7 @@ use crate::engine::{EngineUi, MAX_ELO, MIN_ELO};
 use crate::play::PlaySet;
 use crate::presentation::{GraphicsQuality, Presentation};
 use crate::session::Session;
+use crate::training_ui::TrainingUi;
 use bevy::prelude::*;
 use bevy::window::WindowCloseRequested;
 use chess_core::Color;
@@ -109,6 +110,11 @@ impl Persistence {
             saved: None,
             failing: false,
         }
+    }
+
+    /// O banco e o perfil, para as telas que têm API própria (Treino).
+    pub(crate) fn store_and_profile(&mut self) -> (&mut Store, ProfileId) {
+        (&mut self.store, self.profile)
     }
 
     /// Devolve o banco (testes: reabrir sobre os mesmos dados).
@@ -309,7 +315,7 @@ pub fn database_location(override_path: Option<PathBuf>) -> Option<PathBuf> {
 }
 
 #[derive(Resource, Debug)]
-struct PersistenceHandle(Mutex<Persistence>);
+pub(crate) struct PersistenceHandle(pub(crate) Mutex<Persistence>);
 
 /// Liga a persistência. `db_path = None` mantém o app sem banco (capturas, benchmark).
 #[derive(Debug)]
@@ -358,7 +364,15 @@ impl Plugin for PersistencePlugin {
     }
 }
 
-fn persist_session(session: Res<Session>, handle: Res<PersistenceHandle>) {
+fn persist_session(
+    session: Res<Session>,
+    handle: Res<PersistenceHandle>,
+    training: Res<TrainingUi>,
+) {
+    // Durante o Treino a `Session` é a Partida de um Exercício: não vira Partida do histórico.
+    if training.session_swapped() {
+        return;
+    }
     if let Ok(mut p) = handle.0.lock() {
         p.sync(&session);
     }
@@ -390,10 +404,13 @@ fn close_on_exit(
     mut exits: MessageReader<AppExit>,
     session: Res<Session>,
     handle: Res<PersistenceHandle>,
+    training: Res<TrainingUi>,
 ) {
     let closing = close_requested.read().count() > 0 || exits.read().count() > 0;
     if closing && let Ok(mut p) = handle.0.lock() {
-        p.sync(&session);
+        if !training.session_swapped() {
+            p.sync(&session);
+        }
         p.close();
     }
 }

@@ -25,6 +25,7 @@ mod pieces;
 mod play;
 mod presentation;
 mod session;
+mod training_ui;
 mod ui;
 
 use bevy::prelude::*;
@@ -124,6 +125,7 @@ fn main() {
         capture::CapturePlugin,
         engine::EnginePlugin,
     ));
+    app.add_plugins(training_ui::TrainingPlugin);
     if let Some(dir) = capture {
         if let Err(err) = std::fs::create_dir_all(&dir) {
             eprintln!("não foi possível criar {}: {err}", dir.display());

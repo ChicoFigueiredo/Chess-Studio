@@ -115,7 +115,7 @@ fn reason_key(reason: EndReason) -> &'static str {
     }
 }
 
-fn outcome_text(i18n: &I18n, outcome: Outcome) -> String {
+pub(crate) fn outcome_text(i18n: &I18n, outcome: Outcome) -> String {
     format!(
         "{} — {}",
         i18n.t(result_key(outcome.result)),
