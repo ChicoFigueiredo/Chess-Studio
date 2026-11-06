@@ -13,6 +13,7 @@ mod board2d;
 mod camera;
 mod capture;
 mod engine;
+mod engine_wizard;
 mod fen_pgn;
 mod highlight;
 mod i18n;

@@ -11,6 +11,12 @@ publish.workspace = true
 [dependencies]
 chess-core.workspace = true
 chess-game.workspace = true
+# Download fixado do Stockfish (ADR-0003): HTTP com rustls, SHA-256 e extração.
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+sha2 = "0.10"
+flate2 = "1"
+tar = { version = "0.4", default-features = false }
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [lints]
 workspace = true

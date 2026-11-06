@@ -7,8 +7,9 @@
 //! [`Session::start_engine_game`] com um `EngineSeat` (lado e Elo) e uma
 //! `EngineConfig` — por exemplo, a de [`resolve_engine`].
 //!
-//! O assistente de detecção/download da Engine é o B10: por ora o executável vem da
-//! variável `CHESS_STUDIO_ENGINE`, de `stockfish` no `PATH` ou do caminho digitado.
+//! O executável vem da variável `CHESS_STUDIO_ENGINE`, de `stockfish` no `PATH`, da Engine
+//! escolhida antes no assistente (B10, `engine_wizard`) ou do caminho digitado. Sem
+//! nenhuma, "Iniciar" abre o assistente de detecção/download.
 
 use crate::i18n::I18n;
 use crate::play::PlaySet;
@@ -29,6 +30,7 @@ pub struct EnginePlugin;
 impl Plugin for EnginePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<EngineUi>()
+            .add_plugins(crate::engine_wizard::EngineWizardPlugin)
             .add_systems(Update, tick_engine.in_set(PlaySet));
     }
 }
@@ -60,13 +62,15 @@ pub fn find_engine(
         .find(|candidate| is_file(candidate))
 }
 
-/// [`find_engine`] sobre o ambiente real.
+/// [`find_engine`] sobre o ambiente real; sem resultado, a Engine escolhida/instalada pelo
+/// assistente (B10) em outra sessão.
 pub fn resolve_engine() -> Option<PathBuf> {
     find_engine(
         std::env::var_os(ENGINE_ENV),
         std::env::var_os("PATH"),
         Path::is_file,
     )
+    .or_else(|| chess_uci::engines_dir().and_then(|dir| chess_uci::load_preferred(&dir)))
 }
 
 /// Faixa de Elo do controle do painel.
@@ -80,6 +84,8 @@ pub struct EngineUi {
     elo: u32,
     path_text: String,
     not_found: bool,
+    /// Pedido de abertura do assistente de Engine (B10), atendido por `engine_wizard`.
+    wizard_requested: bool,
 }
 
 impl Default for EngineUi {
@@ -91,6 +97,7 @@ impl Default for EngineUi {
                 .map(|p| p.display().to_string())
                 .unwrap_or_default(),
             not_found: false,
+            wizard_requested: false,
         }
     }
 }
@@ -109,6 +116,17 @@ impl EngineUi {
 
     pub fn elo(&self) -> u32 {
         self.elo
+    }
+
+    /// Caminho escolhido no assistente de Engine.
+    pub fn set_path(&mut self, path: &Path) {
+        self.path_text = path.display().to_string();
+        self.not_found = false;
+    }
+
+    /// Consome o pedido de abrir o assistente.
+    pub fn take_wizard_request(&mut self) -> bool {
+        std::mem::take(&mut self.wizard_requested)
     }
 
     fn config(&self) -> Option<EngineConfig> {
@@ -165,8 +183,14 @@ pub fn engine_section(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session, sta
                 };
                 session.start_engine_game(seat, config);
             }
-            None => state.not_found = true,
+            None => {
+                state.not_found = true;
+                state.wizard_requested = true;
+            }
         }
+    }
+    if ui.small_button(i18n.t("wizard-open")).clicked() {
+        state.wizard_requested = true;
     }
     if state.not_found {
         ui.colored_label(egui::Color32::YELLOW, i18n.t("engine-not-found"));

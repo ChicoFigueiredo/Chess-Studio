@@ -19,6 +19,7 @@ allow = [
     "CC0-1.0",
     "BSL-1.0",
     "OFL-1.1", # fontes
+    "CDLA-Permissive-2.0", # webpki-roots: lista de raízes CA da Mozilla (dado permissivo) usada pelo ureq/rustls no download do Stockfish (#34)
 ]
 confidence-threshold = 0.9
 
