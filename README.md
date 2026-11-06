@@ -2,7 +2,35 @@
 
 Mesa pessoal de treinamento de xadrez: desktop nativo, offline e multiplataforma (Windows, Linux, macOS), para aprender a jogar no tabuleiro físico **sem depender de auxílios digitais**. Tabuleiro 3D sobre uma mesa discreta, 2D técnico, três Políticas de arbitragem (Assistido, Simulação FIDE, Eliminação Imediata), adversário por Engine UCI externa, Exercícios de regras, finais e memória, tudo gravado localmente em SQLite.
 
-> **Estado:** especificação aprovada; implementação do P0 em andamento. Nada aqui é evidência de software pronto até a matriz de aceite marcar `PASS`.
+> **Estado:** P0 em implementação — a Partida Assistido já é jogável no app; Simulação FIDE, Engine, persistência no app e treino estão chegando. Nada aqui é evidência de software pronto até a matriz de aceite marcar `PASS`.
+
+## Rodar e testar
+
+Pré-requisito: [rustup](https://rustup.rs) (o toolchain certo é instalado sozinho pelo `rust-toolchain.toml`). Guias por sistema, com as dependências de cada um: [Linux](docs/build/linux.md) · [Windows](docs/build/windows.md) · [macOS](docs/build/macos.md).
+
+```bash
+git clone https://github.com/ChicoFigueiredo/Chess-Studio.git && cd Chess-Studio
+cargo run -p chess-studio            # abre o app (a primeira compilação demora)
+cargo test --workspace               # suíte automatizada
+cargo run -p chess-studio --release -- --benchmark          # benchmark de 5 min (JSON + CSV em benchmarks/out/)
+cargo run -p chess-studio -- --screenshot docs/evidencias/x # gera capturas e sai
+```
+
+**Controles**
+
+| Ação | Mouse / teclado |
+|---|---|
+| Mover peça | clique na peça e na casa de destino, ou arraste e solte |
+| Orbitar a câmera | botão do meio + mover (trackpad: dois dedos) |
+| Deslocar (pan) | Shift + botão do meio, ou botão direito + mover |
+| Zoom | roda (trackpad: pinça) |
+| Vistas | `1` superior · `2` oblíqua · `3` padrão · `4` invertida · `0` reset |
+| Apresentação | `Tab` alterna 3D profissional / Mesa imersiva / 2D técnico |
+| Cancelar gesto | `Esc` |
+
+Jogar contra o Stockfish (opcional): instale-o pelo gerenciador do sistema ou baixe do [site oficial](https://stockfishchess.org/download/) e deixe `stockfish` no `PATH` (ou aponte `CHESS_STUDIO_ENGINE` para o executável). O Chess Studio nunca distribui Engines ([ADR-0003](docs/adr/0003-engines-externas-download-fixado.md)).
+
+**O que testar:** a lista de critérios de aceite manuais fica no artefato de progresso do projeto, na seção **Homologação** (cada item tem passos e campos PASS/FAIL/N/A com observação, e um botão para baixar o JSON). Os resultados de cada Gate ficam em [docs/relatorios/](docs/relatorios/).
 
 ## Documentos
 
