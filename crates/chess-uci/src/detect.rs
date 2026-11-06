@@ -203,7 +203,7 @@ pub fn probe_engine(path: &Path, timeout: Duration) -> Result<DetectedEngine, En
 /// Como [`probe_engine`], com a configuração completa (argumentos extras, nos testes).
 pub fn probe_config(config: EngineConfig) -> Result<DetectedEngine, EngineError> {
     let path = config.program.clone();
-    let engine = Engine::spawn(config)?;
+    let engine = spawn_retrying_busy(&config)?;
     let info = engine.info().clone();
     engine.quit();
     Ok(DetectedEngine {
@@ -211,6 +211,23 @@ pub fn probe_config(config: EngineConfig) -> Result<DetectedEngine, EngineError>
         name: info.name,
         author: info.author,
     })
+}
+
+/// `Engine::spawn` que tolera "arquivo de texto ocupado" (ETXTBSY): um executável recém-gravado
+/// pode continuar aberto para escrita num `fork` concorrente por instantes; tentar de novo resolve.
+fn spawn_retrying_busy(config: &EngineConfig) -> Result<Engine, EngineError> {
+    let mut attempts = 0;
+    loop {
+        match Engine::spawn(config.clone()) {
+            Err(EngineError::Spawn { source, .. })
+                if source.kind() == std::io::ErrorKind::ExecutableFileBusy && attempts < 20 =>
+            {
+                attempts += 1;
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            other => return other,
+        }
+    }
 }
 
 /// Valida as candidatas das `dirs`; a mesma Engine alcançada por links diferentes aparece
