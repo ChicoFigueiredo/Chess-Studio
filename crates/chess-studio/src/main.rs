@@ -10,6 +10,7 @@ mod board;
 mod board2d;
 mod camera;
 mod capture;
+mod engine;
 mod highlight;
 mod i18n;
 mod layout;
@@ -103,6 +104,7 @@ fn main() {
         picking::PickingPlugin,
         ui::UiPlugin,
         capture::CapturePlugin,
+        engine::EnginePlugin,
     ));
     if let Some(dir) = capture {
         if let Err(err) = std::fs::create_dir_all(&dir) {

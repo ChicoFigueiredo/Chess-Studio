@@ -15,6 +15,10 @@
 //! - `slow`: espera `--delay-ms` (ignorando `stop`) antes de responder `bestmove`.
 //! - `garbage`: intercala linhas de lixo e vazias com respostas válidas.
 //! - `ignore-quit`: ignora `quit` e continua vivo.
+//!
+//! Opções extras: `--elo` anuncia `UCI_Elo` (min 1320, max 3190); `--trace <arquivo>`
+//! acrescenta ao arquivo cada linha recebida (para os testes inspecionarem `position`,
+//! `go` e `setoption`).
 
 use std::io::{self, BufRead, Write};
 use std::time::Duration;
@@ -30,10 +34,22 @@ fn say(line: &str) {
 fn main() {
     let mut mode = String::from("normal");
     let mut delay_ms: u64 = 0;
+    let mut elo = false;
+    let mut trace: Option<std::fs::File> = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--mode" => mode = args.next().unwrap_or_default(),
+            "--elo" => elo = true,
+            "--trace" => {
+                trace = args.next().and_then(|p| {
+                    std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(p)
+                        .ok()
+                });
+            }
             "--delay-ms" => delay_ms = args.next().and_then(|v| v.parse().ok()).unwrap_or(0),
             _ => {}
         }
@@ -47,6 +63,9 @@ fn main() {
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
         let line = line.trim().to_owned();
+        if let Some(file) = trace.as_mut() {
+            let _ = writeln!(file, "{line}");
+        }
         match line.split_whitespace().next() {
             Some("uci") => {
                 if garbage {
@@ -57,6 +76,9 @@ fn main() {
                 say("id author Chess Studio tests");
                 say("option name Skill Level type spin default 20 min 0 max 20");
                 say("option name UCI_LimitStrength type check default false");
+                if elo {
+                    say("option name UCI_Elo type spin default 1320 min 1320 max 3190");
+                }
                 if mode != "hang-handshake" {
                     say("uciok");
                 }

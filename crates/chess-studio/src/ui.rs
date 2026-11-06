@@ -4,6 +4,7 @@
 
 use crate::camera::CameraRig;
 use crate::capture::CaptureMode;
+use crate::engine::{EngineUi, engine_section};
 use crate::i18n::I18n;
 use crate::picking::HoveredSquare;
 use crate::presentation::{GraphicsQuality, Presentation};
@@ -132,6 +133,7 @@ fn info_panel(
     mut presentation: ResMut<Presentation>,
     mut quality: ResMut<GraphicsQuality>,
     capture: Option<Res<CaptureMode>>,
+    mut engine_ui: ResMut<EngineUi>,
 ) -> Result {
     if capture.as_ref().is_some_and(|c| !c.show_panel) {
         return Ok(());
@@ -155,6 +157,7 @@ fn info_panel(
             });
         ui.separator();
         game_section(ui, &i18n, &mut session);
+        engine_section(ui, &i18n, &mut session, &mut engine_ui);
         ui.separator();
         ui.label(i18n.t_with(
             "square-hover",
@@ -209,7 +212,7 @@ fn game_section(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session) {
             .add_enabled(snapshot.can_undo, egui::Button::new(i18n.t("button-undo")))
             .clicked()
         {
-            session.command(Command::Undo);
+            session.undo();
         }
         if ui
             .add_enabled(snapshot.can_redo, egui::Button::new(i18n.t("button-redo")))
