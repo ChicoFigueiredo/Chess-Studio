@@ -3,12 +3,13 @@
 //! tempo de quadro médio em `<dir>/desempenho.txt` e encerra o aplicativo.
 
 use crate::camera::CameraRig;
+use crate::new_game::{NewGameConfig, NewGameDialog};
 use crate::presentation::Presentation;
 use crate::session::Session;
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use chess_core::Square;
-use chess_game::Command;
+use chess_game::{Command, PolicyKind, TimeControl};
 use chess_input::{CameraView, GestureEvent, Modifiers, PointerButton};
 use std::fmt::Write as _;
 use std::path::PathBuf;
@@ -78,6 +79,10 @@ pub struct CaptureScript {
     pub aids: Option<String>,
     /// Entra na revisão neste meio-lance antes das fotos.
     pub review: Option<usize>,
+    /// `--policy`, `--time`, `--side`: configuração da Partida de roteiro (B7/B8).
+    pub config: Option<NewGameConfig>,
+    /// `--new-game`: mostra a tela de Nova Partida (com a configuração acima preenchida).
+    pub show_new_game: bool,
 }
 
 /// Presença deste recurso ativa o modo de captura (o painel egui fica oculto por padrão).
@@ -85,6 +90,7 @@ pub struct CaptureScript {
 pub struct CaptureMode {
     pub dir: PathBuf,
     pub show_panel: bool,
+    pub show_new_game: bool,
     script: CaptureScript,
     scripted: bool,
     step: usize,
@@ -98,6 +104,7 @@ impl CaptureMode {
         Self {
             dir,
             show_panel: script.show_panel,
+            show_new_game: script.show_new_game,
             script,
             scripted: false,
             step: 0,
@@ -124,6 +131,7 @@ fn run_capture(
     mut rig: ResMut<CameraRig>,
     mut session: ResMut<Session>,
     mut aids: ResMut<crate::aids::AidSettings>,
+    mut dialog: ResMut<NewGameDialog>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -137,6 +145,11 @@ fn run_capture(
     };
     if !mode.scripted {
         mode.scripted = true;
+        if let Some(config) = &mode.script.config {
+            dialog.draft = config.clone();
+            session.start(config);
+            rig.pose = config.initial_view().pose();
+        }
         play_script(&mut session, &mode.script);
         *aids = match mode.script.aids.as_deref() {
             Some("physical") => crate::aids::AidSettings::physical(),
@@ -224,4 +237,35 @@ fn promotion_piece(letter: &str) -> Option<chess_core::Piece> {
         "n" => Some(chess_core::Piece::Knight),
         _ => None,
     }
+}
+
+/// `--policy assisted|fide|elimination`, `--time 90+30` (minutos + segundos) e
+/// `--side white|black`; sem nenhum deles, o roteiro usa a Partida padrão.
+pub fn parse_config(
+    policy: Option<&str>,
+    time: Option<&str>,
+    side: Option<&str>,
+) -> Option<NewGameConfig> {
+    if policy.is_none() && time.is_none() && side.is_none() {
+        return None;
+    }
+    let policy = match policy {
+        Some("fide") => PolicyKind::FideSimulation,
+        Some("elimination") => PolicyKind::SuddenElimination,
+        _ => PolicyKind::Assisted,
+    };
+    let mut config = NewGameConfig::for_policy(policy);
+    if let Some((base, inc)) = time.and_then(|t| t.split_once('+')) {
+        config.time = match (base.parse::<u64>(), inc.parse::<u64>()) {
+            (Ok(base), Ok(inc)) => Some(TimeControl {
+                base_ms: base * 60_000,
+                increment_ms: inc * 1000,
+            }),
+            _ => config.time,
+        };
+    }
+    if side == Some("black") {
+        config.user_side = chess_core::Color::Black;
+    }
+    Some(config)
 }

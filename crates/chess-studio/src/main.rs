@@ -12,12 +12,15 @@ mod board;
 mod board2d;
 mod camera;
 mod capture;
+mod clock;
 mod engine;
 mod engine_wizard;
 mod fen_pgn;
+mod fide_panel;
 mod highlight;
 mod i18n;
 mod layout;
+mod new_game;
 mod paths;
 mod persistence;
 mod picking;
@@ -58,6 +61,12 @@ fn capture_script() -> capture::CaptureScript {
         show_panel: std::env::args().any(|a| a == "--panel"),
         aids: option_value("--aids"),
         review: option_value("--review").and_then(|s| s.parse().ok()),
+        config: capture::parse_config(
+            option_value("--policy").as_deref(),
+            option_value("--time").as_deref(),
+            option_value("--side").as_deref(),
+        ),
+        show_new_game: std::env::args().any(|a| a == "--new-game"),
     }
 }
 
@@ -121,6 +130,8 @@ fn main() {
         picking::PickingPlugin,
         ui::UiPlugin,
         aids_panel::AidsPanelPlugin,
+        clock::ClockPlugin,
+        new_game::NewGamePlugin,
         capture::CapturePlugin,
         engine::EnginePlugin,
     ));

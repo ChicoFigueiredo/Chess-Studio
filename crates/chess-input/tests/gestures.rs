@@ -392,3 +392,227 @@ fn nothing_is_selectable_after_the_game_ends() {
     assert!(run(&mut i, &mut g, &two_taps("e7", "e5")).is_empty());
     assert_eq!(i.state(), GestureState::Idle);
 }
+
+// --- Políticas competitivas (DEC-31..33, RULE-02/03, BDD-08) ----------------------
+
+fn competitive(policy: PolicyKind) -> (GestureInterpreter, Game) {
+    (
+        GestureInterpreter::new(MoveMethod::Both),
+        Game::new(GameSetup::standard(policy)),
+    )
+}
+
+fn fide() -> (GestureInterpreter, Game) {
+    competitive(PolicyKind::FideSimulation)
+}
+
+fn touch(at: &str) -> Command {
+    Command::Touch { square: sq(at) }
+}
+
+fn alt_press(at: &str) -> GestureEvent {
+    GestureEvent::PointerDown {
+        button: PointerButton::Primary,
+        square: Some(sq(at)),
+        modifiers: Modifiers {
+            alt: true,
+            ..Modifiers::default()
+        },
+    }
+}
+
+/// Como `run`, mas tolera Comandos recusados (a Partida decide) e os ignora.
+fn crun(interp: &mut GestureInterpreter, game: &mut Game, events: &[GestureEvent]) -> Vec<Command> {
+    let mut all = Vec::new();
+    for event in events {
+        let commands = interp.handle(*event, &game.snapshot());
+        for c in &commands {
+            let _ = game.handle(c.clone(), now());
+        }
+        if commands
+            .iter()
+            .any(|c| matches!(c, Command::Release { .. }))
+        {
+            interp.handle(GestureEvent::Resolved, &game.snapshot());
+        }
+        all.extend(commands);
+    }
+    all
+}
+
+#[test]
+fn pressing_an_own_piece_is_a_touch_and_the_drag_then_makes_the_move() {
+    let (mut i, mut g) = fide();
+    let c = crun(&mut i, &mut g, &drag("e2", "e4"));
+    assert_eq!(c, vec![touch("e2"), release("e2", "e4")]);
+    let snap = g.snapshot();
+    assert_eq!(snap.touched.len(), 1);
+    assert!(snap.made_move.is_some(), "Lance feito, à espera do relógio");
+    assert!(snap.history.is_empty(), "ainda não concluído");
+    g.handle(Command::PressClock, now()).unwrap();
+    assert_eq!(g.snapshot().history[0].san, "e4");
+}
+
+#[test]
+fn two_taps_touch_once_and_release_on_the_second_click() {
+    let (mut i, mut g) = fide();
+    let c = crun(&mut i, &mut g, &two_taps("g1", "f3"));
+    assert_eq!(c, vec![touch("g1"), release("g1", "f3")]);
+}
+
+#[test]
+fn pressing_an_opponent_piece_is_a_touch_that_cannot_be_dragged() {
+    let (mut i, mut g) = fide();
+    let c = crun(&mut i, &mut g, &[press("e7"), mv("e5"), up("e5")]);
+    assert_eq!(c, vec![touch("e7")]);
+    assert_eq!(i.state(), GestureState::Idle);
+    assert!(!i.visual().lifted);
+    assert!(g.snapshot().touched.iter().any(|t| t.square == sq("e7")));
+}
+
+#[test]
+fn capture_by_two_taps_does_not_touch_the_captured_piece() {
+    let (mut i, mut g) = fide();
+    crun(&mut i, &mut g, &two_taps("e2", "e4"));
+    g.handle(Command::PressClock, now()).unwrap();
+    crun(&mut i, &mut g, &two_taps("d7", "d5"));
+    g.handle(Command::PressClock, now()).unwrap();
+    let c = crun(&mut i, &mut g, &two_taps("e4", "d5"));
+    assert_eq!(c, vec![touch("e4"), release("e4", "d5")]);
+}
+
+#[test]
+fn alt_click_adjusts_without_creating_an_obligation() {
+    let (mut i, mut g) = fide();
+    let c = crun(&mut i, &mut g, &[alt_press("e2"), up("e2")]);
+    assert_eq!(c, vec![Command::Adjust { square: sq("e2") }]);
+    let snap = g.snapshot();
+    assert!(snap.touched.is_empty());
+    assert!(snap.must_move_from.is_empty());
+    assert_eq!(i.state(), GestureState::Idle);
+    // Alt+clique em casa vazia também não faz nada.
+    assert!(crun(&mut i, &mut g, &[alt_press("e4"), up("e4")]).is_empty());
+}
+
+#[test]
+fn empty_squares_other_buttons_and_hover_never_touch() {
+    let (mut i, mut g) = fide();
+    let c = crun(
+        &mut i,
+        &mut g,
+        &[
+            press("e4"),
+            up("e4"),
+            down(PointerButton::Middle, "e2"),
+            mv("e3"),
+            up("e3"),
+            down(PointerButton::Secondary, "e2"),
+            up("e2"),
+            mv("e2"),
+            mv("d7"),
+            GestureEvent::PointerDown {
+                button: PointerButton::Primary,
+                square: None,
+                modifiers: Modifiers::default(),
+            },
+        ],
+    );
+    assert!(c.is_empty(), "nenhum Comando: {c:?}");
+    assert!(g.snapshot().touched.is_empty());
+}
+
+#[test]
+fn escape_or_focus_loss_while_dragging_keeps_the_touch_obligation() {
+    for cancel in [GestureEvent::Escape, GestureEvent::FocusLost] {
+        let (mut i, mut g) = fide();
+        let c = crun(&mut i, &mut g, &[press("e2"), mv("e3"), mv("e4"), cancel]);
+        assert_eq!(c, vec![touch("e2")]);
+        assert_eq!(i.state(), GestureState::Idle);
+        // O botão é solto depois: nada de Lance fantasma.
+        assert!(crun(&mut i, &mut g, &[up("e4")]).is_empty());
+        let snap = g.snapshot();
+        assert!(snap.made_move.is_none() && snap.history.is_empty());
+        assert_eq!(snap.must_move_from, vec![sq("e2")], "obrigação preservada");
+    }
+}
+
+#[test]
+fn touching_the_same_piece_again_does_not_repeat_the_touch() {
+    let (mut i, mut g) = fide();
+    crun(&mut i, &mut g, &[press("e2"), GestureEvent::Escape]);
+    let c = crun(&mut i, &mut g, &[press("e2"), up("e2")]);
+    assert!(c.is_empty());
+    assert_eq!(g.snapshot().touched.len(), 1);
+}
+
+#[test]
+fn illegal_drop_stays_provisional_and_the_board_goes_quiet_until_retracted() {
+    let (mut i, mut g) = fide();
+    let c = crun(&mut i, &mut g, &drag("e2", "e5"));
+    assert_eq!(c, vec![touch("e2"), release("e2", "e5")]);
+    let snap = g.snapshot();
+    let provisional = snap.provisional_release.as_ref().unwrap();
+    assert_eq!((provisional.from, provisional.to), (sq("e2"), sq("e5")));
+    assert!(snap.history.is_empty());
+    // Peça solta fica lá: novos pressionamentos não tocam nem arrastam.
+    assert!(crun(&mut i, &mut g, &two_taps("d2", "d4")).is_empty());
+    // Corrigir = retratar; a obrigação de mover o peão de e2 continua.
+    g.handle(Command::RetractMove, now()).unwrap();
+    let snap = g.snapshot();
+    assert!(snap.provisional_release.is_none());
+    assert_eq!(snap.must_move_from, vec![sq("e2")]);
+    let c = crun(&mut i, &mut g, &drag("e2", "e4"));
+    assert_eq!(c, vec![release("e2", "e4")], "e2 já estava tocada");
+}
+
+#[test]
+fn legal_drop_cannot_be_changed_before_the_clock() {
+    let (mut i, mut g) = fide();
+    crun(&mut i, &mut g, &drag("e2", "e4"));
+    assert!(crun(&mut i, &mut g, &drag("e4", "e5")).is_empty());
+    assert!(crun(&mut i, &mut g, &[alt_press("e4")]).is_empty());
+    assert!(g.snapshot().made_move.is_some());
+}
+
+#[test]
+fn pausing_silences_the_board() {
+    let (mut i, mut g) = fide();
+    g.handle(Command::Pause, now()).unwrap();
+    assert!(crun(&mut i, &mut g, &two_taps("e2", "e4")).is_empty());
+    assert!(crun(&mut i, &mut g, &[alt_press("e2")]).is_empty());
+}
+
+#[test]
+fn promotion_is_never_automatic_and_escape_retracts_it() {
+    let setup =
+        GameSetup::from_fen(PolicyKind::FideSimulation, "4k3/P7/8/8/8/8/8/4K3 w - - 0 1").unwrap();
+    let mut g = Game::new(setup);
+    let mut i = GestureInterpreter::new(MoveMethod::Both);
+    crun(&mut i, &mut g, &drag("a7", "a8"));
+    let snap = g.snapshot();
+    assert!(snap.provisional.is_some(), "seletor D/T/B/C aberto");
+    assert!(snap.made_move.is_none(), "nenhuma dama escolhida sozinha");
+    let c = crun(&mut i, &mut g, &[GestureEvent::Escape]);
+    assert_eq!(c, vec![Command::RetractMove]);
+    let snap = g.snapshot();
+    assert!(snap.provisional.is_none());
+    assert_eq!(snap.must_move_from, vec![sq("a7")]);
+}
+
+#[test]
+fn sudden_elimination_uses_the_same_competitive_gestures() {
+    let (mut i, mut g) = competitive(PolicyKind::SuddenElimination);
+    let c = crun(&mut i, &mut g, &drag("e2", "e4"));
+    assert_eq!(c, vec![touch("e2"), release("e2", "e4")]);
+}
+
+#[test]
+fn assisted_never_emits_touch_or_adjust() {
+    let (mut i, mut g) = fresh(MoveMethod::Both);
+    let c = crun(&mut i, &mut g, &[alt_press("e2"), up("e2"), press("e7")]);
+    assert!(
+        c.iter()
+            .all(|c| !matches!(c, Command::Touch { .. } | Command::Adjust { .. })),
+        "{c:?}"
+    );
+}
