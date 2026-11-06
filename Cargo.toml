@@ -26,6 +26,9 @@ cozy-chess = "0.3"
 serde = { version = "1", default-features = false, features = ["derive", "std"] }
 serde_json = "1"
 
+# SQLite embarcado (MIT; o código C do SQLite é domínio público) — só chess-store.
+rusqlite = { version = "0.41", features = ["bundled"] }
+
 # Apenas chess-studio usa estes (ADR-0001: o domínio não depende de Bevy).
 bevy = { version = "0.20.1", default-features = false }
 bevy_egui = { version = "0.43.1", default-features = false }
