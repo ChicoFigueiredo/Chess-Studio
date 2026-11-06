@@ -5,8 +5,8 @@
 //! aparece na interface pública, de modo que ela pode ser trocada sem tocar
 //! nos demais crates.
 //!
-//! Fora do escopo desta etapa (vem no B1): SAN, mate/afogamento como resultado,
-//! material insuficiente e repetição.
+//! Inclui SAN, mate/afogamento, material insuficiente, chave de repetição e
+//! contadores de 50/75 lances. Reclamações e Políticas ficam no `chess-game`.
 //!
 //! ```
 //! use chess_core::{CanonicalPosition, Move};
@@ -19,8 +19,13 @@
 
 mod error;
 mod position;
+mod repetition;
+mod san;
+mod status;
 mod types;
 
-pub use error::{FenError, IllegalMoveError, MoveParseError, SquareParseError};
+pub use error::{FenError, IllegalMoveError, MoveParseError, SanError, SquareParseError};
 pub use position::CanonicalPosition;
+pub use repetition::RepetitionKey;
+pub use status::{FIFTY_MOVE_HALFMOVES, GameStatus, SEVENTY_FIVE_MOVE_HALFMOVES};
 pub use types::{Color, Move, Piece, Square};
