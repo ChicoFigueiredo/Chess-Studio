@@ -16,6 +16,7 @@ mod layout;
 mod picking;
 mod pieces;
 mod play;
+mod prefs;
 mod presentation;
 mod session;
 mod ui;
@@ -91,6 +92,9 @@ fn main() {
         ..default()
     }))
     .add_plugins(EguiPlugin::default())
+    .add_plugins(prefs::PrefsPlugin {
+        enabled: capture.is_none() && bench.is_none(),
+    })
     .add_plugins((
         i18n::I18nPlugin,
         presentation::PresentationPlugin,

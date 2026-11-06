@@ -2,7 +2,7 @@
 
 Todos os assets de modelo e textura são **CC0 1.0** (domínio público, sem atribuição obrigatória;
 registramos a origem mesmo assim, conforme DEC-47 e ADR-0004). A fonte de glifos é **SIL OFL 1.1**.
-Tamanho total do diretório `assets/`: cerca de 9 MB (orçamento: 30 MB).
+Tamanho total do diretório `assets/`: cerca de 11 MB (orçamento: 30 MB).
 
 Data de download de tudo: **2026-11-06**.
 
@@ -11,9 +11,11 @@ Data de download de tudo: **2026-11-06**.
 | `models/chess_pieces.glb` | [Poly Haven — Chess Set](https://polyhaven.com/a/chess_set) (glTF 1k, `https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/chess_set/chess_set.gltf`) | Riley Queen | CC0 1.0 | Só as 32 peças (o tabuleiro de mármore do modelo foi removido); 1 nó por peça, texturas 1k embutidas (JPG), UVs secundárias descartadas. |
 | `textures/maple_{diff,nor_gl,arm}_1k.jpg` | [Poly Haven — White Maple Veneer](https://polyhaven.com/a/white_maple_veneer) (1k, JPG) | Jenelle van Heerden | CC0 1.0 | Casas claras. Sem alteração. |
 | `textures/walnut_{diff,nor_gl,arm}_1k.jpg` | [Poly Haven — Black Walnut Veneer 01](https://polyhaven.com/a/black_walnut_veneer_01) (1k, JPG) | Jenelle van Heerden | CC0 1.0 | Casas escuras e moldura. Sem alteração. |
-| `textures/table_{diff,nor_gl,arm}_1k.jpg` | [Poly Haven — Wood Table 001](https://polyhaven.com/a/wood_table_001) (1k, JPG) | Dimitrios Savva (fotografia), Rico Cilliers (processamento) | CC0 1.0 | Mesa da Mesa imersiva. Sem alteração. |
+| `textures/oak_{diff,nor_gl,arm}_1k.jpg` | [Poly Haven — Oak Veneer 01](https://polyhaven.com/a/oak_veneer_01) (1k, JPG) | Jenelle van Heerden | CC0 1.0 | Mesa da Mesa imersiva (B19), dessaturada por tinta em tempo de execução. Sem alteração do arquivo. Substitui `table_*` (Wood Table 001, veio avermelhado), removido. |
 | `fonts/NotoSansSymbols2-chess.ttf` | [Noto Sans Symbols 2](https://github.com/notofonts/symbols) (`NotoSansSymbols2-Regular.ttf`) | The Noto Project Authors | SIL OFL 1.1 (`fonts/OFL.txt`) | Subconjunto com os glifos de xadrez U+2654–U+265F (`pyftsubset`), usado no 2D técnico. |
 | `fonts/NotoSans-Regular.ttf` | Noto Sans (pacote `fonts-noto-core`, 2020-12) | The Noto Project Authors | SIL OFL 1.1 (`fonts/OFL.txt`) | Fonte da interface egui (texto pt-BR com acentos), sem alteração. As fontes embutidas do egui usam a Ubuntu Font Licence e por isso não são ativadas. |
+
+As peças em madeira (B19) não têm arquivos novos: buxo = bordo (`maple_*`) com tinta amarelada; ébano = nogueira negra (`walnut_*`) com tinta quase preta, ambos com materiais PBR próprios no lugar dos materiais do glTF (`board.rs::piece_wood`).
 
 `diff` = cor base (sRGB), `nor_gl` = normal (convenção OpenGL), `arm` = oclusão/rugosidade/metal.
 

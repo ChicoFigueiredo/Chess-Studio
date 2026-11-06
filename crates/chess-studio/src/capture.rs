@@ -2,7 +2,7 @@
 //! salva um PNG de cada (captura do próprio Bevy, independente do compositor), registra o
 //! tempo de quadro médio em `<dir>/desempenho.txt` e encerra o aplicativo.
 
-use crate::camera::CameraRig;
+use crate::camera::{CameraMemory, CameraRig};
 use crate::presentation::Presentation;
 use crate::session::Session;
 use bevy::prelude::*;
@@ -111,11 +111,13 @@ impl Plugin for CapturePlugin {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_capture(
     mut mode: ResMut<CaptureMode>,
     time: Res<Time>,
     mut presentation: ResMut<Presentation>,
     mut rig: ResMut<CameraRig>,
+    mut memory: ResMut<CameraMemory>,
     mut session: ResMut<Session>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
@@ -133,9 +135,14 @@ fn run_capture(
         play_script(&mut session, &mode.script);
     }
     if mode.frame == 0 {
-        *presentation = step.presentation;
-        rig.pose = step.view.pose();
-        rig.view = Some(step.view);
+        // A câmera da Apresentação que entra vem da memória por Apresentação (B12).
+        if *presentation == step.presentation {
+            rig.pose = step.view.pose();
+            rig.view = Some(step.view);
+        } else {
+            memory.set(step.presentation, step.view.pose(), Some(step.view));
+            *presentation = step.presentation;
+        }
     }
     mode.frame += 1;
     if mode.frame == 10 {

@@ -15,6 +15,7 @@ use bevy::input::mouse::{AccumulatedMouseMotion, MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
 use chess_input::{CameraPose, CameraView};
+use std::collections::HashMap;
 
 const ORBIT_RAD_PER_PX: f32 = 0.005;
 const PAN_PER_PX_PER_DISTANCE: f32 = 0.0012;
@@ -37,6 +38,53 @@ impl Default for CameraRig {
     }
 }
 
+/// Câmera lembrada por Apresentação 3D (órbita, zoom, pan e Vista). Ao trocar de
+/// Apresentação, a câmera de quem sai é guardada e a de quem entra é restaurada; a que
+/// nunca foi visitada começa na Vista padrão. O 2D técnico tem câmera fixa e não entra aqui.
+#[derive(Resource, Debug, Default)]
+pub struct CameraMemory {
+    saved: HashMap<Presentation, (CameraPose, Option<CameraView>)>,
+}
+
+impl CameraMemory {
+    /// Define a câmera com que a Apresentação será aberta na próxima troca.
+    pub fn set(&mut self, presentation: Presentation, pose: CameraPose, view: Option<CameraView>) {
+        self.saved.insert(presentation, (pose, view));
+    }
+
+    /// Guarda a câmera de `from` e carrega a de `to` em `rig`.
+    pub fn switch(&mut self, rig: &mut CameraRig, from: Option<Presentation>, to: Presentation) {
+        if let Some(from) = from.filter(|p| p.is_3d()) {
+            self.saved.insert(from, (rig.pose, rig.view));
+        }
+        if to.is_3d() {
+            let (pose, view) = self
+                .saved
+                .get(&to)
+                .copied()
+                .unwrap_or_else(|| (CameraView::Standard.pose(), Some(CameraView::Standard)));
+            rig.pose = pose;
+            rig.view = view;
+        }
+    }
+}
+
+/// Troca a câmera ativa quando a Apresentação muda (roda no início do `CameraSet`).
+pub(crate) fn switch_camera(
+    presentation: Res<Presentation>,
+    mut memory: ResMut<CameraMemory>,
+    mut rig: ResMut<CameraRig>,
+    mut last: Local<Option<Presentation>>,
+) {
+    if *last == Some(*presentation) {
+        return;
+    }
+    // Como o conjunto só roda em 3D, `last` continua sendo a última Apresentação 3D vista,
+    // dona da pose atual do `rig`, mesmo depois de uma passagem pelo 2D.
+    memory.switch(&mut rig, *last, *presentation);
+    *last = Some(*presentation);
+}
+
 #[derive(Component)]
 pub struct MainCamera;
 
@@ -49,10 +97,11 @@ pub struct CameraPlugin;
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CameraRig>()
+            .init_resource::<CameraMemory>()
             .add_systems(Startup, spawn_camera)
             .add_systems(
                 Update,
-                (view_keys, pointer_controls, apply_pose)
+                (switch_camera, view_keys, pointer_controls, apply_pose)
                     .chain()
                     .in_set(CameraSet)
                     // O 2D técnico tem câmera fixa de cima: sem órbita, pan nem Vistas.

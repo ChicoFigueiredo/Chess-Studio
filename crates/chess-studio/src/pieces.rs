@@ -9,7 +9,7 @@
 //! Animação (INT-05): o destino de um encaixe é sempre a casa canônica; o ponto de partida
 //! vem do gesto (cursor ao soltar) ou da casa de onde a peça veio (deslize).
 
-use crate::board::PIECE_SCALE;
+use crate::board::{PIECE_SCALE, PieceWood};
 use crate::board2d::UNIT;
 use crate::layout::{glyph, parse_node_name};
 use crate::play::PlaySet;
@@ -196,6 +196,7 @@ fn visible_pieces(session: &Session) -> HashMap<Square, (Side, Piece)> {
 fn spawn_piece_3d(
     commands: &mut Commands,
     templates: &PieceTemplates,
+    wood: Option<&PieceWood>,
     square: Square,
     side: Side,
     piece: Piece,
@@ -226,7 +227,8 @@ fn spawn_piece_3d(
             for part in parts {
                 parent.spawn((
                     Mesh3d(part.mesh),
-                    MeshMaterial3d(part.material),
+                    // Madeira (B19) no lugar do material original do glTF.
+                    MeshMaterial3d(wood.map_or(part.material, |w| w.for_side(side))),
                     part.transform,
                 ));
             }
@@ -293,6 +295,7 @@ fn square_pos_of(pos: Vec3) -> Vec2 {
 fn sync_pieces(
     mut session: ResMut<Session>,
     templates: Res<PieceTemplates>,
+    wood: Option<Res<PieceWood>>,
     font: Option<Res<PieceFont>>,
     mut board: ResMut<BoardPieces>,
     mut commands: Commands,
@@ -335,7 +338,15 @@ fn sync_pieces(
             nearest_source(&mut vanished, square, side, piece)
         };
         let at = start.unwrap_or_else(|| square_center(square));
-        let e3d = spawn_piece_3d(&mut commands, &templates, square, side, piece, at);
+        let e3d = spawn_piece_3d(
+            &mut commands,
+            &templates,
+            wood.as_deref(),
+            square,
+            side,
+            piece,
+            at,
+        );
         let e2d = spawn_piece_2d(&mut commands, &font.0, square, side, piece);
         commands.entity(e2d).insert(rest_transform_2d(at));
         if let Some(from) = start {
@@ -466,5 +477,143 @@ mod tests {
         for s in chess_input::all_squares() {
             assert_eq!(square_pos_of(square_center(s)), square_pos(s));
         }
+    }
+
+    // ---- Troca de Apresentação (B12, VIS-05, UX-07, BDD-02) ----------------------------
+
+    use crate::camera::{CameraMemory, CameraRig, switch_camera};
+    use crate::presentation::{Presentation, apply_visibility};
+    use chess_game::Command;
+    use chess_input::CameraView;
+
+    /// App sem janela: só Partida, sincronização das peças, visibilidade e memória de câmera.
+    fn headless_app() -> App {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .init_resource::<Presentation>()
+            .init_resource::<CameraRig>()
+            .init_resource::<CameraMemory>()
+            .insert_resource(Session::new())
+            .insert_resource(PieceFont(Handle::default()))
+            .init_resource::<BoardPieces>()
+            .add_systems(
+                Update,
+                (sync_pieces, apply_visibility, switch_camera).chain(),
+            );
+        let mut templates = PieceTemplates::default();
+        for side in [Side::White, Side::Black] {
+            for piece in [
+                Piece::Pawn,
+                Piece::Knight,
+                Piece::Bishop,
+                Piece::Rook,
+                Piece::Queen,
+                Piece::King,
+            ] {
+                templates.by_kind.insert((side, piece), Vec::new());
+            }
+        }
+        app.insert_resource(templates);
+        app
+    }
+
+    /// Peças da cena (casa, cor, tipo) e quantas entidades 3D e 2D existem.
+    fn scene(app: &mut App) -> (Vec<(String, Side, Piece)>, usize, usize) {
+        let mut pieces: Vec<_> = app
+            .world()
+            .resource::<BoardPieces>()
+            .by_square
+            .iter()
+            .map(|(sq, sp)| (sq.to_string(), sp.side, sp.piece))
+            .collect();
+        pieces.sort_by(|a, b| a.0.cmp(&b.0));
+        let world = app.world_mut();
+        let n3d = world.query::<&Piece3d>().iter(world).count();
+        let n2d = world.query::<&Piece2d>().iter(world).count();
+        (pieces, n3d, n2d)
+    }
+
+    fn visible(app: &mut App, is_3d_piece: bool) -> bool {
+        let world = app.world_mut();
+        let mut all = true;
+        if is_3d_piece {
+            for v in world
+                .query_filtered::<&Visibility, With<Piece3d>>()
+                .iter(world)
+            {
+                all &= *v != Visibility::Hidden;
+            }
+        } else {
+            for v in world
+                .query_filtered::<&Visibility, With<Piece2d>>()
+                .iter(world)
+            {
+                all &= *v != Visibility::Hidden;
+            }
+        }
+        all
+    }
+
+    #[test]
+    fn switching_presentation_keeps_the_game_and_the_scene_position() {
+        let mut app = headless_app();
+        {
+            let mut session = app.world_mut().resource_mut::<Session>();
+            for (from, to) in [("e2", "e4"), ("e7", "e5"), ("g1", "f3")] {
+                session.command(Command::Release {
+                    from: sq(from),
+                    to: sq(to),
+                });
+            }
+        }
+        app.update();
+        let snapshot = app.world().resource::<Session>().snapshot().clone();
+        let (pieces, n3d, n2d) = scene(&mut app);
+        assert_eq!(pieces.len(), 32);
+        assert_eq!((n3d, n2d), (32, 32));
+
+        // 3D profissional -> Mesa imersiva -> 2D técnico -> 3D profissional.
+        for _ in 0..3 {
+            let next = app.world().resource::<Presentation>().next();
+            *app.world_mut().resource_mut::<Presentation>() = next;
+            app.update();
+            app.update();
+
+            let session = app.world().resource::<Session>();
+            assert_eq!(session.snapshot(), &snapshot, "a Partida não muda");
+            assert_eq!(scene(&mut app), (pieces.clone(), 32, 32), "mesma posição");
+            assert_eq!(visible(&mut app, true), next.is_3d());
+            assert_eq!(visible(&mut app, false), !next.is_3d());
+        }
+    }
+
+    #[test]
+    fn each_presentation_remembers_its_own_camera() {
+        let mut app = headless_app();
+        let set_camera = |app: &mut App, view: CameraView| {
+            let mut rig = app.world_mut().resource_mut::<CameraRig>();
+            rig.pose = view.pose();
+            rig.view = Some(view);
+        };
+        let go = |app: &mut App, p: Presentation| {
+            *app.world_mut().resource_mut::<Presentation>() = p;
+            app.update();
+        };
+        let view = |app: &App| app.world().resource::<CameraRig>().view;
+
+        app.update();
+        set_camera(&mut app, CameraView::Oblique); // 3D profissional
+        go(&mut app, Presentation::ImmersiveTable);
+        assert_eq!(view(&app), Some(CameraView::Standard), "nunca visitada");
+        set_camera(&mut app, CameraView::Top);
+        go(&mut app, Presentation::Technical2d);
+        go(&mut app, Presentation::Professional3d);
+        assert_eq!(view(&app), Some(CameraView::Oblique));
+        assert_eq!(
+            app.world().resource::<CameraRig>().pose,
+            CameraView::Oblique.pose()
+        );
+        go(&mut app, Presentation::ImmersiveTable);
+        assert_eq!(view(&app), Some(CameraView::Top));
     }
 }
