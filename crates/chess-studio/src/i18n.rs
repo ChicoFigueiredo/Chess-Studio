@@ -15,6 +15,10 @@ const PT_BR: &[(&str, &str)] = &[
         include_str!("../assets/i18n/pt-BR/engine.ftl"),
     ),
     ("aids.ftl", include_str!("../assets/i18n/pt-BR/aids.ftl")),
+    (
+        "wizard.ftl",
+        include_str!("../assets/i18n/pt-BR/wizard.ftl"),
+    ),
 ];
 
 /// Tradutor do idioma ativo. Chave ausente devolve a própria chave (visível, nunca pânico).
