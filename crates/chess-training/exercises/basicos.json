@@ -1,0 +1,55 @@
+{
+  "format": 1,
+  "exercises": [
+    {
+      "id": "afogamento-001",
+      "kind": "stalemate",
+      "title": "Afogamento: rei sem casas",
+      "fen": "7k/8/4Q1K1/8/8/8/8/8 w - - 0 1",
+      "objective": "Jogue um Lance legal que deixe o rei preto sem Lances e fora de xeque.",
+      "solution": { "type": "force_stalemate" },
+      "explanation": "Há mais de um jeito de afogar: por exemplo, Qf7 deixa o rei preto fora de xeque, com todas as casas ao redor controladas e sem outras peças pretas. Sem Lance legal e fora de xeque, é afogamento e a Partida empata. Com Qe8 o rei estaria em xeque sem escapatória, e isso sim é xeque-mate.",
+      "version": 1
+    },
+    {
+      "id": "mate-em-1-001",
+      "kind": "mate",
+      "title": "Mate de corredor",
+      "fen": "6k1/5ppp/8/8/8/8/8/R3K3 w - - 0 1",
+      "objective": "Dê xeque-mate em um Lance.",
+      "solution": { "type": "mate_in_one" },
+      "explanation": "Ra8 dá xeque na oitava fileira e os peões pretos bloqueiam as fugas do rei: o rei está em xeque e não tem como sair, ou seja, é xeque-mate.",
+      "version": 1
+    },
+    {
+      "id": "roque-001",
+      "kind": "castling",
+      "title": "Roque pequeno",
+      "fen": "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1",
+      "objective": "Faça o roque pequeno com as brancas.",
+      "solution": { "type": "moves", "line": ["e1g1"] },
+      "explanation": "No roque o rei anda duas casas em direção à torre (e1 para g1) e a torre salta para o outro lado dele. Só vale se nem o rei nem a torre se moveram, se não há peças entre eles e se o rei não passa por casas atacadas.",
+      "version": 1
+    },
+    {
+      "id": "peao-ilegal-001",
+      "kind": "illegal_pawn",
+      "title": "Peão cravado",
+      "fen": "6k1/8/8/b7/8/8/3P4/4K3 w - - 0 1",
+      "objective": "Tente avançar o peão de d2 para d3 e veja por que o Lance é recusado.",
+      "solution": { "type": "refuse_illegal", "uci": "d2d3" },
+      "explanation": "O peão está cravado: o bispo em a5 ataca o rei em e1 pela diagonal e o peão é a única peça no caminho. Mover o peão deixaria o próprio rei em xeque, o que nunca é permitido.",
+      "version": 1
+    },
+    {
+      "id": "promocao-001",
+      "kind": "promotion",
+      "title": "Promoção a dama",
+      "fen": "8/P6k/8/8/8/8/8/K7 w - - 0 1",
+      "objective": "Promova o peão a dama.",
+      "solution": { "type": "moves", "line": ["a7a8q"] },
+      "explanation": "Ao chegar à última fileira o peão precisa virar dama, torre, bispo ou cavalo. A dama é a escolha mais forte na maioria das posições.",
+      "version": 1
+    }
+  ]
+}

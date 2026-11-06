@@ -42,19 +42,6 @@ impl Presentation {
         }
     }
 
-    /// Chave estável usada na persistência das preferências.
-    pub fn key(self) -> &'static str {
-        match self {
-            Presentation::Professional3d => "professional3d",
-            Presentation::ImmersiveTable => "immersive",
-            Presentation::Technical2d => "technical2d",
-        }
-    }
-
-    pub fn from_key(key: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|p| p.key() == key)
-    }
-
     pub fn is_3d(self) -> bool {
         self != Presentation::Technical2d
     }
@@ -87,19 +74,6 @@ impl GraphicsQuality {
         GraphicsQuality::Balanced,
         GraphicsQuality::Ultra,
     ];
-
-    /// Chave estável usada na persistência das preferências.
-    pub fn key(self) -> &'static str {
-        match self {
-            GraphicsQuality::Economic => "economic",
-            GraphicsQuality::Balanced => "balanced",
-            GraphicsQuality::Ultra => "ultra",
-        }
-    }
-
-    pub fn from_key(key: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|q| q.key() == key)
-    }
 
     /// Chave i18n do nome da qualidade.
     pub fn label_key(self) -> &'static str {

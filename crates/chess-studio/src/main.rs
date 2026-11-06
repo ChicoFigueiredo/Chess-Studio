@@ -26,9 +26,9 @@ mod persistence;
 mod picking;
 mod pieces;
 mod play;
-mod prefs;
 mod presentation;
 mod session;
+mod training_ui;
 mod ui;
 
 use bevy::prelude::*;
@@ -117,9 +117,6 @@ fn main() {
         ..default()
     }))
     .add_plugins(EguiPlugin::default())
-    .add_plugins(prefs::PrefsPlugin {
-        enabled: capture.is_none() && bench.is_none(),
-    })
     .add_plugins((
         i18n::I18nPlugin,
         persistence::PersistencePlugin { db_path },
@@ -141,6 +138,7 @@ fn main() {
         capture::CapturePlugin,
         engine::EnginePlugin,
     ));
+    app.add_plugins(training_ui::TrainingPlugin);
     if let Some(dir) = capture {
         if let Err(err) = std::fs::create_dir_all(&dir) {
             eprintln!("não foi possível criar {}: {err}", dir.display());

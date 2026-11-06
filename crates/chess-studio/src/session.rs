@@ -138,6 +138,13 @@ impl Session {
         }
     }
 
+    /// Faz a cena redesenhar quando esta Sessão ocupa o lugar de `previous` no recurso
+    /// (Treino troca a Partida por uma de Exercício e depois a devolve): a revisão passa a
+    /// ser diferente da última desenhada.
+    pub fn supersede(&mut self, previous: &Session) {
+        self.revision = previous.revision.wrapping_add(1);
+    }
+
     /// A Partida em si (somente leitura: exportação e persistência).
     pub fn game(&self) -> &Game {
         &self.game

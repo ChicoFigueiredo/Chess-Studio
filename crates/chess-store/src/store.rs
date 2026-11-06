@@ -77,16 +77,16 @@ pub struct Pragmas {
 
 #[derive(Debug)]
 pub struct Store {
-    conn: Connection,
+    pub(crate) conn: Connection,
 }
 
-fn now_ms() -> i64 {
+pub(crate) fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
 }
 
-fn ensure_profile(conn: &Connection, profile: ProfileId) -> Result<()> {
+pub(crate) fn ensure_profile(conn: &Connection, profile: ProfileId) -> Result<()> {
     let ok = conn
         .query_row("SELECT 1 FROM profiles WHERE id = ?1", [profile.0], |_| {
             Ok(())

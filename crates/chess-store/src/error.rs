@@ -1,6 +1,6 @@
 //! Erros tipados do repositório.
 
-use crate::{GameId, ProfileId};
+use crate::{GameId, ProfileId, RunId};
 use chess_game::ReplayError;
 use std::fmt;
 
@@ -34,6 +34,17 @@ pub enum StoreError {
         game: GameId,
         detail: String,
     },
+    /// Exercício que não está no catálogo gravado.
+    ExerciseNotFound(String),
+    RunNotFound(RunId),
+    /// A Resolução já foi encerrada: o registro é imutável.
+    RunAlreadyFinished(RunId),
+    /// O registro encerrado não é do Exercício da Resolução iniciada.
+    RunMismatch {
+        run: RunId,
+        expected: String,
+        got: String,
+    },
 }
 
 impl fmt::Display for StoreError {
@@ -59,6 +70,20 @@ impl fmt::Display for StoreError {
             Self::CorruptLog { game, detail } => {
                 write!(f, "log da Partida {} corrompido: {detail}", game.0)
             }
+            Self::ExerciseNotFound(id) => write!(f, "Exercício `{id}` não está no catálogo"),
+            Self::RunNotFound(id) => write!(f, "Resolução {} não existe", id.0),
+            Self::RunAlreadyFinished(id) => {
+                write!(
+                    f,
+                    "Resolução {} já foi encerrada e não pode ser reescrita",
+                    id.0
+                )
+            }
+            Self::RunMismatch { run, expected, got } => write!(
+                f,
+                "Resolução {} é do Exercício `{expected}`, não de `{got}`",
+                run.0
+            ),
         }
     }
 }
