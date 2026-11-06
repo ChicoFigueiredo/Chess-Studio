@@ -129,6 +129,27 @@ impl EngineUi {
         std::mem::take(&mut self.wizard_requested)
     }
 
+    /// Há um executável de Engine configurado (variável, `PATH`, assistente ou digitado)?
+    pub fn has_engine(&self) -> bool {
+        self.engine_config().is_some()
+    }
+
+    /// Configuração da Engine a partir do caminho atual.
+    pub fn engine_config(&self) -> Option<EngineConfig> {
+        self.config()
+    }
+
+    /// Pede a abertura do assistente de Engine (B10).
+    pub fn request_wizard(&mut self) {
+        self.wizard_requested = true;
+    }
+
+    /// Guarda o lado do usuário e o Elo escolhidos na Nova Partida (a persistência os grava).
+    pub fn set_choice(&mut self, user_side: Side, elo: u32) {
+        self.user_side = user_side;
+        self.elo = elo.clamp(MIN_ELO, MAX_ELO);
+    }
+
     fn config(&self) -> Option<EngineConfig> {
         let text = self.path_text.trim();
         (!text.is_empty()).then(|| EngineConfig::new(text))

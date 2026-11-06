@@ -3,20 +3,25 @@
 //! adversário e o Perfil de auxílios. A configuração é um dado puro ([`NewGameConfig`]) que
 //! vira o `GameSetup` do domínio; a janela só a edita e a entrega à `Session`.
 //!
-//! Pontos de extensão:
-//! - **Engine (B9):** [`Opponent::Engine`] existe, mas só é selecionável quando o recurso
-//!   [`EngineAvailability`] diz que há Engine configurada. O B9 liga isso ao inserir
-//!   `EngineAvailability(true)` e ao consumir `Session::opponent()` para pedir os Lances.
-//! - **Perfil de auxílios (B4):** [`AidProfile`] é guardado na configuração, mas ainda não
-//!   altera nada na cena (TODO(B4): ligar ao store de preferências e aos marcadores).
+//! Integrações:
+//! - **Engine (B9/B10):** "Engine" está sempre selecionável. Sem Engine configurada, escolhê-la
+//!   (ou iniciar assim) abre o assistente de Engine (`engine_wizard`) em vez de só desabilitar;
+//!   com o caminho escolhido, `Session::start` entrega a Engine à Partida, inclusive nas
+//!   Políticas competitivas (o relógio dela é acionado pelo `EngineMove`).
+//! - **Perfil de auxílios (B4):** "Jogo físico"/"Treinamento" gravam as `AidSettings` (que a
+//!   persistência guarda); "Manter os atuais" ([`AidProfile::Custom`]) não as altera.
 
+use crate::aids::{AidProfile, AidSettings};
 use crate::camera::CameraRig;
+use crate::engine::{EngineUi, MAX_ELO, MIN_ELO};
 use crate::i18n::I18n;
 use crate::session::Session;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use chess_core::Color as Side;
-use chess_game::{CLASSICAL_MIN_BASE_MS, GameSetup, InfractionStage, PolicyKind, TimeControl};
+use chess_game::{
+    CLASSICAL_MIN_BASE_MS, EngineSeat, GameSetup, InfractionStage, PolicyKind, TimeControl,
+};
 use chess_input::CameraView;
 
 /// Contra quem o usuário joga.
@@ -25,24 +30,9 @@ pub enum Opponent {
     /// Dois jogadores no mesmo computador.
     #[default]
     TwoLocal,
-    /// Engine UCI (B9). Só selecionável com [`EngineAvailability`] ligado.
+    /// Engine UCI (B9); sem executável configurado, a tela abre o assistente (B10).
     Engine,
 }
-
-/// Perfil de auxílios escolhido na Nova Partida (DEC-49).
-/// TODO(B4): trocar por `chess_store::AidProfile` e aplicar os Auxílios na cena.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum AidProfile {
-    /// Todos os Auxílios desligados.
-    PhysicalGame,
-    /// Destinos, seleção, último lance, xeque e explicação imediata (padrão).
-    #[default]
-    Training,
-}
-
-/// Há Engine configurada? O B9 insere `EngineAvailability(true)` quando houver.
-#[derive(Resource, Clone, Copy, Debug, Default)]
-pub struct EngineAvailability(pub bool);
 
 /// Tudo o que a tela de Nova Partida define.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -55,6 +45,9 @@ pub struct NewGameConfig {
     /// Lado do usuário (decide a Vista inicial e de que lado fica o relógio).
     pub user_side: Side,
     pub opponent: Opponent,
+    /// Elo pedido à Engine (só vale com `Opponent::Engine`).
+    pub engine_elo: u32,
+    /// Perfil de auxílios; `Custom` mantém os Auxílios atuais.
     pub aid_profile: AidProfile,
 }
 
@@ -66,6 +59,7 @@ impl Default for NewGameConfig {
             time: None,
             user_side: Side::White,
             opponent: Opponent::TwoLocal,
+            engine_elo: 1500,
             aid_profile: AidProfile::Training,
         }
     }
@@ -90,7 +84,32 @@ impl NewGameConfig {
         if self.policy == PolicyKind::SuddenElimination {
             setup = setup.with_infraction_stage(self.infraction_stage);
         }
+        if self.opponent == Opponent::Engine {
+            setup = setup.with_engine(EngineSeat {
+                color: self.user_side.opposite(),
+                elo: self.engine_elo,
+            });
+        }
         setup
+    }
+
+    /// Configuração que descreve um `GameSetup` (Partida reaberta do log). O Perfil de
+    /// auxílios é preferência do usuário, não da Partida: fica "Manter os atuais".
+    pub fn from_setup(setup: &GameSetup) -> Self {
+        let engine = setup.engine();
+        Self {
+            policy: setup.policy(),
+            infraction_stage: setup.infraction_stage(),
+            time: setup.time_control(),
+            user_side: engine.map_or(Side::White, |seat| seat.color.opposite()),
+            opponent: if engine.is_some() {
+                Opponent::Engine
+            } else {
+                Opponent::TwoLocal
+            },
+            engine_elo: engine.map_or(1500, |seat| seat.elo),
+            aid_profile: AidProfile::Custom,
+        }
     }
 
     /// Aviso RULE-05: Simulação FIDE com menos de 60 min por jogador.
@@ -138,6 +157,18 @@ const PRESETS: [(&str, Option<TimeControl>); 4] = [
 pub struct NewGameDialog {
     pub open: bool,
     pub draft: NewGameConfig,
+    /// O rascunho já recebeu as preferências gravadas (Elo, lado, Perfil de auxílios).
+    pub seeded: bool,
+}
+
+impl NewGameDialog {
+    /// Reabre a tela partindo da Partida atual e dos Auxílios em uso.
+    pub fn open_from(&mut self, config: &NewGameConfig, aids: &AidSettings) {
+        self.draft = config.clone();
+        self.draft.aid_profile = aids.profile();
+        self.seeded = true;
+        self.open = true;
+    }
 }
 
 impl Default for NewGameDialog {
@@ -146,6 +177,7 @@ impl Default for NewGameDialog {
         Self {
             open: true,
             draft: NewGameConfig::default(),
+            seeded: false,
         }
     }
 }
@@ -155,7 +187,6 @@ pub struct NewGamePlugin;
 impl Plugin for NewGamePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<NewGameDialog>()
-            .init_resource::<EngineAvailability>()
             .add_systems(EguiPrimaryContextPass, new_game_window);
     }
 }
@@ -180,7 +211,8 @@ fn policy_hint_key(policy: PolicyKind) -> &'static str {
 fn new_game_window(
     mut contexts: EguiContexts,
     i18n: Res<I18n>,
-    engine: Res<EngineAvailability>,
+    mut engine_ui: ResMut<EngineUi>,
+    mut aids: ResMut<AidSettings>,
     mut dialog: ResMut<NewGameDialog>,
     mut session: ResMut<Session>,
     mut rig: ResMut<CameraRig>,
@@ -188,6 +220,13 @@ fn new_game_window(
 ) -> Result {
     if !dialog.open || capture.as_ref().is_some_and(|c| !c.show_new_game) {
         return Ok(());
+    }
+    if !dialog.seeded {
+        // Primeira abertura: o Elo/lado gravados e o Perfil de auxílios em uso.
+        dialog.seeded = true;
+        dialog.draft.engine_elo = engine_ui.elo();
+        dialog.draft.user_side = engine_ui.user_side();
+        dialog.draft.aid_profile = aids.profile();
     }
     let mut draft = dialog.draft.clone();
     let mut start = false;
@@ -201,7 +240,7 @@ fn new_game_window(
             ui.separator();
             time_section(ui, &i18n, &mut draft);
             ui.separator();
-            players_section(ui, &i18n, &mut draft, engine.0);
+            players_section(ui, &i18n, &mut draft, &mut engine_ui);
             ui.separator();
             ui.horizontal(|ui| {
                 if ui.button(i18n.t("newgame-start")).clicked() {
@@ -213,11 +252,24 @@ fn new_game_window(
             });
         });
     if start {
-        let view = draft.initial_view();
-        session.start(&draft);
-        rig.pose = view.pose();
-        rig.view = Some(view);
-        dialog.open = false;
+        let engine_config = engine_ui.engine_config();
+        if draft.opponent == Opponent::Engine && engine_config.is_none() {
+            // Sem Engine não há Partida contra ela: abre o assistente (B10) e fica na tela.
+            engine_ui.request_wizard();
+        } else {
+            let view = draft.initial_view();
+            if draft.opponent == Opponent::Engine {
+                engine_ui.set_choice(draft.user_side, draft.engine_elo);
+            }
+            if let Some(profile) = AidSettings::for_profile(draft.aid_profile) {
+                // Ajuste explícito do usuário: a persistência grava a preferência.
+                aids.set_if_neq(profile);
+            }
+            session.start(&draft, engine_config);
+            rig.pose = view.pose();
+            rig.view = Some(view);
+            dialog.open = false;
+        }
     } else if cancel {
         dialog.open = false;
     }
@@ -298,7 +350,12 @@ fn time_section(ui: &mut egui::Ui, i18n: &I18n, draft: &mut NewGameConfig) {
     }
 }
 
-fn players_section(ui: &mut egui::Ui, i18n: &I18n, draft: &mut NewGameConfig, engine: bool) {
+fn players_section(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    draft: &mut NewGameConfig,
+    engine: &mut EngineUi,
+) {
     ui.strong(i18n.t("newgame-side-label"));
     ui.horizontal(|ui| {
         ui.radio_value(
@@ -319,34 +376,42 @@ fn players_section(ui: &mut egui::Ui, i18n: &I18n, draft: &mut NewGameConfig, en
             Opponent::TwoLocal,
             i18n.t("newgame-opponent-local"),
         );
-        ui.add_enabled_ui(engine, |ui| {
-            ui.radio_value(
-                &mut draft.opponent,
-                Opponent::Engine,
-                i18n.t("newgame-opponent-engine"),
-            );
-        });
+        let was_local = draft.opponent == Opponent::TwoLocal;
+        ui.radio_value(
+            &mut draft.opponent,
+            Opponent::Engine,
+            i18n.t("newgame-opponent-engine"),
+        );
+        if was_local && draft.opponent == Opponent::Engine && !engine.has_engine() {
+            // Sem Engine disponível: em vez de só desabilitar, abre o assistente (B10).
+            engine.request_wizard();
+        }
     });
-    if !engine {
-        ui.small(i18n.t("newgame-engine-unavailable"));
-        if draft.opponent == Opponent::Engine {
-            draft.opponent = Opponent::TwoLocal;
+    if draft.opponent == Opponent::Engine {
+        ui.add(
+            egui::Slider::new(&mut draft.engine_elo, MIN_ELO..=MAX_ELO)
+                .text(i18n.t("engine-elo-label")),
+        );
+        if engine.has_engine() {
+            ui.small(i18n.t("newgame-engine-ready"));
+        } else {
+            ui.colored_label(egui::Color32::YELLOW, i18n.t("newgame-engine-unavailable"));
+            if ui.button(i18n.t("wizard-open")).clicked() {
+                engine.request_wizard();
+            }
         }
     }
     ui.strong(i18n.t("newgame-aids-label"));
     ui.horizontal(|ui| {
-        ui.radio_value(
-            &mut draft.aid_profile,
-            AidProfile::PhysicalGame,
-            i18n.t("newgame-aids-physical"),
-        );
-        ui.radio_value(
-            &mut draft.aid_profile,
-            AidProfile::Training,
-            i18n.t("newgame-aids-training"),
-        );
+        for (profile, key) in [
+            (AidProfile::PhysicalGame, "newgame-aids-physical"),
+            (AidProfile::Training, "newgame-aids-training"),
+            (AidProfile::Custom, "newgame-aids-keep"),
+        ] {
+            ui.radio_value(&mut draft.aid_profile, profile, i18n.t(key));
+        }
     });
-    ui.small(i18n.t("newgame-aids-pending"));
+    ui.small(i18n.t("newgame-aids-hint"));
 }
 
 #[cfg(test)]
@@ -435,8 +500,28 @@ mod tests {
     }
 
     #[test]
-    fn engine_is_off_by_default_and_local_play_is_the_default_opponent() {
-        assert!(!EngineAvailability::default().0);
+    fn local_play_is_the_default_opponent() {
         assert_eq!(NewGameConfig::default().opponent, Opponent::TwoLocal);
+    }
+
+    #[test]
+    fn engine_seat_goes_to_the_setup_and_back_for_every_policy() {
+        for policy in [
+            PolicyKind::Assisted,
+            PolicyKind::FideSimulation,
+            PolicyKind::SuddenElimination,
+        ] {
+            let config = NewGameConfig {
+                opponent: Opponent::Engine,
+                user_side: Side::Black,
+                engine_elo: 1800,
+                aid_profile: AidProfile::Custom,
+                ..NewGameConfig::for_policy(policy)
+            };
+            let setup = config.to_setup();
+            let seat = setup.engine().unwrap();
+            assert_eq!((seat.color, seat.elo), (Side::White, 1800));
+            assert_eq!(NewGameConfig::from_setup(&setup), config);
+        }
     }
 }

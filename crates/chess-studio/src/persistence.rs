@@ -595,4 +595,34 @@ mod tests {
             .unwrap();
         assert_eq!(p.load_prefs(), SavedPrefs::default());
     }
+
+    #[test]
+    fn a_new_game_screen_fide_game_with_engine_is_saved_and_resumes_paused() {
+        use crate::new_game::{NewGameConfig, Opponent};
+        let mut p = new_persistence();
+        let mut session = p.restore().session;
+        let config = NewGameConfig {
+            opponent: Opponent::Engine,
+            engine_elo: 1700,
+            ..NewGameConfig::for_policy(PolicyKind::FideSimulation)
+        };
+        session.start(&config, Some(chess_uci::EngineConfig::new("/nao/existe")));
+        assert!(session.engine_active());
+        play(&mut session, "e2", "e4");
+        session.press_clock();
+        p.sync(&session);
+        p.close();
+
+        let mut p2 = Persistence::new(p.into_store());
+        let restored = p2.restore();
+        assert!(restored.resumed);
+        let s = restored.session;
+        assert!(s.snapshot().paused, "volta pausada");
+        assert_eq!(s.snapshot().policy, PolicyKind::FideSimulation);
+        assert_eq!(s.snapshot().history.len(), 1);
+        assert_eq!(s.config().opponent, Opponent::Engine);
+        assert_eq!(s.config().engine_elo, 1700);
+        let clock = s.snapshot().clock.as_ref().expect("relógio da Partida");
+        assert_eq!(clock.increment_ms, 30_000);
+    }
 }

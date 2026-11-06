@@ -170,8 +170,10 @@ impl Session {
     }
 
     /// Aviso do último Lance ilegal, enquanto recente.
+    /// Nas Políticas competitivas não há aviso nem explicação durante a Partida (DEC-32).
     pub fn illegal_notice(&self) -> Option<IllegalNotice> {
-        self.illegal.filter(|_| self.illegal_recently())
+        self.illegal
+            .filter(|_| self.illegal_recently() && !self.is_competitive())
     }
 
     pub fn illegal_revealed(&self) -> bool {
@@ -185,7 +187,11 @@ impl Session {
     }
 
     /// Ocorrências ilegais do log, em ordem (a Partida não as conta como Lances).
+    /// Nas Políticas competitivas a explicação só vem depois do resultado (§12).
     pub fn illegal_incidents(&self) -> Vec<IllegalIncident> {
+        if self.is_competitive() && self.snapshot.outcome.is_none() {
+            return Vec::new();
+        }
         let mut plies = 0usize;
         let mut out = Vec::new();
         for event in self.game.events() {
@@ -910,7 +916,9 @@ mod tests {
     }
 
     fn competitive(policy: PolicyKind) -> Session {
-        Session::with_config(&NewGameConfig::for_policy(policy))
+        let mut s = Session::new();
+        s.start(&NewGameConfig::for_policy(policy), None);
+        s
     }
 
     #[test]

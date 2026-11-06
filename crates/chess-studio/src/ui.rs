@@ -142,6 +142,7 @@ fn info_panel(
     mut quality: ResMut<GraphicsQuality>,
     capture: Option<Res<CaptureMode>>,
     mut engine_ui: ResMut<EngineUi>,
+    aids: Res<crate::aids::AidSettings>,
 ) -> Result {
     if capture.as_ref().is_some_and(|c| !c.show_panel) {
         return Ok(());
@@ -164,7 +165,7 @@ fn info_panel(
                 }
             });
         ui.separator();
-        game_section(ui, &i18n, &mut session, &mut dialog);
+        game_section(ui, &i18n, &mut session, &mut dialog, &aids);
         engine_section(ui, &i18n, &mut session, &mut engine_ui);
         ui.separator();
         ui.label(i18n.t_with(
@@ -190,7 +191,13 @@ fn info_panel(
     Ok(())
 }
 
-fn game_section(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session, dialog: &mut NewGameDialog) {
+fn game_section(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    session: &mut Session,
+    dialog: &mut NewGameDialog,
+    aids: &crate::aids::AidSettings,
+) {
     let snapshot = session.snapshot().clone();
     ui.strong(i18n.t("game-heading"));
     match snapshot.outcome {
@@ -234,8 +241,7 @@ fn game_section(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session, dialog: &
         }
         if ui.button(i18n.t("button-new-game")).clicked() {
             // A Nova Partida abre a tela de configuração (AC-01); a atual segue até "Iniciar".
-            dialog.draft = session.config().clone();
-            dialog.open = true;
+            dialog.open_from(session.config(), aids);
         }
     });
     let mut method = session.move_method();

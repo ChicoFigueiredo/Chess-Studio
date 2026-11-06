@@ -129,6 +129,8 @@ fn main() {
         camera::CameraPlugin,
         picking::PickingPlugin,
         ui::UiPlugin,
+    ))
+    .add_plugins((
         aids_panel::AidsPanelPlugin,
         clock::ClockPlugin,
         new_game::NewGamePlugin,

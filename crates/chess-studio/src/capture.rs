@@ -147,7 +147,8 @@ fn run_capture(
         mode.scripted = true;
         if let Some(config) = &mode.script.config {
             dialog.draft = config.clone();
-            session.start(config);
+            dialog.seeded = true;
+            session.start(config, None);
             rig.pose = config.initial_view().pose();
         }
         play_script(&mut session, &mode.script);

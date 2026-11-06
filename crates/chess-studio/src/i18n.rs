@@ -15,16 +15,14 @@ const PT_BR: &[(&str, &str)] = &[
         include_str!("../assets/i18n/pt-BR/engine.ftl"),
     ),
     ("aids.ftl", include_str!("../assets/i18n/pt-BR/aids.ftl")),
-<<<<<<< HEAD
     (
         "wizard.ftl",
         include_str!("../assets/i18n/pt-BR/wizard.ftl"),
-=======
+    ),
     ("fide.ftl", include_str!("../assets/i18n/pt-BR/fide.ftl")),
     (
         "newgame.ftl",
         include_str!("../assets/i18n/pt-BR/newgame.ftl"),
->>>>>>> af9dd50 (feat(input,studio): Simulação FIDE no app, relógio 3D e tela de Nova Partida (#31, #32))
     ),
 ];
 
