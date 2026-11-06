@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "run": {
+    "app_version": "0.1.0",
+    "git_commit": "37c380a8a304",
+    "started_utc": "2026-11-06T05:07:12Z",
+    "requested_minutes": 5.0,
+    "measured_seconds": 297.05008359527585,
+    "warmup_seconds": 3.0,
+    "preset": "equilibrado",
+    "engine": "ociosa",
+    "engine_integrated": false,
+    "present_mode": "vsync",
+    "window_width": 1920,
+    "window_height": 1020,
+    "route": "órbita de 20 s por volta; Vista a cada 15 s (Padrão, Oblíqua, Superior, Invertida)"
+  },
+  "system": {
+    "os": "Linux (Ubuntu 26.04)",
+    "kernel": "7.0.0-38-generic",
+    "cpu_brand": "AMD Ryzen 7 3700X 8-Core Processor",
+    "cpu_logical_cores": 16,
+    "ram_total_mib": 128688.85546875
+  },
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 4080 SUPER",
+    "vendor_id": 4318,
+    "device_id": 9986,
+    "device_type": "DiscreteGpu",
+    "driver": "NVIDIA",
+    "driver_info": "595.99.02",
+    "backend": "Vulkan",
+    "vram_source": "nvidia-smi",
+    "vram_total_mib": 16376.0
+  },
+  "frame_time": {
+    "frames": 5937,
+    "total_seconds": 297.05008359527585,
+    "fps_avg": 19.9865286289198,
+    "frame_ms_avg": 50.03370112772038,
+    "frame_ms_min": 7.08010196685791,
+    "frame_ms_max": 250.82667541503906,
+    "frame_ms_p1": 37.25449752807617,
+    "frame_ms_p5": 44.73902130126953,
+    "frame_ms_p50": 49.96686935424805,
+    "frame_ms_p95": 55.205989837646484,
+    "frame_ms_p99": 62.4275016784668,
+    "fps_1pct_low": 13.824591399549368
+  },
+  "process_ram_mib": {
+    "samples": 289,
+    "min": 664.41796875,
+    "avg": 678.6555201124568,
+    "max": 679.65234375
+  },
+  "process_cpu_percent": {
+    "samples": 289,
+    "min": 0.0,
+    "avg": 17.060848562775185,
+    "max": 19.912879943847656
+  },
+  "gpu_vram_used_mib": {
+    "samples": 289,
+    "min": 5467.0,
+    "avg": 10756.636678200692,
+    "max": 15579.0
+  },
+  "gpu_utilization_percent": {
+    "samples": 289,
+    "min": 0.0,
+    "avg": 11.66089965397924,
+    "max": 35.0
+  },
+  "notes": []
+}
