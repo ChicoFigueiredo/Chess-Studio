@@ -46,6 +46,51 @@ fn save_close_reopen_restores_identical_snapshot() {
     assert_eq!(loaded.snapshot().history.len(), 3);
 }
 
+/// BDD-07: o PGN depois de fechar e reabrir é igual ao de antes, só com Lances
+/// legais (o Lance ilegal fica no log) e com os metadados pertinentes.
+#[test]
+fn pgn_after_reopen_is_identical_and_has_only_legal_moves() {
+    let db = TempDb::new("pgn_reopen");
+    let options = chess_game::PgnOptions {
+        white: "Ana".into(),
+        black: "Beto".into(),
+        ..chess_game::PgnOptions::default()
+    };
+    let (id, before) = {
+        let mut store = Store::open(db.path()).unwrap();
+        let (game, events) = play(
+            setup(),
+            &[("e2", "e4"), ("e7", "e5"), ("e2", "e5"), ("g1", "f3")],
+        );
+        let id = store
+            .create_game(game.setup(), &GameMetadata::default())
+            .unwrap();
+        store.append_events(id, &events).unwrap();
+        (id, game.to_pgn(&options))
+    };
+    let after = Store::open(db.path())
+        .unwrap()
+        .load_game(id)
+        .unwrap()
+        .to_pgn(&options);
+    assert_eq!(before, after);
+    assert!(after.trim_end().ends_with("1. e4 e5 2. Nf3 *"), "{after}");
+    assert!(after.contains("[TimeControl \"300+2\"]") && after.contains("[White \"Ana\"]"));
+}
+
+/// DB-02: FEN inválido não cria Partida nem toca o banco.
+#[test]
+fn invalid_fen_does_not_create_a_game_or_touch_the_db() {
+    let store = Store::open_in_memory().unwrap();
+    assert!(GameSetup::from_fen(PolicyKind::Assisted, "isto não é FEN").is_err());
+    assert!(GameSetup::from_fen(PolicyKind::Assisted, "").is_err());
+    assert!(
+        GameSetup::from_fen(PolicyKind::Assisted, "8/8/8/8/8/8/8/8 w - - 0 1").is_err(),
+        "sem reis"
+    );
+    assert!(store.list_games(&GameQuery::default()).unwrap().is_empty());
+}
+
 #[test]
 fn appends_in_several_calls_keep_sequence_order() {
     let mut store = Store::open_in_memory().unwrap();
