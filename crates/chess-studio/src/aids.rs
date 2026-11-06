@@ -493,4 +493,51 @@ mod tests {
         assert_eq!(on, off);
         assert!(!on.is_empty());
     }
+
+    fn tap(session: &mut Session, name: &str) {
+        let square = Some(sq(name));
+        session.gesture(chess_input::GestureEvent::PointerDown {
+            button: chess_input::PointerButton::Primary,
+            square,
+            modifiers: chess_input::Modifiers::default(),
+        });
+        session.gesture(chess_input::GestureEvent::PointerUp { square });
+    }
+
+    /// BDD-01 e UX-04: sem destinos e fantasmas, selecionar e2 não mostra e3 nem e4, e
+    /// concluir em e5 é Lance ilegal que não entra no histórico legal.
+    #[test]
+    fn bdd_01_physical_game_shows_no_destinations_and_e2_e5_is_illegal() {
+        let mut s = Session::new();
+        let aids = AidSettings::physical();
+        tap(&mut s, "e2");
+        assert_eq!(s.gesture_visual().origin, Some(sq("e2")));
+        let snap = s.snapshot();
+        let legal = snap.legal_destinations(sq("e2"));
+        assert!(legal.contains(&sq("e3")) && legal.contains(&sq("e4")));
+        let marks = compute_marks(
+            &aids,
+            ShownPosition {
+                position: &snap.position,
+                side_to_move: snap.side_to_move,
+                in_check: snap.in_check,
+                last_move: None,
+            },
+            s.gesture_visual().origin,
+            &legal,
+        );
+        assert_eq!(marks, Marks::default(), "nada em e3, e4 nem em e2");
+
+        tap(&mut s, "e5");
+        assert!(s.snapshot().history.is_empty(), "e2-e5 não é Lance legal");
+        let notice = s.illegal_notice().unwrap();
+        assert_eq!((notice.from, notice.to), (sq("e2"), sq("e5")));
+        assert_eq!(notice.reason, IllegalReason::NotLegal { in_check: false });
+        // Em Jogo físico o aviso não aparece durante a Partida; fica para a revisão.
+        assert_eq!(
+            notice_view(aids.explanation, s.illegal_revealed()),
+            NoticeView::Hidden
+        );
+        assert_eq!(s.illegal_incidents().len(), 1);
+    }
 }

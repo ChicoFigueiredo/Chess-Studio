@@ -36,9 +36,6 @@ struct Check2d;
 #[derive(Component)]
 struct GhostPiece;
 
-#[derive(Resource, Debug)]
-struct GhostMaterial(Handle<StandardMaterial>);
-
 pub struct HighlightPlugin;
 
 impl Plugin for HighlightPlugin {
@@ -71,12 +68,6 @@ fn spawn_markers(
     let dot_material = materials.add(flat_marker(Color::srgba(0.15, 0.75, 0.35, 0.7)));
     let last_material = materials.add(flat_marker(LAST_MOVE_COLOR));
     let check_material = materials.add(flat_marker(CHECK_COLOR));
-    commands.insert_resource(GhostMaterial(materials.add(StandardMaterial {
-        base_color: Color::srgba(0.85, 0.95, 1.0, 0.38),
-        unlit: true,
-        alpha_mode: AlphaMode::Blend,
-        ..default()
-    })));
     let size = Vec2::splat(UNIT);
     for i in 0..MAX_DESTINATIONS {
         commands.spawn((
@@ -160,9 +151,8 @@ fn update_markers(
         Single<(&mut Transform, &mut Visibility), With<Check2d>>,
     )>,
 ) {
-    if !marks.is_changed() {
-        return;
-    }
+    // Todo quadro: a troca de Apresentação reexibe as entidades do 2D técnico
+    // (`VisibleIn`), então a visibilidade precisa ser reafirmada.
     for (marker, mut t, mut v) in &mut q.p0() {
         place3d(
             &mut t,
@@ -201,7 +191,7 @@ fn update_ghosts(
     marks: Res<Marks>,
     templates: Res<PieceTemplates>,
     font: Option<Res<PieceFont>>,
-    material: Option<Res<GhostMaterial>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     existing: Query<Entity, With<GhostPiece>>,
     mut commands: Commands,
 ) {
@@ -211,9 +201,15 @@ fn update_ghosts(
     for entity in &existing {
         commands.entity(entity).despawn();
     }
-    let (Some(font), Some(material)) = (font, material) else {
+    let Some(font) = font else {
         return;
     };
+    let material = materials.add(StandardMaterial {
+        base_color: Color::srgba(0.85, 0.95, 1.0, 0.38),
+        unlit: true,
+        alpha_mode: AlphaMode::Blend,
+        ..default()
+    });
     for ghost in &marks.ghosts {
         let facing = if ghost.side == Side::White {
             std::f32::consts::PI
@@ -232,7 +228,7 @@ fn update_ghosts(
             ))
             .with_children(|parent| {
                 for (mesh, transform) in templates.ghost_parts(ghost.side, ghost.piece) {
-                    parent.spawn((Mesh3d(mesh), MeshMaterial3d(material.0.clone()), transform));
+                    parent.spawn((Mesh3d(mesh), MeshMaterial3d(material.clone()), transform));
                 }
             });
         let color = if ghost.side == Side::White {
