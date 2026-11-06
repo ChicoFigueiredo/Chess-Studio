@@ -4,9 +4,12 @@
 
 use crate::camera::CameraRig;
 use crate::presentation::Presentation;
+use crate::session::Session;
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
-use chess_input::CameraView;
+use chess_core::Square;
+use chess_game::Command;
+use chess_input::{CameraView, GestureEvent, Modifiers, PointerButton};
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
@@ -61,10 +64,24 @@ const STEPS: [Step; 7] = [
     },
 ];
 
-/// Presença deste recurso ativa o modo de captura (o painel egui fica oculto).
+/// Roteiro opcional da captura: Lances jogados e peça selecionada antes das fotos.
+#[derive(Debug, Default, Clone)]
+pub struct CaptureScript {
+    /// Lances em coordenadas (`e2e4`, `a7a8q`), jogados como Comandos da Partida.
+    pub moves: Vec<String>,
+    /// Peça a selecionar por clique depois dos Lances (mostra elevação e destinos).
+    pub select: Option<Square>,
+    /// Mantém o painel egui visível.
+    pub show_panel: bool,
+}
+
+/// Presença deste recurso ativa o modo de captura (o painel egui fica oculto por padrão).
 #[derive(Resource, Debug)]
 pub struct CaptureMode {
     pub dir: PathBuf,
+    pub show_panel: bool,
+    script: CaptureScript,
+    scripted: bool,
     step: usize,
     frame: u32,
     frame_time_sum: f32,
@@ -72,9 +89,12 @@ pub struct CaptureMode {
 }
 
 impl CaptureMode {
-    pub fn new(dir: PathBuf) -> Self {
+    pub fn new(dir: PathBuf, script: CaptureScript) -> Self {
         Self {
             dir,
+            show_panel: script.show_panel,
+            script,
+            scripted: false,
             step: 0,
             frame: 0,
             frame_time_sum: 0.0,
@@ -96,6 +116,7 @@ fn run_capture(
     time: Res<Time>,
     mut presentation: ResMut<Presentation>,
     mut rig: ResMut<CameraRig>,
+    mut session: ResMut<Session>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -107,12 +128,19 @@ fn run_capture(
         exit.write(AppExit::Success);
         return;
     };
+    if !mode.scripted {
+        mode.scripted = true;
+        play_script(&mut session, &mode.script);
+    }
     if mode.frame == 0 {
         *presentation = step.presentation;
         rig.pose = step.view.pose();
         rig.view = Some(step.view);
     }
     mode.frame += 1;
+    if mode.frame == 10 {
+        select_script(&mut session, &mode.script);
+    }
     if mode.frame > SETTLE_FRAMES - MEASURE_FRAMES && mode.frame <= SETTLE_FRAMES {
         mode.frame_time_sum += time.delta_secs();
     }
@@ -135,5 +163,47 @@ fn run_capture(
         mode.step += 1;
         mode.frame = 0;
         mode.frame_time_sum = 0.0;
+    }
+}
+
+/// Joga os Lances do roteiro e seleciona a peça pedida (só para gerar evidências).
+fn play_script(session: &mut Session, script: &CaptureScript) {
+    for text in &script.moves {
+        let parse =
+            |range: std::ops::Range<usize>| text.get(range).and_then(|t| t.parse::<Square>().ok());
+        let (Some(from), Some(to)) = (parse(0..2), parse(2..4)) else {
+            warn!("lance de roteiro inválido: {text}");
+            continue;
+        };
+        session.command(Command::Release { from, to });
+        if let Some(piece) = text.get(4..5).and_then(promotion_piece) {
+            session.command(Command::ChoosePromotion { piece });
+        }
+    }
+}
+
+/// Seleciona a peça do roteiro (refeito a cada passo: trocar de Apresentação cancela o gesto).
+fn select_script(session: &mut Session, script: &CaptureScript) {
+    if let Some(square) = script.select
+        && session.gesture_visual().origin.is_none()
+    {
+        session.gesture(GestureEvent::PointerDown {
+            button: PointerButton::Primary,
+            square: Some(square),
+            modifiers: Modifiers::default(),
+        });
+        session.gesture(GestureEvent::PointerUp {
+            square: Some(square),
+        });
+    }
+}
+
+fn promotion_piece(letter: &str) -> Option<chess_core::Piece> {
+    match letter {
+        "q" => Some(chess_core::Piece::Queen),
+        "r" => Some(chess_core::Piece::Rook),
+        "b" => Some(chess_core::Piece::Bishop),
+        "n" => Some(chess_core::Piece::Knight),
+        _ => None,
     }
 }

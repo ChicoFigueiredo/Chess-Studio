@@ -4,13 +4,13 @@
 //! Mundo 2D: 1 casa = `UNIT` (100) unidades, x para a direita, y para cima. A conversão para
 //! o mundo 3D (que `chess_input` usa) é `x3d = x / UNIT`, `z3d = -y / UNIT`.
 
-use crate::layout::initial_layout;
-use crate::picking::{ClickedSquare, HoveredSquare};
+use crate::picking::{HoveredSquare, SelectedSquare};
 use crate::presentation::{TechnicalCamera, VisibleIn};
 use bevy::camera::ScalingMode;
 use bevy::prelude::*;
 use bevy::render::view::Msaa;
-use chess_input::{BOARD_SIZE, BoardSquare, square_center};
+use chess_core::Square;
+use chess_input::{BOARD_SIZE, all_squares, square_center};
 
 /// Unidades do mundo 2D por casa.
 pub const UNIT: f32 = 100.0;
@@ -20,7 +20,7 @@ pub fn to_board_plane(p: Vec2) -> Vec3 {
     Vec3::new(p.x / UNIT, 0.0, -p.y / UNIT)
 }
 
-fn square_pos(sq: BoardSquare) -> Vec2 {
+pub fn square_pos(sq: Square) -> Vec2 {
     let c = square_center(sq);
     Vec2::new(c.x * UNIT, -c.z * UNIT)
 }
@@ -76,9 +76,9 @@ fn spawn_camera(mut commands: Commands) {
     ));
 }
 
-fn spawn_board(mut commands: Commands, assets: Res<AssetServer>) {
+fn spawn_board(mut commands: Commands) {
     let size = Vec2::splat(UNIT);
-    for sq in BoardSquare::all() {
+    for sq in all_squares() {
         let dark = (sq.file() + sq.rank()) % 2 == 0;
         let p = square_pos(sq);
         commands.spawn((
@@ -111,42 +111,6 @@ fn spawn_board(mut commands: Commands, assets: Res<AssetServer>) {
         }
     }
 
-    // Peças: glifo preenchido com contorno de cor oposta (legível em casas claras e escuras).
-    let font: Handle<Font> = assets.load("fonts/NotoSansSymbols2-chess.ttf");
-    for slot in initial_layout() {
-        let p = square_pos(slot.square);
-        let (fill, outline) = if slot.white {
-            (Color::srgb(0.98, 0.97, 0.92), Color::srgb(0.08, 0.08, 0.09))
-        } else {
-            (Color::srgb(0.06, 0.06, 0.07), Color::srgb(0.95, 0.95, 0.90))
-        };
-        let glyph = |color: Color, x: f32, y: f32, z: f32| {
-            (
-                Text2d::new(slot.kind.glyph().to_string()),
-                TextFont {
-                    font: font.clone().into(),
-                    font_size: FontSize::Px(84.0),
-                    ..default()
-                },
-                TextColor(color),
-                Transform::from_xyz(x, y, z),
-            )
-        };
-        commands
-            .spawn((
-                Name::new(format!("piece2d_{}", slot.square)),
-                Transform::from_xyz(p.x, p.y - 4.0, 2.0),
-                Visibility::default(),
-                VisibleIn::TECHNICAL,
-            ))
-            .with_children(|parent| {
-                for (dx, dy) in [(-2.5, 0.0), (2.5, 0.0), (0.0, -2.5), (0.0, 2.5)] {
-                    parent.spawn(glyph(outline, dx, dy, 0.0));
-                }
-                parent.spawn(glyph(fill, 0.0, 0.0, 0.5));
-            });
-    }
-
     for (is_hover, color, z) in [
         (true, Color::srgba(0.2, 0.6, 1.0, 0.40), 0.4),
         (false, Color::srgba(1.0, 0.8, 0.1, 0.50), 0.5),
@@ -168,7 +132,7 @@ fn spawn_board(mut commands: Commands, assets: Res<AssetServer>) {
 #[allow(clippy::type_complexity)]
 fn update_markers(
     hovered: Res<HoveredSquare>,
-    clicked: Res<ClickedSquare>,
+    clicked: Res<SelectedSquare>,
     mut sprites: ParamSet<(
         Single<(&mut Transform, &mut Visibility), With<HoverSprite>>,
         Single<(&mut Transform, &mut Visibility), With<ClickSprite>>,
@@ -180,7 +144,7 @@ fn update_markers(
     place(&mut t, &mut v, clicked.0);
 }
 
-fn place(transform: &mut Transform, visibility: &mut Visibility, square: Option<BoardSquare>) {
+fn place(transform: &mut Transform, visibility: &mut Visibility, square: Option<Square>) {
     match square {
         Some(sq) => {
             let p = square_pos(sq);

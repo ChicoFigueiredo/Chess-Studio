@@ -25,11 +25,12 @@ impl Presentation {
         Presentation::Technical2d,
     ];
 
-    pub fn label(self) -> &'static str {
+    /// Chave i18n do nome da Apresentação.
+    pub fn label_key(self) -> &'static str {
         match self {
-            Presentation::Professional3d => "3D profissional",
-            Presentation::ImmersiveTable => "Mesa imersiva",
-            Presentation::Technical2d => "2D técnico",
+            Presentation::Professional3d => "presentation-professional3d",
+            Presentation::ImmersiveTable => "presentation-immersive",
+            Presentation::Technical2d => "presentation-technical2d",
         }
     }
 
@@ -67,10 +68,11 @@ pub enum GraphicsQuality {
 impl GraphicsQuality {
     pub const ALL: [GraphicsQuality; 2] = [GraphicsQuality::Economic, GraphicsQuality::Balanced];
 
-    pub fn label(self) -> &'static str {
+    /// Chave i18n do nome da qualidade.
+    pub fn label_key(self) -> &'static str {
         match self {
-            GraphicsQuality::Economic => "Econômico",
-            GraphicsQuality::Balanced => "Equilibrado",
+            GraphicsQuality::Economic => "quality-economic",
+            GraphicsQuality::Balanced => "quality-balanced",
         }
     }
 

@@ -51,6 +51,8 @@ sysinfo = "0.37"
 serde_json = "1.0.154"
 serde = { version = "1.0.229", features = ["derive"] }
 wgpu-types = "30"
+fluent-bundle = "0.16.0"
+unic-langid = "0.9.6"
 
 [lints]
 workspace = true

@@ -1,11 +1,10 @@
-//! Cena 3D: tabuleiro de madeira (casas claras/escuras e borda), peças Staunton (glTF),
-//! mesa discreta da Mesa imersiva e iluminação de estúdio. Só geometria visual: nenhuma
-//! regra de jogo. A geometria das 64 casas vem de `chess_input` (a mesma do picking).
+//! Cena 3D: tabuleiro de madeira (casas claras/escuras e borda), mesa discreta da Mesa
+//! imersiva e iluminação de estúdio. Só geometria visual: nenhuma regra de jogo (as peças
+//! vêm da Partida, ver `pieces`). A geometria das 64 casas vem de `chess_input` (a mesma do picking).
 //!
 //! Assets (todos CC0, ver `assets/LICENSES.md`): peças do "Chess Set" da Poly Haven e
 //! texturas PBR de madeira (maple, nogueira negra e mesa) da Poly Haven.
 
-use crate::layout::{PieceSlot, slot_for_node};
 use crate::presentation::{LightRole, VisibleIn};
 use bevy::asset::RenderAssetUsages;
 use bevy::image::{
@@ -13,12 +12,12 @@ use bevy::image::{
 };
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
-use bevy::world_serialization::WorldInstanceReady;
-use chess_input::{BOARD_SIZE, BoardSquare, SQUARE_SIZE, square_center};
+use chess_core::Square;
+use chess_input::{BOARD_SIZE, SQUARE_SIZE, all_squares, square_center};
 
 /// Escala do modelo glTF (metros) para o mundo (1 casa = 1 unidade): o "Chess Set" tem
 /// casas de 0,057888 m.
-const PIECE_SCALE: f32 = 1.0 / 0.057_888;
+pub const PIECE_SCALE: f32 = 1.0 / 0.057_888;
 /// Espessura da moldura do tabuleiro.
 const FRAME_THICKNESS: f32 = 0.4;
 /// A face da moldura fica um pouco abaixo do plano das casas (y = 0).
@@ -37,18 +36,8 @@ impl Plugin for BoardPlugin {
             brightness: 420.0,
             ..default()
         })
-        .add_systems(
-            Startup,
-            (spawn_board, spawn_table, spawn_pieces, spawn_lights),
-        );
+        .add_systems(Startup, (spawn_board, spawn_table, spawn_lights));
     }
-}
-
-/// Peça 3D (apenas visual; a Posição real virá da Partida).
-#[derive(Component, Debug)]
-#[allow(dead_code)] // lido pelos marcos seguintes
-pub struct PieceVisual {
-    pub slot: PieceSlot,
 }
 
 /// Textura de madeira com repetição e filtro anisotrópico.
@@ -114,7 +103,7 @@ const TABLE: WoodPaths = WoodPaths {
 /// Malha com um quadrado horizontal (normal +Y) por casa, no plano y = 0. As UVs seguem as
 /// coordenadas de mundo, com um deslocamento por casa: cada casa mostra um trecho
 /// diferente do veio da madeira, como em peças de marchetaria.
-fn squares_mesh(squares: &[BoardSquare]) -> Mesh {
+fn squares_mesh(squares: &[Square]) -> Mesh {
     const GRAIN: f32 = 0.22;
     let mut positions = Vec::new();
     let mut uvs = Vec::new();
@@ -155,7 +144,7 @@ fn spawn_board(
 ) {
     // a1 é escura: coluna + fila par = escura.
     let (dark, light): (Vec<_>, Vec<_>) =
-        BoardSquare::all().partition(|sq| (sq.file() + sq.rank()) % 2 == 0);
+        all_squares().partition(|sq| (sq.file() + sq.rank()) % 2 == 0);
     let light_mat = materials.add(wood_material(
         &assets,
         &MAPLE,
@@ -228,45 +217,6 @@ fn spawn_table(
         Transform::from_xyz(0.0, TABLE_TOP - 0.7, 0.0),
         VisibleIn::PROFESSIONAL,
     ));
-}
-
-fn spawn_pieces(mut commands: Commands, assets: Res<AssetServer>) {
-    commands
-        .spawn((
-            Name::new("pieces"),
-            WorldAssetRoot(
-                assets.load(GltfAssetLabel::Scene(0).from_asset("models/chess_pieces.glb")),
-            ),
-            Transform::from_scale(Vec3::splat(PIECE_SCALE)),
-            VisibleIn::BOTH_3D,
-        ))
-        .observe(place_pieces);
-}
-
-/// Posiciona cada nó `piece_*` do glTF na casa da posição inicial (layout compartilhado
-/// com o 2D técnico). As peças brancas giram 180° para olhar o lado das pretas.
-fn place_pieces(
-    ready: On<WorldInstanceReady>,
-    children: Query<&Children>,
-    mut pieces: Query<(Entity, &Name, &mut Transform)>,
-    mut commands: Commands,
-) {
-    for entity in children.iter_descendants(ready.entity) {
-        let Ok((entity, name, mut transform)) = pieces.get_mut(entity) else {
-            continue;
-        };
-        let Some(slot) = slot_for_node(name) else {
-            continue;
-        };
-        let c = square_center(slot.square) / PIECE_SCALE;
-        let facing = if slot.white {
-            std::f32::consts::PI
-        } else {
-            0.0
-        };
-        *transform = Transform::from_translation(c).with_rotation(Quat::from_rotation_y(facing));
-        commands.entity(entity).insert(PieceVisual { slot });
-    }
 }
 
 fn spawn_lights(mut commands: Commands) {

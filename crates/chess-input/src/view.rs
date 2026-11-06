@@ -19,16 +19,6 @@ pub enum CameraView {
 impl CameraView {
     pub const ALL: [CameraView; 4] = [Self::Top, Self::Oblique, Self::Standard, Self::Inverted];
 
-    /// Nome em pt-BR para a interface.
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Top => "Superior",
-            Self::Oblique => "Oblíqua",
-            Self::Standard => "Padrão",
-            Self::Inverted => "Invertida",
-        }
-    }
-
     /// Pose de câmera da Vista.
     pub fn pose(self) -> CameraPose {
         let (yaw, pitch, distance) = match self {
@@ -135,11 +125,12 @@ impl CameraPose {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::board::all_squares;
     use crate::board::{ray_to_square, square_center};
-    use crate::square::BoardSquare;
+    use chess_core::Square;
 
     /// Raio da câmera da pose até um ponto da mesa.
-    fn ray_to(pose: &CameraPose, point: Vec3) -> Option<BoardSquare> {
+    fn ray_to(pose: &CameraPose, point: Vec3) -> Option<Square> {
         let o = pose.position();
         ray_to_square(o, point - o)
     }
@@ -148,7 +139,7 @@ mod tests {
     fn every_square_is_pickable_in_every_view() {
         for view in CameraView::ALL {
             let pose = view.pose();
-            for s in BoardSquare::all() {
+            for s in all_squares() {
                 assert_eq!(ray_to(&pose, square_center(s)), Some(s), "{view:?} {s}");
                 // Dentro da casa, longe do centro, ainda é a mesma casa.
                 for (dx, dz) in [(0.4, 0.4), (-0.4, 0.4), (0.4, -0.4), (-0.4, -0.4)] {
@@ -166,7 +157,7 @@ mod tests {
                 let pose = CameraView::Standard
                     .pose()
                     .orbit(step as f32 * 5f32.to_radians(), d_pitch);
-                for s in BoardSquare::all() {
+                for s in all_squares() {
                     assert_eq!(ray_to(&pose, square_center(s)), Some(s));
                 }
             }
@@ -176,7 +167,7 @@ mod tests {
     #[test]
     fn inverting_the_view_does_not_change_logical_interpretation() {
         // CAM-03: a casa sob um ponto do mundo é a mesma, qualquer que seja a Vista.
-        let e4 = square_center(BoardSquare::new(4, 3).unwrap());
+        let e4 = square_center(Square::new(4, 3).unwrap());
         for view in CameraView::ALL {
             assert_eq!(ray_to(&view.pose(), e4).unwrap().to_string(), "e4");
         }

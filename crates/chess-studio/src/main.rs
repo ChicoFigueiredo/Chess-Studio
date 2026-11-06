@@ -1,17 +1,23 @@
 //! Chess Studio: binário Bevy. Só lê o estado da Partida e envia intenções (ADR-0001).
 //!
-//! Neste marco (Gate A) há cena com assets CC0, três Apresentações, câmera e picking: nenhuma
-//! lógica de jogo. `--screenshot <dir>` gera as capturas de evidência e encerra;
-//! `--benchmark` liga o modo benchmark (ver `benchmark`).
+//! Partida a dois no mesmo computador (Assistido): o intérprete de gestos (`chess_input`)
+//! traduz ponteiro em Comandos, a `Session` os envia à Partida e a cena é reconstruída do
+//! `snapshot()`. `--screenshot <dir>` gera as capturas de evidência e encerra (com
+//! `--moves`, `--select` e `--panel` opcionais); `--benchmark` liga o modo benchmark.
 
 mod benchmark;
 mod board;
 mod board2d;
 mod camera;
 mod capture;
+mod highlight;
+mod i18n;
 mod layout;
 mod picking;
+mod pieces;
+mod play;
 mod presentation;
+mod session;
 mod ui;
 
 use bevy::prelude::*;
@@ -19,15 +25,31 @@ use bevy::window::{PresentMode, WindowResolution};
 use bevy_egui::EguiPlugin;
 use std::path::PathBuf;
 
-/// `--screenshot <dir>`: diretório de saída das capturas.
-fn screenshot_dir() -> Option<PathBuf> {
+/// Valor da opção `--<nome> <valor>`.
+fn option_value(name: &str) -> Option<String> {
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
-        if arg == "--screenshot" {
-            return args.next().map(PathBuf::from);
+        if arg == name {
+            return args.next();
         }
     }
     None
+}
+
+/// `--screenshot <dir>`: diretório de saída das capturas.
+fn screenshot_dir() -> Option<PathBuf> {
+    option_value("--screenshot").map(PathBuf::from)
+}
+
+/// Roteiro da captura: `--moves e2e4,e7e5`, `--select e2` e `--panel`.
+fn capture_script() -> capture::CaptureScript {
+    capture::CaptureScript {
+        moves: option_value("--moves")
+            .map(|m| m.split(',').map(str::to_owned).collect())
+            .unwrap_or_default(),
+        select: option_value("--select").and_then(|s| s.parse().ok()),
+        show_panel: std::env::args().any(|a| a == "--panel"),
+    }
 }
 
 fn main() {
@@ -61,7 +83,7 @@ fn main() {
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
-            title: "Chess Studio".into(),
+            title: i18n::I18n::pt_br().t("app-title"),
             resolution,
             present_mode,
             ..default()
@@ -70,8 +92,12 @@ fn main() {
     }))
     .add_plugins(EguiPlugin::default())
     .add_plugins((
+        i18n::I18nPlugin,
         presentation::PresentationPlugin,
         board::BoardPlugin,
+        pieces::PiecesPlugin,
+        play::PlayPlugin,
+        highlight::HighlightPlugin,
         board2d::Board2dPlugin,
         camera::CameraPlugin,
         picking::PickingPlugin,
@@ -82,7 +108,7 @@ fn main() {
         if let Err(err) = std::fs::create_dir_all(&dir) {
             eprintln!("não foi possível criar {}: {err}", dir.display());
         }
-        app.insert_resource(capture::CaptureMode::new(dir));
+        app.insert_resource(capture::CaptureMode::new(dir, capture_script()));
     }
     if let Some(config) = bench {
         app.add_plugins(benchmark::BenchmarkPlugin {
