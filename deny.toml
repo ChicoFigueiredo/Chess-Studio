@@ -17,8 +17,6 @@ allow = [
     "Zlib",
     "Unicode-3.0",
     "CC0-1.0",
-    "BSL-1.0",
-    "OFL-1.1", # fontes
     "CDLA-Permissive-2.0", # webpki-roots: lista de raízes CA da Mozilla (dado permissivo) usada pelo ureq/rustls no download do Stockfish (#34)
 ]
 confidence-threshold = 0.9
@@ -29,3 +27,13 @@ exceptions = []
 [bans]
 multiple-versions = "allow"
 wildcards = "deny"
+# Dependências por caminho entre crates do workspace (`x.workspace = true`) não têm versão.
+allow-wildcard-paths = true
+
+[advisories]
+# Cada ignore é justificado aqui.
+ignore = [
+    # ttf-parser sem manutenção: transitiva do winit (sctk-adwaita, só decoração de janela no
+    # Linux/Wayland). Não processa entrada do usuário nem rede. Reavaliar ao atualizar o Bevy.
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser sem manutenção, sem correção disponível; ver comentário acima" },
+]
