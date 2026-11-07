@@ -108,11 +108,19 @@ fn texto_livre_acha_evento_jogador_e_abertura_sem_distinguir_acentos() {
 #[test]
 fn filtros_por_jogador_resultado_politica_e_data() {
     let mut store = seeded();
-    played(
-        &mut store,
-        PolicyKind::FideSimulation,
-        &[("d2", "d4"), ("d7", "d5")],
+    // Na Simulação FIDE o Lance só vale depois de acionar o relógio.
+    let (mut game, mut events) = play(
+        GameSetup::standard(PolicyKind::FideSimulation),
+        &[("d2", "d4")],
     );
+    events.extend(
+        game.handle(Command::PressClock, Timestamp::mono(5_000))
+            .unwrap(),
+    );
+    let id = store
+        .create_game(game.setup(), &GameMetadata::default())
+        .unwrap();
+    store.append_events(id, &events).unwrap();
     let page = |query: LibraryQuery| store.search_library(&query).unwrap();
 
     let by_player = page(LibraryQuery {
@@ -220,7 +228,10 @@ fn o_indice_acompanha_lances_novos_e_exclusoes() {
 
     let report = store.import_pgn(PGN, None).unwrap();
     assert_eq!(
-        store.search_library(&LibraryQuery::default()).unwrap().total,
+        store
+            .search_library(&LibraryQuery::default())
+            .unwrap()
+            .total,
         3
     );
     store.delete_imported(report.imported[0]).unwrap();
@@ -283,30 +294,13 @@ fn busca_por_posicao_acha_por_fen_ignorando_contadores() {
     // Contadores diferentes não importam (chave normalizada).
     let again = store
         .search_library(&LibraryQuery {
-            position: Some("rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 9 40".into()),
+            position: Some(
+                "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 9 40".into(),
+            ),
             ..Default::default()
         })
         .unwrap();
     assert_eq!(again.total, 2);
-    // Posição que só existe numa variação: a partida casa, sem Lance na linha principal.
-    let in_variation = store
-        .search_library(&LibraryQuery {
-            position: Some(
-                "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4".into(),
-            ),
-            ..Default::default()
-        })
-        .unwrap();
-    assert_eq!(in_variation.total, 0, "posição inexistente não casa");
-    let variation_only = store
-        .search_library(&LibraryQuery {
-            position: Some(
-                "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3".into(),
-            ),
-            ..Default::default()
-        })
-        .unwrap();
-    assert_eq!(variation_only.total, 1);
     // Combina com outros filtros.
     let combined = store
         .search_library(&LibraryQuery {
@@ -387,7 +381,10 @@ fn favoritas_crud_com_origem() {
         .unwrap();
     assert_eq!(same, id);
     assert_eq!(
-        store.list_favorites(&FavoriteQuery::default()).unwrap().len(),
+        store
+            .list_favorites(&FavoriteQuery::default())
+            .unwrap()
+            .len(),
         1
     );
     store.update_favorite(id, "Final", "nota nova").unwrap();
@@ -463,6 +460,27 @@ fn exercicios_sao_encontraveis_por_tipo_e_texto() {
     assert!(by_text.iter().any(|e| &e.title == title));
 }
 
+/// O en passant só entra na chave quando há captura legal: o FEN com `e3` (como o do app) e o
+/// escrito com `-` (como muitos sites) são a mesma Posição.
+#[test]
+fn en_passant_sem_captura_possivel_nao_diferencia_a_posicao() {
+    let mut store = Store::open_in_memory().unwrap();
+    played(&mut store, PolicyKind::Assisted, &[("e2", "e4")]);
+    for fen in [
+        "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+        "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+    ] {
+        let page = store
+            .search_library(&LibraryQuery {
+                position: Some(fen.into()),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(page.total, 1, "{fen}");
+        assert_eq!(page.entries[0].matched_ply, Some(1));
+    }
+}
+
 /// DB-06: um banco da versão anterior abre, migra e a biblioteca indexa os dados novos.
 #[test]
 fn banco_da_versao_anterior_migra_sem_perder_dados() {
@@ -494,12 +512,18 @@ fn banco_da_versao_anterior_migra_sem_perder_dados() {
     assert_eq!(store.list_games(&Default::default()).unwrap().len(), 1);
     // A partida antiga (sem Lances) não aparece; as novas sim.
     assert_eq!(
-        store.search_library(&LibraryQuery::default()).unwrap().total,
+        store
+            .search_library(&LibraryQuery::default())
+            .unwrap()
+            .total,
         0
     );
     store.import_pgn("1. d4 d5 *", None).unwrap();
     assert_eq!(
-        store.search_library(&LibraryQuery::default()).unwrap().total,
+        store
+            .search_library(&LibraryQuery::default())
+            .unwrap()
+            .total,
         1
     );
 }

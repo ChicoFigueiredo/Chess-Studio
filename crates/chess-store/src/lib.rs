@@ -34,7 +34,9 @@
 
 mod engines;
 mod error;
+mod favorites;
 mod imported;
+mod library;
 pub mod migrations;
 mod store;
 mod training;
@@ -42,7 +44,11 @@ mod training_profiles;
 
 pub use engines::{EngineId, EngineOrigin, EngineRecord};
 pub use error::{Result, StoreError};
+pub use favorites::{Favorite, FavoriteId, FavoriteOrigin, FavoriteQuery, NewFavorite};
 pub use imported::{ImportReport, ImportedId, ImportedQuery, ImportedSummary};
+pub use library::{
+    LibraryEntry, LibraryEntryId, LibraryPage, LibraryQuery, LibrarySource, position_key,
+};
 pub use migrations::LATEST_VERSION as LATEST_SCHEMA_VERSION;
 pub use store::{
     GameId, GameMetadata, GameQuery, GameSummary, OpenedGame, Pragmas, ProfileId, Store,

@@ -1,6 +1,6 @@
 //! Erros tipados do repositório.
 
-use crate::{EngineId, GameId, ImportedId, ProfileId, RunId};
+use crate::{EngineId, FavoriteId, GameId, ImportedId, ProfileId, RunId};
 use chess_game::ReplayError;
 use std::fmt;
 
@@ -49,6 +49,10 @@ pub enum StoreError {
     },
     /// Partida importada de PGN que não existe (ou foi excluída).
     ImportedGameNotFound(ImportedId),
+    /// FEN que não descreve uma Posição válida (busca por Posição, favoritas).
+    InvalidFen(String),
+    /// Posição favorita que não existe (ou foi removida).
+    FavoriteNotFound(FavoriteId),
 }
 
 impl fmt::Display for StoreError {
@@ -90,6 +94,8 @@ impl fmt::Display for StoreError {
                 run.0
             ),
             Self::ImportedGameNotFound(id) => write!(f, "partida importada {} não existe", id.0),
+            Self::InvalidFen(detail) => write!(f, "FEN inválido: {detail}"),
+            Self::FavoriteNotFound(id) => write!(f, "posição favorita {} não existe", id.0),
         }
     }
 }
