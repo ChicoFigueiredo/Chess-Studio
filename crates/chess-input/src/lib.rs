@@ -6,6 +6,7 @@
 
 pub mod arrow;
 pub mod board;
+pub mod controls;
 pub mod gesture;
 pub mod settle;
 pub mod view;
