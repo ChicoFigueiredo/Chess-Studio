@@ -161,6 +161,23 @@ pub fn clock_placement(user_side: Side) -> (Vec3, f32) {
     }
 }
 
+/// Cantos da caixa que envolve o relógio na mesa (mundo), para o enquadramento das Vistas.
+/// A caixa local cobre a base, a rampa e os botões; escala e giro vêm da própria colocação.
+pub fn clock_footprint(user_side: Side) -> [Vec3; 8] {
+    let root = root_transform(user_side);
+    let (x, y, z) = (BASE_HALF_WIDTH, (0.0, 1.1), (-0.8, 1.25));
+    let mut corners = [Vec3::ZERO; 8];
+    for (i, corner) in corners.iter_mut().enumerate() {
+        let local = Vec3::new(
+            if i & 1 == 0 { -x } else { x },
+            if i & 2 == 0 { y.0 } else { y.1 },
+            if i & 4 == 0 { z.0 } else { z.1 },
+        );
+        *corner = root.transform_point(local);
+    }
+    corners
+}
+
 // ---------------------------------------------------------------------------------------
 // Cena 3D.
 

@@ -117,6 +117,14 @@ _Evitar_: preset de ajuda, nível de dificuldade
 Sobreposição virtual de treino ou análise presa às casas e peças; não envolve câmera física.
 _Evitar_: realidade aumentada
 
+**Tela cheia** (_en_: `Fullscreen`):
+Janela sem bordas ocupando o monitor inteiro (F11 ou item de menu); estado de interface, independente do modo Foco.
+_Evitar_: maximizar
+
+**Modo Foco** (_en_: `FocusMode`):
+Estado de interface que esconde o dock e a janela principal, deixando só tabuleiro, mesa, relógio e controles mínimos; nunca altera turno, relógio ou posição, e é independente da Tela cheia.
+_Evitar_: modo zen, tela limpa
+
 ## Treinamento
 
 **Exercício** (_en_: `Exercise`):

@@ -101,7 +101,13 @@ impl Plugin for CameraPlugin {
             .add_systems(Startup, spawn_camera)
             .add_systems(
                 Update,
-                (switch_camera, view_keys, pointer_controls, apply_pose)
+                (
+                    switch_camera,
+                    view_keys,
+                    crate::framing::fit_active_view,
+                    pointer_controls,
+                    apply_pose,
+                )
                     .chain()
                     .in_set(CameraSet)
                     // O 2D técnico tem câmera fixa de cima: sem órbita, pan nem Vistas.

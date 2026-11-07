@@ -20,6 +20,8 @@ mod engine_manager;
 mod engine_wizard;
 mod fen_pgn;
 mod fide_panel;
+mod focus;
+mod framing;
 mod highlight;
 mod i18n;
 mod layout;
@@ -136,6 +138,7 @@ fn main() {
         picking::PickingPlugin,
         ui::UiPlugin,
         dock::DockPlugin,
+        focus::FocusPlugin,
     ))
     .add_plugins((
         aids_panel::AidsPanelPlugin,
@@ -154,6 +157,13 @@ fn main() {
             eprintln!("não foi possível criar {}: {err}", dir.display());
         }
         app.insert_resource(capture::CaptureMode::new(dir, capture_script()));
+        // `--focus`: a evidência do modo Foco (sem banco, o estado não vem das preferências).
+        if std::env::args().any(|a| a == "--focus") {
+            app.insert_resource(focus::ViewState {
+                focus: true,
+                fullscreen: false,
+            });
+        }
     }
     if let Some(config) = bench {
         app.add_plugins(benchmark::BenchmarkPlugin {
