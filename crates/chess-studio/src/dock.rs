@@ -523,7 +523,11 @@ fn dock_ui(world: &mut World) {
     // de Treino, que vive num painel).
     let hidden = world
         .get_resource::<CaptureMode>()
-        .is_some_and(|c| !c.show_panel && !crate::training_ui::demo_active());
+        .is_some_and(|c| !c.show_panel && !crate::training_ui::demo_active())
+        // Modo Foco: sem dock; o tabuleiro ocupa a janela toda.
+        || world
+            .get_resource::<crate::focus::ViewState>()
+            .is_some_and(|v| v.focus);
     world.resource_scope(|world, mut dock: Mut<Dock>| {
         if !dock.tabs_applied {
             dock.tabs_applied = true;

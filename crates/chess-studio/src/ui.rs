@@ -146,14 +146,17 @@ fn info_panel(
     aids: Res<crate::aids::AidSettings>,
     mut dock: ResMut<crate::dock::Dock>,
     registry: Res<crate::dock::PanelRegistry>,
+    mut view_state: ResMut<crate::focus::ViewState>,
 ) -> Result {
-    if capture.as_ref().is_some_and(|c| !c.show_panel) {
+    // No modo Foco a janela principal some (as janelas da Partida, como a promoção, ficam).
+    if view_state.focus || capture.as_ref().is_some_and(|c| !c.show_panel) {
         return Ok(());
     }
     // Edita cópias: tomar `&mut` dos recursos todo quadro marcaria `is_changed` e faria os
     // sistemas de Apresentação e qualidade reaplicarem tudo a cada quadro.
     let mut chosen_presentation = *presentation;
     let mut chosen_quality = *quality;
+    let mut chosen_view = *view_state;
     egui::Window::new(i18n.t("app-title")).show(contexts.ctx_mut()?, |ui| {
         ui.horizontal(|ui| {
             for p in Presentation::ALL {
@@ -173,6 +176,8 @@ fn info_panel(
         ui.separator();
         crate::dock::panels_section(ui, &i18n, &mut dock, &registry, &session);
         ui.separator();
+        crate::focus::view_section(ui, &i18n, &mut chosen_view);
+        ui.separator();
         ui.label(i18n.t_with(
             "square-hover",
             &[("square", &square_name(&i18n, hovered.0))],
@@ -186,9 +191,13 @@ fn info_panel(
         ui.small(i18n.t("help-zoom"));
         ui.small(i18n.t("help-presentation"));
         ui.small(i18n.t("help-game"));
+        ui.small(i18n.t("help-view"));
     });
     if chosen_presentation != *presentation {
         *presentation = chosen_presentation;
+    }
+    if chosen_view != *view_state {
+        *view_state = chosen_view;
     }
     if chosen_quality != *quality {
         *quality = chosen_quality;

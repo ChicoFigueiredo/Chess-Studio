@@ -10,6 +10,7 @@
 use crate::aids::AidSettings;
 use crate::dock::{Dock, DockLayout};
 use crate::engine::{EngineUi, MAX_ELO, MIN_ELO};
+use crate::focus::ViewState;
 use crate::play::PlaySet;
 use crate::presentation::{GraphicsQuality, Presentation};
 use crate::session::Session;
@@ -31,6 +32,9 @@ const KEY_PRESENTATION: &str = "presentation";
 const KEY_QUALITY: &str = "quality";
 const KEY_ENGINE_ELO: &str = "engine_elo";
 const KEY_ENGINE_USER_SIDE: &str = "engine_user_side";
+/// Tela cheia e modo Foco (C3, UI-03/04): preferências de interface.
+const KEY_FULLSCREEN: &str = "fullscreen";
+const KEY_FOCUS: &str = "focus_mode";
 /// Layout do dock de painéis (C1, UI-02): árvore, tamanhos, visibilidade e largura.
 const KEY_DOCK_LAYOUT: &str = "dock_layout";
 /// Prefixo da chave das Anotações de estudo (C2): uma preferência por Partida.
@@ -47,6 +51,8 @@ pub struct SavedPrefs {
     pub engine_elo: u32,
     /// Lado do usuário contra a Engine (B9).
     pub engine_user_side: Color,
+    /// Tela cheia (F11) e modo Foco (F10), independentes.
+    pub view: ViewState,
 }
 
 impl Default for SavedPrefs {
@@ -58,6 +64,7 @@ impl Default for SavedPrefs {
             quality: GraphicsQuality::default(),
             engine_elo: 1500,
             engine_user_side: Color::White,
+            view: ViewState::default(),
         }
     }
 }
@@ -272,6 +279,14 @@ impl Persistence {
                 get(KEY_ENGINE_USER_SIDE),
             )
             .unwrap_or(defaults.engine_user_side),
+            view: ViewState {
+                fullscreen: get(KEY_FULLSCREEN)
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(defaults.view.fullscreen),
+                focus: get(KEY_FOCUS)
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(defaults.view.focus),
+            },
         }
     }
 
@@ -350,6 +365,12 @@ impl Persistence {
         if before.engine_user_side != now.engine_user_side {
             writes.push((KEY_ENGINE_USER_SIDE, debug_id(&now.engine_user_side)));
         }
+        if before.view.fullscreen != now.view.fullscreen {
+            writes.push((KEY_FULLSCREEN, json!(now.view.fullscreen)));
+        }
+        if before.view.focus != now.view.focus {
+            writes.push((KEY_FOCUS, json!(now.view.focus)));
+        }
         for (key, value) in writes {
             if let Err(err) = self.store.set_pref(self.profile, key, &value) {
                 self.report(&err);
@@ -414,6 +435,7 @@ impl Plugin for PersistencePlugin {
             .insert_resource(prefs.aids)
             .insert_resource(prefs.presentation)
             .insert_resource(prefs.quality)
+            .insert_resource(prefs.view)
             .insert_resource(Dock::with_layout(layout))
             .insert_resource(notes)
             .insert_resource(
@@ -450,6 +472,7 @@ fn persist_prefs(
     presentation: Res<Presentation>,
     quality: Res<GraphicsQuality>,
     engine_ui: Res<EngineUi>,
+    view: Res<ViewState>,
     handle: Res<PersistenceHandle>,
 ) {
     if let Ok(mut p) = handle.0.lock() {
@@ -460,6 +483,7 @@ fn persist_prefs(
             quality: *quality,
             engine_elo: engine_ui.elo(),
             engine_user_side: engine_ui.user_side(),
+            view: *view,
         });
     }
 }
@@ -696,6 +720,10 @@ mod tests {
             quality: GraphicsQuality::Economic,
             engine_elo: 2100,
             engine_user_side: Color::Black,
+            view: ViewState {
+                focus: true,
+                fullscreen: true,
+            },
         };
         p.sync_prefs(custom);
         let p2 = Persistence::new(p.into_store());
