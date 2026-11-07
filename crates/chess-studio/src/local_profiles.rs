@@ -115,10 +115,12 @@ impl LocalProfiles {
         self.active = Some(persistence.profile());
     }
 
+    #[cfg(test)]
     pub fn list(&self) -> &[ProfileInfo] {
         &self.list
     }
 
+    #[cfg(test)]
     pub fn active(&self) -> Option<ProfileId> {
         self.active
     }
@@ -137,6 +139,7 @@ impl LocalProfiles {
         self.ops.push(op);
     }
 
+    #[cfg(test)]
     pub fn error(&self) -> Option<OpError> {
         self.error
     }
@@ -255,10 +258,11 @@ fn execute(
 
 /// Seção da janela principal: perfil em uso, troca rápida e acesso ao gerenciador.
 pub fn section(ui: &mut egui::Ui, i18n: &I18n, state: &mut LocalProfiles, blocked: bool) {
-    ui.strong(i18n.t("lp-heading"));
+    // Sem banco (capturas, benchmark) não há perfis para mostrar.
     let Some(active) = state.active else {
         return;
     };
+    ui.strong(i18n.t("lp-heading"));
     let mut chosen = None;
     ui.add_enabled_ui(!blocked, |ui| {
         egui::ComboBox::from_label(i18n.t("lp-current"))

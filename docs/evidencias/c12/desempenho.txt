@@ -1,0 +1,1 @@
+qualidade-ultra-painel: 4.55 ms/quadro (220 quadros/s)

@@ -787,6 +787,7 @@ fn persist_controls(controls: Res<crate::controls::Controls>, handle: Res<Persis
 }
 
 /// Janela fechada ou saída do app: encerra a sessão da Partida e grava o que faltar.
+#[allow(clippy::too_many_arguments)]
 fn close_on_exit(
     mut close_requested: MessageReader<WindowCloseRequested>,
     mut exits: MessageReader<AppExit>,

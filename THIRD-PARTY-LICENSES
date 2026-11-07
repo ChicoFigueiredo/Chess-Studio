@@ -14,7 +14,7 @@ ASSETS (assets/)
 
 RESUMO DAS LICENÇAS DAS DEPENDÊNCIAS
 ------------------------------------
-MIT License (498 crates)
+MIT License (502 crates)
 ISC License (24 crates)
 Unicode License v3 (23 crates)
 Apache License 2.0 (19 crates)
@@ -5981,6 +5981,39 @@ DEALINGS IN THE SOFTWARE.
 MIT License
 ================================================================================
 Usada por:
+- egui_tiles 0.17.1 (https://github.com/rerun-io/egui_tiles)
+
+Copyright (c) 2024 Rerun Technologies AB <opensource@rerun.io>
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+
+================================================================================
+MIT License
+================================================================================
+Usada por:
 - bit-set 0.10.0 (https://github.com/contain-rs/bit-set)
 
 Copyright (c) 2026 The Rust Project Developers
@@ -7234,6 +7267,7 @@ Usada por:
 - chess-core 0.1.0 (https://github.com/ChicoFigueiredo/Chess-Studio)
 - chess-game 0.1.0 (https://github.com/ChicoFigueiredo/Chess-Studio)
 - chess-input 0.1.0 (https://github.com/ChicoFigueiredo/Chess-Studio)
+- chess-pgn 0.1.0 (https://github.com/ChicoFigueiredo/Chess-Studio)
 - chess-store 0.1.0 (https://github.com/ChicoFigueiredo/Chess-Studio)
 - chess-studio 0.1.0 (https://github.com/ChicoFigueiredo/Chess-Studio)
 - chess-training 0.1.0 (https://github.com/ChicoFigueiredo/Chess-Studio)
@@ -7599,6 +7633,7 @@ Usada por:
 - bevy_mesh 0.20.1 (https://github.com/bevyengine/bevy)
 - bevy_pbr 0.20.1 (https://github.com/bevyengine/bevy)
 - bevy_platform 0.20.1 (https://github.com/bevyengine/bevy)
+- bevy_post_process 0.20.1 (https://github.com/bevyengine/bevy)
 - bevy_ptr 0.20.1 (https://github.com/bevyengine/bevy)
 - bevy_reflect 0.20.1 (https://github.com/bevyengine/bevy)
 - bevy_reflect_derive 0.20.1 (https://github.com/bevyengine/bevy)
@@ -7772,6 +7807,7 @@ Usada por:
 - concurrent-queue 2.5.0 (https://github.com/smol-rs/concurrent-queue)
 - ctrlc 3.5.2 (https://github.com/Detegr/rust-ctrlc.git)
 - displaydoc 0.2.7 (https://github.com/yaahc/displaydoc)
+- enumn 0.1.14 (https://github.com/dtolnay/enumn)
 - erased-serde 0.4.11 (https://github.com/dtolnay/erased-serde)
 - event-listener-strategy 0.5.4 (https://github.com/smol-rs/event-listener-strategy)
 - event-listener 5.4.2 (https://github.com/smol-rs/event-listener)

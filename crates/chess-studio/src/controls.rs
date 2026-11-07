@@ -390,21 +390,32 @@ fn controls_window(
     let screen = ctx.viewport_rect();
     egui::Window::new(i18n.t("ctl-title"))
         .open(&mut open)
-        .default_width(560.0)
+        .default_width(760.0)
+        .default_height(560.0)
         .max_height((screen.height() - 40.0).max(240.0))
         .show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.small(i18n.t("ctl-intro"));
                 ui.add_space(4.0);
                 ui.strong(i18n.t("ctl-group-pointer"));
-                for action in POINTER_ACTIONS {
-                    action_row(ui, &i18n, &mut map, &mut ui_state, action);
-                }
+                egui::Grid::new("ctl-pointer-grid")
+                    .num_columns(2)
+                    .spacing([12.0, 6.0])
+                    .show(ui, |ui| {
+                        for action in POINTER_ACTIONS {
+                            action_row(ui, &i18n, &mut map, &mut ui_state, action);
+                        }
+                    });
                 ui.add_space(6.0);
                 ui.strong(i18n.t("ctl-group-keyboard"));
-                for action in KEY_ACTIONS {
-                    action_row(ui, &i18n, &mut map, &mut ui_state, action);
-                }
+                egui::Grid::new("ctl-key-grid")
+                    .num_columns(2)
+                    .spacing([12.0, 6.0])
+                    .show(ui, |ui| {
+                        for action in KEY_ACTIONS {
+                            action_row(ui, &i18n, &mut map, &mut ui_state, action);
+                        }
+                    });
                 ui.add_space(6.0);
                 status_area(ui, &i18n, &mut map, &mut ui_state);
                 ui.separator();
@@ -437,11 +448,8 @@ fn action_row(
     state: &mut ControlsUi,
     action: Action,
 ) {
-    ui.horizontal_wrapped(|ui| {
-        ui.add_sized(
-            [150.0, 20.0],
-            egui::Label::new(action_label(i18n, action)).truncate(),
-        );
+    ui.label(action_label(i18n, action));
+    ui.horizontal(|ui| {
         let waiting = state.capture.is_some_and(|(a, _)| a == action);
         let triggers: Vec<Trigger> = map.triggers(action).to_vec();
         if triggers.is_empty() {
@@ -452,7 +460,7 @@ fn action_row(
             ui.group(|ui| {
                 ui.label(trigger_label(i18n, trigger));
                 if ui
-                    .small_button("✕")
+                    .small_button("×")
                     .on_hover_text(i18n.t("ctl-remove"))
                     .clicked()
                 {
@@ -489,6 +497,7 @@ fn action_row(
             }
         }
     });
+    ui.end_row();
 }
 
 /// Conflito pendente e avisos.
@@ -637,8 +646,10 @@ mod tests {
 
     #[test]
     fn capturing_silences_every_query() {
-        let mut controls = Controls::default();
-        controls.capturing = true;
+        let controls = Controls {
+            capturing: true,
+            ..Controls::default()
+        };
         assert!(!controls.key_just_pressed(Action::Cancel, &keys_with(&[], &[KeyCode::Escape])));
         assert_eq!(
             controls.mouse_action(MouseButton::Left, &keys_with(&[], &[])),
