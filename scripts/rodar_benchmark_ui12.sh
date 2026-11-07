@@ -12,6 +12,14 @@
 # O custo do HUD é medido à parte, em modo de captura (`--screenshot ... --hud analysis`),
 # com o tempo médio por quadro (etapa 4 abaixo).
 #
+# QUAL USAR: para a medição atual do UI-12 (HUD ligado, Equilibrado 1080p e Econômico 720p,
+# marcador `maquina_ocupada`), use `scripts/benchmark_matriz.sh` ou, equivalente, este roteiro
+# com `--matriz` (repassa BIN, BIN_BASE, MINUTOS, OUT e STOCKFISH para ele). Sem `--matriz`
+# este roteiro mantém o comportamento original (C13, sem HUD no benchmark, mais as capturas
+# de custo do HUD e do Foco).
+#
+# Uso: scripts/rodar_benchmark_ui12.sh [--matriz] [--dry-run]
+#
 # Variáveis:
 #   BIN         binário atual (padrão: $CARGO_TARGET_DIR/release/chess-studio)
 #   BIN_BASE    binário do baseline sem painéis (obrigatório para a terceira medição)
@@ -20,6 +28,16 @@
 #   OUT         diretório de saída (padrão docs/evidencias/c13)
 #   BEVY_ASSET_ROOT=$PWD/crates/chess-studio, se o binário não achar os assets
 set -euo pipefail
+
+modo_matriz=0
+dry=0
+for a in "$@"; do
+  case "$a" in
+    --matriz) modo_matriz=1 ;;
+    --dry-run) dry=1 ;;
+    *) echo "argumento desconhecido: $a" >&2; exit 2 ;;
+  esac
+done
 
 RAIZ="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$RAIZ"
@@ -33,9 +51,19 @@ MINUTOS="${MINUTOS:-5}"
 OUT="${OUT:-docs/evidencias/c13}"
 export BEVY_ASSET_ROOT="${BEVY_ASSET_ROOT:-$RAIZ/crates/chess-studio}"
 
-mkdir -p "$OUT"
+if [[ "$modo_matriz" -eq 1 ]]; then
+  export CHESS_STUDIO_BIN="$BIN"
+  export CHESS_STUDIO_BASELINE="$BIN_BASE"
+  export CHESS_STUDIO_ENGINE_ARGS="${CHESS_STUDIO_ENGINE_ARGS:---engine-path $STOCKFISH}"
+  margs=(--minutes "$MINUTOS" --out "${OUT_MATRIZ:-$OUT}")
+  [[ "$dry" -eq 1 ]] && margs+=(--dry-run)
+  exec "$RAIZ/scripts/benchmark_matriz.sh" "${margs[@]}"
+fi
+
+[[ "$dry" -eq 1 ]] || mkdir -p "$OUT"
 
 estado() { # $1 = rótulo
+  [[ "$dry" -eq 1 ]] && return 0
   {
     echo "== $1 ($(date -Is))"
     echo "uptime: $(uptime)"
@@ -48,11 +76,12 @@ estado() { # $1 = rótulo
 medir() { # $1 = nome, $2 = binário, demais = argumentos
   local nome="$1" bin="$2"; shift 2
   estado "antes de $nome"
+  if [[ "$dry" -eq 1 ]]; then echo ">>> $nome: $bin --benchmark --minutes $MINUTOS --out $OUT/$nome $*"; return 0; fi
   "$bin" --benchmark --minutes "$MINUTOS" --out "$OUT/$nome" "$@" 2>&1 | tee "$OUT/$nome.log"
   estado "depois de $nome"
 }
 
-: > "$OUT/maquina.txt"
+[[ "$dry" -eq 1 ]] || : > "$OUT/maquina.txt"
 
 # 1. Dock aberto, Análise ligada (Equilibrado, como o padrão do app).
 args=(--engine ativa --load equilibrado --engine-path "$STOCKFISH")
@@ -72,6 +101,7 @@ fi
 # 4. Custo do HUD e do Foco em modo de captura (sem vsync): dock e HUD ligados e desligados.
 captura() { # $1 = nome, demais = argumentos
   local nome="$1"; shift
+  if [[ "$dry" -eq 1 ]]; then echo ">>> captura-$nome: $BIN --screenshot $OUT/captura-$nome $*"; return 0; fi
   rm -rf "$OUT/captura-$nome"
   "$BIN" --screenshot "$OUT/captura-$nome" "$@" >/dev/null 2>&1 || true
 }
@@ -82,6 +112,6 @@ captura foco-hud-desligado --focus --hud off
 captura foco-hud-analise --focus --hud analysis --moves e2e4,e7e5,g1f3,b8c6,f1c4,g8f6
 estado "depois das capturas"
 # As capturas PNG são descartadas (já existem em docs/evidencias/c3 e c5); fica o desempenho.txt.
-find "$OUT" -path "*/captura-*" -name '*.png' -delete
+[[ "$dry" -eq 1 ]] || find "$OUT" -path "*/captura-*" -name '*.png' -delete
 
 echo "pronto: $OUT"
