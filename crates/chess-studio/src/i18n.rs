@@ -10,6 +10,10 @@ use unic_langid::LanguageIdentifier;
 const PT_BR: &[(&str, &str)] = &[
     ("app.ftl", include_str!("../assets/i18n/pt-BR/app.ftl")),
     ("dock.ftl", include_str!("../assets/i18n/pt-BR/dock.ftl")),
+    (
+        "profiles.ftl",
+        include_str!("../assets/i18n/pt-BR/profiles.ftl"),
+    ),
     ("focus.ftl", include_str!("../assets/i18n/pt-BR/focus.ftl")),
     ("game.ftl", include_str!("../assets/i18n/pt-BR/game.ftl")),
     (

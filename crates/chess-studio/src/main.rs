@@ -38,6 +38,8 @@ mod picking;
 mod pieces;
 mod play;
 mod presentation;
+mod profiles;
+mod responsive;
 mod session;
 mod study;
 mod training_ui;
@@ -71,7 +73,8 @@ fn capture_script() -> capture::CaptureScript {
             .map(|m| m.split(',').map(str::to_owned).collect())
             .unwrap_or_default(),
         select: option_value("--select").and_then(|s| s.parse().ok()),
-        show_panel: std::env::args().any(|a| a == "--panel"),
+        show_panel: std::env::args().any(|a| a == "--panel") || option_value("--profile").is_some(),
+        profile: option_value("--profile"),
         aids: option_value("--aids"),
         hud: option_value("--hud"),
         inverted: std::env::args().any(|a| a == "--inverted"),
@@ -108,7 +111,14 @@ fn main() {
         (res, mode)
     } else if capture.is_some() {
         // Evidência em 1080p, medindo sem o limite do vsync.
-        (WindowResolution::new(1920, 1080), PresentMode::AutoNoVsync)
+        // `--size 800x600` captura numa janela pequena (C4, UI-10).
+        let (w, h) = option_value("--size")
+            .and_then(|s| {
+                let (w, h) = s.split_once('x')?;
+                Some((w.parse::<u32>().ok()?, h.parse::<u32>().ok()?))
+            })
+            .unwrap_or((1920, 1080));
+        (WindowResolution::new(w, h), PresentMode::AutoNoVsync)
     } else {
         (WindowResolution::new(1280, 720), PresentMode::AutoVsync)
     };
@@ -165,6 +175,8 @@ fn main() {
         study::StudyPlugin,
         fide_panel::ArbitrationPlugin,
         analysis::AnalysisPlugin,
+        profiles::ProfilesPlugin,
+        responsive::ResponsivePlugin,
     ));
     app.add_plugins((hud::HudPlugin, hud_draw::HudDrawPlugin));
     app.add_plugins(training_ui::TrainingPlugin);

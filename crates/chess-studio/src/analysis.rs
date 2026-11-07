@@ -317,7 +317,6 @@ impl Analysis {
         &self.status
     }
 
-    #[cfg(test)]
     pub fn shown(&self) -> Option<&Shown> {
         self.view.as_ref()
     }

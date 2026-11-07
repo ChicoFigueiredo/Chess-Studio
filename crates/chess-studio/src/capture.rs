@@ -98,6 +98,21 @@ pub struct CaptureScript {
     pub inverted: bool,
     /// `--new-game`: mostra a tela de Nova Partida (com a configuração acima preenchida).
     pub show_new_game: bool,
+    /// `--profile physical|training|study`: aplica o Perfil de interface de fábrica e tira
+    /// uma única foto (C4).
+    pub profile: Option<String>,
+}
+
+impl CaptureScript {
+    fn factory_profile(&self) -> Option<crate::profiles::FactoryProfile> {
+        use crate::profiles::FactoryProfile;
+        match self.profile.as_deref()? {
+            "physical" => Some(FactoryProfile::PhysicalGame),
+            "training" => Some(FactoryProfile::AssistedTraining),
+            "study" => Some(FactoryProfile::StudyAnalysis),
+            _ => None,
+        }
+    }
 }
 
 /// Presença deste recurso ativa o modo de captura (o painel egui fica oculto por padrão).
@@ -149,10 +164,28 @@ fn run_capture(
     mut aids: ResMut<crate::aids::AidSettings>,
     mut hud: ResMut<crate::hud::HudSettings>,
     mut dialog: ResMut<NewGameDialog>,
+    mut profiles: ResMut<crate::profiles::InterfaceProfiles>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
 ) {
-    let Some(step) = STEPS.get(mode.step) else {
+    // Com `--profile` a captura é uma foto só, na Apresentação do perfil.
+    let profile_step = mode.script.factory_profile().and_then(|f| {
+        (mode.step == 0).then(|| Step {
+            file: match f {
+                crate::profiles::FactoryProfile::PhysicalGame => "perfil-jogo-fisico",
+                crate::profiles::FactoryProfile::AssistedTraining => "perfil-treinamento",
+                crate::profiles::FactoryProfile::StudyAnalysis => "perfil-estudo",
+            },
+            presentation: f.profile().presentation,
+            view: CameraView::Standard,
+        })
+    });
+    let step = if mode.script.factory_profile().is_some() {
+        profile_step.as_ref()
+    } else {
+        STEPS.get(mode.step)
+    };
+    let Some(step) = step else {
         let path = mode.dir.join("desempenho.txt");
         if let Err(err) = std::fs::write(&path, &mode.report) {
             error!("não foi possível salvar {}: {err}", path.display());
@@ -169,19 +202,25 @@ fn run_capture(
             rig.pose = config.initial_view().pose();
         }
         play_script(&mut session, &mode.script);
-        *aids = match mode.script.aids.as_deref() {
-            Some("physical") => crate::aids::AidSettings::physical(),
-            Some("ghosts") => crate::aids::AidSettings {
-                ghosts: true,
-                ..crate::aids::AidSettings::training()
-            },
-            _ => crate::aids::AidSettings::training(),
-        };
-        *hud = match mode.script.hud.as_deref() {
-            Some("study") => crate::hud::HudSettings::study(),
-            Some("analysis") => crate::hud::HudSettings::analysis(),
-            _ => crate::hud::HudSettings::off(),
-        };
+        if let Some(f) = mode.script.factory_profile() {
+            profiles.request = Some(crate::profiles::ProfileRequest::Apply(
+                crate::profiles::ProfileKey::Factory(f),
+            ));
+        } else {
+            *aids = match mode.script.aids.as_deref() {
+                Some("physical") => crate::aids::AidSettings::physical(),
+                Some("ghosts") => crate::aids::AidSettings {
+                    ghosts: true,
+                    ..crate::aids::AidSettings::training()
+                },
+                _ => crate::aids::AidSettings::training(),
+            };
+            *hud = match mode.script.hud.as_deref() {
+                Some("study") => crate::hud::HudSettings::study(),
+                Some("analysis") => crate::hud::HudSettings::analysis(),
+                _ => crate::hud::HudSettings::off(),
+            };
+        }
         if let Some(ply) = mode.script.review {
             session.set_review_ply(Some(ply));
         }
