@@ -583,12 +583,10 @@ mod tests {
             "sem melhora, a análise volta ao nível reduzido: {levels:?}"
         );
         // Durante a espera não escala de novo; passada a espera, tenta de novo.
-        let held: Vec<Level> = levels[paused_at + 1..].iter().copied().collect();
+        let held = &levels[paused_at + 1..];
         assert!(held.iter().take(1).all(|l| *l == Level::Reduced));
         assert!(
-            levels[paused_at + 2..]
-                .iter()
-                .any(|l| *l > Level::Reduced),
+            levels[paused_at + 2..].iter().any(|l| *l > Level::Reduced),
             "depois da espera volta a escalar: {levels:?}"
         );
     }
