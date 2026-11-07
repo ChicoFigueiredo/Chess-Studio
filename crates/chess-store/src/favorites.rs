@@ -42,6 +42,7 @@ pub struct Favorite {
 }
 
 /// Filtro de [`Store::list_favorites`]; o padrão lista todas, da mais recente à mais antiga.
+/// `profile: None` lista de todos os perfis (testes/administração): a interface sempre passa o ativo.
 #[derive(Debug, Clone, Default)]
 pub struct FavoriteQuery {
     /// Trecho (sem distinguir maiúsculas) do nome ou da nota.
@@ -130,28 +131,34 @@ impl Store {
         Ok(FavoriteId(id))
     }
 
-    /// A favorita desta Posição no perfil padrão, se existir (FEN inválido é erro).
-    pub fn find_favorite(&self, fen: &str) -> Result<Option<FavoriteId>> {
+    /// A favorita desta Posição no `profile`, se existir (FEN inválido é erro).
+    pub fn find_favorite(&self, profile: ProfileId, fen: &str) -> Result<Option<FavoriteId>> {
         let (_, key) = fen_key(fen)?;
         Ok(self
             .conn
             .query_row(
                 "SELECT id FROM favorite_positions WHERE profile_id = ?1 AND position_key = ?2",
-                params![self.default_profile()?.0, key],
+                params![profile.0, key],
                 |r| r.get(0).map(FavoriteId),
             )
             .optional()?)
     }
 
-    pub fn get_favorite(&self, id: FavoriteId) -> Result<Favorite> {
-        self.conn
+    /// Lê a favorita; `WrongProfile` se ela é de outro perfil.
+    pub fn get_favorite(&self, profile: ProfileId, id: FavoriteId) -> Result<Favorite> {
+        let favorite = self
+            .conn
             .query_row(
                 &format!("SELECT {COLUMNS} FROM favorite_positions WHERE id = ?1"),
                 [id.0],
                 row_to_favorite,
             )
             .optional()?
-            .ok_or(StoreError::FavoriteNotFound(id))
+            .ok_or(StoreError::FavoriteNotFound(id))?;
+        if favorite.profile != profile {
+            return Err(StoreError::WrongProfile { profile });
+        }
+        Ok(favorite)
     }
 
     pub fn list_favorites(&self, query: &FavoriteQuery) -> Result<Vec<Favorite>> {
@@ -184,24 +191,28 @@ impl Store {
         Ok(out)
     }
 
-    pub fn update_favorite(&self, id: FavoriteId, name: &str, note: &str) -> Result<()> {
-        let n = self.conn.execute(
-            "UPDATE favorite_positions SET name = ?2, note = ?3, updated_at_ms = ?4 WHERE id = ?1",
-            params![id.0, name, note, now_ms()],
+    pub fn update_favorite(
+        &self,
+        profile: ProfileId,
+        id: FavoriteId,
+        name: &str,
+        note: &str,
+    ) -> Result<()> {
+        self.get_favorite(profile, id)?;
+        self.conn.execute(
+            "UPDATE favorite_positions SET name = ?2, note = ?3, updated_at_ms = ?4
+             WHERE id = ?1 AND profile_id = ?5",
+            params![id.0, name, note, now_ms(), profile.0],
         )?;
-        if n == 0 {
-            return Err(StoreError::FavoriteNotFound(id));
-        }
         Ok(())
     }
 
-    pub fn delete_favorite(&self, id: FavoriteId) -> Result<()> {
-        let n = self
-            .conn
-            .execute("DELETE FROM favorite_positions WHERE id = ?1", [id.0])?;
-        if n == 0 {
-            return Err(StoreError::FavoriteNotFound(id));
-        }
+    pub fn delete_favorite(&self, profile: ProfileId, id: FavoriteId) -> Result<()> {
+        self.get_favorite(profile, id)?;
+        self.conn.execute(
+            "DELETE FROM favorite_positions WHERE id = ?1 AND profile_id = ?2",
+            params![id.0, profile.0],
+        )?;
         Ok(())
     }
 }

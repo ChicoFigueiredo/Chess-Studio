@@ -433,7 +433,7 @@ impl LibraryUi {
                 SourceFilter::Played => Some(LibrarySource::Played),
                 SourceFilter::Imported => Some(LibrarySource::Imported),
             },
-            profile: None,
+            profile: None, // o chamador fixa o perfil ativo
             limit: Some(PAGE_SIZE),
             offset: self.page * PAGE_SIZE,
         }
@@ -452,14 +452,20 @@ impl LibraryUi {
         self.dirty = false;
         self.refreshed = Some(Instant::now());
         let tab = self.tab;
-        let query = self.query();
         let favorite_text = self.favorite_text.clone();
         let (kind, exercise_text) = (self.exercise_kind, self.exercise_text.clone());
-        let data = with_store(&mut self.local, handle, |store, _| match tab {
-            Tab::Games => store.search_library(&query).map(|p| (Some(p), None, None)),
+        let filters = self.query();
+        let data = with_store(&mut self.local, handle, |store, profile| match tab {
+            Tab::Games => store
+                .search_library(&LibraryQuery {
+                    profile: Some(profile),
+                    ..filters
+                })
+                .map(|p| (Some(p), None, None)),
             Tab::Favorites => store
                 .list_favorites(&FavoriteQuery {
                     text: Some(favorite_text),
+                    profile: Some(profile),
                     ..Default::default()
                 })
                 .map(|f| (None, Some(f), None)),
@@ -582,7 +588,9 @@ fn apply(
             }
         }
         Action::OpenImported(id) => {
-            let loaded = with_store(&mut lib.local, handle, |store, _| store.load_imported(id));
+            let loaded = with_store(&mut lib.local, handle, |store, profile| {
+                store.load_imported(profile, id)
+            });
             match loaded {
                 Some(Ok(game)) => {
                     let title = game_title(&game);
@@ -601,7 +609,9 @@ fn apply(
             }
         }
         Action::DeleteImported(id) => {
-            let done = with_store(&mut lib.local, handle, |store, _| store.delete_imported(id));
+            let done = with_store(&mut lib.local, handle, |store, profile| {
+                store.delete_imported(profile, id)
+            });
             if let Some(Err(err)) = done {
                 lib.status = Some(err.to_string());
             }
@@ -643,15 +653,17 @@ fn apply(
             add_favorite(lib, handle, i18n, fen, name, origin);
         }
         Action::UpdateFavorite { id, name, note } => {
-            let done = with_store(&mut lib.local, handle, |store, _| {
-                store.update_favorite(id, &name, &note)
+            let done = with_store(&mut lib.local, handle, |store, profile| {
+                store.update_favorite(profile, id, &name, &note)
             });
             if let Some(Err(err)) = done {
                 lib.status = Some(err.to_string());
             }
         }
         Action::DeleteFavorite(id) => {
-            let done = with_store(&mut lib.local, handle, |store, _| store.delete_favorite(id));
+            let done = with_store(&mut lib.local, handle, |store, profile| {
+                store.delete_favorite(profile, id)
+            });
             if let Some(Err(err)) = done {
                 lib.status = Some(err.to_string());
             }
@@ -1577,8 +1589,8 @@ fn library_demo(
             })
             .flatten();
             if let Some(id) = id
-                && let Some(Ok(game)) = with_store(&mut lib.local, None, |store, _| {
-                    store.load_imported(ImportedId(id))
+                && let Some(Ok(game)) = with_store(&mut lib.local, None, |store, profile| {
+                    store.load_imported(profile, ImportedId(id))
                 })
             {
                 let lines = flatten_tree(&game);

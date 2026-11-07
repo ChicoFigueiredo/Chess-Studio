@@ -358,6 +358,23 @@ impl Store {
         })
     }
 
+    /// Como [`Self::open_game`], mas só se a Partida for do `profile` (`WrongProfile` senão).
+    pub fn open_game_for(&self, profile: ProfileId, game: GameId) -> Result<OpenedGame> {
+        let owner: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT profile_id FROM games WHERE id = ?1",
+                [game.0],
+                |r| r.get(0),
+            )
+            .optional()?;
+        match owner {
+            None => Err(StoreError::GameNotFound(game)),
+            Some(o) if o != profile.0 => Err(StoreError::WrongProfile { profile }),
+            Some(_) => self.open_game(game),
+        }
+    }
+
     /// Fechamento limpo (janela fechada normalmente): a Partida fica pausada.
     pub fn close_game(&self, game: GameId) -> Result<()> {
         self.update_flags(game, "session_open = 0, paused = 1")

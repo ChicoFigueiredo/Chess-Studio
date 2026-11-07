@@ -53,7 +53,9 @@ fn import_pgn_grava_a_arvore_e_relata_os_erros_sem_perder_as_boas() {
 fn load_imported_devolve_a_mesma_arvore_com_comentarios_e_nags() {
     let mut store = Store::open_in_memory().unwrap();
     let report = store.import_pgn(PGN, None).unwrap();
-    let game = store.load_imported(report.imported[0]).unwrap();
+    let game = store
+        .load_imported(store.default_profile().unwrap(), report.imported[0])
+        .unwrap();
     assert_eq!(game.mainline_sans(), ["e4", "e5", "Nf3", "Nc6", "Bb5"]);
     assert_eq!(game.moves[1].variations[0][0].comments, ["Siciliana"]);
     assert_eq!(game.moves[1].variations[0][1].variations[0][0].nags, [5]);
@@ -81,7 +83,9 @@ fn filtro_por_texto_e_exclusao() {
         })
         .unwrap();
     assert_eq!(ana.len(), 1);
-    store.delete_imported(report.imported[0]).unwrap();
+    store
+        .delete_imported(store.default_profile().unwrap(), report.imported[0])
+        .unwrap();
     assert_eq!(
         store
             .list_imported(&ImportedQuery::default())
@@ -90,7 +94,7 @@ fn filtro_por_texto_e_exclusao() {
         1
     );
     assert!(matches!(
-        store.load_imported(report.imported[0]),
+        store.load_imported(store.default_profile().unwrap(), report.imported[0]),
         Err(StoreError::ImportedGameNotFound(_))
     ));
 }
@@ -133,7 +137,10 @@ fn importar_sobrevive_a_reabertura_do_banco() {
     };
     let store = Store::open(db.path()).unwrap();
     assert_eq!(
-        store.load_imported(id).unwrap().tag("Event"),
+        store
+            .load_imported(store.default_profile().unwrap(), id)
+            .unwrap()
+            .tag("Event"),
         Some("Estudo A")
     );
 }

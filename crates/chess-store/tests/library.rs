@@ -234,7 +234,9 @@ fn o_indice_acompanha_lances_novos_e_exclusoes() {
             .total,
         3
     );
-    store.delete_imported(report.imported[0]).unwrap();
+    store
+        .delete_imported(store.default_profile().unwrap(), report.imported[0])
+        .unwrap();
     let after = store.search_library(&LibraryQuery::default()).unwrap();
     assert_eq!(after.total, 2);
     assert_eq!(
@@ -369,7 +371,12 @@ fn favoritas_crud_com_origem() {
             ply: 2
         })
     );
-    assert_eq!(store.find_favorite(fen).unwrap(), Some(id));
+    assert_eq!(
+        store
+            .find_favorite(store.default_profile().unwrap(), fen)
+            .unwrap(),
+        Some(id)
+    );
     // Mesma posição (contadores diferentes) é a mesma favorita: atualiza, não duplica.
     let same = store
         .add_favorite(&NewFavorite {
@@ -387,8 +394,12 @@ fn favoritas_crud_com_origem() {
             .len(),
         1
     );
-    store.update_favorite(id, "Final", "nota nova").unwrap();
-    let got = store.get_favorite(id).unwrap();
+    store
+        .update_favorite(store.default_profile().unwrap(), id, "Final", "nota nova")
+        .unwrap();
+    let got = store
+        .get_favorite(store.default_profile().unwrap(), id)
+        .unwrap();
     assert_eq!(
         (got.name.as_str(), got.note.as_str()),
         ("Final", "nota nova")
@@ -401,7 +412,9 @@ fn favoritas_crud_com_origem() {
         })
         .unwrap();
     assert_eq!(hit.len(), 1);
-    store.delete_favorite(id).unwrap();
+    store
+        .delete_favorite(store.default_profile().unwrap(), id)
+        .unwrap();
     assert!(
         store
             .list_favorites(&FavoriteQuery::default())
@@ -409,10 +422,15 @@ fn favoritas_crud_com_origem() {
             .is_empty()
     );
     assert!(matches!(
-        store.delete_favorite(id),
+        store.delete_favorite(store.default_profile().unwrap(), id),
         Err(StoreError::FavoriteNotFound(_))
     ));
-    assert_eq!(store.find_favorite(fen).unwrap(), None);
+    assert_eq!(
+        store
+            .find_favorite(store.default_profile().unwrap(), fen)
+            .unwrap(),
+        None
+    );
 }
 
 #[test]
