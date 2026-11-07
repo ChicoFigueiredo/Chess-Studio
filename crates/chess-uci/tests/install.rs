@@ -89,6 +89,7 @@ fn spec(url: String, sha256: String, kind: ArchiveKind) -> InstallSpec {
         sha256,
         kind,
         executable: EXE_IN_ARCHIVE.to_owned(),
+        keep: vec!["Copying.txt".to_owned(), "AUTHORS".to_owned()],
     }
 }
 
@@ -102,11 +103,13 @@ fn run(spec: &InstallSpec, root: &Path) -> Result<chess_uci::Installed, InstallE
     )
 }
 
+/// Nomes na pasta, sem o marcador de procedência que o app grava.
 fn names(dir: &Path) -> Vec<String> {
     let mut names: Vec<String> = fs::read_dir(dir)
         .map(|r| {
             r.flatten()
                 .map(|e| e.file_name().to_string_lossy().into_owned())
+                .filter(|n| n != chess_uci::INSTALL_MARKER)
                 .collect()
         })
         .unwrap_or_default();

@@ -20,12 +20,16 @@ mod detect;
 mod engine;
 mod error;
 mod install;
+mod manager;
+mod options;
 mod player;
 mod protocol;
 
 pub use catalog::{
-    ASSETS, ArchiveKind, Asset, RELEASE_BASE_URL, STOCKFISH_LICENSE_NAME, STOCKFISH_LICENSE_URL,
-    STOCKFISH_SOURCE_URL, STOCKFISH_VERSION, asset_for, asset_for_host, install_dir_name,
+    ASSETS, ArchiveKind, Asset, Backend, CATALOG, CatalogEntry, LC0_ASSETS, LC0_NETWORKS,
+    LC0_VERSION, Network, OFFICIAL_HOSTS, RELEASE_BASE_URL, STOCKFISH_LICENSE_NAME,
+    STOCKFISH_LICENSE_URL, STOCKFISH_SOURCE_URL, STOCKFISH_VERSION, asset_for, asset_for_host,
+    entry as catalog_entry, install_dir_name, is_official_url,
 };
 pub use config::{EngineConfig, Timeouts};
 pub use controller::{
@@ -34,12 +38,24 @@ pub use controller::{
 };
 pub use detect::{
     DetectedEngine, PROBE_TIMEOUT, SearchEnv, app_data_dir, detect_host, detect_in,
-    engine_files_in, engines_dir, load_preferred, probe_config, probe_engine, save_preferred,
-    search_dirs,
+    engine_files_in, engines_dir, load_preferred, probe_config, probe_engine, probe_full,
+    save_preferred, search_dirs,
 };
 pub use engine::{Engine, EngineMove, QuitOutcome};
 pub use error::{EngineError, Stage};
-pub use install::{InstallError, InstallSpec, Installed, Progress, install};
+pub use install::{
+    INSTALL_MARKER, InstallError, InstallSpec, Installed, InstalledNetwork, NetworkSpec, Progress,
+    install, install_network,
+};
+pub use manager::{
+    InstallPlan, NETWORKS_DIR, RemoveError, Updated, install_from_catalog,
+    install_network_from_catalog, installed_networks, plans_for, remove_installed, update,
+    update_available, update_from_catalog, weights_option,
+};
+pub use options::{
+    Control, Limits, OptionGroup, OptionSpec, SettingError, effective_bounds, group_of,
+    parse_option, parse_options, resolve_settings, validate_option,
+};
 pub use player::{DEFAULT_MOVETIME, EnginePlayer, PlayerStatus};
 pub use protocol::{
     BestMove, Clock, EngineInfo, EngineOption, GoParams, LogEntry, LogSource, PositionSpec,

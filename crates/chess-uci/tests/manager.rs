@@ -496,3 +496,44 @@ fn configured_options_reach_the_engine_and_hostile_ones_never_do() {
     let text = fs::read_to_string(&trace).unwrap_or_default();
     assert!(!text.contains("setoption name Skill Level value 7"), "{text}");
 }
+
+// --- rede real (só com --ignored) ---------------------------------------------------------
+
+/// Baixa cada arquivo do catálogo do Lc0 (redes e pacotes Windows; cerca de 850 MB no
+/// total) e confere o SHA-256 fixado. Roda só com `--ignored` e rede.
+#[test]
+#[ignore = "toca a rede real: baixa as redes e os pacotes Windows do Lc0 (~850 MB)"]
+fn real_lc0_catalog_hashes_match_the_official_downloads() {
+    let lc0 = chess_uci::catalog_entry("lc0").expect("lc0");
+    let root = scratch("real-lc0");
+    for net in lc0.networks {
+        let spec = NetworkSpec {
+            url: net.url(),
+            sha256: net.sha256.to_owned(),
+            file_name: net.file_name.to_owned(),
+        };
+        let done = install_network(&spec, &root, &never(), &mut |_| {}).expect(net.file_name);
+        assert_eq!(done.sha256, net.sha256);
+        assert_eq!(
+            fs::metadata(&done.path).expect("meta").len(),
+            net.size,
+            "{}",
+            net.file_name
+        );
+    }
+    for asset in lc0.assets {
+        let spec = NetworkSpec {
+            url: asset.url(),
+            sha256: asset.sha256.to_owned(),
+            file_name: asset.file_name.to_owned(),
+        };
+        let done = install_network(&spec, &root, &never(), &mut |_| {}).expect(asset.file_name);
+        assert_eq!(
+            fs::metadata(&done.path).expect("meta").len(),
+            asset.size,
+            "{}",
+            asset.file_name
+        );
+        fs::remove_file(&done.path).expect("liberar espaço");
+    }
+}

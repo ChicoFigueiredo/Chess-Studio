@@ -170,6 +170,11 @@ pub struct EngineOption {
 }
 
 impl EngineOption {
+    /// Interpreta uma linha `option name … type …` (como anunciada no handshake).
+    pub fn parse_line(line: &str) -> Option<Self> {
+        Self::parse(line)
+    }
+
     pub(crate) fn parse(line: &str) -> Option<Self> {
         let rest = line.strip_prefix("option name ")?;
         let (name, after) = rest.split_once(" type ")?;

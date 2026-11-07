@@ -152,6 +152,9 @@ impl Engine {
             state: State::Idle,
         };
         engine.handshake()?;
+        for (name, value) in &config.options {
+            engine.set_option(name, Some(value))?;
+        }
         engine.is_ready()?;
         Ok(engine)
     }
@@ -193,6 +196,13 @@ impl Engine {
 
     /// `setoption name <nome> [value <valor>]`.
     pub fn set_option(&mut self, name: &str, value: Option<&str>) -> Result<(), EngineError> {
+        // Quebra de linha ou controle em nome/valor injetaria outro comando UCI.
+        let hostile = |t: &str| t.chars().any(char::is_control);
+        if name.is_empty() || hostile(name) || value.is_some_and(hostile) {
+            return Err(EngineError::InvalidInput(format!(
+                "opção UCI inválida: {name:?}"
+            )));
+        }
         self.ensure_idle()?;
         match value {
             Some(v) => self.send(&format!("setoption name {name} value {v}")),
