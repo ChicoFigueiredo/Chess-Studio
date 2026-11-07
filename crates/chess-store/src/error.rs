@@ -1,6 +1,6 @@
 //! Erros tipados do repositório.
 
-use crate::{GameId, ProfileId, RunId};
+use crate::{GameId, ImportedId, ProfileId, RunId};
 use chess_game::ReplayError;
 use std::fmt;
 
@@ -45,6 +45,8 @@ pub enum StoreError {
         expected: String,
         got: String,
     },
+    /// Partida importada de PGN que não existe (ou foi excluída).
+    ImportedGameNotFound(ImportedId),
 }
 
 impl fmt::Display for StoreError {
@@ -84,6 +86,7 @@ impl fmt::Display for StoreError {
                 "Resolução {} é do Exercício `{expected}`, não de `{got}`",
                 run.0
             ),
+            Self::ImportedGameNotFound(id) => write!(f, "partida importada {} não existe", id.0),
         }
     }
 }

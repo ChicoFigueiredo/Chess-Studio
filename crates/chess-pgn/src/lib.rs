@@ -13,6 +13,7 @@
 mod convert;
 mod error;
 mod export;
+mod lexer;
 mod model;
 mod parser;
 

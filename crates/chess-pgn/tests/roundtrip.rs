@@ -59,7 +59,10 @@ fn exportacao_tem_str_primeiro_linhas_curtas_e_variacoes_entre_parenteses() {
         ["Event", "Site", "Date", "Round", "White", "Black", "Result"]
     );
     assert!(text.lines().all(|l| l.chars().count() <= 80), "{text}");
-    assert!(text.contains("(3... Nf6 4. Nc3 (4. e5 d5) 4... Bb4)"), "{text}");
+    assert!(
+        text.contains("(3... Nf6 4. Nc3 (4. e5 d5) 4... Bb4)"),
+        "{text}"
+    );
     assert!(text.trim_end().ends_with("23. Be7# 1-0"));
 }
 
@@ -86,7 +89,10 @@ fn arvore_montada_a_mao_exporta_comentarios_nags_e_numeracao_das_pretas() {
         comments: vec![],
     };
     let text = game.to_pgn();
-    assert!(text.contains("1. e4 $1 {rei} 1... e5 (1... c5 2. Nf3) 2. Nf3 *"), "{text}");
+    assert!(
+        text.contains("1. e4 $1 {rei} 1... e5 (1... c5 2. Nf3) 2. Nf3 *"),
+        "{text}"
+    );
     assert_eq!(parse_pgn(&text).unwrap()[0].moves, game.moves);
 }
 
@@ -116,8 +122,16 @@ fn pgn_exportado_pelo_app_e_importado_sem_perda() {
         ..PgnOptions::default()
     };
     let parsed = &parse_pgn(&game.to_pgn(&options)).unwrap()[0];
-    let history: Vec<String> = game.snapshot().history.iter().map(|h| h.san.clone()).collect();
-    assert_eq!(parsed.mainline_sans(), history.iter().map(String::as_str).collect::<Vec<_>>());
+    let history: Vec<String> = game
+        .snapshot()
+        .history
+        .iter()
+        .map(|h| h.san.clone())
+        .collect();
+    assert_eq!(
+        parsed.mainline_sans(),
+        history.iter().map(String::as_str).collect::<Vec<_>>()
+    );
     assert_eq!(parsed.result, PgnResult::WhiteWins);
     assert_eq!(parsed.tag("Black"), Some("Duque \"e\" Conde"));
     assert_eq!(parsed.tag("Termination"), Some("normal"));
@@ -138,21 +152,50 @@ fn comentarios_de_infracao_do_app_voltam_como_comentarios_no_lance_certo() {
     let at = |ms| Timestamp::mono(ms);
     let h = |game: &mut Game, ms, c| game.handle(c, at(ms)).unwrap();
     h(&mut game, 1, Command::Touch { square: sq("e2") });
-    h(&mut game, 2, Command::Release { from: sq("e2"), to: sq("e4") });
+    h(
+        &mut game,
+        2,
+        Command::Release {
+            from: sq("e2"),
+            to: sq("e4"),
+        },
+    );
     h(&mut game, 3, Command::PressClock);
     // As pretas soltam a torre a8 em a5 (bloqueada): Infração.
     h(&mut game, 4, Command::Touch { square: sq("a8") });
-    h(&mut game, 5, Command::Release { from: sq("a8"), to: sq("a5") });
+    h(
+        &mut game,
+        5,
+        Command::Release {
+            from: sq("a8"),
+            to: sq("a5"),
+        },
+    );
     h(&mut game, 6, Command::PressClock);
     h(&mut game, 7, Command::Touch { square: sq("e7") });
-    h(&mut game, 8, Command::Release { from: sq("e7"), to: sq("e5") });
+    h(
+        &mut game,
+        8,
+        Command::Release {
+            from: sq("e7"),
+            to: sq("e5"),
+        },
+    );
     h(&mut game, 9, Command::PressClock);
-    assert!(game.events().iter().any(|e| matches!(e.kind, EventKind::InfractionRecorded { .. })));
+    assert!(
+        game.events()
+            .iter()
+            .any(|e| matches!(e.kind, EventKind::InfractionRecorded { .. }))
+    );
 
     let parsed = &parse_pgn(&game.to_pgn(&PgnOptions::default())).unwrap()[0];
     assert_eq!(parsed.mainline_sans(), ["e4", "e5"]);
     assert_eq!(parsed.moves[0].comments.len(), 1);
-    assert!(parsed.moves[0].comments[0].starts_with("Infração 1 das pretas"), "{:?}", parsed.moves[0]);
+    assert!(
+        parsed.moves[0].comments[0].starts_with("Infração 1 das pretas"),
+        "{:?}",
+        parsed.moves[0]
+    );
     assert_eq!(parsed.tag("TimeControl"), Some("5400+30"));
 }
 
@@ -187,5 +230,8 @@ fn conversao_de_arvore_invalida_falha_com_erro_tipado() {
         other => panic!("{other:?}"),
     }
     g.start_fen = "lixo".into();
-    assert!(matches!(g.to_assisted_game(), Err(ConvertError::InvalidFen(_))));
+    assert!(matches!(
+        g.to_assisted_game(),
+        Err(ConvertError::InvalidFen(_))
+    ));
 }

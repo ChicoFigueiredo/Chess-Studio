@@ -13,7 +13,10 @@ pub enum PgnErrorKind {
     /// Tag que não segue `[Nome "valor"]`.
     MalformedTag(String),
     /// `FEN` da tag não é uma Posição aceita.
-    InvalidFen { fen: String, source: FenError },
+    InvalidFen {
+        fen: String,
+        source: FenError,
+    },
     /// O Lance não é legal (ou não é SAN) na Posição em que aparece.
     IllegalMove {
         /// Texto do Lance como escrito no arquivo.

@@ -15,7 +15,9 @@ fn random_game(seed: u64, plies: usize) -> String {
         if moves.is_empty() {
             break;
         }
-        state = state.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
         let mv = moves[(state >> 33) as usize % moves.len()];
         if ply % 2 == 0 {
             out.push_str(&format!("{}. ", ply / 2 + 1));

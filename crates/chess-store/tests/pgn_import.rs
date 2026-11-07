@@ -39,7 +39,10 @@ fn import_pgn_grava_a_arvore_e_relata_os_erros_sem_perder_as_boas() {
     // Mais recentes primeiro.
     assert_eq!(list[0].event.as_deref(), Some("Estudo B"));
     let a = &list[1];
-    assert_eq!((a.white.as_deref(), a.black.as_deref()), (Some("Ana"), Some("Beto")));
+    assert_eq!(
+        (a.white.as_deref(), a.black.as_deref()),
+        (Some("Ana"), Some("Beto"))
+    );
     assert_eq!(a.result, "1-0");
     assert_eq!(a.ply_count, 8); // 5 da linha principal + 3 das variações
     assert_eq!(a.variation_count, 2);
@@ -72,11 +75,20 @@ fn filtro_por_texto_e_exclusao() {
     let mut store = Store::open_in_memory().unwrap();
     let report = store.import_pgn(PGN, None).unwrap();
     let ana = store
-        .list_imported(&ImportedQuery { text: Some("ana".into()), ..Default::default() })
+        .list_imported(&ImportedQuery {
+            text: Some("ana".into()),
+            ..Default::default()
+        })
         .unwrap();
     assert_eq!(ana.len(), 1);
     store.delete_imported(report.imported[0]).unwrap();
-    assert_eq!(store.list_imported(&ImportedQuery::default()).unwrap().len(), 1);
+    assert_eq!(
+        store
+            .list_imported(&ImportedQuery::default())
+            .unwrap()
+            .len(),
+        1
+    );
     assert!(matches!(
         store.load_imported(report.imported[0]),
         Err(StoreError::ImportedGameNotFound(_))
@@ -105,7 +117,10 @@ fn migracao_preserva_partidas_e_preferencias_e_cria_a_tabela_de_importadas() {
     assert_eq!(store.schema_version().unwrap(), LATEST_SCHEMA_VERSION);
     assert_eq!(store.list_games(&Default::default()).unwrap().len(), 1);
     let profile = store.default_profile().unwrap();
-    assert_eq!(store.get_pref(profile, "k").unwrap(), Some(serde_json::json!(1)));
+    assert_eq!(
+        store.get_pref(profile, "k").unwrap(),
+        Some(serde_json::json!(1))
+    );
     assert_eq!(store.import_pgn(PGN, None).unwrap().imported.len(), 2);
 }
 
@@ -117,5 +132,8 @@ fn importar_sobrevive_a_reabertura_do_banco() {
         store.import_pgn(PGN, None).unwrap().imported[0]
     };
     let store = Store::open(db.path()).unwrap();
-    assert_eq!(store.load_imported(id).unwrap().tag("Event"), Some("Estudo A"));
+    assert_eq!(
+        store.load_imported(id).unwrap().tag("Event"),
+        Some("Estudo A")
+    );
 }

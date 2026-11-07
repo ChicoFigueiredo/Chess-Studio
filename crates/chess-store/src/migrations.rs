@@ -116,8 +116,35 @@ ALTER TABLE exercise_runs ADD COLUMN session INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE exercise_runs ADD COLUMN summary_json TEXT NOT NULL DEFAULT '{}';
 ";
 
+// Partidas importadas de PGN (#48): a árvore de variações (JSON) mais colunas de
+// listagem. Só acrescenta uma tabela; nada do que existe é alterado (DB-06).
+const V4_IMPORTED_GAMES: &str = "
+CREATE TABLE imported_games (
+    id              INTEGER PRIMARY KEY,
+    profile_id      INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    source          TEXT,
+    event           TEXT,
+    white           TEXT,
+    black           TEXT,
+    date            TEXT,
+    result          TEXT NOT NULL,
+    start_fen       TEXT NOT NULL,
+    ply_count       INTEGER NOT NULL,
+    variation_count INTEGER NOT NULL,
+    tree_version    INTEGER NOT NULL DEFAULT 1,
+    tree_json       TEXT NOT NULL,
+    imported_at_ms  INTEGER NOT NULL
+);
+CREATE INDEX imported_games_recent ON imported_games (profile_id, imported_at_ms DESC, id DESC);
+";
+
 /// Migrações em ordem; o índice + 1 é a versão resultante.
-const MIGRATIONS: &[&str] = &[V1_CORE, V2_TRAINING_AND_ENGINES, V3_EXERCISE_API];
+const MIGRATIONS: &[&str] = &[
+    V1_CORE,
+    V2_TRAINING_AND_ENGINES,
+    V3_EXERCISE_API,
+    V4_IMPORTED_GAMES,
+];
 
 /// Versão de esquema desta build.
 pub const LATEST_VERSION: u32 = MIGRATIONS.len() as u32;
