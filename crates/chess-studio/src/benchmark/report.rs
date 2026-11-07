@@ -17,7 +17,34 @@ pub struct Report {
     pub process_cpu_percent: Option<SeriesStats>,
     pub gpu_vram_used_mib: Option<SeriesStats>,
     pub gpu_utilization_percent: Option<SeriesStats>,
+    /// Só com `--engine ativa`: fases com e sem análise e o impacto de cada uma (PERF-04).
+    pub analysis: Option<AnalysisReport>,
     pub notes: Vec<String>,
+}
+
+/// Comparação com e sem a Engine analisando (PERF-04).
+#[derive(Debug, Serialize)]
+pub struct AnalysisReport {
+    /// Modo do governador de carga (`maximo`, `equilibrado`, `leve`).
+    pub load_mode: String,
+    /// Meta de FPS do governador.
+    pub target_fps: u32,
+    pub phases: Vec<super::phases::PhaseReport>,
+    /// Cada fase de análise contra a de referência.
+    pub impact: Vec<super::phases::Impact>,
+    /// A máquina estava ocupada? (para interpretar os números)
+    pub machine: MachineState,
+}
+
+/// Estado da máquina durante a medição.
+#[derive(Debug, Serialize)]
+pub struct MachineState {
+    /// Média de carga de 1 min no início e no fim (Linux/macOS); 1,0 por núcleo = saturada.
+    pub load_average_1m_start: Option<f64>,
+    pub load_average_1m_end: Option<f64>,
+    pub cpu_logical_cores: usize,
+    /// VRAM já usada por outros processos antes do app abrir a janela.
+    pub vram_used_before_mib: Option<f64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -70,21 +97,31 @@ pub struct Sample {
     pub ram_mib: f64,
     pub vram_used_mib: Option<f64>,
     pub gpu_util_percent: Option<f64>,
+    /// Análise ativa (`--engine ativa`): profundidade e nós/s mostrados, e o nível do
+    /// governador de carga (0 = pleno … 4 = pausado).
+    pub analysis_depth: Option<u32>,
+    pub analysis_nps: Option<u64>,
+    pub load_level: Option<u8>,
 }
 
 pub fn samples_csv(samples: &[Sample]) -> String {
-    let mut out = String::from("t_s,fps,cpu_percent,ram_mib,vram_used_mib,gpu_util_percent\n");
+    let mut out = String::from(
+        "t_s,fps,cpu_percent,ram_mib,vram_used_mib,gpu_util_percent,analysis_depth,analysis_nps,load_level\n",
+    );
     let opt = |v: Option<f64>| v.map_or_else(String::new, |v| format!("{v:.1}"));
     for s in samples {
         let _ = writeln!(
             out,
-            "{:.1},{:.1},{:.1},{:.1},{},{}",
+            "{:.1},{:.1},{:.1},{:.1},{},{},{},{},{}",
             s.t_s,
             s.fps,
             s.cpu_percent,
             s.ram_mib,
             opt(s.vram_used_mib),
-            opt(s.gpu_util_percent)
+            opt(s.gpu_util_percent),
+            s.analysis_depth.map_or_else(String::new, |v| v.to_string()),
+            s.analysis_nps.map_or_else(String::new, |v| v.to_string()),
+            s.load_level.map_or_else(String::new, |v| v.to_string()),
         );
     }
     out
@@ -228,6 +265,9 @@ mod tests {
                 ram_mib: 300.0,
                 vram_used_mib: None,
                 gpu_util_percent: None,
+                analysis_depth: None,
+                analysis_nps: None,
+                load_level: None,
             },
             Sample {
                 t_s: 2.0,
@@ -236,15 +276,18 @@ mod tests {
                 ram_mib: 301.0,
                 vram_used_mib: Some(900.0),
                 gpu_util_percent: Some(30.0),
+                analysis_depth: Some(14),
+                analysis_nps: Some(20_000),
+                load_level: Some(1),
             },
         ]);
         let lines: Vec<&str> = csv.lines().collect();
         assert_eq!(
             lines[0],
-            "t_s,fps,cpu_percent,ram_mib,vram_used_mib,gpu_util_percent"
+            "t_s,fps,cpu_percent,ram_mib,vram_used_mib,gpu_util_percent,analysis_depth,analysis_nps,load_level"
         );
-        assert_eq!(lines[1], "1.0,60.0,12.5,300.0,,");
-        assert_eq!(lines[2], "2.0,59.0,10.0,301.0,900.0,30.0");
+        assert_eq!(lines[1], "1.0,60.0,12.5,300.0,,,,,");
+        assert_eq!(lines[2], "2.0,59.0,10.0,301.0,900.0,30.0,14,20000,1");
     }
 
     #[test]

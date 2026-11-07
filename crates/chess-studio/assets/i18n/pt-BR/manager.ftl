@@ -66,3 +66,12 @@ manager-error-store = Não foi possível gravar no banco de dados.
 manager-error-not-uci = Esse arquivo não respondeu como uma Engine UCI e não foi adicionado.
 manager-error-remove-refused = Por segurança, nada foi apagado: a pasta não é uma instalação do Chess Studio dentro da pasta de Engines.
 manager-error-remove-io = Não foi possível apagar a pasta da Engine. Feche programas que a usem e tente de novo.
+
+## Backends do Lc0 e rede neural para um Lc0 já instalado (C10).
+
+manager-backend-recommended = Backend recomendado para esta máquina: { $backend }. Sem escolha, o app usa esse e recua para a CPU se a GPU não subir.
+manager-backend-fallback-note = Nem todo backend neural funciona em toda GPU: se o escolhido falhar (sem driver CUDA, por exemplo), a análise avisa e usa a CPU.
+manager-network-download = Baixar a rede neural recomendada: { $name } ({ $size })
+manager-network-confirm = Baixar a rede neural { $name } ({ $size }) do site oficial do Lc0 e conferir o hash antes de usar?
+manager-network-accept = Aceito e quero baixar
+manager-network-installed = Rede neural instalada e selecionada. Salve a configuração para usá-la.

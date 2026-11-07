@@ -11,6 +11,7 @@
 //! cada troca de Posição a busca recebe `stop`, a nova `position` é enviada e o que sobrou
 //! da busca antiga é descartado pelo `id`.
 
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -21,8 +22,10 @@ use chess_core::{CanonicalPosition, Color, Move};
 
 use crate::controller::{Failure, FailureKind};
 use crate::{
-    Bound, Control, Engine, EngineConfig, EngineError, GoParams, InfoLine, Limits, PositionSpec,
-    Stage, Timeouts, UciScore, effective_bounds, parse_options,
+    Bound, Control, Duty, Engine, EngineConfig, EngineError, GoParams, Hardware, InfoLine, Limits,
+    LoadPlan, OptionSpec, PositionSpec, Stage, Timeouts, UciScore, advertised_backends,
+    classify_failure, describe_failure, detect_hardware, effective_bounds, fallback_backend,
+    is_gpu_backend, parse_options, recommended_backend,
 };
 
 /// Fatia de espera do worker: é a latência para notar uma troca de Posição.
@@ -75,6 +78,17 @@ pub enum AnalysisEvent {
         name: Option<String>,
         threads: Option<u32>,
         hash_mb: Option<u32>,
+        /// Backend em uso (Lc0); `None` para Engines sem a opção `Backend`.
+        backend: Option<String>,
+        /// Backends que a Engine anuncia (vazio se não tem a opção).
+        backends: Vec<String>,
+    },
+    /// O backend de GPU não subiu e a análise recuou para um de CPU (UCI-06).
+    BackendFallback {
+        from: String,
+        to: String,
+        /// Frase em pt-BR com o motivo provável.
+        message: String,
     },
     Update(AnalysisUpdate),
     /// A Engine de análise não serve mais; crie outro controlador para tentar de novo.
@@ -92,6 +106,15 @@ pub struct AnalysisConfig {
     pub limits: Limits,
     /// Intervalo mínimo entre duas atualizações.
     pub interval: Duration,
+    /// Backend escolhido à mão (Lc0); `None` = escolha automática pelo que a Engine anuncia
+    /// e pela máquina. Um `Backend` nas opções da Engine vale como escolha manual.
+    pub backend: Option<String>,
+    /// Máquina (GPU); `None` = detectar ao subir a Engine.
+    pub hardware: Option<Hardware>,
+    /// Sistema operacional (`std::env::consts::OS`); fixável nos testes.
+    pub os: &'static str,
+    /// Recuar para a CPU quando o backend de GPU não sobe.
+    pub cpu_fallback: bool,
 }
 
 impl AnalysisConfig {
@@ -102,6 +125,10 @@ impl AnalysisConfig {
             hash_mb: None,
             limits: Limits::for_host(),
             interval: DEFAULT_INTERVAL,
+            backend: None,
+            hardware: None,
+            os: std::env::consts::OS,
+            cpu_fallback: true,
         }
     }
 }
@@ -116,9 +143,44 @@ enum Job {
     Shutdown,
 }
 
+/// Plano de carga compartilhado com o worker: troca atômica, com contador de geração para o
+/// worker notar a mudança sem travar.
+#[derive(Debug)]
+struct LoadShared {
+    generation: AtomicU64,
+    plan: Mutex<LoadPlan>,
+}
+
+impl LoadShared {
+    fn new() -> Self {
+        Self {
+            generation: AtomicU64::new(0),
+            plan: Mutex::new(LoadPlan::FULL),
+        }
+    }
+
+    fn generation(&self) -> u64 {
+        self.generation.load(Ordering::SeqCst)
+    }
+
+    fn snapshot(&self) -> (u64, LoadPlan) {
+        let plan = self.plan.lock().unwrap_or_else(PoisonError::into_inner);
+        (self.generation(), *plan)
+    }
+
+    fn set(&self, new: LoadPlan) {
+        let mut plan = self.plan.lock().unwrap_or_else(PoisonError::into_inner);
+        if *plan != new {
+            *plan = new;
+            self.generation.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct AnalysisController {
     jobs: Sender<Job>,
+    load: Arc<LoadShared>,
     /// Em `Mutex` só para ser `Sync` (recurso do Bevy); sem disputa.
     events: Mutex<Receiver<AnalysisEvent>>,
     current: Arc<AtomicU64>,
@@ -133,9 +195,14 @@ impl AnalysisController {
         let (events_tx, events_rx) = mpsc::channel();
         let current = Arc::new(AtomicU64::new(0));
         let worker_current = Arc::clone(&current);
-        thread::spawn(move || worker(&config, &jobs_rx, &events_tx, &worker_current));
+        let load = Arc::new(LoadShared::new());
+        let worker_load = Arc::clone(&load);
+        thread::spawn(move || {
+            worker(&config, &jobs_rx, &events_tx, &worker_current, &worker_load);
+        });
         Self {
             jobs: jobs_tx,
+            load,
             events: Mutex::new(events_rx),
             current,
             next_id: 1,
@@ -156,6 +223,14 @@ impl AnalysisController {
         };
         let _ = self.jobs.send(job);
         id
+    }
+
+    /// Aplica o plano do governador de carga (C10): a busca em curso recebe `stop`, os tetos de
+    /// Threads/lote/cache são reenviados e a busca recomeça; plano pausado deixa a Engine
+    /// parada (o pedido continua valendo) e o intermitente roda em rajadas. Plano igual ao
+    /// atual não toca na Engine.
+    pub fn set_load(&mut self, plan: LoadPlan) {
+        self.load.set(plan);
     }
 
     /// Para a análise (a Engine recebe `stop`); o que ainda chegar é descartado.
@@ -222,33 +297,62 @@ impl Drop for AnalysisController {
 
 // --- worker ------------------------------------------------------------------
 
+/// Engine de análise pronta (backend escolhido, recursos aplicados).
+struct Started {
+    engine: Engine,
+    specs: Vec<OptionSpec>,
+    threads: Option<u32>,
+    hash_mb: Option<u32>,
+    backend: Option<String>,
+    backends: Vec<String>,
+}
+
+/// Estado do worker que dura mais que um pedido.
+struct State {
+    multipv_sent: Option<u8>,
+    /// Última geração do plano de carga aplicada à Engine.
+    applied_gen: u64,
+    /// Valor numérico enviado por último de cada opção de carga.
+    sent: BTreeMap<String, i64>,
+}
+
 fn worker(
     config: &AnalysisConfig,
     jobs: &Receiver<Job>,
     out: &Sender<AnalysisEvent>,
     current: &AtomicU64,
+    load: &LoadShared,
 ) {
-    let fail = |e: &EngineError| {
-        let _ = out.send(AnalysisEvent::Failed(Failure::from(e)));
+    let started = match start_engine(config, out) {
+        Ok(started) => started,
+        Err(failure) => {
+            let _ = out.send(AnalysisEvent::Failed(failure));
+            return;
+        }
     };
-    let timeouts = config.engine.timeouts;
-    let mut engine = match Engine::spawn(config.engine.clone()).and_then(|mut e| {
-        e.new_game()?;
-        Ok(e)
-    }) {
-        Ok(e) => e,
-        Err(e) => return fail(&e),
-    };
-    let (threads, hash_mb) = match apply_resources(&mut engine, config) {
-        Ok(applied) => applied,
-        Err(e) => return fail(&e),
-    };
+    let Started {
+        mut engine,
+        specs,
+        threads,
+        hash_mb,
+        backend,
+        backends,
+    } = started;
     let _ = out.send(AnalysisEvent::Ready {
         name: engine.info().name.clone(),
         threads,
         hash_mb,
+        backend,
+        backends,
     });
-    let mut multipv_sent: Option<u8> = None;
+    let mut state = State {
+        multipv_sent: None,
+        applied_gen: 0,
+        sent: BTreeMap::new(),
+    };
+    if let Some(t) = threads {
+        state.sent.insert("Threads".into(), i64::from(t));
+    }
     while let Ok(job) = jobs.recv() {
         let Job::Analyze {
             id,
@@ -267,13 +371,178 @@ fn worker(
             position: &position,
             multipv,
             interval: config.interval,
-            timeouts,
+            timeouts: config.engine.timeouts,
         };
-        if let Err(e) = run_analysis(&mut engine, &run, &mut multipv_sent, current, out) {
-            return fail(&e); // `engine` cai aqui e o processo é encerrado
+        let ctx = Ctx {
+            config,
+            specs: &specs,
+            current,
+            load,
+            out,
+        };
+        if let Err(e) = serve(&mut engine, &ctx, &run, &mut state) {
+            let _ = out.send(AnalysisEvent::Failed(Failure::from(&e)));
+            return; // `engine` cai aqui e o processo é encerrado
         }
     }
     let _ = engine.quit();
+}
+
+/// O que o worker compartilha com o controlador, para passar de uma vez.
+struct Ctx<'a> {
+    config: &'a AnalysisConfig,
+    specs: &'a [OptionSpec],
+    current: &'a AtomicU64,
+    load: &'a LoadShared,
+    out: &'a Sender<AnalysisEvent>,
+}
+
+/// Atende um pedido até ele ser substituído, parado ou terminar, obedecendo ao plano de
+/// carga: reaplica os tetos quando o plano muda, espera enquanto pausado e roda em rajadas
+/// quando o plano pede.
+fn serve(
+    engine: &mut Engine,
+    ctx: &Ctx<'_>,
+    run: &Run<'_>,
+    state: &mut State,
+) -> Result<(), EngineError> {
+    loop {
+        if ctx.current.load(Ordering::SeqCst) != run.id {
+            return Ok(());
+        }
+        let (generation, plan) = ctx.load.snapshot();
+        if generation != state.applied_gen {
+            apply_load(engine, ctx.specs, ctx.config, &plan, &mut state.sent)?;
+            state.applied_gen = generation;
+        }
+        if plan.paused {
+            thread::sleep(SLICE);
+            continue;
+        }
+        let burst = plan.duty;
+        match run_analysis(engine, run, ctx, state, burst)? {
+            Outcome::Finished => return Ok(()),
+            Outcome::Reconfigure => {}
+            Outcome::Burst(pause) => {
+                // Descansa entre as rajadas, atento a pedido novo e a mudança de plano.
+                let until = Instant::now() + pause;
+                while Instant::now() < until
+                    && ctx.current.load(Ordering::SeqCst) == run.id
+                    && ctx.load.generation() == state.applied_gen
+                {
+                    thread::sleep(SLICE.min(until.saturating_duration_since(Instant::now())));
+                }
+            }
+        }
+    }
+}
+
+/// Sobe a Engine, escolhe o backend e aplica Threads/Hash. Se o backend de GPU não sobe,
+/// recua para um de CPU (quando permitido) e avisa com um evento.
+fn start_engine(config: &AnalysisConfig, out: &Sender<AnalysisEvent>) -> Result<Started, Failure> {
+    let hardware = config.hardware.unwrap_or_else(detect_hardware);
+    let mut base = config.engine.clone();
+    let mut manual = config.backend.clone();
+    base.options.retain(|(name, value)| {
+        if name.eq_ignore_ascii_case("backend") {
+            if manual.is_none() {
+                manual = Some(value.clone());
+            }
+            false
+        } else {
+            true
+        }
+    });
+    let manual = manual.filter(|b| !matches!(b.trim(), "" | "<autodiscover>" | "auto"));
+    let mut forced: Option<String> = None;
+    loop {
+        let fail = |e: &EngineError| Failure::from(e);
+        let mut engine = Engine::spawn(base.clone()).map_err(|e| fail(&e))?;
+        engine.new_game().map_err(|e| fail(&e))?;
+        let specs = parse_options(&engine.info().options);
+        let backends = advertised_backends(&engine.info().options);
+        let chosen = if backends.is_empty() {
+            None
+        } else if let Some(wanted) = forced.clone().or_else(|| manual.clone()) {
+            if !backends.iter().any(|b| b == &wanted) {
+                return Err(Failure::new(
+                    FailureKind::Protocol,
+                    format!(
+                        "O backend {wanted:?} não existe nesta Engine (disponíveis: {}). \
+                         Escolha outro no gerenciador de Engines.",
+                        backends.join(", ")
+                    ),
+                ));
+            }
+            Some(wanted)
+        } else {
+            recommended_backend(config.os, hardware, &backends)
+        };
+        let attempt = (|| {
+            if let Some(b) = &chosen {
+                engine.set_option("Backend", Some(b))?;
+            }
+            let (threads, hash_mb) = apply_resources(&mut engine, config)?;
+            if chosen.is_some() {
+                warm_up(&mut engine, config.engine.timeouts)?;
+            }
+            Ok((threads, hash_mb))
+        })();
+        match attempt {
+            Ok((threads, hash_mb)) => {
+                return Ok(Started {
+                    engine,
+                    specs,
+                    threads,
+                    hash_mb,
+                    backend: chosen,
+                    backends,
+                });
+            }
+            Err(e) => {
+                let Some(failed) = chosen else {
+                    return Err(Failure::from(&e));
+                };
+                // O leitor de stderr pode atrasar alguns ms em relação à morte do processo.
+                thread::sleep(Duration::from_millis(60));
+                let log: String = engine
+                    .log()
+                    .iter()
+                    .map(|entry| entry.line.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let problem = classify_failure(&log);
+                let fallback = (config.cpu_fallback && forced.is_none() && is_gpu_backend(&failed))
+                    .then(|| fallback_backend(config.os, &backends, &failed))
+                    .flatten();
+                match fallback {
+                    Some(cpu) => {
+                        let message = describe_failure(&failed, problem, Some(&cpu));
+                        let _ = out.send(AnalysisEvent::BackendFallback {
+                            from: failed,
+                            to: cpu.clone(),
+                            message,
+                        });
+                        forced = Some(cpu);
+                    }
+                    None => {
+                        let mut failure = Failure::from(&e);
+                        failure.message = describe_failure(&failed, problem, None);
+                        return Err(failure);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// O Lc0 só carrega a rede na primeira busca: uma busca curta força a falha de backend a
+/// aparecer agora (e recuar para a CPU) em vez de no meio da análise.
+fn warm_up(engine: &mut Engine, timeouts: Timeouts) -> Result<(), EngineError> {
+    engine.set_position(&PositionSpec::startpos())?;
+    engine.go(&GoParams::movetime(Duration::from_millis(50)))?;
+    engine.wait_bestmove(timeouts.ready.saturating_mul(3))?;
+    engine.new_game()
 }
 
 /// Threads e Hash: só se a Engine os anuncia, sempre dentro dos limites do app.
@@ -302,6 +571,51 @@ fn apply_resources(
     Ok((threads, hash))
 }
 
+/// Aplica os tetos do plano de carga: o valor configurado (ou o padrão da Engine) limitado
+/// pelo teto. Só envia o que mudou. A Engine está parada (`stop` já feito).
+fn apply_load(
+    engine: &mut Engine,
+    specs: &[OptionSpec],
+    config: &AnalysisConfig,
+    plan: &LoadPlan,
+    sent: &mut BTreeMap<String, i64>,
+) -> Result<(), EngineError> {
+    let knobs: [(&str, Option<u32>, Option<u32>); 3] = [
+        ("Threads", plan.threads_cap, config.threads),
+        ("MinibatchSize", plan.minibatch_cap, None),
+        ("NNCacheSize", plan.nn_cache_cap, None),
+    ];
+    let mut changed = false;
+    for (name, cap, wanted) in knobs {
+        let Some(spec) = specs.iter().find(|s| {
+            s.name.eq_ignore_ascii_case(name) && matches!(s.control, Control::Spin { .. })
+        }) else {
+            continue;
+        };
+        let Control::Spin { default, .. } = spec.control else {
+            continue;
+        };
+        let (min, max) = effective_bounds(spec, &config.limits).unwrap_or((0, i64::MAX));
+        let base = wanted.map_or(default, i64::from).clamp(min, max);
+        // Valor 0 é "automático" no Lc0: sob um teto, o teto vale.
+        let value = match (cap.map(i64::from), base) {
+            (Some(c), 0) => c,
+            (Some(c), b) => b.min(c),
+            (None, b) => b,
+        }
+        .clamp(min, max);
+        if sent.get(&spec.name).copied().unwrap_or(default) != value {
+            engine.set_option(&spec.name, Some(&value.to_string()))?;
+            sent.insert(spec.name.clone(), value);
+            changed = true;
+        }
+    }
+    if changed {
+        engine.is_ready()?;
+    }
+    Ok(())
+}
+
 struct Run<'a> {
     id: u64,
     position: &'a PositionSpec,
@@ -321,34 +635,67 @@ fn resolve(spec: &PositionSpec) -> Option<CanonicalPosition> {
     Some(position)
 }
 
+/// Como uma rodada de busca terminou.
+enum Outcome {
+    /// Pedido substituído, parado ou a Engine encerrou a busca sozinha.
+    Finished,
+    /// O plano de carga mudou: reaplicar e buscar de novo.
+    Reconfigure,
+    /// Fim de uma rajada: descansar este tempo e retomar.
+    Burst(Duration),
+}
+
 fn run_analysis(
     engine: &mut Engine,
     run: &Run<'_>,
-    multipv_sent: &mut Option<u8>,
-    current: &AtomicU64,
-    out: &Sender<AnalysisEvent>,
-) -> Result<(), EngineError> {
+    ctx: &Ctx<'_>,
+    state: &mut State,
+    burst: Option<Duty>,
+) -> Result<Outcome, EngineError> {
     let Some(position) = resolve(run.position) else {
         // Posição que o núcleo não aceita: nada a analisar.
-        let _ = out.send(AnalysisEvent::Update(AnalysisUpdate {
+        let _ = ctx.out.send(AnalysisEvent::Update(AnalysisUpdate {
             id: run.id,
             lines: Vec::new(),
         }));
-        return Ok(());
+        return Ok(Outcome::Finished);
     };
-    if *multipv_sent != Some(run.multipv)
+    if state.multipv_sent != Some(run.multipv)
         && engine.info().options.iter().any(|o| o.name == "MultiPV")
     {
         engine.set_option("MultiPV", Some(&run.multipv.to_string()))?;
-        *multipv_sent = Some(run.multipv);
+        state.multipv_sent = Some(run.multipv);
     }
     engine.set_position(run.position)?;
     engine.go(&GoParams::infinite())?;
+    let began = Instant::now();
     let mut collector = Collector::new(position, usize::from(run.multipv));
     let mut last_emit: Option<Instant> = None;
+    let emit = |collector: &mut Collector, last_emit: &mut Option<Instant>| {
+        collector.dirty = false;
+        *last_emit = Some(Instant::now());
+        let _ = ctx.out.send(AnalysisEvent::Update(AnalysisUpdate {
+            id: run.id,
+            lines: collector.lines(),
+        }));
+    };
     loop {
-        if current.load(Ordering::SeqCst) != run.id {
-            return stop_search(engine, run.timeouts);
+        // Pedido novo, plano novo ou fim da rajada: para a busca (sem perder o que já veio).
+        let interrupt = if ctx.current.load(Ordering::SeqCst) != run.id {
+            Some(Outcome::Finished)
+        } else if ctx.load.generation() != state.applied_gen {
+            Some(Outcome::Reconfigure)
+        } else {
+            burst
+                .filter(|d| began.elapsed() >= d.run)
+                .map(|d| Outcome::Burst(d.pause))
+        };
+        if let Some(outcome) = interrupt {
+            if collector.dirty && ctx.current.load(Ordering::SeqCst) == run.id {
+                emit(&mut collector, &mut last_emit);
+            }
+            stop_search(engine, run.timeouts)?;
+            return Ok(outcome);
         }
         let result = engine.wait_bestmove_with(SLICE, |info| collector.feed(info));
         let finished = match result {
@@ -358,15 +705,10 @@ fn run_analysis(
         };
         let due = last_emit.is_none_or(|t| t.elapsed() >= run.interval);
         if collector.dirty && (due || finished) {
-            collector.dirty = false;
-            last_emit = Some(Instant::now());
-            let _ = out.send(AnalysisEvent::Update(AnalysisUpdate {
-                id: run.id,
-                lines: collector.lines(),
-            }));
+            emit(&mut collector, &mut last_emit);
         }
         if finished {
-            return Ok(());
+            return Ok(Outcome::Finished);
         }
     }
 }

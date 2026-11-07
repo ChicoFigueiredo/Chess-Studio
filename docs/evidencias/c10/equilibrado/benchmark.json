@@ -1,0 +1,253 @@
+{
+  "schema_version": 1,
+  "run": {
+    "app_version": "0.1.0",
+    "git_commit": "c62a3492dfcc",
+    "started_utc": "2026-11-07T02:38:27Z",
+    "requested_minutes": 2.15,
+    "measured_seconds": 126.02097831439971,
+    "warmup_seconds": 3.0,
+    "preset": "equilibrado",
+    "engine": "ativa",
+    "engine_integrated": true,
+    "present_mode": "vsync",
+    "window_width": 1920,
+    "window_height": 1020,
+    "route": "órbita de 20 s por volta; Vista a cada 15 s (Padrão, Oblíqua, Superior, Invertida)"
+  },
+  "system": {
+    "os": "Linux (Ubuntu 26.04)",
+    "kernel": "7.0.0-38-generic",
+    "cpu_brand": "AMD Ryzen 7 3700X 8-Core Processor",
+    "cpu_logical_cores": 16,
+    "ram_total_mib": 128688.85546875
+  },
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 4080 SUPER",
+    "vendor_id": 4318,
+    "device_id": 9986,
+    "device_type": "DiscreteGpu",
+    "driver": "NVIDIA",
+    "driver_info": "595.99.02",
+    "backend": "Vulkan",
+    "vram_source": "nvidia-smi",
+    "vram_total_mib": 16376.0
+  },
+  "frame_time": {
+    "frames": 6635,
+    "total_seconds": 126.02097831439971,
+    "fps_avg": 52.64996422616928,
+    "frame_ms_avg": 18.993365232012014,
+    "frame_ms_min": 8.175786018371582,
+    "frame_ms_max": 120.78614044189453,
+    "frame_ms_p1": 10.782382011413574,
+    "frame_ms_p5": 12.511530876159668,
+    "frame_ms_p50": 17.436721801757812,
+    "frame_ms_p95": 30.90989875793457,
+    "frame_ms_p99": 41.95900344848633,
+    "fps_1pct_low": 19.336816410312252
+  },
+  "process_ram_mib": {
+    "samples": 124,
+    "min": 947.99609375,
+    "avg": 953.7490234375,
+    "max": 956.48828125
+  },
+  "process_cpu_percent": {
+    "samples": 124,
+    "min": 0.0,
+    "avg": 73.28242431148406,
+    "max": 88.44720458984375
+  },
+  "gpu_vram_used_mib": {
+    "samples": 124,
+    "min": 10834.0,
+    "avg": 11285.370967741936,
+    "max": 12353.0
+  },
+  "gpu_utilization_percent": {
+    "samples": 124,
+    "min": 4.0,
+    "avg": 28.056451612903224,
+    "max": 71.0
+  },
+  "analysis": {
+    "load_mode": "equilibrado",
+    "target_fps": 60,
+    "phases": [
+      {
+        "name": "sem-analise",
+        "engine": null,
+        "engine_path": null,
+        "backend": null,
+        "start_s": 3.0,
+        "end_s": 45.0,
+        "settle_seconds": 0.0,
+        "frame_time": {
+          "frames": 2291,
+          "total_seconds": 41.9924574136734,
+          "fps_avg": 54.55741676251637,
+          "frame_ms_avg": 18.32931358082645,
+          "frame_ms_min": 8.175786018371582,
+          "frame_ms_max": 74.8757095336914,
+          "frame_ms_p1": 10.925822257995605,
+          "frame_ms_p5": 12.46566390991211,
+          "frame_ms_p50": 17.006332397460938,
+          "frame_ms_p95": 28.039085388183594,
+          "frame_ms_p99": 41.0928955078125,
+          "fps_1pct_low": 19.116662730235113
+        },
+        "process_cpu_percent": {
+          "samples": 41,
+          "min": 0.0,
+          "avg": 73.9865352351491,
+          "max": 86.24535369873047
+        },
+        "gpu_vram_used_mib": {
+          "samples": 41,
+          "min": 10842.0,
+          "avg": 10842.0,
+          "max": 10842.0
+        },
+        "gpu_utilization_percent": {
+          "samples": 41,
+          "min": 14.0,
+          "avg": 30.51219512195122,
+          "max": 50.0
+        },
+        "analysis_depth_max": null,
+        "analysis_nps_avg": null,
+        "load_level_seconds": {}
+      },
+      {
+        "name": "com-analise-stockfish",
+        "engine": "Stockfish",
+        "engine_path": "/home/chico/.cache/chess-studio-dev/stockfish/stockfish",
+        "backend": null,
+        "start_s": 45.0,
+        "end_s": 87.0,
+        "settle_seconds": 2.0,
+        "frame_time": {
+          "frames": 2016,
+          "total_seconds": 40.01737737178802,
+          "fps_avg": 50.37811401956756,
+          "frame_ms_avg": 19.849889569339297,
+          "frame_ms_min": 8.894307136535645,
+          "frame_ms_max": 75.87069702148438,
+          "frame_ms_p1": 10.761202812194824,
+          "frame_ms_p5": 12.661211967468262,
+          "frame_ms_p50": 18.178966522216797,
+          "frame_ms_p95": 32.96392822265625,
+          "frame_ms_p99": 44.12101364135742,
+          "fps_1pct_low": 19.416842696949388
+        },
+        "process_cpu_percent": {
+          "samples": 40,
+          "min": 42.46913528442383,
+          "avg": 71.37844696044922,
+          "max": 85.81997680664062
+        },
+        "gpu_vram_used_mib": {
+          "samples": 40,
+          "min": 10841.0,
+          "avg": 10841.8,
+          "max": 10842.0
+        },
+        "gpu_utilization_percent": {
+          "samples": 40,
+          "min": 11.0,
+          "avg": 30.2,
+          "max": 51.0
+        },
+        "analysis_depth_max": 28,
+        "analysis_nps_avg": 348706.2571428571,
+        "load_level_seconds": {
+          "intermitente": 3.0,
+          "minimo": 3.0,
+          "pausado": 10.0,
+          "pleno": 8.0,
+          "reduzido": 18.0
+        }
+      },
+      {
+        "name": "com-analise-lc0",
+        "engine": "Lc0",
+        "engine_path": "/home/chico/.cache/chess-studio-dev/lc0/build/lc0",
+        "backend": "cuda-auto",
+        "start_s": 87.0,
+        "end_s": 129.0,
+        "settle_seconds": 2.0,
+        "frame_time": {
+          "frames": 2119,
+          "total_seconds": 39.971999390602114,
+          "fps_avg": 53.012109284135576,
+          "frame_ms_avg": 18.86361462510718,
+          "frame_ms_min": 8.938629150390625,
+          "frame_ms_max": 75.49116516113281,
+          "frame_ms_p1": 10.982028007507324,
+          "frame_ms_p5": 12.541637420654297,
+          "frame_ms_p50": 17.294483184814453,
+          "frame_ms_p95": 31.00472640991211,
+          "frame_ms_p99": 40.300628662109375,
+          "fps_1pct_low": 21.41089515958833
+        },
+        "process_cpu_percent": {
+          "samples": 39,
+          "min": 45.432098388671875,
+          "avg": 74.4322653550368,
+          "max": 88.44720458984375
+        },
+        "gpu_vram_used_mib": {
+          "samples": 39,
+          "min": 10834.0,
+          "avg": 12251.923076923076,
+          "max": 12353.0
+        },
+        "gpu_utilization_percent": {
+          "samples": 39,
+          "min": 4.0,
+          "avg": 22.487179487179485,
+          "max": 71.0
+        },
+        "analysis_depth_max": 14,
+        "analysis_nps_avg": 10371.6,
+        "load_level_seconds": {
+          "intermitente": 3.0,
+          "minimo": 3.0,
+          "pausado": 15.0,
+          "pleno": 6.0,
+          "reduzido": 14.0
+        }
+      }
+    ],
+    "impact": [
+      {
+        "phase": "com-analise-stockfish",
+        "fps_avg_delta_percent": -7.66037505247168,
+        "fps_1pct_low_delta_percent": 1.5702529827003069,
+        "frame_ms_p95_delta": 4.924842834472656,
+        "frame_ms_p99_delta": 3.028118133544922,
+        "process_cpu_percent_delta": -2.608088274699881,
+        "gpu_vram_used_mib_delta": -0.2000000000007276,
+        "gpu_utilization_percent_delta": -0.3121951219512198
+      },
+      {
+        "phase": "com-analise-lc0",
+        "fps_avg_delta_percent": -2.832442535003773,
+        "fps_1pct_low_delta_percent": 12.001218317905632,
+        "frame_ms_p95_delta": 2.9656410217285156,
+        "frame_ms_p99_delta": -0.792266845703125,
+        "process_cpu_percent_delta": 0.44573011988769906,
+        "gpu_vram_used_mib_delta": 1409.9230769230762,
+        "gpu_utilization_percent_delta": -8.025015634771734
+      }
+    ],
+    "machine": {
+      "load_average_1m_start": 47.98,
+      "load_average_1m_end": 49.7,
+      "cpu_logical_cores": 16,
+      "vram_used_before_mib": 10552.0
+    }
+  },
+  "notes": []
+}

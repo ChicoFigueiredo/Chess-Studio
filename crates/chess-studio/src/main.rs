@@ -31,6 +31,7 @@ mod hud_policy;
 mod i18n;
 mod layout;
 mod library_ui;
+mod load_control;
 mod new_game;
 mod notation;
 mod paths;

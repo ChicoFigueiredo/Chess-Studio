@@ -3,24 +3,31 @@
 //! O app roda por `--minutes` (padrão 5), grava `benchmark.json`, `frame_times.csv` e
 //! `samples.csv` no diretório de saída, imprime um resumo e encerra sozinho.
 //!
+//! Engine ativa (`--engine ativa`, C10, PERF-04): a medição é dividida em fases iguais, a
+//! primeira sem análise e uma por Engine (Stockfish e, se houver, Lc0) com o painel Análise
+//! ligado de verdade, e o relatório traz o impacto de cada uma em FPS, frame time, CPU, VRAM
+//! e uso da GPU (`phases.rs`). `--load maximo|equilibrado|leve` escolhe o governador de carga,
+//! `--engine-path`, `--network` e `--backend` indicam as Engines.
+//!
 //! Limitações conhecidas (documentadas no PR da issue #23):
-//! - `--engine ativa` só registra o campo; a Engine real (UCI) chega no B9;
 //! - VRAM/utilização da GPU vêm do `nvidia-smi` (sem dependência obrigatória) e medem a
 //!   GPU inteira, não só este processo; sem `nvidia-smi` os campos ficam nulos;
 //! - CPU do processo: 100% = um núcleo lógico inteiro (pode passar de 100%).
 
 mod config;
+mod phases;
 mod report;
 mod route;
 mod stats;
 
 pub use config::{BenchmarkConfig, parse_args};
 
+use crate::analysis::Analysis;
 use crate::camera::{CameraRig, CameraSet, MainCamera};
 use bevy::prelude::*;
 use bevy::render::{ExtractSchedule, RenderApp, renderer::RenderAdapterInfo, view::Msaa};
 use bevy::window::PrimaryWindow;
-use report::{GpuInfo, Report, RunInfo, Sample, SystemInfo};
+use report::{AnalysisReport, GpuInfo, MachineState, Report, RunInfo, Sample, SystemInfo};
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
@@ -30,6 +37,8 @@ use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 /// Os primeiros segundos (compilação de shaders, abertura da janela) ficam fora da estatística.
 const WARMUP_S: f64 = 3.0;
 const NVIDIA_POLL: Duration = Duration::from_secs(3);
+/// Com Engine ativa as fases são curtas: a GPU é lida a cada segundo.
+const NVIDIA_POLL_ACTIVE: Duration = Duration::from_secs(1);
 const MIB: f64 = 1024.0 * 1024.0;
 
 #[derive(Debug, Clone, Copy)]
@@ -57,6 +66,83 @@ struct Bench {
     nvidia: Arc<Mutex<Option<NvidiaSample>>>,
     nvidia_total_mib: Option<f64>,
     notes: Vec<String>,
+    /// `--engine ativa`: fases (a primeira sem análise) e o backend visto em cada uma.
+    phases: Vec<phases::PhaseSpec>,
+    phase_now: Option<usize>,
+    phase_backend: Vec<Option<String>>,
+    load_avg_start: Option<f64>,
+    vram_before_mib: Option<f64>,
+}
+
+/// Engines que analisam no benchmark: as indicadas por `--engine-path` ou as do ambiente.
+fn analysis_candidates(cfg: &BenchmarkConfig, notes: &mut Vec<String>) -> Vec<phases::Candidate> {
+    let mut paths = cfg.engine_paths.clone();
+    if paths.is_empty() {
+        paths.extend(crate::engine::resolve_engine());
+        paths.extend(
+            std::env::var_os(chess_uci::LC0_ENV)
+                .map(PathBuf::from)
+                .filter(|p| p.is_file()),
+        );
+    }
+    let network = cfg.network.clone().or_else(|| {
+        std::env::var_os("CHESS_STUDIO_LC0_NET")
+            .map(PathBuf::from)
+            .filter(|p| p.is_file())
+    });
+    let mut out = Vec::new();
+    for path in paths {
+        let stem = path
+            .file_stem()
+            .map_or_else(String::new, |s| s.to_string_lossy().into_owned());
+        let mut options = Vec::new();
+        let name = if stem.to_lowercase().starts_with("lc0") {
+            let Some(net) = &network else {
+                notes.push(format!(
+                    "{}: Lc0 sem rede neural (use --network ou CHESS_STUDIO_LC0_NET); fase omitida.",
+                    path.display()
+                ));
+                continue;
+            };
+            options.push(("WeightsFile".to_owned(), net.to_string_lossy().into_owned()));
+            if let Some(backend) = &cfg.backend {
+                options.push(("Backend".to_owned(), backend.clone()));
+            }
+            "Lc0".to_owned()
+        } else {
+            let mut name = stem;
+            if let Some(first) = name.get_mut(..1) {
+                first.make_ascii_uppercase();
+            }
+            name
+        };
+        if !path.is_file() {
+            notes.push(format!(
+                "{}: Engine não encontrada; fase omitida.",
+                path.display()
+            ));
+            continue;
+        }
+        out.push(phases::Candidate {
+            name,
+            path,
+            options,
+        });
+    }
+    out
+}
+
+/// Uma leitura única do `nvidia-smi` (VRAM em uso antes de o app abrir a janela).
+fn nvidia_now() -> Option<NvidiaSample> {
+    let out = Command::new("nvidia-smi")
+        .args([
+            "--query-gpu=memory.used,memory.total,utilization.gpu",
+            "--format=csv,noheader,nounits",
+        ])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?;
+    parse_nvidia(&String::from_utf8_lossy(&out.stdout))
 }
 
 pub struct BenchmarkPlugin {
@@ -72,7 +158,23 @@ impl Plugin for BenchmarkPlugin {
         let cap = (duration_s * 1000.0) as usize + 1024;
         let gpu = Arc::new(Mutex::new(None));
         let nvidia = Arc::new(Mutex::new(None));
-        spawn_nvidia_poller(nvidia.clone());
+        let active = cfg.engine == config::EngineMode::Active;
+        spawn_nvidia_poller(
+            nvidia.clone(),
+            if active {
+                NVIDIA_POLL_ACTIVE
+            } else {
+                NVIDIA_POLL
+            },
+        );
+        let mut notes = Vec::new();
+        let phases = if active {
+            phases::plan(WARMUP_S, duration_s, analysis_candidates(&cfg, &mut notes))
+        } else {
+            Vec::new()
+        };
+        let phase_backend = vec![None; phases.len()];
+        let vram_before_mib = active.then(nvidia_now).flatten().map(|n| n.used_mib);
 
         if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
             let slot = gpu.clone();
@@ -121,16 +223,22 @@ impl Plugin for BenchmarkPlugin {
             gpu,
             nvidia,
             nvidia_total_mib: None,
-            notes: Vec::new(),
+            notes,
+            phases,
+            phase_now: None,
+            phase_backend,
+            load_avg_start: System::load_average().one.into(),
+            vram_before_mib,
         })
         .add_systems(PostStartup, apply_preset)
         .add_systems(Update, drive_camera.before(CameraSet))
+        .add_systems(Update, drive_phases)
         .add_systems(Last, collect);
     }
 }
 
 /// Lê `nvidia-smi` a cada poucos segundos numa thread própria; ausente = nada é gravado.
-fn spawn_nvidia_poller(slot: Arc<Mutex<Option<NvidiaSample>>>) {
+fn spawn_nvidia_poller(slot: Arc<Mutex<Option<NvidiaSample>>>, every: Duration) {
     let _ = std::thread::Builder::new()
         .name("benchmark-nvidia-smi".into())
         .spawn(move || {
@@ -150,7 +258,7 @@ fn spawn_nvidia_poller(slot: Arc<Mutex<Option<NvidiaSample>>>) {
                 {
                     *guard = Some(sample);
                 }
-                std::thread::sleep(NVIDIA_POLL);
+                std::thread::sleep(every);
             }
         });
 }
@@ -185,6 +293,31 @@ fn apply_preset(
     }
 }
 
+/// Liga e desliga a análise real conforme a fase (só com `--engine ativa`).
+fn drive_phases(mut bench: ResMut<Bench>, mut analysis: ResMut<Analysis>) {
+    if bench.phases.is_empty() {
+        return;
+    }
+    let Some(start) = bench.start else { return };
+    let t = start.elapsed().as_secs_f64();
+    let now = phases::index_at(&bench.phases, t);
+    if now != bench.phase_now {
+        bench.phase_now = now;
+        match now.and_then(|i| bench.phases[i].engine.clone()) {
+            Some(engine) => {
+                analysis.bench_use(engine.path, engine.options, bench.cfg.load);
+                analysis.set_enabled(true);
+            }
+            None => analysis.set_enabled(false),
+        }
+    }
+    if let Some(i) = now
+        && let Some(backend) = analysis.backend_active()
+    {
+        bench.phase_backend[i] = Some(backend.to_owned());
+    }
+}
+
 /// Câmera = função pura do tempo decorrido (mesmo percurso em qualquer FPS).
 fn drive_camera(bench: Res<Bench>, mut rig: ResMut<CameraRig>) {
     let Some(start) = bench.start else { return };
@@ -198,6 +331,7 @@ fn collect(
     mut bench: ResMut<Bench>,
     time: Res<Time<Real>>,
     window: Query<&Window, With<PrimaryWindow>>,
+    analysis: Res<Analysis>,
     mut exit: MessageWriter<AppExit>,
 ) {
     let now = Instant::now();
@@ -213,7 +347,7 @@ fn collect(
     }
 
     if t >= bench.next_sample_s {
-        take_sample(&mut bench, t);
+        take_sample(&mut bench, t, &analysis);
     }
 
     if t >= bench.cfg.minutes * 60.0 {
@@ -228,7 +362,7 @@ fn collect(
     }
 }
 
-fn take_sample(bench: &mut Bench, t: f64) {
+fn take_sample(bench: &mut Bench, t: f64, analysis: &Analysis) {
     let pid = bench.pid;
     bench.sys.refresh_processes_specifics(
         ProcessesToUpdate::Some(&[pid]),
@@ -250,6 +384,9 @@ fn take_sample(bench: &mut Bench, t: f64) {
         ram_mib: ram,
         vram_used_mib: nv.map(|n| n.used_mib),
         gpu_util_percent: nv.map(|n| n.util_percent),
+        analysis_depth: analysis.latest_metrics().map(|m| m.0),
+        analysis_nps: analysis.latest_metrics().and_then(|m| m.1),
+        load_level: analysis.is_active().then(|| analysis.load_level_index()),
     });
     bench.frames_in_second = 0;
     bench.next_sample_s = t + 1.0;
@@ -283,9 +420,7 @@ fn finish(bench: &mut Bench, width: u32, height: u32) -> std::io::Result<PathBuf
     if vram.is_empty() {
         notes.push("VRAM indisponível (nvidia-smi ausente ou sem GPU NVIDIA).".into());
     }
-    if bench.cfg.engine == config::EngineMode::Active {
-        notes.push("Engine ativa apenas registrada: a Engine real chega no B9.".into());
-    }
+    let analysis = analysis_report(bench);
     if gpu.is_none() {
         notes.push("Informações do adaptador wgpu não foram capturadas.".into());
     }
@@ -304,7 +439,7 @@ fn finish(bench: &mut Bench, width: u32, height: u32) -> std::io::Result<PathBuf
             warmup_seconds: WARMUP_S,
             preset: bench.cfg.preset.label().into(),
             engine: bench.cfg.engine.label().into(),
-            engine_integrated: false,
+            engine_integrated: bench.cfg.engine == config::EngineMode::Active,
             present_mode: if bench.vsync { "vsync" } else { "sem-vsync" }.into(),
             window_width: width,
             window_height: height,
@@ -330,6 +465,7 @@ fn finish(bench: &mut Bench, width: u32, height: u32) -> std::io::Result<PathBuf
         process_cpu_percent: stats::series_stats(&col(|s| s.cpu_percent)),
         gpu_vram_used_mib: stats::series_stats(&vram),
         gpu_utilization_percent: stats::series_stats(&opt_col(|s| s.gpu_util_percent)),
+        analysis,
         notes,
     };
 
@@ -342,6 +478,50 @@ fn finish(bench: &mut Bench, width: u32, height: u32) -> std::io::Result<PathBuf
     std::fs::write(dir.join("samples.csv"), report::samples_csv(&bench.samples))?;
     println!("{}", report::summary_text(&report));
     Ok(dir)
+}
+
+/// Relatório por fase (só com `--engine ativa`).
+fn analysis_report(bench: &Bench) -> Option<AnalysisReport> {
+    if bench.phases.is_empty() {
+        return None;
+    }
+    let reports: Vec<phases::PhaseReport> = bench
+        .phases
+        .iter()
+        .enumerate()
+        .map(|(i, spec)| {
+            phases::summarize(
+                spec,
+                &bench.frame_t,
+                &bench.frame_ms,
+                &bench.samples,
+                bench.phase_backend[i].clone(),
+            )
+        })
+        .collect();
+    let impact = reports
+        .iter()
+        .skip(1)
+        .map(|r| phases::impact(&reports[0], r))
+        .collect();
+    let target = crate::load_control::target_for(crate::presentation::GraphicsQuality::default());
+    Some(AnalysisReport {
+        load_mode: match bench.cfg.load {
+            chess_uci::LoadMode::Max => "maximo",
+            chess_uci::LoadMode::Balanced => "equilibrado",
+            chess_uci::LoadMode::Light => "leve",
+        }
+        .into(),
+        target_fps: target.fps(),
+        phases: reports,
+        impact,
+        machine: MachineState {
+            load_average_1m_start: bench.load_avg_start,
+            load_average_1m_end: Some(System::load_average().one),
+            cpu_logical_cores: bench.sys.cpus().len().max(1),
+            vram_used_before_mib: bench.vram_before_mib,
+        },
+    })
 }
 
 #[cfg(test)]

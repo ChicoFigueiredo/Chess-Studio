@@ -1,5 +1,6 @@
 //! Argumentos de linha de comando do modo benchmark (parser puro, sem Bevy).
 
+use chess_uci::LoadMode;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,6 +42,15 @@ pub struct BenchmarkConfig {
     pub preset: Preset,
     pub engine: EngineMode,
     pub out: Option<PathBuf>,
+    /// `--engine-path` (repetível): Engines que analisam, uma fase cada. Vazio = as do
+    /// ambiente (`CHESS_STUDIO_ENGINE`/PATH e `CHESS_STUDIO_LC0`).
+    pub engine_paths: Vec<PathBuf>,
+    /// `--network`: rede neural (`WeightsFile`) para as Engines que a pedem (Lc0).
+    pub network: Option<PathBuf>,
+    /// `--load`: modo do governador de carga durante a análise.
+    pub load: LoadMode,
+    /// `--backend`: backend do Lc0 (padrão: automático).
+    pub backend: Option<String>,
 }
 
 impl Default for BenchmarkConfig {
@@ -52,6 +62,10 @@ impl Default for BenchmarkConfig {
             preset: Preset::Balanced,
             engine: EngineMode::Idle,
             out: None,
+            engine_paths: Vec::new(),
+            network: None,
+            load: LoadMode::Balanced,
+            backend: None,
         }
     }
 }
@@ -107,6 +121,17 @@ where
                 };
             }
             "--out" => cfg.out = Some(PathBuf::from(value("diretório")?)),
+            "--engine-path" => cfg.engine_paths.push(PathBuf::from(value("executável")?)),
+            "--network" => cfg.network = Some(PathBuf::from(value("arquivo da rede")?)),
+            "--backend" => cfg.backend = Some(value("nome do backend")?),
+            "--load" => {
+                cfg.load = match value("maximo|equilibrado|leve")?.as_str() {
+                    "maximo" => LoadMode::Max,
+                    "equilibrado" => LoadMode::Balanced,
+                    "leve" => LoadMode::Light,
+                    other => return Err(format!("--load inválido: {other}")),
+                };
+            }
             _ => {}
         }
     }
@@ -166,6 +191,36 @@ mod tests {
     }
 
     #[test]
+    fn parses_the_analysis_options() {
+        let cfg = parse_args([
+            "--benchmark",
+            "--engine",
+            "ativa",
+            "--engine-path",
+            "/e/stockfish",
+            "--engine-path=/e/lc0",
+            "--network",
+            "/n/net.pb.gz",
+            "--load",
+            "leve",
+            "--backend",
+            "cuda-fp16",
+        ])
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            cfg.engine_paths,
+            [PathBuf::from("/e/stockfish"), PathBuf::from("/e/lc0")]
+        );
+        assert_eq!(cfg.network, Some(PathBuf::from("/n/net.pb.gz")));
+        assert_eq!(cfg.load, LoadMode::Light);
+        assert_eq!(cfg.backend.as_deref(), Some("cuda-fp16"));
+        let defaults = parse_args(["--benchmark"]).unwrap().unwrap();
+        assert_eq!(defaults.load, LoadMode::Balanced);
+        assert!(defaults.engine_paths.is_empty() && defaults.backend.is_none());
+    }
+
+    #[test]
     fn rejects_invalid_values() {
         for bad in [
             vec!["--benchmark", "--minutes", "0"],
@@ -174,6 +229,8 @@ mod tests {
             vec!["--benchmark", "--resolution", "0x1080"],
             vec!["--benchmark", "--preset", "ultra"],
             vec!["--benchmark", "--engine", "talvez"],
+            vec!["--benchmark", "--load", "turbo"],
+            vec!["--benchmark", "--engine-path"],
             vec!["--benchmark", "--out"],
         ] {
             assert!(parse_args(bad.clone()).is_err(), "{bad:?}");
