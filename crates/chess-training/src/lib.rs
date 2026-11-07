@@ -24,16 +24,30 @@
 
 mod aids;
 mod catalog;
+mod evolution;
 mod exercise;
 mod memory;
 mod metrics;
+mod position_memory;
+mod profiles;
 mod review;
 mod run;
 
 pub use aids::{Aid, AidsRecord, Feedback};
 pub use catalog::{Catalog, CatalogError};
-pub use exercise::{Exercise, ExerciseError, ExerciseKind, MEMORY_LINE_RANGE, Solution};
+pub use evolution::{
+    DatedRun, Endgames, Evolution, Period, PeriodStats, by_period, by_player, by_training_profile,
+    civil_date, day_of, report,
+};
+pub use exercise::{
+    Exercise, ExerciseError, ExerciseKind, MEMORY_LINE_RANGE, POSITION_STUDY_SECONDS, Solution,
+};
 pub use memory::{MemoryPhase, MemoryRun, MemorySummary, PlyResult};
 pub use metrics::{Metrics, Tally};
+pub use position_memory::{
+    PiecePlacement, PositionJudgment, PositionMemoryRun, PositionMemorySummary, PositionPhase,
+    SquareVerdict, judge, squares_in_reading_order,
+};
+pub use profiles::{Difficulty, ProfileError, ProfileSet, ProfileStep, TrainingProfile};
 pub use review::{MemoryReview, NotCheckmate, PlyReview, Review};
 pub use run::{ErrorCause, ExerciseRun, Followup, RunError, RunResult, RunStatus, RunSummary};

@@ -1,0 +1,47 @@
+{
+  "format": 1,
+  "profiles": [
+    {
+      "id": "regras-basicas",
+      "name": "Regras básicas",
+      "description": "Xeque, mate, roque, promoção e o peão: o que todo jogador precisa dominar antes de competir.",
+      "steps": [
+        { "exercise": "xeque-001", "difficulty": "easy" },
+        { "exercise": "xeque-002", "difficulty": "easy" },
+        { "exercise": "mate-em-1-001", "difficulty": "easy" },
+        { "exercise": "roque-001", "difficulty": "easy" },
+        { "exercise": "promocao-001", "difficulty": "easy" },
+        { "exercise": "peao-ilegal-001", "difficulty": "medium" },
+        { "exercise": "roque-003", "difficulty": "medium" },
+        { "exercise": "promocao-003", "difficulty": "hard" }
+      ]
+    },
+    {
+      "id": "finais-afogamento",
+      "name": "Finais e afogamento",
+      "description": "Dar mate sem afogar e afogar quando convém: o limite fino entre vitória e empate nos finais.",
+      "steps": [
+        { "exercise": "afogamento-001", "difficulty": "easy" },
+        { "exercise": "mate-em-1-001", "difficulty": "easy" },
+        { "exercise": "afogamento-002", "difficulty": "medium" },
+        { "exercise": "mate-em-1-003", "difficulty": "medium" },
+        { "exercise": "afogamento-003", "difficulty": "hard" }
+      ]
+    },
+    {
+      "id": "memoria",
+      "name": "Memória",
+      "description": "Memorizar e recolocar posições, da mais simples à mais cheia.",
+      "steps": [
+        { "exercise": "memoria-posicao-001", "difficulty": "easy" },
+        { "exercise": "memoria-pastor-001", "difficulty": "easy" },
+        { "exercise": "memoria-posicao-004", "difficulty": "easy" },
+        { "exercise": "memoria-italiana-001", "difficulty": "medium" },
+        { "exercise": "memoria-posicao-002", "difficulty": "medium" },
+        { "exercise": "memoria-posicao-003", "difficulty": "medium" },
+        { "exercise": "memoria-tatica-001", "difficulty": "hard" },
+        { "exercise": "memoria-posicao-005", "difficulty": "hard" }
+      ]
+    }
+  ]
+}

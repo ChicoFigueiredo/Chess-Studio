@@ -43,12 +43,17 @@ fn install_fonts(mut contexts: EguiContexts, mut done: Local<bool>) -> Result {
             "../assets/fonts/NotoSans-Regular.ttf"
         ))),
     );
+    // Glifos de xadrez (U+265A..265F) para a bandeja do editor de posição (C11).
+    fonts.font_data.insert(
+        "noto-chess".to_owned(),
+        std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
+            "../assets/fonts/NotoSansSymbols2-chess.ttf"
+        ))),
+    );
     for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
-        fonts
-            .families
-            .entry(family)
-            .or_default()
-            .push("noto-sans".to_owned());
+        let list = fonts.families.entry(family).or_default();
+        list.push("noto-sans".to_owned());
+        list.push("noto-chess".to_owned());
     }
     contexts.ctx_mut()?.set_fonts(fonts);
     *done = true;

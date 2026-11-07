@@ -19,17 +19,23 @@ use crate::persistence::PersistenceHandle;
 use crate::play::PlaySet;
 use crate::session::Session;
 use bevy::prelude::*;
-use bevy_egui::egui;
+use bevy_egui::{EguiPrimaryContextPass, egui};
 use chess_core::{Color as Side, Square};
 use chess_game::Command;
 use chess_store::{ProfileId, RunId, RunQuery, Store};
 use chess_training::{
     Aid, AidsRecord, Catalog, ErrorCause, Exercise, ExerciseKind, ExerciseRun, Feedback,
-    MemoryPhase, MemoryRun, Metrics, PlyResult, Review, RunError, RunStatus, RunSummary, Solution,
-    Tally,
+    MemoryPhase, MemoryRun, Metrics, PlyResult, ProfileSet, Review, RunError, RunStatus,
+    RunSummary, Solution, Tally,
 };
+use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::sync::Mutex;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
+
+mod evolution;
+mod position;
+mod profiles;
 
 /// Rodadas máximas de "juiz pede, `Session` aplica" por quadro.
 const MAX_ROUNDS: usize = 16;
@@ -38,10 +44,13 @@ pub struct TrainingPlugin;
 
 impl Plugin for TrainingPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<TrainingUi>().add_systems(
-            Update,
-            (training_demo, training_judge).chain().after(PlaySet),
-        );
+        app.init_resource::<TrainingUi>()
+            .add_systems(
+                Update,
+                (training_demo, training_judge).chain().after(PlaySet),
+            )
+            .add_systems(Update, (position::tick, position::sync_board).chain())
+            .add_systems(EguiPrimaryContextPass, position::editor);
         crate::dock::register_panel(
             app,
             crate::dock::PanelDef {
@@ -60,6 +69,12 @@ enum View {
     List,
     Exercise,
     Review,
+    /// Memória de posição: estudo, reconstrução e revisão (C11).
+    Position,
+    /// Perfis de treino (C11).
+    Profiles,
+    /// Aba Evolução (C11).
+    Evolution,
 }
 
 #[derive(Debug)]
@@ -97,6 +112,14 @@ pub struct TrainingUi {
     active: Option<ActiveRun>,
     memory: Option<MemoryActive>,
     review: Option<ReviewState>,
+    /// Memória de posição em andamento (C11).
+    position: Option<position::PositionState>,
+    /// Perfis de treino, avanço por Perfil e o Perfil seguido (C11).
+    profiles: ProfileSet,
+    progress: BTreeMap<String, BTreeSet<String>>,
+    active_profile: Option<String>,
+    evolution_data: evolution::EvolutionData,
+    evolution_view: evolution::EvolutionView,
     metrics: Metrics,
     /// Identifica a sessão do app nas métricas.
     session_id: u64,
@@ -120,6 +143,10 @@ impl Default for TrainingUi {
             error!("catálogo de Exercícios inválido: {err}");
             Catalog::default()
         });
+        let profiles = ProfileSet::bundled(&catalog).unwrap_or_else(|err| {
+            error!("Perfis de treino inválidos: {err}");
+            ProfileSet::default()
+        });
         let wall = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .ok()
@@ -134,6 +161,12 @@ impl Default for TrainingUi {
             active: None,
             memory: None,
             review: None,
+            position: None,
+            profiles,
+            progress: BTreeMap::new(),
+            active_profile: None,
+            evolution_data: evolution::EvolutionData::default(),
+            evolution_view: evolution::EvolutionView::default(),
             metrics: Metrics::default(),
             session_id: wall,
             clock: Instant::now(),
@@ -237,6 +270,8 @@ impl TrainingUi {
         if let Some(Ok(metrics)) = metrics {
             self.metrics = metrics;
         }
+        self.refresh_profiles(handle);
+        self.refresh_evolution(handle);
     }
 
     fn open(&mut self, handle: Option<&PersistenceHandle>) {
@@ -248,11 +283,22 @@ impl TrainingUi {
         };
     }
 
+    /// Troca de tela dentro do Treino (lista, Perfis, Evolução).
+    fn show(&mut self, view: View, session: &mut Session, handle: Option<&PersistenceHandle>) {
+        if view == View::List {
+            self.leave(session, View::List);
+        } else {
+            self.refresh_metrics(handle);
+            self.view = view;
+        }
+    }
+
     /// Sai do Exercício e volta a mostrar a Partida que estava em andamento.
     fn leave(&mut self, session: &mut Session, view: View) {
         self.active = None;
         self.memory = None;
         self.review = None;
+        self.position = None;
         self.view = view;
         if let Some(mut original) = self.stashed.take() {
             original.set_move_method(session.move_method());
@@ -282,6 +328,10 @@ impl TrainingUi {
         let Some(exercise) = self.catalog.get(id).cloned() else {
             return;
         };
+        if exercise.kind == ExerciseKind::MemoryPosition {
+            return self.start_position(id, session, aids, handle);
+        }
+        self.position = None;
         let is_memory = matches!(exercise.solution, Solution::Memorize { .. });
         let fresh = if is_memory {
             presentation_session(&exercise)
@@ -337,6 +387,7 @@ impl TrainingUi {
                 warn!("Treino: não foi possível gravar a Resolução: {err}");
             }
         }
+        self.advance_profiles(&summary, handle);
         let review = Review::new(&exercise, &summary);
         self.review = Some(ReviewState { review, exercise });
         // Revisão: a Partida do Exercício fica só para leitura.
@@ -402,6 +453,13 @@ enum Action {
     GiveUp,
     BackToList,
     Reveal,
+    /// Comando do editor de memória de posição.
+    Position(position::Cmd),
+    /// Vai para outra tela do Treino (Perfis, Evolução, lista).
+    Show(View),
+    /// Segue o Perfil de treino e resolve o próximo Exercício dele.
+    FollowAndStart(String, String),
+    Unfollow,
 }
 
 fn promotion_piece(uci: &str) -> Option<chess_core::Piece> {
@@ -1005,7 +1063,23 @@ pub fn training_panel(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
                 }
                 view => {
                     let inner = match view {
-                        View::List => list_view(ui, i18n, &state),
+                        View::List => {
+                            let go = ui
+                                .horizontal(|ui| {
+                                    let mut go = None;
+                                    if ui.button(i18n.t("profiles-open")).clicked() {
+                                        go = Some(Action::Show(View::Profiles));
+                                    }
+                                    if ui.button(i18n.t("evolution-open")).clicked() {
+                                        go = Some(Action::Show(View::Evolution));
+                                    }
+                                    go
+                                })
+                                .inner;
+                            let resume = profiles::continue_bar(ui, i18n, &state);
+                            let chosen = list_view(ui, i18n, &state);
+                            go.or(resume).or(chosen)
+                        }
                         View::Exercise => {
                             if let Some(memory) = state.memory.as_ref() {
                                 memory_view(ui, i18n, memory, &session, state.now_ms())
@@ -1016,6 +1090,16 @@ pub fn training_panel(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
                                     .and_then(|a| exercise_view(ui, i18n, a, &session, &aids))
                             }
                         }
+                        View::Position => {
+                            let now = state.now_ms();
+                            state
+                                .position
+                                .as_ref()
+                                .and_then(|p| position::panel(ui, i18n, p, now))
+                        }
+                        View::Profiles => profiles::view(ui, i18n, &state),
+                        View::Evolution => evolution::view(ui, i18n, &mut state)
+                            .then_some(Action::Show(View::List)),
                         _ => state.review.as_ref().and_then(|r| review_view(ui, i18n, r)),
                     };
                     if inner.is_some() {
@@ -1042,6 +1126,13 @@ pub fn training_panel(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
                     }
                 }
                 Some(Action::ShowAgain) => state.show_again(&mut session),
+                Some(Action::Position(cmd)) => state.apply_position(cmd, handle),
+                Some(Action::Show(view)) => state.show(view, &mut session, handle),
+                Some(Action::FollowAndStart(profile, exercise)) => {
+                    state.follow_profile(Some(profile), handle);
+                    state.start(&exercise, &mut session, &aids, handle);
+                }
+                Some(Action::Unfollow) => state.follow_profile(None, handle),
                 // Sair sem resolver nem desistir descarta a Resolução (não vira erro).
                 Some(Action::BackToList) => state.leave(&mut session, View::List),
                 Some(Action::Reveal) => {

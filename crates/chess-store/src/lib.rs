@@ -38,6 +38,7 @@ mod imported;
 pub mod migrations;
 mod store;
 mod training;
+mod training_profiles;
 
 pub use engines::{EngineId, EngineOrigin, EngineRecord};
 pub use error::{Result, StoreError};

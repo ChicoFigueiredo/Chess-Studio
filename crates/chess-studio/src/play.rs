@@ -58,7 +58,13 @@ fn gesture_input(
     mut was_pressed: Local<bool>,
     mut last_world: Local<Vec3>,
     mut last_presentation: Local<Option<Presentation>>,
+    editor: Res<crate::pieces::BoardOverride>,
 ) {
+    // O editor de posição (C11) usa o tabuleiro: os gestos não chegam à Partida.
+    if editor.is_active() {
+        *was_pressed = false;
+        return;
+    }
     let over_ui = egui.wants_pointer_input() || egui.is_pointer_over_area();
 
     // Cancelamentos primeiro: nunca geram Lance (INT-03/UX-09).

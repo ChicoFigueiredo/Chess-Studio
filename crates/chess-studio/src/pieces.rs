@@ -69,11 +69,35 @@ impl PieceTemplates {
 #[derive(Resource, Debug)]
 pub struct PieceFont(pub Handle<Font>);
 
+/// Peças desenhadas **no lugar** das da Partida: o editor de posição (C11) mostra a
+/// Posição a memorizar e depois o que a pessoa montou, nas três Apresentações. Não é
+/// Partida nem Posição canônica: nada aqui decide Lance (ADR-0001).
+#[derive(Resource, Default, Debug)]
+pub struct BoardOverride {
+    pieces: Option<HashMap<Square, (Side, Piece)>>,
+    version: u64,
+}
+
+impl BoardOverride {
+    /// Troca o desenho; só conta como mudança (e redesenha a cena) se for diferente.
+    pub fn set(&mut self, pieces: Option<HashMap<Square, (Side, Piece)>>) {
+        if self.pieces != pieces {
+            self.pieces = pieces;
+            self.version = self.version.wrapping_add(1);
+        }
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.pieces.is_some()
+    }
+}
+
 /// Peças já desenhadas (uma entidade 3D e uma 2D por casa ocupada).
 #[derive(Resource, Default, Debug)]
 struct BoardPieces {
     by_square: HashMap<Square, Spawned>,
-    synced: Option<u64>,
+    /// (revisão da Partida, versão do desenho alternativo) da última sincronização.
+    synced: Option<(u64, u64)>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -106,6 +130,7 @@ impl Plugin for PiecesPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PieceTemplates>()
             .init_resource::<BoardPieces>()
+            .init_resource::<BoardOverride>()
             .add_systems(Startup, load_piece_assets)
             .add_systems(
                 Update,
@@ -197,7 +222,10 @@ fn capture_templates(
 
 /// Peças a desenhar: Posição visual provisória (promoção pendente, peça solta em casa
 /// ilegal, DEC-32), Lance feito à espera do relógio (art. 4.7) ou a canônica.
-fn visible_pieces(session: &Session) -> HashMap<Square, (Side, Piece)> {
+fn visible_pieces(session: &Session, over: &BoardOverride) -> HashMap<Square, (Side, Piece)> {
+    if let Some(pieces) = &over.pieces {
+        return pieces.clone();
+    }
     // Revisão Lance a Lance: mostra a Posição revisada (somente leitura).
     if let Some(review) = session.review() {
         return chess_input::all_squares()
@@ -329,15 +357,17 @@ fn sync_pieces(
     templates: Res<PieceTemplates>,
     wood: Option<Res<PieceWood>>,
     font: Option<Res<PieceFont>>,
+    over: Res<BoardOverride>,
     mut board: ResMut<BoardPieces>,
     mut commands: Commands,
 ) {
     let Some(font) = font else { return };
-    if !templates.complete() || board.synced == Some(session.revision()) {
+    let stamp = (session.revision(), over.version);
+    if !templates.complete() || board.synced == Some(stamp) {
         return;
     }
-    board.synced = Some(session.revision());
-    let desired = visible_pieces(&session);
+    board.synced = Some(stamp);
+    let desired = visible_pieces(&session, &over);
     let hint = session.take_hint();
 
     // Peças que saíram da casa (ou mudaram de tipo): somem; as iguais ficam.
