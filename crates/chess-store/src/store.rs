@@ -2,7 +2,7 @@
 
 use crate::error::{Result, StoreError};
 use crate::migrations;
-use chess_game::{Event, EventKind, Game, GameSetup, Outcome, PAYLOAD_VERSION};
+use chess_game::{Event, Game, GameSetup, Outcome, PAYLOAD_VERSION};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -226,7 +226,6 @@ impl Store {
         }
         // Valida e serializa antes de abrir a transação de escrita.
         let mut rows = Vec::with_capacity(events.len());
-        let mut outcome = None;
         for (i, event) in events.iter().enumerate() {
             if event.version == 0 || event.version > PAYLOAD_VERSION {
                 return Err(StoreError::UnsupportedEventVersion {
@@ -240,9 +239,6 @@ impl Store {
                 .as_str()
                 .unwrap_or("unknown")
                 .to_owned();
-            if let EventKind::GameEnded { outcome: o } = &event.kind {
-                outcome = Some(serde_json::to_string(o)?);
-            }
             rows.push((event.version, kind, value.to_string()));
         }
 
@@ -277,12 +273,21 @@ impl Store {
                 ])?;
             }
         }
+        // Fim/reabertura derivados do último Evento terminal ou de MoveUndone do log inteiro:
+        // desfazer depois do fim reabre a Partida (#115).
         tx.execute(
-            "UPDATE games SET updated_at_ms = ?2,
-                    finished = CASE WHEN ?3 IS NULL THEN finished ELSE 1 END,
-                    outcome_json = COALESCE(?3, outcome_json)
+            "UPDATE games SET updated_at_ms = ?2, outcome_json = (
+                 SELECT CASE WHEN e.kind = 'game_ended'
+                             THEN json_extract(e.payload_json, '$.kind.outcome') END
+                 FROM game_events e
+                 WHERE e.game_id = games.id AND e.kind IN ('game_ended', 'move_undone')
+                 ORDER BY e.seq DESC LIMIT 1)
              WHERE id = ?1",
-            params![game.0, now_ms(), outcome],
+            params![game.0, now_ms()],
+        )?;
+        tx.execute(
+            "UPDATE games SET finished = (outcome_json IS NOT NULL) WHERE id = ?1",
+            [game.0],
         )?;
         tx.commit()?;
         Ok(())
