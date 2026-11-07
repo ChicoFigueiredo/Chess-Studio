@@ -83,6 +83,9 @@ jobs:
       - name: SHA256SUMS
         working-directory: artefatos
         run: |
+          # Uploads com vários caminhos guardam a pasta (ex.: dist/); traz tudo para a raiz.
+          find . -mindepth 2 -type f -exec mv -f -t . {} +
+          ls -la
           sha256sum *.tar.gz *.deb *.zip *.dmg > SHA256SUMS
           cat SHA256SUMS
       - name: Draft release (nunca publicado automaticamente)
