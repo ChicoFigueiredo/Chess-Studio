@@ -81,8 +81,20 @@ impl FrameWindow {
     }
 
     pub fn push(&mut self, frame_ms: f64) {
-        let _ = frame_ms;
-        unimplemented!()
+        if !frame_ms.is_finite() || frame_ms < 0.0 {
+            return;
+        }
+        self.samples.push_back(frame_ms);
+        self.total_ms += frame_ms;
+        // Sai o que ficou mais velho que a janela, mas sempre sobra o quadro mais recente.
+        while self.samples.len() > 1 {
+            let oldest = self.samples.front().copied().unwrap_or_default();
+            if self.total_ms - oldest < self.span_ms {
+                break;
+            }
+            self.samples.pop_front();
+            self.total_ms -= oldest;
+        }
     }
 
     pub fn clear(&mut self) {
@@ -91,7 +103,20 @@ impl FrameWindow {
     }
 
     pub fn stats(&self) -> FrameStats {
-        unimplemented!()
+        let mut sorted: Vec<f64> = self.samples.iter().copied().collect();
+        sorted.sort_by(f64::total_cmp);
+        let p95_ms = match sorted.len() {
+            0 => 0.0,
+            n => {
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                let rank = ((n as f64) * 0.95).ceil() as usize;
+                sorted[rank.clamp(1, n) - 1]
+            }
+        };
+        FrameStats {
+            p95_ms,
+            frames: sorted.len(),
+        }
     }
 }
 
@@ -119,13 +144,8 @@ impl Level {
         match self {
             Self::Paused => Self::Intermittent,
             Self::Intermittent => Self::Minimal,
-            Self::Minimal | Self::Reduced | Self::Full => {
-                if self == Self::Minimal {
-                    Self::Reduced
-                } else {
-                    Self::Full
-                }
-            }
+            Self::Minimal => Self::Reduced,
+            Self::Reduced | Self::Full => Self::Full,
         }
     }
 }
@@ -165,8 +185,79 @@ impl LoadPlan {
 
     /// Plano do nível, para uma análise configurada com `threads` threads.
     pub fn for_level(level: Level, threads: u32) -> Self {
-        let _ = (level, threads);
-        unimplemented!()
+        let half = (threads / 2).max(1);
+        let base = Self {
+            level,
+            ..Self::FULL
+        };
+        match level {
+            Level::Full => Self::FULL,
+            Level::Reduced => Self {
+                threads_cap: Some(half),
+                minibatch_cap: Some(64),
+                nn_cache_cap: Some(400_000),
+                ..base
+            },
+            Level::Minimal => Self {
+                threads_cap: Some(1),
+                minibatch_cap: Some(16),
+                nn_cache_cap: Some(100_000),
+                ..base
+            },
+            Level::Intermittent => Self {
+                threads_cap: Some(1),
+                minibatch_cap: Some(16),
+                nn_cache_cap: Some(100_000),
+                duty: Some(Duty {
+                    run: Duration::from_millis(200),
+                    pause: Duration::from_millis(600),
+                }),
+                ..base
+            },
+            Level::Paused => Self {
+                paused: true,
+                ..base
+            },
+        }
+    }
+}
+
+/// Quadros mínimos na janela para o p95 valer algo (app parado quase não desenha).
+const MIN_FRAMES: usize = 20;
+/// Tempo depois de uma mudança para a janela de quadros refletir o novo nível.
+const SETTLE_S: f64 = 2.0;
+/// Recaída dentro deste prazo depois de soltar o nível conta como oscilação.
+const RELAPSE_S: f64 = 30.0;
+const MAX_RECOVER_SCALE: f64 = 6.0;
+
+/// Sensibilidade de cada modo.
+struct Tuning {
+    /// p95 / meta acima disto é "FPS abaixo da meta".
+    over: f64,
+    /// p95 / meta até isto é "calmo".
+    calm: f64,
+    /// Segundos seguidos acima da tolerância para subir um nível.
+    react_s: f64,
+    /// Segundos seguidos calmos para descer um nível.
+    recover_s: f64,
+}
+
+impl Tuning {
+    fn of(mode: LoadMode) -> Self {
+        match mode {
+            LoadMode::Max | LoadMode::Balanced => Self {
+                over: 1.25,
+                calm: 1.10,
+                react_s: 1.0,
+                recover_s: 10.0,
+            },
+            LoadMode::Light => Self {
+                over: 1.10,
+                calm: 1.05,
+                react_s: 0.5,
+                recover_s: 20.0,
+            },
+        }
     }
 }
 
@@ -177,12 +268,38 @@ pub struct Governor {
     target: FpsTarget,
     threads: u32,
     level: Level,
+    clock_s: f64,
+    since_change_s: f64,
+    over_s: f64,
+    calm_s: f64,
+    lowered_at_s: Option<f64>,
+    recover_scale: f64,
+    below: bool,
+}
+
+/// Nível mais baixo que o modo aceita.
+fn floor(mode: LoadMode) -> Level {
+    match mode {
+        LoadMode::Max | LoadMode::Balanced => Level::Full,
+        LoadMode::Light => Level::Reduced,
+    }
 }
 
 impl Governor {
     pub fn new(mode: LoadMode, target: FpsTarget, threads: u32) -> Self {
-        let _ = (mode, target, threads);
-        unimplemented!()
+        Self {
+            mode,
+            target,
+            threads,
+            level: floor(mode),
+            clock_s: 0.0,
+            since_change_s: SETTLE_S,
+            over_s: 0.0,
+            calm_s: 0.0,
+            lowered_at_s: None,
+            recover_scale: 1.0,
+            below: false,
+        }
     }
 
     pub fn mode(&self) -> LoadMode {
@@ -204,13 +321,18 @@ impl Governor {
 
     /// O FPS está abaixo da meta agora (mesmo que o modo não permita reduzir)?
     pub fn below_target(&self) -> bool {
-        unimplemented!()
+        self.below
     }
 
     /// Muda o modo; devolve o novo plano se ele mudou.
     pub fn set_mode(&mut self, mode: LoadMode) -> Option<LoadPlan> {
-        let _ = mode;
-        unimplemented!()
+        if mode == self.mode {
+            return None;
+        }
+        let before = self.plan();
+        self.mode = mode;
+        self.reset();
+        (self.plan() != before).then(|| self.plan())
     }
 
     pub fn set_target(&mut self, target: FpsTarget) {
@@ -219,19 +341,79 @@ impl Governor {
 
     /// Threads configurados da análise (base do teto do nível `Reduced`).
     pub fn set_threads(&mut self, threads: u32) -> Option<LoadPlan> {
-        let _ = threads;
-        unimplemented!()
+        let before = self.plan();
+        self.threads = threads;
+        (self.plan() != before).then(|| self.plan())
     }
 
     /// Volta ao nível inicial do modo (análise desligada ou reiniciada).
     pub fn reset(&mut self) {
-        unimplemented!()
+        self.level = floor(self.mode);
+        self.since_change_s = SETTLE_S;
+        self.over_s = 0.0;
+        self.calm_s = 0.0;
+        self.lowered_at_s = None;
+        self.recover_scale = 1.0;
+        self.below = false;
     }
 
     /// Passa `dt_s` segundos com os quadros `stats`; devolve o novo plano quando muda.
     pub fn observe(&mut self, dt_s: f64, stats: FrameStats) -> Option<LoadPlan> {
-        let _ = (dt_s, stats);
-        unimplemented!()
+        let dt_s = dt_s.max(0.0);
+        self.clock_s += dt_s;
+        self.since_change_s += dt_s;
+        let tuning = Tuning::of(self.mode);
+        let budget = self.target.budget_ms();
+        if stats.frames < MIN_FRAMES {
+            self.below = false;
+            self.over_s = 0.0;
+            self.calm_s = 0.0;
+            return None;
+        }
+        let over = stats.p95_ms > budget * tuning.over;
+        self.below = over;
+        if self.mode == LoadMode::Max || self.since_change_s < SETTLE_S {
+            // Max só observa; depois de uma mudança, espera a janela refletir o novo nível.
+            self.over_s = 0.0;
+            self.calm_s = 0.0;
+            return None;
+        }
+        if over {
+            self.calm_s = 0.0;
+            self.over_s += dt_s;
+            if self.over_s >= tuning.react_s && self.level < Level::Paused {
+                if self
+                    .lowered_at_s
+                    .is_some_and(|t| self.clock_s - t < RELAPSE_S)
+                {
+                    self.recover_scale = (self.recover_scale * 2.0).min(MAX_RECOVER_SCALE);
+                }
+                self.level = self.level.up();
+                return Some(self.changed());
+            }
+        } else if stats.p95_ms <= budget * tuning.calm {
+            self.over_s = 0.0;
+            self.calm_s += dt_s;
+            if self.calm_s >= tuning.recover_s * self.recover_scale
+                && self.level > floor(self.mode)
+            {
+                self.level = self.level.down();
+                self.lowered_at_s = Some(self.clock_s);
+                return Some(self.changed());
+            }
+        } else {
+            // Entre "calmo" e "acima da tolerância": segura onde está.
+            self.over_s = 0.0;
+            self.calm_s = 0.0;
+        }
+        None
+    }
+
+    fn changed(&mut self) -> LoadPlan {
+        self.since_change_s = 0.0;
+        self.over_s = 0.0;
+        self.calm_s = 0.0;
+        self.plan()
     }
 }
 
@@ -384,7 +566,7 @@ mod tests {
     #[test]
     fn a_quick_relapse_lengthens_the_next_recovery() {
         let mut g = gov(LoadMode::Balanced);
-        run(&mut g, 4.0, BAD);
+        run(&mut g, 2.5, BAD);
         assert_eq!(g.level(), Level::Reduced);
         // Solta depois da calma...
         let mut calm_to_release = 0.0;
@@ -394,7 +576,7 @@ mod tests {
         }
         assert_eq!(g.level(), Level::Full);
         // ...o FPS cai de novo logo em seguida: reduz e a próxima espera é maior.
-        run(&mut g, 4.0, BAD);
+        run(&mut g, 3.5, BAD);
         assert_eq!(g.level(), Level::Reduced);
         let mut second = 0.0;
         while g.level() == Level::Reduced && second < 200.0 {
