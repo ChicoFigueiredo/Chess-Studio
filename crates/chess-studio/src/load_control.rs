@@ -180,7 +180,7 @@ mod tests {
     #[test]
     fn a_long_enough_slowdown_pauses_and_says_so() {
         let mut c = control(LoadMode::Balanced);
-        feed(&mut c, 40.0, 50.0, true);
+        feed(&mut c, 15.0, 50.0, true);
         assert_eq!(c.level(), Level::Paused);
         assert_eq!(c.notice(), Some(Notice::Paused));
         assert!(c.plan().paused);
