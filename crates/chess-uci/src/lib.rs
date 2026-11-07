@@ -14,6 +14,7 @@
 //! ```
 
 mod analysis;
+mod backend;
 mod catalog;
 mod config;
 mod controller;
@@ -29,6 +30,11 @@ mod protocol;
 pub use analysis::{
     AnalysisConfig, AnalysisController, AnalysisEvent, AnalysisLine, AnalysisUpdate,
     DEFAULT_INTERVAL, MAX_MULTIPV, Score,
+};
+pub use backend::{
+    BACKENDS, BackendClass, BackendInfo, BackendProblem, GpuVendor, Hardware, advertised_backends,
+    auto_order, backend_info, classify_failure, describe_failure, detect_hardware,
+    fallback_backend, is_gpu_backend, lc0_install_help, recommended_backend, supported_on,
 };
 pub use catalog::{
     ASSETS, ArchiveKind, Asset, Backend, CATALOG, CatalogEntry, LC0_ASSETS, LC0_NETWORKS,
