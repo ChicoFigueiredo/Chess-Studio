@@ -5,8 +5,8 @@
 use crate::error::{Result, StoreError};
 use crate::store::{GameId, ProfileId, Store, ensure_profile, now_ms};
 use chess_training::{
-    Counts, EntryCheck, HistoryPeriod, ManualScoresheet, ScoresheetCheck, ScoresheetHistory,
-    Verdict,
+    Counts, EntryCheck, HistoryFingerprint, HistoryPeriod, ManualScoresheet, ScoresheetCheck,
+    ScoresheetHistory, Verdict,
 };
 use rusqlite::{OptionalExtension, params};
 
@@ -113,8 +113,16 @@ impl Store {
             [id],
         )?;
         tx.execute(
-            "INSERT INTO manual_scoresheet_checks (scoresheet_id, checked_at_ms) VALUES (?1, ?2)",
-            params![id, check.checked_at_ms()],
+            "INSERT INTO manual_scoresheet_checks
+                 (scoresheet_id, checked_at_ms, history_plies, history_id)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![
+                id,
+                check.checked_at_ms(),
+                check.history().plies(),
+                // u64 guardado como i64 (mesmos bits)
+                i64::from_ne_bytes(check.history().id().to_ne_bytes()),
+            ],
         )?;
         for e in check.entries() {
             tx.execute(
@@ -135,18 +143,18 @@ impl Store {
         game: GameId,
     ) -> Result<Option<ScoresheetCheck>> {
         self.ensure_game_owner(profile, game)?;
-        let head: Option<(i64, i64)> = self
+        let head: Option<(i64, i64, u16, i64)> = self
             .conn
             .query_row(
-                "SELECT c.scoresheet_id, c.checked_at_ms
+                "SELECT c.scoresheet_id, c.checked_at_ms, c.history_plies, c.history_id
                  FROM manual_scoresheet_checks c
                  JOIN manual_scoresheets s ON s.id = c.scoresheet_id
                  WHERE s.profile_id = ?1 AND s.game_id = ?2",
                 params![profile.0, game.0],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )
             .optional()?;
-        let Some((id, checked_at_ms)) = head else {
+        let Some((id, checked_at_ms, plies, history_id)) = head else {
             return Ok(None);
         };
         let mut stmt = self.conn.prepare(
@@ -178,7 +186,13 @@ impl Store {
                 verdict,
             });
         }
-        Ok(Some(ScoresheetCheck::from_parts(checked_at_ms, entries)))
+        let history =
+            HistoryFingerprint::from_parts(plies, u64::from_ne_bytes(history_id.to_ne_bytes()));
+        Ok(Some(ScoresheetCheck::from_parts(
+            checked_at_ms,
+            history,
+            entries,
+        )))
     }
 
     /// Histórico de erros de Súmula do `profile` no `period`, a partir das conferências

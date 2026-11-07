@@ -59,3 +59,10 @@ scoresheet-history-empty = Nenhuma Súmula conferida neste período.
 scoresheet-history-sheets = Súmulas conferidas: { $count }
 scoresheet-history-evolution = Evolução (acertos de cada dia ou mês)
 scoresheet-history-point = { $date }: { $right } de { $total } corretos ({ $sheets } Súmula(s))
+
+## Falhas do banco e anotações sem Lance
+scoresheet-load-error = Não foi possível ler a Súmula gravada. Tentando de novo; a notação segue oculta.
+scoresheet-save-error = Não foi possível gravar a Súmula agora. Tentando de novo.
+scoresheet-beyond-title = Anotações de Lances que a Partida não tem (por exemplo, após Desfazer):
+scoresheet-beyond-line = Lance { $ply }: { $text }
+scoresheet-beyond-delete = Apagar

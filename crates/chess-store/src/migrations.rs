@@ -276,7 +276,11 @@ CREATE TABLE manual_scoresheet_entries (
 const V11_SCORESHEET_CHECK: &str = "
 CREATE TABLE manual_scoresheet_checks (
     scoresheet_id INTEGER PRIMARY KEY REFERENCES manual_scoresheets(id) ON DELETE CASCADE,
-    checked_at_ms INTEGER NOT NULL
+    checked_at_ms INTEGER NOT NULL,
+    -- Histórico conferido: nº de meios-lances e identificador (FNV-1a, u64 guardado como i64);
+    -- a conferência é refeita quando o histórico da Partida muda.
+    history_plies INTEGER NOT NULL CHECK (history_plies >= 0),
+    history_id    INTEGER NOT NULL
 );
 CREATE TABLE manual_scoresheet_check_entries (
     scoresheet_id INTEGER NOT NULL REFERENCES manual_scoresheet_checks(scoresheet_id) ON DELETE CASCADE,

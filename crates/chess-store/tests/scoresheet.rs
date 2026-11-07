@@ -249,6 +249,12 @@ fn the_check_round_trips_with_every_verdict() {
         .unwrap();
     assert_eq!(loaded, check);
     assert_eq!(loaded.checked_at_ms(), 77);
+    assert_eq!(
+        loaded.history(),
+        check.history(),
+        "o histórico conferido é gravado"
+    );
+    assert_eq!(loaded.history().plies(), 2);
     let verdicts: Vec<_> = loaded.entries().iter().map(|e| e.verdict).collect();
     assert_eq!(
         verdicts,

@@ -6,7 +6,8 @@ use Verdict::{AcceptedWithCaveat as Caveat, Correct, Extra, Missing, Swapped, Wr
 use chess_core::{CanonicalPosition, Move, Square};
 use chess_game::{Command, Game, GameSetup, PolicyKind, Timestamp};
 use chess_training::{
-    CheckError, ManualScoresheet, ScoresheetCheck, Verdict, check_against_game, check_scoresheet,
+    CheckError, HistoryFingerprint, ManualScoresheet, ScoresheetCheck, Verdict, check_against_game,
+    check_scoresheet,
 };
 
 fn line(start: &CanonicalPosition, sans: &[&str]) -> Vec<Move> {
@@ -262,4 +263,85 @@ fn checking_a_game_does_not_touch_its_events() {
     let c = check_against_game(&s, &game, 7).unwrap();
     assert_eq!(verdicts(&c), vec![Correct, Swapped, Caveat]);
     assert_eq!(game.events(), events_before.as_slice());
+}
+
+#[test]
+fn extra_normalizations_are_accepted_with_caveat_table() {
+    let start = CanonicalPosition::start();
+    let mate = ["e4", "e5", "Bc4", "Nc6", "Qh5", "Nf6", "Qxf7#"];
+    let ep = ["e4", "a6", "e5", "d5", "exd6"];
+    let table: &[(&[&str], u16, &str, Verdict)] = &[
+        // prefixo de número de lance
+        (&["e4"], 1, "1.e4", Caveat),
+        (&["e4"], 1, "1. e4", Caveat),
+        (&["e4", "e5"], 2, "1... e5", Caveat),
+        (&["e4", "e5"], 2, "1...e5", Caveat),
+        (&["e4", "e5"], 2, "1 ... e5", Caveat),
+        (&["e4"], 1, "12 . e4", Caveat),
+        (&["e4"], 1, "12 e4", WrongNotation),
+        // espaços internos
+        (&["Nf3"], 1, "N f3", Caveat),
+        (&["Nf3"], 1, "C f3", Caveat),
+        (&["Nf3"], 1, " N f 3 ", Caveat),
+        // símbolos Unicode de peça (brancos e pretos)
+        (&["Nf3"], 1, "♘f3", Caveat),
+        (&["Nf3"], 1, "♞f3", Caveat),
+        (&mate, 7, "♕xf7#", Caveat),
+        (&mate, 7, "♛xf7#", Caveat),
+        // sufixo en passant
+        (&ep, 5, "exd6ep", Caveat),
+        (&ep, 5, "exd6e.p", Caveat),
+        (&ep, 5, "exd6 e.p.", Caveat),
+        (&ep, 5, "exd6 ep", Caveat),
+        (&ep, 5, "exd6", Correct),
+        // continua errado quando o Lance não é o jogado
+        (&["e4"], 1, "1. d4", Swapped),
+        (&["Nf3"], 1, "♗f3", WrongNotation),
+    ];
+    for (real, ply, written, want) in table {
+        let c = check(&start, real, &[(*ply, written)]);
+        let got = c.entries().iter().find(|e| e.ply == *ply).unwrap().verdict;
+        assert_eq!(got, *want, "{real:?} ply {ply}: escrito {written:?}");
+    }
+}
+
+#[test]
+fn a_unicode_rook_is_never_read_as_the_pt_br_king() {
+    let start = fen("4k3/8/8/8/8/8/8/R3K3 w - - 0 1");
+    // ♖d1 é Torre; o Lance jogado foi do Rei (Kd1): não vale a leitura pt-BR de "R".
+    let c = check(&start, &["Kd1"], &[(1, "♖d1")]);
+    assert_eq!(c.entries()[0].verdict, Swapped);
+}
+
+#[test]
+fn an_unavailable_start_position_is_an_error() {
+    // `check_against_game` pede a Posição inicial à Partida e devolve Err se ela não a der
+    // (nunca cai na Posição padrão).
+    assert_eq!(
+        CheckError::StartPositionUnavailable.to_string(),
+        "a Posição inicial da Partida não está disponível"
+    );
+}
+
+#[test]
+fn the_check_records_which_history_it_covers() {
+    let start = CanonicalPosition::start();
+    let moves = line(&start, &["e4", "e5", "Nf3"]);
+    let c = check_scoresheet(&sheet(&[(1, "e4")], true), &start, &moves, 1).unwrap();
+    let fp = HistoryFingerprint::of(&moves);
+    assert_eq!(c.history(), fp);
+    assert_eq!(fp.plies(), 3);
+    // Mesmo histórico: mesmo identificador (determinístico); outro: diferente.
+    assert_eq!(HistoryFingerprint::of(&moves), fp);
+    assert_ne!(HistoryFingerprint::of(&moves[..2]), fp);
+    let other = line(&start, &["d4", "d5", "Nf3"]);
+    assert_ne!(
+        HistoryFingerprint::of(&other),
+        fp,
+        "mesmo tamanho, outros lances"
+    );
+    // Reconstruir a partir das partes (persistência) preserva tudo.
+    let again = ScoresheetCheck::from_parts(1, fp, c.entries().to_vec());
+    assert_eq!(again, c);
+    assert_eq!(HistoryFingerprint::from_parts(fp.plies(), fp.id()), fp);
 }

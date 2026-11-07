@@ -7,7 +7,8 @@ mod common;
 use chess_game::{GameSetup, PolicyKind};
 use chess_store::{GameMetadata, ProfileId, Store};
 use chess_training::{
-    EntryCheck, HistoryPeriod, ManualScoresheet, ScoresheetCheck, ScoresheetHistory, Verdict,
+    EntryCheck, HistoryFingerprint, HistoryPeriod, ManualScoresheet, ScoresheetCheck,
+    ScoresheetHistory, Verdict,
 };
 use common::{TempDb, play};
 
@@ -25,7 +26,12 @@ fn setup() -> (TempDb, Store, ProfileId, ProfileId) {
 
 /// Uma Partida do perfil com Súmula entregue e conferida em `checked_at`, com o
 /// resultado `verdicts` (um por meio-lance).
-fn conferred(store: &mut Store, profile: ProfileId, checked_at: i64, verdicts: &[Verdict]) {
+fn conferred(
+    store: &mut Store,
+    profile: ProfileId,
+    checked_at: i64,
+    verdicts: &[Verdict],
+) -> chess_store::GameId {
     let (game, events) = play(
         GameSetup::standard(PolicyKind::Assisted),
         &[("e2", "e4"), ("e7", "e5")],
@@ -38,6 +44,18 @@ fn conferred(store: &mut Store, profile: ProfileId, checked_at: i64, verdicts: &
     sheet.write(1, "e4").unwrap();
     sheet.deliver(checked_at - 1).unwrap();
     store.save_scoresheet(profile, id, &sheet).unwrap();
+    recheck(store, profile, id, checked_at, verdicts);
+    id
+}
+
+/// Grava (ou regrava) a conferência vigente da Súmula já entregue de `id`.
+fn recheck(
+    store: &mut Store,
+    profile: ProfileId,
+    id: chess_store::GameId,
+    checked_at: i64,
+    verdicts: &[Verdict],
+) {
     let entries = verdicts
         .iter()
         .enumerate()
@@ -47,14 +65,28 @@ fn conferred(store: &mut Store, profile: ProfileId, checked_at: i64, verdicts: &
             expected: Some("y".into()),
             verdict: *v,
         })
-        .collect();
+        .collect::<Vec<_>>();
     store
         .save_scoresheet_check(
             profile,
             id,
-            &ScoresheetCheck::from_parts(checked_at, entries),
+            &ScoresheetCheck::from_parts(checked_at, HistoryFingerprint::from_parts(2, 0), entries),
         )
         .unwrap();
+}
+
+#[test]
+fn recalculated_check_replaces_the_previous_one_and_counts_once() {
+    let (_db, mut store, ana, _) = setup();
+    let id = conferred(&mut store, ana, NOW - 2 * DAY, &[Correct, Swapped, Missing]);
+    recheck(&mut store, ana, id, NOW - DAY, &[Correct, Correct]);
+    let h = store
+        .scoresheet_history(ana, HistoryPeriod::Week, NOW)
+        .unwrap();
+    assert_eq!(h.sheets, 1);
+    assert_eq!(h.totals.total(), 2);
+    assert_eq!(h.totals.swapped, 0);
+    assert_eq!(h.points.len(), 1);
 }
 
 use Verdict::{AcceptedWithCaveat as Caveat, Correct, Extra, Missing, Swapped, WrongNotation};
