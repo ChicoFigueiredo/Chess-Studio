@@ -106,6 +106,7 @@ fn reason_key(reason: EndReason) -> &'static str {
         EndReason::Checkmate => "game-reason-checkmate",
         EndReason::Stalemate => "game-reason-stalemate",
         EndReason::InsufficientMaterial => "game-reason-insufficient-material",
+        EndReason::DeadPosition => "game-reason-dead-position",
         EndReason::ThreefoldRepetition => "game-reason-threefold",
         EndReason::FivefoldRepetition => "game-reason-fivefold",
         EndReason::FiftyMoveRule => "game-reason-fifty-move",

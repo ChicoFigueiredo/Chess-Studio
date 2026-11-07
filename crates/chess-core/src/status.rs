@@ -94,7 +94,7 @@ impl CanonicalPosition {
     /// Casos reconhecidos: K x K, K+B x K, K+N x K e K+B x K+B (ou mais bispos) com
     /// todos os bispos em casas da mesma cor. Dois cavalos contra rei sozinho **não**
     /// entram (o mate é possível com ajuda do adversário), nem K+N x K+N.
-    /// Não detecta posição morta por bloqueio de peões nem fortalezas.
+    /// Não cobre bloqueio de peões (ver [`Self::is_dead_position`]) nem fortalezas.
     pub fn is_insufficient_material(&self) -> bool {
         let (w, b) = (self.material(Color::White), self.material(Color::Black));
         if w.has_heavy_or_pawn() || b.has_heavy_or_pawn() {
@@ -110,23 +110,140 @@ impl CanonicalPosition {
     /// O lado `color` tem material para dar mate por *alguma* sequência de Lances
     /// legais (cooperação do adversário incluída), como pedem os arts. 6.9 e 7.5.5.
     ///
-    /// Aproximação por material, conservadora (`true` na dúvida): peão, torre ou
-    /// dama bastam; duas ou mais peças menores bastam, exceto só bispos da mesma
-    /// cor; uma peça menor (ou bispos de uma só cor) só basta se o adversário tiver
-    /// alguma peça além do rei que sirva de bloqueio e a posição não for morta por
-    /// material. Não analisa bloqueios de peões nem fortalezas.
+    /// Aproximação conservadora (`true` na dúvida). Primeiro, se a posição é morta
+    /// ([`Self::is_dead_position`]: material insuficiente ou bloqueio total de
+    /// peões), ninguém dá mate. Depois, por material: peão, torre ou dama bastam;
+    /// duas ou mais peças menores bastam, exceto só bispos da mesma cor; uma peça
+    /// menor (ou bispos de uma só cor) só basta se o adversário tiver alguma peça
+    /// além do rei que sirva de bloqueio. Não analisa fortalezas.
     pub fn can_checkmate(&self, color: Color) -> bool {
+        if self.is_dead_position() {
+            return false;
+        }
         let me = self.material(color);
         if me.has_heavy_or_pawn() {
             return true;
         }
-        if me.minors() == 0 || self.is_insufficient_material() {
+        if me.minors() == 0 {
             return false;
         }
         if me.minors() >= 2 && !me.only_same_color_bishops() {
             return true;
         }
         self.material(color.opposite()).has_anything()
+    }
+
+    /// Posição morta (art. 5.2.2): nenhuma série de Lances legais leva a xeque-mate.
+    ///
+    /// **Detector conservador**: `true` só quando a posição é comprovadamente morta;
+    /// na dúvida devolve `false` (falso negativo permitido, falso positivo nunca).
+    /// Cobre (a) material insuficiente ([`Self::is_insufficient_material`]) e
+    /// (b) bloqueio total de peões, pelo algoritmo abaixo.
+    ///
+    /// Bloqueio total, só com reis e peões e sem en passant:
+    /// 1. todo peão está travado de frente por um peão adversário (nenhum avança,
+    ///    nem duplo) e nenhum tem peão adversário numa casa de captura;
+    /// 2. para cada rei, calcula-se por busca em largura o conjunto de casas que ele
+    ///    alcança com os peões fixos, sem pisar em peão nem em casa atacada por peão
+    ///    adversário (ignora-se o outro rei: superconjunto, portanto seguro);
+    /// 3. nenhum rei pode já estar atacado por peão, e nenhuma casa alcançável pode
+    ///    ser vizinha de peão adversário (senão o rei poderia capturá-lo).
+    ///
+    /// Se 1-3 valem, o conjunto de peões é invariante (ninguém captura nem avança),
+    /// os reis ficam presos aos seus conjuntos e, sem poder pisar em casa atacada
+    /// por peão, nunca há xeque; logo não há mate.
+    ///
+    /// Não cobre: bispos presos atrás de cadeias, cavalos, torres, damas, fortalezas
+    /// nem posições em que a captura é possível mas inútil. Nesses casos devolve `false`.
+    pub fn is_dead_position(&self) -> bool {
+        self.is_insufficient_material() || self.is_dead_by_pawn_blockade()
+    }
+
+    fn is_dead_by_pawn_blockade(&self) -> bool {
+        // En passant pendente: captura possível, não afirma nada.
+        if self.to_fen().split(' ').nth(3) != Some("-") {
+            return false;
+        }
+        let mut pawns = [[None::<Color>; 8]; 8];
+        let mut kings = Vec::new();
+        for rank in 0..8u8 {
+            for file in 0..8u8 {
+                let sq = Square::new(file, rank).expect("coordenadas em 0..8");
+                match self.piece_at(sq) {
+                    None => {}
+                    Some((color, Piece::Pawn)) => {
+                        if rank == 0 || rank == 7 {
+                            return false;
+                        }
+                        pawns[usize::from(file)][usize::from(rank)] = Some(color);
+                    }
+                    Some((color, Piece::King)) => kings.push((color, file, rank)),
+                    Some(_) => return false,
+                }
+            }
+        }
+        let at = |file: i8, rank: i8| -> Option<Color> {
+            if (0..8).contains(&file) && (0..8).contains(&rank) {
+                pawns[file as usize][rank as usize]
+            } else {
+                None
+            }
+        };
+        let forward = |c: Color| -> i8 { if c == Color::White { 1 } else { -1 } };
+        // Passo 1: travamento frontal e ausência de captura.
+        for file in 0..8i8 {
+            for rank in 0..8i8 {
+                let Some(color) = at(file, rank) else {
+                    continue;
+                };
+                let f = forward(color);
+                if at(file, rank + f) != Some(color.opposite()) {
+                    return false;
+                }
+                if at(file - 1, rank + f) == Some(color.opposite())
+                    || at(file + 1, rank + f) == Some(color.opposite())
+                {
+                    return false;
+                }
+            }
+        }
+        // `color` ataca (file, rank) com algum peão?
+        let attacked_by_pawn = |color: Color, file: i8, rank: i8| -> bool {
+            let f = forward(color);
+            at(file - 1, rank - f) == Some(color) || at(file + 1, rank - f) == Some(color)
+        };
+        // Passos 2 e 3.
+        for &(color, kf, kr) in &kings {
+            let enemy = color.opposite();
+            let (kf, kr) = (kf as i8, kr as i8);
+            if attacked_by_pawn(enemy, kf, kr) {
+                return false;
+            }
+            let mut seen = [[false; 8]; 8];
+            seen[kf as usize][kr as usize] = true;
+            let mut stack = vec![(kf, kr)];
+            while let Some((f, r)) = stack.pop() {
+                for df in -1..=1i8 {
+                    for dr in -1..=1i8 {
+                        let (nf, nr) = (f + df, r + dr);
+                        if (df, dr) == (0, 0) || !(0..8).contains(&nf) || !(0..8).contains(&nr) {
+                            continue;
+                        }
+                        match at(nf, nr) {
+                            Some(c) if c == enemy => return false,
+                            Some(_) => continue,
+                            None => {}
+                        }
+                        if attacked_by_pawn(enemy, nf, nr) || seen[nf as usize][nr as usize] {
+                            continue;
+                        }
+                        seen[nf as usize][nr as usize] = true;
+                        stack.push((nf, nr));
+                    }
+                }
+            }
+        }
+        true
     }
 
     /// Cinquenta lances: o relógio de meio-lance chegou a 100, o que permite

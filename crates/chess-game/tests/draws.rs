@@ -95,6 +95,18 @@ fn material_insuficiente_empata_ao_ficar_rei_contra_rei() {
 }
 
 #[test]
+fn posicao_morta_por_bloqueio_de_pecoes_empata_automaticamente() {
+    // Muro total de peões travados; a captura da torre deixa só reis e peões travados.
+    let mut game = assisted_from("4k3/8/1p1p1p1p/pPpPpPpP/P1P1P1P1/8/3r4/4K3 w - - 0 1");
+    let mut clock = FakeClock::new();
+    assert_eq!(reason(&game), None);
+    play_san(&mut game, &mut clock, "Kxd2");
+    let outcome = game.snapshot().outcome.unwrap();
+    assert_eq!(outcome.result, GameResult::Draw);
+    assert_eq!(outcome.reason, EndReason::DeadPosition);
+}
+
+#[test]
 fn proposta_aceita_encerra_em_empate_por_acordo() {
     let mut game = assisted();
     let mut clock = FakeClock::new();

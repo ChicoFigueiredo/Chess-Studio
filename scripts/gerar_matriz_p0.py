@@ -78,14 +78,19 @@ LINHAS = [
      "chess-core (repetition, status); chess-game (policy, draws, fide)",
      t(CORE + "repetition.rs", "same_position_reached_again_has_equal_key_regardless_of_clocks", "castling_rights_are_part_of_the_key",
        "capturable_en_passant_is_part_of_the_key")
-     + t(CORE + "status.rs", "fifty_move_counter_thresholds", "seventy_five_move_counter_thresholds", "insufficient_material_fide_cases")
+     + t(CORE + "status.rs", "fifty_move_counter_thresholds", "seventy_five_move_counter_thresholds", "insufficient_material_fide_cases",
+       "dead_position_by_pawn_blockade_is_detected", "dead_position_makes_checkmate_impossible_for_both_sides",
+       "blockade_with_possible_capture_is_not_dead", "king_that_reaches_an_enemy_pawn_is_not_dead",
+       "pieces_other_than_kings_and_pawns_are_never_declared_dead_by_blockade", "king_in_check_by_pawn_or_en_passant_is_not_dead",
+       "wall_is_independently_verified_by_exhaustive_search")
      + t(GAME + "draws.rs", "tripla_repeticao_empata_automaticamente_no_assistido", "cinquenta_lances_empatam_automaticamente_no_assistido",
-         "setenta_e_cinco_lances_encerram_automaticamente", "material_insuficiente_empata_ao_ficar_rei_contra_rei")
+         "setenta_e_cinco_lances_encerram_automaticamente", "material_insuficiente_empata_ao_ficar_rei_contra_rei",
+         "posicao_morta_por_bloqueio_de_pecoes_empata_automaticamente")
      + t(GAME + "fide_claims.rs", "tripla_repeticao_nao_encerra_sozinha_exige_reclamacao_dec_38", "cinco_repeticoes_encerram_automaticamente_art_9_6_1",
-         "material_insuficiente_encerra_automaticamente_art_5_2_2", "reclamacao_incorreta_da_dois_minutos_ao_adversario_e_a_partida_continua_art_9_5_3"),
-     "PRs #65, #69, #74. Teste `dead_position_by_pawn_blockade_is_not_detected` (`#[ignore]`, **falha de propósito** ao ser executado: documenta a lacuna)",
-     "FAIL",
-     "Parcial. Repetição, 50/75 e material insuficiente: PASS. **Posição morta por bloqueio de peões (art. 5.2.2) não é detectada** (limitação conhecida desde o B1; `can_checkmate` é a aproximação por material). Reclassificar para PASS ou N/A somente se o usuário aceitar a limitação (DECISOES_PENDENTES)."),
+         "material_insuficiente_encerra_automaticamente_art_5_2_2", "posicao_morta_por_bloqueio_encerra_automaticamente_art_5_2_2", "reclamacao_incorreta_da_dois_minutos_ao_adversario_e_a_partida_continua_art_9_5_3"),
+     "PRs #65, #69, #74 e #93 (detector de posição morta). `CanonicalPosition::is_dead_position` e a prova do muro por busca exaustiva (`wall_is_independently_verified_by_exhaustive_search`)",
+     "PASS",
+     "Repetição, 50/75, material insuficiente e posição morta por bloqueio total de peões (art. 5.2.2) cobertos; a bandeira e as Infrações usam o detector via `can_checkmate` (arts. 6.9 e 7.5.5). O detector é conservador: não cobre bispos presos atrás de cadeias nem fortalezas (falso negativo permitido, falso positivo nunca)."),
     ("CORE-08", "Engine UCI não pode alterar a posição canônica com lance ilegal.",
      "chess-uci (engine, player, controller); chess-game (EngineMove)",
      t(UCI + "adapter.rs", "illegal_move_is_a_recoverable_error_and_leaves_the_position_unchanged", "malformed_move_text_is_a_recoverable_error")
@@ -435,7 +440,7 @@ Gerada por `scripts/gerar_matriz_p0.py`, que **falha** se algum teste ou evidên
 
 - **Base:** `main` em `6a65770bd9bb` (inclui os PRs #61 a #89; os PRs #90 (B15, memória) e #91 (B17, instaláveis) estão abertos e **fora** desta matriz).
 - **Ambiente:** Linux físico (Ubuntu 26.04, Ryzen 7 3700X, RTX 4080 SUPER, driver 595.99.02), Rust 1.98.1.
-- **Suíte:** `cargo test --workspace` = **514 testes aprovados, 0 falhas, 6 `#[ignore]`** (inclui 3 doctests). Os 6 ignorados: perft profundo, posição morta por bloqueio, Stockfish real (2: handshake e jogador), download real do Stockfish, PGN com python-chess. Quatro foram executados à parte em 2026-11-06 e passaram (perft profundo, os 2 de Stockfish 19 real, PGN com python-chess); o download real do Stockfish não foi reexecutado (passou no PR #85); `dead_position_by_pawn_blockade_is_not_detected` **falha de propósito** (documenta a lacuna do CORE-07).
+- **Suíte:** `cargo test --workspace` = **524 testes aprovados, 0 falhas, 5 `#[ignore]`** (inclui 3 doctests). Os 5 ignorados: perft profundo, Stockfish real (2: handshake e jogador), download real do Stockfish, PGN com python-chess. Quatro foram executados à parte em 2026-11-06 e passaram (perft profundo, os 2 de Stockfish 19 real, PGN com python-chess); o download real do Stockfish não foi reexecutado (passou no PR #85);
 - **Escopo:** os {{TOTAL}} IDs de marco P0 da §14 do prompt mestre (CORE, VIS, CAM, INT, AC, RULE, UX, DB, UCI, TRN, PLAT, PERF). UI-01 a UI-12 e UCI-05/06 são V1 e V2-SUM são V2: fora do P0. RULE-05 é "P0/V1" e entra aqui. `VIS-04` não existe na matriz.
 - **Resumo:** {{RESUMO}}
 
@@ -448,7 +453,7 @@ Legenda: **PASS** = teste automatizado verde ou evidência verificável; **UNVER
 Itens que só o usuário (ou hardware dele) resolve, mais as pendências de engenharia que bloqueiam o GO.
 
 **Decisão do usuário**
-1. **CORE-07 (FAIL parcial):** aceitar (ou mandar implementar) a limitação de posição morta por bloqueio de peões (art. 5.2.2). Hoje só material insuficiente é detectado.
+1. **CORE-07:** resolvido pelo detector de posição morta (#93); resta apenas conhecer o limite (bispos presos e fortalezas não são detectados).
 
 **Homologação visual (revisão humana)**
 2. **VIS-01** e **VIS-02:** aprovar o 3D profissional e a Mesa imersiva (capturas em `docs/evidencias/b19/`) ou pedir ajustes; confirmar o 2D técnico (VIS-03, coordenadas legíveis).
