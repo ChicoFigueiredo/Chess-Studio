@@ -39,10 +39,10 @@ impl FileTools {
     }
 
     /// Exporta o PGN para `dir`.
-    pub fn export(&mut self, session: &Session, dir: &Path) {
+    pub fn export(&mut self, session: &Session, notes: &[(usize, String)], dir: &Path) {
         let wall = session_wall_ms();
         self.pgn_result = Some(
-            export_pgn(&session.export_pgn(self.include_comments), dir, wall)
+            export_pgn(&session.export_pgn(self.include_comments, notes), dir, wall)
                 .map_err(|err| format!("{}: {err}", dir.display())),
         );
     }
@@ -137,7 +137,7 @@ mod tests {
         let mut s = Session::new();
         mv(&mut s, "e2", "e4");
         mv(&mut s, "e7", "e5");
-        let pgn = s.export_pgn(true);
+        let pgn = s.export_pgn(true, &[]);
         let first = export_pgn(&pgn, &dir, Some(1_000)).unwrap();
         let second = export_pgn(&pgn, &dir, Some(1_000)).unwrap();
         assert_ne!(first, second);
@@ -153,8 +153,8 @@ mod tests {
         mv(&mut s, "e2", "e4");
         mv(&mut s, "e7", "e5");
         mv(&mut s, "e1", "e5"); // ilegal no Assistido: fora do PGN
-        let with = s.export_pgn(true);
-        let without = s.export_pgn(false);
+        let with = s.export_pgn(true, &[]);
+        let without = s.export_pgn(false, &[]);
         assert!(with.contains("1. e4 e5"));
         assert!(without.contains("1. e4 e5"));
         assert!(!without.contains('{'));
@@ -191,7 +191,7 @@ mod tests {
             "4k3/8/8/8/8/8/4P3/4K3 w - - 0 1"
         );
         assert!(
-            s.export_pgn(true)
+            s.export_pgn(true, &[])
                 .contains("[FEN \"4k3/8/8/8/8/8/4P3/4K3 w - - 0 1\"]")
         );
     }

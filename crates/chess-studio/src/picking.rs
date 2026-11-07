@@ -117,7 +117,12 @@ fn pick(
                     ray_to_board_plane(ray.origin, *ray.direction)
                 } else {
                     // 2D técnico: raio vertical sobre o ponto do tabuleiro sob o cursor.
-                    Some(to_board_plane(cursor_to_world(cursor, window.size())))
+                    // A câmera renderiza só na área livre (viewport recortado): o centro e a
+                    // escala vêm dessa área, não da janela inteira.
+                    Some(to_board_plane(cursor_to_world(
+                        cursor,
+                        dock.board_size(window.size()),
+                    )))
                 }
             })
     };

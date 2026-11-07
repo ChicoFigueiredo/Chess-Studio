@@ -19,7 +19,7 @@ use crate::persistence::PersistenceHandle;
 use crate::play::PlaySet;
 use crate::session::Session;
 use bevy::prelude::*;
-use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
+use bevy_egui::egui;
 use chess_core::{Color as Side, Square};
 use chess_game::Command;
 use chess_store::{ProfileId, RunId, RunQuery, Store};
@@ -38,12 +38,19 @@ pub struct TrainingPlugin;
 
 impl Plugin for TrainingPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<TrainingUi>()
-            .add_systems(
-                Update,
-                (training_demo, training_judge).chain().after(PlaySet),
-            )
-            .add_systems(EguiPrimaryContextPass, training_window);
+        app.init_resource::<TrainingUi>().add_systems(
+            Update,
+            (training_demo, training_judge).chain().after(PlaySet),
+        );
+        crate::dock::register_panel(
+            app,
+            crate::dock::PanelDef {
+                id: crate::dock::ids::TRAINING,
+                label_key: "dock-panel-training",
+                access: crate::dock::PanelAccess::Always,
+                ui: training_panel,
+            },
+        );
     }
 }
 
@@ -979,86 +986,80 @@ fn review_view(ui: &mut egui::Ui, i18n: &I18n, review: &ReviewState) -> Option<A
     action
 }
 
-fn training_window(
-    mut contexts: EguiContexts,
-    i18n: Res<I18n>,
-    mut state: ResMut<TrainingUi>,
-    mut session: ResMut<Session>,
-    aids: Res<AidSettings>,
-    handle: Option<Res<PersistenceHandle>>,
-    capture: Option<Res<CaptureMode>>,
-) -> Result {
-    if capture
-        .as_ref()
-        .is_some_and(|c| !c.show_panel && demo_script().is_none())
-    {
-        return Ok(());
-    }
-    let mut action = None;
-    egui::Window::new(i18n.t("training-window-title"))
-        .anchor(egui::Align2::LEFT_BOTTOM, [8.0, -8.0])
-        .default_width(330.0)
-        .show(contexts.ctx_mut()?, |ui| match state.view {
-            View::Closed => {
-                if ui.button(i18n.t("training-open")).clicked() {
-                    action = Some(Action::Open);
+/// Painel Treino do dock (C2): o que era a janela flutuante. Estado em [`TrainingUi`]; a
+/// `Session` só recebe as intenções do juiz (ADR-0001).
+pub fn training_panel(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
+    world.resource_scope(|world, mut state: Mut<TrainingUi>| {
+        world.resource_scope(|world, mut session: Mut<Session>| {
+            let aids = world
+                .get_resource::<AidSettings>()
+                .copied()
+                .unwrap_or_default();
+            let handle = world.get_resource::<PersistenceHandle>();
+            let mut action = None;
+            match state.view {
+                View::Closed => {
+                    if ui.button(i18n.t("training-open")).clicked() {
+                        action = Some(Action::Open);
+                    }
+                }
+                view => {
+                    let inner = match view {
+                        View::List => list_view(ui, i18n, &state),
+                        View::Exercise => {
+                            if let Some(memory) = state.memory.as_ref() {
+                                memory_view(ui, i18n, memory, &session, state.now_ms())
+                            } else {
+                                state
+                                    .active
+                                    .as_ref()
+                                    .and_then(|a| exercise_view(ui, i18n, a, &session, &aids))
+                            }
+                        }
+                        _ => state.review.as_ref().and_then(|r| review_view(ui, i18n, r)),
+                    };
+                    if inner.is_some() {
+                        action = inner;
+                    }
+                    ui.separator();
+                    metrics_section(ui, i18n, &state.metrics, state.session_id);
+                    ui.small(i18n.t("training-note-no-effect"));
+                    if ui.button(i18n.t("training-close")).clicked() {
+                        action = Some(Action::Close);
+                    }
                 }
             }
-            view => {
-                let inner = match view {
-                    View::List => list_view(ui, &i18n, &state),
-                    View::Exercise => {
-                        if let Some(memory) = state.memory.as_ref() {
-                            memory_view(ui, &i18n, memory, &session, state.now_ms())
-                        } else {
-                            state
-                                .active
-                                .as_ref()
-                                .and_then(|a| exercise_view(ui, &i18n, a, &session, &aids))
-                        }
+            match action {
+                None => {}
+                Some(Action::Open) => state.open(handle),
+                Some(Action::Close) => state.leave(&mut session, View::Closed),
+                Some(Action::Start(id)) => state.start(&id, &mut session, &aids, handle),
+                Some(Action::GiveUp) => {
+                    if state.memory.is_some() {
+                        state.finish_memory(&mut session, handle);
+                    } else {
+                        state.finish(&mut session, handle);
                     }
-                    _ => state
-                        .review
-                        .as_ref()
-                        .and_then(|r| review_view(ui, &i18n, r)),
-                };
-                if inner.is_some() {
-                    action = inner;
                 }
-                ui.separator();
-                metrics_section(ui, &i18n, &state.metrics, state.session_id);
-                ui.small(i18n.t("training-note-no-effect"));
-                if ui.button(i18n.t("training-close")).clicked() {
-                    action = Some(Action::Close);
+                Some(Action::ShowAgain) => state.show_again(&mut session),
+                // Sair sem resolver nem desistir descarta a Resolução (não vira erro).
+                Some(Action::BackToList) => state.leave(&mut session, View::List),
+                Some(Action::Reveal) => {
+                    if let Some(active) = state.active.as_mut() {
+                        active.revealed = true;
+                    }
                 }
             }
         });
-    let handle = handle.as_deref();
-    match action {
-        None => {}
-        Some(Action::Open) => state.open(handle),
-        Some(Action::Close) => state.leave(&mut session, View::Closed),
-        Some(Action::Start(id)) => state.start(&id, &mut session, &aids, handle),
-        Some(Action::GiveUp) => {
-            if state.memory.is_some() {
-                state.finish_memory(&mut session, handle);
-            } else {
-                state.finish(&mut session, handle);
-            }
-        }
-        Some(Action::ShowAgain) => state.show_again(&mut session),
-        // Sair sem resolver nem desistir descarta a Resolução (não vira erro).
-        Some(Action::BackToList) => state.leave(&mut session, View::List),
-        Some(Action::Reveal) => {
-            if let Some(active) = state.active.as_mut() {
-                active.revealed = true;
-            }
-        }
-    }
-    Ok(())
+    });
 }
 
 // --- Evidências (`--screenshot <dir> --training list|exercise|review`) ----------------
+
+/// Roteiro de captura de Treino ativo (`--training`): o dock aparece mesmo sem `--panel`.
+pub(crate) fn demo_active() -> bool {
+    demo_script().is_some()
+}
 
 fn demo_script() -> Option<String> {
     let mut args = std::env::args().skip(1);

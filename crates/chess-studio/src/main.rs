@@ -12,6 +12,7 @@ mod board;
 mod board2d;
 mod camera;
 mod capture;
+mod captured;
 mod clock;
 mod dock;
 mod engine;
@@ -30,6 +31,7 @@ mod pieces;
 mod play;
 mod presentation;
 mod session;
+mod study;
 mod training_ui;
 mod ui;
 
@@ -140,6 +142,10 @@ fn main() {
         new_game::NewGamePlugin,
         capture::CapturePlugin,
         engine::EnginePlugin,
+        notation::NotationPlugin,
+        captured::CapturedPlugin,
+        study::StudyPlugin,
+        fide_panel::ArbitrationPlugin,
     ));
     app.add_plugins(training_ui::TrainingPlugin);
     if let Some(dir) = capture {

@@ -3,8 +3,10 @@
 //! só navega na revisão (`Session::set_review_ply`): nenhum Comando de Partida é emitido
 //! (ADR-0001).
 
+use crate::dock::{PanelAccess, PanelDef, ids};
 use crate::i18n::I18n;
 use crate::session::Session;
+use bevy::prelude::*;
 use bevy_egui::egui;
 use chess_core::Color as Side;
 use chess_game::{GameResult, HistoryEntry};
@@ -79,6 +81,26 @@ pub fn current_ply(session: &Session) -> usize {
 pub fn navigate(session: &mut Session, ply: usize) {
     let total = session.snapshot().history.len();
     session.set_review_ply(if ply >= total { None } else { Some(ply) });
+}
+
+pub struct NotationPlugin;
+
+impl Plugin for NotationPlugin {
+    fn build(&self, app: &mut App) {
+        crate::dock::register_panel(
+            app,
+            PanelDef {
+                id: ids::NOTATION,
+                label_key: "dock-panel-notation",
+                access: PanelAccess::Always,
+                ui: |ui, i18n, world| {
+                    if let Some(mut session) = world.get_resource_mut::<Session>() {
+                        self::ui(ui, i18n, &mut session);
+                    }
+                },
+            },
+        );
+    }
 }
 
 /// Conteúdo do painel Notação.
