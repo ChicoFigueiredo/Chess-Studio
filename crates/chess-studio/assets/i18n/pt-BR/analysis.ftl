@@ -1,0 +1,29 @@
+## Painel Análise (C8): avaliação contínua da Engine em estudo (US-17, UI-08).
+
+analysis-toggle-on = Ligar análise
+analysis-toggle-off = Desligar análise
+analysis-engine-label = Engine
+analysis-engine-default = Engine padrão
+analysis-lines-label = Linhas
+analysis-threads-label = Threads
+analysis-hash-label = Hash (MB)
+analysis-pause-while-thinking = Pausar enquanto a Engine adversária pensa
+analysis-load-note = A análise usa uma segunda Engine (outro processo) e consome CPU; ela nunca mexe no relógio nem no lance do adversário.
+analysis-status-off = Análise desligada.
+analysis-status-starting = Iniciando a Engine…
+analysis-status-thinking = Calculando…
+analysis-status-paused = Pausada: a Engine adversária está pensando.
+analysis-status-no-moves = Sem lances: a Partida termina nesta posição.
+analysis-status-no-engine = Nenhuma Engine encontrada. Instale ou escolha uma no painel Engines.
+analysis-status-failed = A Engine de análise falhou
+analysis-retry = Tentar de novo
+analysis-locked-training = Indisponível durante um Exercício de Treino.
+analysis-white-pov = Avaliação do ponto de vista das Brancas.
+analysis-depth = Profundidade { $depth } (seletiva { $seldepth })
+analysis-depth-plain = Profundidade { $depth }
+analysis-speed = { $nodes } nós · { $nps } nós/s
+analysis-line-hint = Clique num lance para ver a linha no tabuleiro; a Partida não muda.
+analysis-back-to-game = Voltar à Partida
+analysis-showing-line = Mostrando uma linha da análise (somente leitura).
+analysis-mate-white = Mate das Brancas em { $n }
+analysis-mate-black = Mate das Pretas em { $n }

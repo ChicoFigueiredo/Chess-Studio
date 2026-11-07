@@ -27,7 +27,8 @@ mod player;
 mod protocol;
 
 pub use analysis::{
-    AnalysisConfig, AnalysisController, AnalysisEvent, AnalysisLine, AnalysisUpdate, Score,
+    AnalysisConfig, AnalysisController, AnalysisEvent, AnalysisLine, AnalysisUpdate,
+    DEFAULT_INTERVAL, MAX_MULTIPV, Score,
 };
 pub use catalog::{
     ASSETS, ArchiveKind, Asset, Backend, CATALOG, CatalogEntry, LC0_ASSETS, LC0_NETWORKS,
