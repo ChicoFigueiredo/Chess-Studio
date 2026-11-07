@@ -1,0 +1,41 @@
+{
+  "format": 1,
+  "exercises": [
+    {
+      "id": "afogamento-001",
+      "kind": "stalemate",
+      "title": "Afogamento: rei sem casas",
+      "fen": "7k/8/4Q1K1/8/8/8/8/8 w - - 0 1",
+      "objective": "Jogue um Lance legal que deixe o rei preto sem Lances e fora de xeque.",
+      "solution": {
+        "type": "force_stalemate"
+      },
+      "explanation": "Há mais de um jeito de afogar: por exemplo, Qf7 deixa o rei preto fora de xeque, com todas as casas ao redor controladas e sem outras peças pretas. Sem Lance legal e fora de xeque, é afogamento e a Partida empata (art. 5.2.1). Com Qe8 o rei estaria em xeque sem escapatória, e isso sim é xeque-mate.",
+      "version": 1
+    },
+    {
+      "id": "afogamento-002",
+      "kind": "stalemate",
+      "title": "Rei e peão: o rei que sobra",
+      "fen": "7k/8/5KP1/8/8/8/8/8 w - - 0 1",
+      "objective": "Em vez de avançar o peão, jogue o Lance que afoga o rei preto.",
+      "solution": {
+        "type": "force_stalemate"
+      },
+      "explanation": "Kf7 deixa o rei preto em h8 sem nenhuma casa: g8 e g7 são vigiadas pelo rei branco e h7 pelo peão de g6, e ele não está em xeque. Sem Lance legal e fora de xeque é afogamento, e a Partida empata (art. 5.2.1). É um erro clássico de quem está ganhando: g7+ mantinha a vitória, mas Kf7 a joga fora.",
+      "version": 1
+    },
+    {
+      "id": "afogamento-003",
+      "kind": "stalemate",
+      "title": "Dama contra rei encurralado",
+      "fen": "k7/8/1K6/8/8/8/8/2Q5 w - - 0 1",
+      "objective": "Encontre um Lance de dama que deixe o rei preto afogado.",
+      "solution": {
+        "type": "force_stalemate"
+      },
+      "explanation": "O rei preto em a8 já tem a7 e b7 cobertas pelo rei branco. Qc8 seria xeque-mate, mas Qc7 (ou Qf4) tira b8 e a8 do alcance da dama sem dar xeque: o rei fica sem Lances e a Partida empata por afogamento (art. 5.2.1). Cuidado com a dama que prende o rei demais: antes de cada Lance, confira se o adversário ainda tem algum Lance legal.",
+      "version": 1
+    }
+  ]
+}

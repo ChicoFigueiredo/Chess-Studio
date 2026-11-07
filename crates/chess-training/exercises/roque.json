@@ -1,0 +1,74 @@
+{
+  "format": 1,
+  "exercises": [
+    {
+      "id": "roque-001",
+      "kind": "castling",
+      "title": "Roque pequeno",
+      "fen": "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1",
+      "objective": "Faça o roque pequeno com as brancas.",
+      "solution": {
+        "type": "moves",
+        "line": [
+          "e1g1"
+        ]
+      },
+      "explanation": "No roque o rei anda duas casas em direção à torre (e1 para g1) e a torre salta para o outro lado dele (art. 3.8). Só vale se nem o rei nem a torre se moveram, se não há peças entre eles e se o rei não passa por casas atacadas.",
+      "version": 1
+    },
+    {
+      "id": "roque-002",
+      "kind": "castling",
+      "title": "Roque grande no meio-jogo",
+      "fen": "r3k2r/pppq1ppp/2n2n2/2bpp3/2BPP3/2N2N2/PPPQ1PPP/R3K2R w KQkq - 0 1",
+      "objective": "Faça o roque grande com as brancas.",
+      "solution": {
+        "type": "moves",
+        "line": [
+          "e1c1"
+        ]
+      },
+      "explanation": "O roque grande leva o rei de e1 a c1 e a torre de a1 a d1 (art. 3.8). As casas b1, c1 e d1 estão livres e o rei não está em xeque nem passa por casa atacada (d1) nem chega a uma (c1). A casa b1 só precisa estar vazia: não importa se está atacada.",
+      "version": 1
+    },
+    {
+      "id": "roque-003",
+      "kind": "castling",
+      "title": "Roque com o rei em xeque",
+      "fen": "4r1k1/8/8/8/8/8/8/R3K2R w KQ - 0 1",
+      "objective": "Tente fazer o roque pequeno (e1g1) e veja por que ele é recusado.",
+      "solution": {
+        "type": "refuse_illegal",
+        "uci": "e1g1"
+      },
+      "explanation": "Não se pode rocar para escapar de um xeque: a torre preta em e8 ataca o rei em e1 (art. 3.8). É preciso primeiro sair do xeque; o direito de roque continua depois, desde que o rei e a torre não tenham se movido.",
+      "version": 1
+    },
+    {
+      "id": "roque-004",
+      "kind": "castling",
+      "title": "Roque atravessando casa atacada",
+      "fen": "5rk1/8/8/8/8/8/8/R3K2R w KQ - 0 1",
+      "objective": "Tente fazer o roque pequeno (e1g1) e veja por que ele é recusado.",
+      "solution": {
+        "type": "refuse_illegal",
+        "uci": "e1g1"
+      },
+      "explanation": "O rei não está em xeque, mas a torre preta em f8 ataca f1, a casa que ele atravessaria (art. 3.8). O roque pequeno fica proibido nesta posição; o roque grande, ao contrário, ainda é possível.",
+      "version": 1
+    },
+    {
+      "id": "roque-005",
+      "kind": "castling",
+      "title": "Rei ou torre já movidos",
+      "fen": "4k3/8/8/8/8/8/8/R3K2R w - - 0 1",
+      "objective": "Tente fazer o roque pequeno (e1g1) e veja por que ele é recusado.",
+      "solution": {
+        "type": "refuse_illegal",
+        "uci": "e1g1"
+      },
+      "explanation": "O roque só é permitido se o rei e a torre envolvida nunca se moveram (art. 3.8). Nesta posição o direito foi perdido (o FEN não traz nenhum direito de roque), como se o rei já tivesse saído de e1 e voltado: voltar à casa original não devolve o direito.",
+      "version": 1
+    }
+  ]
+}

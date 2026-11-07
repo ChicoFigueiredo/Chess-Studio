@@ -23,7 +23,24 @@ use std::path::Path;
 pub const FORMAT_VERSION: u32 = 1;
 
 const BUNDLED: &[(&str, &str)] = &[
-    ("basicos.json", include_str!("../exercises/basicos.json")),
+    (
+        "finais-afogamento.json",
+        include_str!("../exercises/finais-afogamento.json"),
+    ),
+    (
+        "mates-basicos.json",
+        include_str!("../exercises/mates-basicos.json"),
+    ),
+    ("xeques.json", include_str!("../exercises/xeques.json")),
+    (
+        "regras-peao.json",
+        include_str!("../exercises/regras-peao.json"),
+    ),
+    ("roque.json", include_str!("../exercises/roque.json")),
+    (
+        "promocoes.json",
+        include_str!("../exercises/promocoes.json"),
+    ),
     ("memoria.json", include_str!("../exercises/memoria.json")),
 ];
 
