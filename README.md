@@ -1,5 +1,7 @@
 # Chess Studio
 
+[![CI](https://github.com/ChicoFigueiredo/Chess-Studio/actions/workflows/ci.yml/badge.svg)](https://github.com/ChicoFigueiredo/Chess-Studio/actions/workflows/ci.yml) · CI/CD: [docs/ci.md](docs/ci.md)
+
 Mesa pessoal de treinamento de xadrez: desktop nativo, offline e multiplataforma (Windows, Linux, macOS), para aprender a jogar no tabuleiro físico **sem depender de auxílios digitais**. Tabuleiro 3D sobre uma mesa discreta, 2D técnico, três Políticas de arbitragem (Assistido, Simulação FIDE, Eliminação Imediata), adversário por Engine UCI externa, Exercícios de regras, finais e memória, tudo gravado localmente em SQLite.
 
 > **Estado:** P0 em implementação — a Partida Assistido já é jogável no app; Simulação FIDE, Engine, persistência no app e treino estão chegando. Nada aqui é evidência de software pronto até a matriz de aceite marcar `PASS`.

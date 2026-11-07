@@ -353,7 +353,7 @@ mod tests {
     fn linux_dirs_cover_common_locations_without_duplicates() {
         let env = SearchEnv {
             os: "linux".into(),
-            path_var: Some(OsString::from("/usr/bin:/opt/x")),
+            path_var: Some(std::env::join_paths(["/usr/bin", "/opt/x"]).unwrap()),
             home: Some(PathBuf::from("/home/u")),
             ..SearchEnv::default()
         };
@@ -365,10 +365,11 @@ mod tests {
             "/usr/local/bin",
             "/snap/bin",
             "/var/lib/flatpak/exports/bin",
-            "/home/u/.local/bin",
         ] {
             assert!(dirs.contains(&PathBuf::from(want)), "falta {want}");
         }
+        // `join` usa o separador do SO (no Windows `\home\u\.local\bin`).
+        assert!(dirs.contains(&PathBuf::from("/home/u").join(".local/bin")));
         assert_eq!(
             dirs.iter().filter(|d| **d == Path::new("/usr/bin")).count(),
             1

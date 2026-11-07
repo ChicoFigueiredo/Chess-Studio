@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use chess_uci::{
     AnalysisConfig, AnalysisController, AnalysisEvent, Duty, EngineConfig, FailureKind, GpuVendor,
-    Hardware, Level, LoadPlan, PositionSpec, Timeouts,
+    Hardware, Level, Limits, LoadPlan, PositionSpec, Timeouts,
 };
 
 const FAKE: &str = env!("CARGO_BIN_EXE_fake_uci");
@@ -50,6 +50,11 @@ fn config(extra: &[&str], trace: &Path) -> AnalysisConfig {
     engine = engine.arg("--trace").arg(trace.as_os_str());
     let mut config = AnalysisConfig::new(engine);
     config.interval = ms(40);
+    // Teto fixo: o resultado não pode depender dos núcleos da máquina (runners de CI têm 3-4).
+    config.limits = Limits {
+        max_threads: 16,
+        ..Limits::for_host()
+    };
     config.os = "linux";
     config.hardware = Some(Hardware {
         gpu: Some(GpuVendor::Nvidia),
