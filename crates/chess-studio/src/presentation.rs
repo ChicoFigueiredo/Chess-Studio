@@ -248,7 +248,7 @@ impl VisibleIn {
         technical: true,
     };
 
-    fn shows(self, p: Presentation) -> bool {
+    pub(crate) fn shows(self, p: Presentation) -> bool {
         match p {
             Presentation::Professional3d => self.professional,
             Presentation::ImmersiveTable => self.immersive,

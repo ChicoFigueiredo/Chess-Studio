@@ -170,7 +170,17 @@ fn run_capture(
     mut profiles: ResMut<crate::profiles::InterfaceProfiles>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
+    ready: Res<crate::ready::SceneReady>,
 ) {
+    // B22: nada de contar quadros nem fotografar antes da cena pronta.
+    if let Some(err) = ready.timeout_error() {
+        error!("captura abortada: {err}");
+        exit.write(AppExit::from_code(2));
+        return;
+    }
+    if !ready.is_ready() {
+        return;
+    }
     // Com `--profile` a captura é uma foto só, na Apresentação do perfil.
     let profile_step = mode.script.factory_profile().and_then(|f| {
         (mode.step == 0).then(|| Step {
@@ -198,6 +208,13 @@ fn run_capture(
         STEPS.get(mode.step)
     };
     let Some(step) = step else {
+        if let Some(load) = ready.load_time() {
+            let _ = writeln!(
+                mode.report,
+                "carregamento da cena: {:.2} s",
+                load.as_secs_f32()
+            );
+        }
         let path = mode.dir.join("desempenho.txt");
         if let Err(err) = std::fs::write(&path, &mode.report) {
             error!("não foi possível salvar {}: {err}", path.display());

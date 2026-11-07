@@ -57,5 +57,8 @@ fluent-bundle = "0.16.0"
 unic-langid = "0.9.6"
 egui_tiles = { version = "0.17.1", features = ["serde"] }
 
+[dev-dependencies]
+png = "0.18"
+
 [lints]
 workspace = true

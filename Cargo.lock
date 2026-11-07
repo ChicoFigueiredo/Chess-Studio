@@ -1969,6 +1969,7 @@ dependencies = [
  "chess-uci",
  "egui_tiles",
  "fluent-bundle",
+ "png",
  "serde",
  "serde_json",
  "sysinfo",
