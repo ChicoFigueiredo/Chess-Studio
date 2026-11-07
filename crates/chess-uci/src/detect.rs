@@ -63,7 +63,12 @@ pub struct SearchEnv {
     pub local_app_data: Option<PathBuf>,
     /// Diretório de dados do app (`<dados>`), cujo `engines/` também é varrido.
     pub data_dir: Option<PathBuf>,
+    /// Pastas indicadas pelo usuário (ex.: a do executável em `CHESS_STUDIO_LC0`).
+    pub extra_dirs: Vec<PathBuf>,
 }
+
+/// Variável de ambiente com o caminho do executável do Lc0 (compilado em casa, por exemplo).
+pub const LC0_ENV: &str = "CHESS_STUDIO_LC0";
 
 impl SearchEnv {
     /// O ambiente real do processo.
@@ -79,6 +84,11 @@ impl SearchEnv {
                 .collect(),
             local_app_data: var("LOCALAPPDATA"),
             data_dir: app_data_dir(),
+            extra_dirs: std::env::var_os(LC0_ENV)
+                .map(PathBuf::from)
+                .and_then(|p| p.parent().map(Path::to_path_buf))
+                .into_iter()
+                .collect(),
         }
     }
 }
@@ -104,11 +114,23 @@ pub fn search_dirs(env: &SearchEnv) -> Vec<PathBuf> {
             }
             dirs.extend(home(".local/bin"));
             dirs.extend(home(".local/share/flatpak/exports/bin"));
+            // O Lc0 não tem binário oficial no Linux: pacote da distribuição, `make install`
+            // ou a pasta de compilação do próprio usuário.
+            for fixed in ["/opt/lc0/bin", "/opt/lc0", "/usr/local/lc0/bin"] {
+                dirs.push(PathBuf::from(fixed));
+            }
+            dirs.extend(home("lc0/build/release"));
+            dirs.extend(home("lc0/build"));
+            dirs.extend(home("src/lc0/build/release"));
         }
         "macos" => {
             dirs.push(PathBuf::from("/opt/homebrew/bin"));
+            dirs.push(PathBuf::from("/opt/homebrew/opt/lc0/bin"));
             dirs.push(PathBuf::from("/usr/local/bin"));
+            dirs.push(PathBuf::from("/usr/local/opt/lc0/bin"));
             dirs.extend(home(".local/bin"));
+            dirs.extend(home("lc0/build/release"));
+            dirs.extend(home("lc0/build"));
         }
         "windows" => {
             let mut roots: Vec<PathBuf> = env.program_files.clone();
@@ -128,6 +150,7 @@ pub fn search_dirs(env: &SearchEnv) -> Vec<PathBuf> {
         }
         _ => {}
     }
+    dirs.extend(env.extra_dirs.iter().cloned());
     if let Some(data) = &env.data_dir {
         let engines = data.join("engines");
         dirs.push(engines.clone());
@@ -350,6 +373,51 @@ mod tests {
             dirs.iter().filter(|d| **d == Path::new("/usr/bin")).count(),
             1
         );
+    }
+
+    #[test]
+    fn lc0_build_and_install_locations_are_searched_on_linux_and_macos() {
+        let linux = SearchEnv {
+            os: "linux".into(),
+            home: Some(PathBuf::from("/home/u")),
+            extra_dirs: vec![PathBuf::from("/x/meu-lc0")],
+            ..SearchEnv::default()
+        };
+        let dirs = search_dirs(&linux);
+        for want in [
+            "/opt/lc0/bin",
+            "/usr/local/bin",
+            "/home/u/lc0/build/release",
+            "/x/meu-lc0",
+        ] {
+            assert!(dirs.contains(&PathBuf::from(want)), "falta {want}");
+        }
+        let mac = SearchEnv {
+            os: "macos".into(),
+            home: Some(PathBuf::from("/Users/u")),
+            ..SearchEnv::default()
+        };
+        let dirs = search_dirs(&mac);
+        assert!(dirs.contains(&PathBuf::from("/opt/homebrew/opt/lc0/bin")));
+        assert!(dirs.contains(&PathBuf::from("/Users/u/lc0/build/release")));
+    }
+
+    #[test]
+    fn an_lc0_in_a_user_given_folder_is_found_by_name_only() {
+        let dir = std::env::temp_dir().join(format!("chess-studio-lc0-dir-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for name in ["lc0", "outro-programa"] {
+            let file = dir.join(name);
+            std::fs::write(&file, "#!/bin/sh\n").unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+            }
+        }
+        let found = engine_files_in(&dir);
+        assert_eq!(found, [dir.join("lc0")]);
     }
 
     #[test]
