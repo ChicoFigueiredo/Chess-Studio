@@ -51,3 +51,17 @@ Copie para os campos `PENDENTE (usuário)` de `docs/relatorios/gate-a.md`:
 - `cargo build`: ok ou erro (as 20 últimas linhas se falhar).
 - `cargo test --workspace`: total, aprovados, falhas (anexe `test-macos.log`).
 - A janela abriu? Se não, a mensagem de erro literal e o resultado com `WGPU_BACKEND=metal`.
+
+## Empacotar (B17)
+
+Gera `dist/chess-studio-<versão>-macos-<arch>.tar.gz` e `.dmg` com **Chess Studio.app** (`Contents/MacOS/chess-studio` + `Contents/Resources/assets` + licenças). Sem assinatura nem notarização.
+
+```bash
+scripts/package-macos.sh                 # compila em release e empacota (--skip-build reaproveita o binário)
+mkdir -p /tmp/cs && tar -C /tmp/cs -xzf dist/chess-studio-*-macos-*.tar.gz
+"/tmp/cs/$(ls /tmp/cs)/Chess Studio.app/Contents/MacOS/chess-studio" --screenshot /tmp/cs/cap   # o 3D deve aparecer, não preto
+```
+
+Na VM sem Metal acelerado a janela pode não abrir (esperado, veja acima); nesse caso registre o erro e valide só o conteúdo do `.app` (`ls "Chess Studio.app/Contents/Resources/assets"`). O Gatekeeper bloqueia a primeira abertura do `.app` baixado: `xattr -dr com.apple.quarantine "Chess Studio.app"` ou botão direito > Abrir (`docs/instalacao.md`). Para compilar em Intel e Apple Silicon, rode o script em cada arquitetura (não há binário universal).
+
+Teste sem rede (PLAT-02): desligue o Wi-Fi/rede da VM e abra o app.

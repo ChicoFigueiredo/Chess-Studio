@@ -71,3 +71,20 @@ Copie para os campos `PENDENTE (usuário)` de `docs/relatorios/gate-a.md`:
 - `cargo test --workspace`: total, aprovados, falhas (anexe `test-windows.log`).
 - A janela abriu? Com qual `WGPU_BACKEND` e qual adaptador (`AdapterInfo` do log)? Capturas geradas por `--screenshot` (anexe 1 ou 2 PNGs).
 - Qualquer erro de wgpu, DX12 ou Vulkan, copiado literalmente.
+
+## Empacotar (B17)
+
+Gera `dist\chess-studio-<versão>-windows-x86_64.zip` (`chess-studio.exe` + `assets\` + licenças) e `dist\SHA256SUMS-windows`. O `THIRD-PARTY-LICENSES` já vem no repositório.
+
+```powershell
+.\scripts\package-windows.ps1            # compila em release e empacota (-SkipBuild reaproveita o binário)
+Expand-Archive dist\chess-studio-*-windows-x86_64.zip $env:TEMP\cs-teste -Force
+cd $env:TEMP\cs-teste\chess-studio-*
+.\chess-studio.exe --screenshot $env:TEMP\cs-teste\cap    # o 3D deve aparecer nos PNGs, não preto
+```
+
+Se o PowerShell bloquear o script: `powershell -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1`. O `.exe` não é assinado; o SmartScreen mostra aviso (veja `docs/instalacao.md`). Não há `.msi` neste momento (exigiria WiX/cargo-packager; fica para depois do CI).
+
+Teste sem rede (PLAT-02): desative o adaptador de rede da VM (ou `Disable-NetAdapter`), abra o `.exe` e jogue algumas partidas.
+
+Anote no relatório: o `.zip` extraído abriu e desenhou o tabuleiro 3D? Capturas geradas? Houve aviso do SmartScreen?

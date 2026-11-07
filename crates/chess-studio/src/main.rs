@@ -7,6 +7,7 @@
 
 mod aids;
 mod aids_panel;
+mod asset_dir;
 mod benchmark;
 mod board;
 mod board2d;
@@ -114,15 +115,22 @@ fn main() {
     };
 
     let mut app = App::new();
-    app.add_plugins(DefaultPlugins.set(WindowPlugin {
-        primary_window: Some(Window {
-            title: i18n::I18n::pt_br().t("app-title"),
-            resolution,
-            present_mode,
-            ..default()
-        }),
-        ..default()
-    }))
+    app.add_plugins(
+        DefaultPlugins
+            .set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: i18n::I18n::pt_br().t("app-title"),
+                    resolution,
+                    present_mode,
+                    ..default()
+                }),
+                ..default()
+            })
+            .set(AssetPlugin {
+                file_path: asset_dir::current(),
+                ..default()
+            }),
+    )
     .add_plugins(EguiPlugin::default())
     .add_plugins((
         i18n::I18nPlugin,

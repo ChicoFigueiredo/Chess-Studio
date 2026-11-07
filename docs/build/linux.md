@@ -62,3 +62,17 @@ CHESS_STUDIO_STOCKFISH=/caminho/stockfish cargo test -p chess-uci --test stockfi
 - Se a janela abriu e se as capturas foram geradas.
 - O JSON do `--benchmark` (copiar para `docs/evidencias/a6/`).
 - Para medir de forma válida: sessão desbloqueada, janela visível, máquina ociosa (sem outros builds).
+
+## Empacotar (B17)
+
+Gera `dist/chess-studio-<versão>-linux-<arch>.tar.gz` (executável + `assets/` + licenças) e `dist/chess-studio_<versão>_<arch>.deb` (`/usr/bin/chess-studio` + `/usr/share/chess-studio/assets`), mais `dist/SHA256SUMS`. Só precisa de `dpkg-deb` para o `.deb`.
+
+```bash
+scripts/package-linux.sh                 # compila em release e empacota (--skip-build reaproveita o binário)
+mkdir /tmp/cs && tar -C /tmp/cs -xzf dist/chess-studio-*-linux-*.tar.gz
+cd /tmp/cs/chess-studio-* && ./chess-studio --screenshot /tmp/cs/cap   # o 3D deve aparecer nos PNGs, não preto
+```
+
+O app acha os `assets/` (nesta ordem) por `CHESS_STUDIO_ASSETS`, `./assets` ao lado do executável, `../share/chess-studio/assets` e, por último, a pasta do código-fonte. Para regenerar `THIRD-PARTY-LICENSES` (após mudar dependências): `cargo install cargo-about --locked && scripts/gerar-licencas.sh`.
+
+Teste sem rede (PLAT-02): `unshare -rn ./chess-studio` (sem interfaces de rede) ou desligue a rede e jogue; veja `docs/instalacao.md`.
