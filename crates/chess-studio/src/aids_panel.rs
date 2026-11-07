@@ -113,13 +113,14 @@ fn aids_panel(
     mut aids: ResMut<AidSettings>,
     mut tools: ResMut<FileTools>,
     capture: Option<Res<CaptureMode>>,
+    dock: Res<crate::dock::Dock>,
 ) -> Result {
     if capture.as_ref().is_some_and(|c| !c.show_panel) {
         return Ok(());
     }
     let mut edited = *aids;
     egui::Window::new(i18n.t("aid-window-title"))
-        .anchor(egui::Align2::RIGHT_TOP, [-8.0, 8.0])
+        .anchor(egui::Align2::RIGHT_TOP, [dock.right_offset(8.0), 8.0])
         .default_width(280.0)
         .show(contexts.ctx_mut()?, |ui| {
             alerts(ui, &i18n, &mut session, &edited);

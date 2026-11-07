@@ -144,6 +144,7 @@ fn info_panel(
     capture: Option<Res<CaptureMode>>,
     mut engine_ui: ResMut<EngineUi>,
     aids: Res<crate::aids::AidSettings>,
+    mut dock: ResMut<crate::dock::Dock>,
 ) -> Result {
     if capture.as_ref().is_some_and(|c| !c.show_panel) {
         return Ok(());
@@ -168,6 +169,8 @@ fn info_panel(
         ui.separator();
         game_section(ui, &i18n, &mut session, &mut dialog, &aids);
         engine_section(ui, &i18n, &mut session, &mut engine_ui);
+        ui.separator();
+        crate::dock::panels_section(ui, &i18n, &mut dock);
         ui.separator();
         ui.label(i18n.t_with(
             "square-hover",

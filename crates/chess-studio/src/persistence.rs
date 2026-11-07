@@ -8,6 +8,7 @@
 //! abrir, o app segue jogando sem persistência (aviso no log).
 
 use crate::aids::AidSettings;
+use crate::dock::{Dock, DockLayout};
 use crate::engine::{EngineUi, MAX_ELO, MIN_ELO};
 use crate::play::PlaySet;
 use crate::presentation::{GraphicsQuality, Presentation};
@@ -29,6 +30,8 @@ const KEY_PRESENTATION: &str = "presentation";
 const KEY_QUALITY: &str = "quality";
 const KEY_ENGINE_ELO: &str = "engine_elo";
 const KEY_ENGINE_USER_SIDE: &str = "engine_user_side";
+/// Layout do dock de painéis (C1, UI-02): árvore, tamanhos, visibilidade e largura.
+const KEY_DOCK_LAYOUT: &str = "dock_layout";
 
 /// Preferências do usuário que sobrevivem ao fechamento do app.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -75,6 +78,8 @@ pub struct Persistence {
     epoch: u64,
     was_paused: bool,
     saved: Option<SavedPrefs>,
+    /// Último layout do dock gravado (ou carregado), para só gravar o que mudou.
+    saved_layout: Option<Value>,
     failing: bool,
 }
 
@@ -108,6 +113,7 @@ impl Persistence {
             epoch: 0,
             was_paused: false,
             saved: None,
+            saved_layout: None,
             failing: false,
         }
     }
@@ -266,6 +272,30 @@ impl Persistence {
         }
     }
 
+    /// Layout do dock gravado; ausente ou ilegível volta ao padrão.
+    pub fn load_layout(&mut self) -> DockLayout {
+        let stored = self
+            .store
+            .get_pref(self.profile, KEY_DOCK_LAYOUT)
+            .ok()
+            .flatten();
+        let layout = DockLayout::from_json(stored);
+        self.saved_layout = Some(layout.to_json());
+        layout
+    }
+
+    /// Grava o layout do dock se mudou desde a última chamada (no ato, sem "Salvar").
+    pub fn sync_layout(&mut self, layout: &DockLayout) {
+        let json = layout.to_json();
+        if self.saved_layout.as_ref() == Some(&json) {
+            return;
+        }
+        match self.store.set_pref(self.profile, KEY_DOCK_LAYOUT, &json) {
+            Ok(()) => self.saved_layout = Some(json),
+            Err(err) => self.report(&err),
+        }
+    }
+
     /// Grava só o que mudou desde a última chamada (ou desde `load_prefs`).
     pub fn sync_prefs(&mut self, now: SavedPrefs) {
         let before = match self.saved {
@@ -350,16 +380,21 @@ impl Plugin for PersistencePlugin {
             );
         }
         persistence.saved = Some(prefs);
+        let layout = persistence.load_layout();
         // Os plugins seguintes usam `init_resource`, que preserva estes valores.
         app.insert_resource(restored.session)
             .insert_resource(prefs.aids)
             .insert_resource(prefs.presentation)
             .insert_resource(prefs.quality)
+            .insert_resource(Dock::with_layout(layout))
             .insert_resource(
                 EngineUi::default().with_saved(prefs.engine_user_side, prefs.engine_elo),
             )
             .insert_resource(PersistenceHandle(Mutex::new(persistence)))
-            .add_systems(Update, (persist_session, persist_prefs).after(PlaySet))
+            .add_systems(
+                Update,
+                (persist_session, persist_prefs, persist_layout).after(PlaySet),
+            )
             .add_systems(Last, close_on_exit);
     }
 }
@@ -398,6 +433,21 @@ fn persist_prefs(
     }
 }
 
+/// Grava o layout do dock. Enquanto o botão do mouse está apertado (arrastando um divisor
+/// ou uma aba) espera: grava ao soltar, não a cada quadro.
+fn persist_layout(
+    dock: Res<Dock>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    handle: Res<PersistenceHandle>,
+) {
+    if buttons.pressed(MouseButton::Left) {
+        return;
+    }
+    if let Ok(mut p) = handle.0.lock() {
+        p.sync_layout(&dock.layout);
+    }
+}
+
 /// Janela fechada ou saída do app: encerra a sessão da Partida e grava o que faltar.
 fn close_on_exit(
     mut close_requested: MessageReader<WindowCloseRequested>,
@@ -405,12 +455,14 @@ fn close_on_exit(
     session: Res<Session>,
     handle: Res<PersistenceHandle>,
     training: Res<TrainingUi>,
+    dock: Res<Dock>,
 ) {
     let closing = close_requested.read().count() > 0 || exits.read().count() > 0;
     if closing && let Ok(mut p) = handle.0.lock() {
         if !training.session_swapped() {
             p.sync(&session);
         }
+        p.sync_layout(&dock.layout);
         p.close();
     }
 }
@@ -599,6 +651,38 @@ mod tests {
         p.sync_prefs(custom);
         let p2 = Persistence::new(p.into_store());
         assert_eq!(p2.load_prefs(), custom);
+    }
+
+    /// UI-02: layout, tamanhos e visibilidade persistem no SQLite e voltam ao reabrir.
+    #[test]
+    fn dock_layout_round_trips_through_sqlite() {
+        use crate::dock::PanelKind;
+        let mut p = new_persistence();
+        assert_eq!(p.load_layout(), DockLayout::default(), "banco novo: padrão");
+        let mut layout = DockLayout {
+            width: 360.0,
+            ..DockLayout::default()
+        };
+        layout.set_visible(PanelKind::Notation, false);
+        p.sync_layout(&layout);
+        let mut p2 = Persistence::new(p.into_store());
+        let back = p2.load_layout();
+        assert_eq!(back, layout);
+        assert_eq!(back.width, 360.0);
+        assert!(!back.is_visible(PanelKind::Notation));
+        // Restaurar o padrão também é gravado.
+        p2.sync_layout(&DockLayout::default());
+        let mut p3 = Persistence::new(p2.into_store());
+        assert_eq!(p3.load_layout(), DockLayout::default());
+    }
+
+    #[test]
+    fn unreadable_dock_layout_falls_back_to_the_default() {
+        let mut p = new_persistence();
+        p.store
+            .set_pref(p.profile, KEY_DOCK_LAYOUT, &json!({"width": "x"}))
+            .unwrap();
+        assert_eq!(p.load_layout(), DockLayout::default());
     }
 
     #[test]

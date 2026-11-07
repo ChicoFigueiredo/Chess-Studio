@@ -53,6 +53,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 wgpu-types = "30"
 fluent-bundle = "0.16.0"
 unic-langid = "0.9.6"
+egui_tiles = { version = "0.17.1", features = ["serde"] }
 
 [lints]
 workspace = true

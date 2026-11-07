@@ -96,6 +96,7 @@ fn pick(
     camera: Single<(&Camera, &Transform), With<MainCamera>>,
     presentation: Res<Presentation>,
     egui: Res<EguiWantsInput>,
+    dock: Res<crate::dock::Dock>,
     mut hovered: ResMut<HoveredSquare>,
     mut world: ResMut<CursorWorld>,
 ) {
@@ -104,18 +105,21 @@ fn pick(
     let point = if over_ui {
         None
     } else {
-        window.cursor_position().and_then(|cursor| {
-            // Em todas as Apresentações o ponto vem da geometria pura de `chess_input`.
-            if presentation.is_3d() {
-                let ray = camera
-                    .viewport_to_world(&GlobalTransform::from(*transform), cursor)
-                    .ok()?;
-                ray_to_board_plane(ray.origin, *ray.direction)
-            } else {
-                // 2D técnico: raio vertical sobre o ponto do tabuleiro sob o cursor.
-                Some(to_board_plane(cursor_to_world(cursor, window.size())))
-            }
-        })
+        window
+            .cursor_position()
+            .filter(|cursor| dock.pointer_in_board(*cursor))
+            .and_then(|cursor| {
+                // Em todas as Apresentações o ponto vem da geometria pura de `chess_input`.
+                if presentation.is_3d() {
+                    let ray = camera
+                        .viewport_to_world(&GlobalTransform::from(*transform), cursor)
+                        .ok()?;
+                    ray_to_board_plane(ray.origin, *ray.direction)
+                } else {
+                    // 2D técnico: raio vertical sobre o ponto do tabuleiro sob o cursor.
+                    Some(to_board_plane(cursor_to_world(cursor, window.size())))
+                }
+            })
     };
     let square = point.and_then(point_to_square);
     if hovered.0 != square {
