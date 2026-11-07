@@ -1901,6 +1901,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "chess-pgn"
+version = "0.1.0"
+dependencies = [
+ "chess-core",
+ "chess-game",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "chess-store"
 version = "0.1.0"
 dependencies = [
