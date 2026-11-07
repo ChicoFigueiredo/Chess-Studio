@@ -18,10 +18,10 @@ _Evitar_: estado do tabuleiro, posição atual
 Disposição exibida durante um arrasto ou Lance ainda não aceito; nunca é a Posição canônica.
 _Evitar_: preview, posição temporária
 
-**FEN** (_en_: `Fen`):
+**FEN** (_en_: `from_fen` e `to_fen`):
 Representação textual de uma Posição canônica; não substitui o histórico da Partida.
 
-**PGN** (_en_: `Pgn`):
+**PGN** (_en_: `PgnGame`):
 Formato interoperável de exportação dos Lances legais e metadados de uma Partida.
 
 ## Lances
@@ -30,33 +30,33 @@ Formato interoperável de exportação dos Lances legais e metadados de uma Part
 Movimento de uma peça por um lado, segundo as regras do xadrez.
 _Evitar_: jogada, movimento
 
-**Lance feito** (_en_: `MadeMove`):
+**Lance feito** (_en_: `MoveMade`):
 Lance executado no tabuleiro (peça solta na casa de destino), antes de acionar o relógio.
 _Evitar_: jogada feita
 
-**Lance concluído** (_en_: `CompletedMove`):
+**Lance concluído** (_en_: `MoveCompleted`):
 Lance feito e confirmado pelo acionamento do relógio, ou encerrado de imediato por mate ou afogamento.
 _Evitar_: jogada concluída, lance confirmado
 
-**Lance ilegal** (_en_: `IllegalMove`):
+**Lance ilegal** (_en_: `IllegalMoveReleased`):
 Lance que as regras não permitem na Posição canônica; pode estar feito ou concluído, e nunca entra no histórico legal.
 _Evitar_: tentativa ilegal, jogada inválida
 
 ## Manipulação
 
-**Seleção** (_en_: `Selection`):
+**Seleção** (_en_: `SelectedSquare`):
 Foco de uma peça ou casa na interface, sem consequência regulamentar própria.
 _Evitar_: clique, toque
 
-**Toque intencional** (_en_: `IntentionalTouch`):
+**Toque intencional** (_en_: `PieceTouched`):
 Contato deliberado com uma peça que, numa Política competitiva, cria Obrigação de peça tocada.
 _Evitar_: seleção, clique
 
-**Ajuste** (_en_: `Adjustment`):
+**Ajuste** (_en_: `PieceAdjusted`):
 Toque declarado apenas para acomodar a peça na casa (j'adoube), sem criar obrigação.
 _Evitar_: j'adoube
 
-**Obrigação de peça tocada** (_en_: `TouchMoveObligation`):
+**Obrigação de peça tocada** (_en_: `TouchedPieceObligation`):
 Dever de mover (ou capturar) a peça tocada intencionalmente, quando houver Lance legal para isso.
 _Evitar_: peça tocada é peça jogada
 
@@ -81,18 +81,18 @@ _Evitar_: modo FIDE oficial, regulamentar
 Política de arbitragem personalizada de treinamento em que a primeira Infração encerra a Partida; nunca é apresentada como FIDE.
 _Evitar_: morte súbita
 
-**Infração** (_en_: `Infraction`):
+**Infração** (_en_: `InfractionRecorded`):
 Registro, feito pela Política de arbitragem, de um Lance ilegal concluído ou ato equivalente, com causa, instante, lado e consequência.
 _Evitar_: erro, falta, incidente
 
-**Reclamação de empate** (_en_: `DrawClaim`):
+**Reclamação de empate** (_en_: `ClaimDraw`):
 Pedido do jogador para encerrar a Partida empatada por repetição tripla ou 50 lances, sujeito à verificação da Política de arbitragem.
 _Evitar_: pedir empate, proposta de empate
 
-**Proposta de empate** (_en_: `DrawOffer`):
+**Proposta de empate** (_en_: `DrawOffered`):
 Oferta de empate de um lado ao outro, que só encerra a Partida se aceita.
 
-**Pausa** (_en_: `Pause`):
+**Pausa** (_en_: `Paused`):
 Interrupção registrada da Partida em que os relógios param; perder o foco da janela não é Pausa.
 
 ## Apresentação
@@ -117,7 +117,7 @@ _Evitar_: preset de ajuda, nível de dificuldade
 Conjunto nomeado de Apresentação, layout do dock (painéis visíveis, abas, larguras), Perfil de auxílios, modo Foco e Vista da câmera: Jogo físico, Treinamento assistido, Estudo e análise (de fábrica) ou um salvo pelo usuário; "Personalizado" é o estado atual quando não coincide com nenhum. Trocar de perfil nunca altera a Partida. Não confundir com Perfil de auxílios (só os Auxílios) nem com Perfil de treino.
 _Evitar_: tema, workspace, modo
 
-**Perfil local** (_en_: `LocalProfile`):
+**Perfil local** (_en_: `LocalProfiles`):
 Um jogador deste computador: nome e, só dele, preferências, Perfis de interface, controles, Partidas e Resoluções. Vários podem coexistir; o seletor da abertura aparece quando há mais de um. Excluir apaga os dados do perfil; o último não se exclui. Não confundir com Perfil de interface, Perfil de auxílios nem Perfil de treino, que existem *dentro* de um perfil local.
 _Evitar_: usuário, conta, login
 
@@ -125,15 +125,15 @@ _Evitar_: usuário, conta, login
 Tabela única ação -> atalhos (tecla, botão do mouse com modificadores, roda ou gesto de trackpad), consultada por todos os sistemas de entrada. O padrão é o da DEC-51; cada Perfil local guarda o seu. Um mesmo atalho não serve a duas ações (conflito).
 _Evitar_: keybindings, hotkeys
 
-**HUD** (_en_: `Hud`):
+**HUD** (_en_: `HudSettings`):
 Sobreposição virtual de treino ou análise presa às casas e peças; não envolve câmera física.
 _Evitar_: realidade aumentada
 
-**Tela cheia** (_en_: `Fullscreen`):
+**Tela cheia** (_en_: `ViewState::fullscreen`):
 Janela sem bordas ocupando o monitor inteiro (F11 ou item de menu); estado de interface, independente do modo Foco.
 _Evitar_: maximizar
 
-**Modo Foco** (_en_: `FocusMode`):
+**Modo Foco** (_en_: `ViewState::focus`):
 Estado de interface que esconde o dock e a janela principal, deixando só tabuleiro, mesa, relógio e controles mínimos; nunca altera turno, relógio ou posição, e é independente da Tela cheia.
 _Evitar_: modo zen, tela limpa
 
@@ -157,6 +157,6 @@ _Evitar_: trilha, plano
 Programa externo de xadrez, falando UCI, que propõe Lances ou análises e nunca decide legalidade.
 _Evitar_: motor, IA, bot
 
-**Súmula manual** (_en_: `ManualScoresheet`):
+**Súmula manual** (_en_: `ManualScoresheet`, ainda sem código):
 Registro escrito pelo próprio jogador como exercício de competição; diferente da notação automática.
 _Evitar_: planilha, scoresheet

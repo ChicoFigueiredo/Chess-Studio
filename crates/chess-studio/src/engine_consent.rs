@@ -137,6 +137,23 @@ impl Consent {
     }
 }
 
+/// Engine que a análise pode subir. A escolhida entre as do gerenciador vale se está na
+/// lista de registradas e prontas (`registered`) ou é o caminho já liberado nesta sessão;
+/// sem escolha, só o caminho liberado (assistente, gerenciador ou aviso + sonda). Um
+/// caminho vindo do ambiente (`CHESS_STUDIO_ENGINE`/`PATH`) não entra por aqui: só depois
+/// de liberado pelo fluxo de consentimento.
+pub fn analysis_engine(
+    chosen: Option<&Path>,
+    cleared: Option<&Path>,
+    registered: &[PathBuf],
+) -> Option<PathBuf> {
+    match chosen {
+        Some(path) => (cleared == Some(path) || registered.iter().any(|r| r == path))
+            .then(|| path.to_path_buf()),
+        None => cleared.map(Path::to_path_buf),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -232,6 +249,34 @@ mod tests {
         assert_eq!(
             c.request("/w/eng", Intent::NewGame, nobody),
             Request::Ready(PathBuf::from("/w/eng"), Intent::NewGame)
+        );
+    }
+
+    #[test]
+    fn analysis_ignores_an_engine_that_was_never_cleared() {
+        assert_eq!(analysis_engine(None, None, &[]), None);
+        let registered = [PathBuf::from("/db/sf")];
+        assert_eq!(analysis_engine(None, None, &registered), None);
+        assert_eq!(
+            analysis_engine(Some(Path::new("/env/sf")), None, &registered),
+            None
+        );
+    }
+
+    #[test]
+    fn analysis_uses_cleared_or_registered_paths() {
+        let registered = [PathBuf::from("/db/sf")];
+        assert_eq!(
+            analysis_engine(None, Some(Path::new("/w/eng")), &registered),
+            Some(PathBuf::from("/w/eng"))
+        );
+        assert_eq!(
+            analysis_engine(Some(Path::new("/db/sf")), None, &registered),
+            Some(PathBuf::from("/db/sf"))
+        );
+        assert_eq!(
+            analysis_engine(Some(Path::new("/w/eng")), Some(Path::new("/w/eng")), &[]),
+            Some(PathBuf::from("/w/eng"))
         );
     }
 }

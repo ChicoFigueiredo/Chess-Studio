@@ -32,8 +32,8 @@ impl Timestamp {
     }
 }
 
-/// Controle de tempo (base + incremento, em ms). A Política Assistido o ignora;
-/// o relógio de xadrez é do B6.
+/// Controle de tempo (base + incremento, em ms). O relógio de xadrez
+/// (`clock.rs`) o aplica derivando o tempo dos instantes dos Eventos.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TimeControl {
     pub base_ms: u64,

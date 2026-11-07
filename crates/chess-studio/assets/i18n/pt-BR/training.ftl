@@ -1,6 +1,5 @@
 ## Treino: lista de Exercícios, Resolução, revisão e métricas.
 
-training-window-title = Treino
 training-open = Abrir Treino
 training-close = Sair do Treino
 training-note-no-effect = O treino não altera o resultado de nenhuma Partida.

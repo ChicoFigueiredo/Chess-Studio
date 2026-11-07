@@ -1,6 +1,5 @@
 ## Gerenciador de Engines (C9): instalar, atualizar, remover e configurar.
 
-manager-open = Gerenciar Engines…
 manager-title = Engines
 manager-intro = Aqui você vê as Engines que o Chess Studio conhece, instala as oficiais do catálogo, atualiza, remove e ajusta threads, memória (hash) e nível. Nada é baixado nem executado sem a sua confirmação.
 

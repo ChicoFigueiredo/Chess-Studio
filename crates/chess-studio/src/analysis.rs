@@ -269,6 +269,7 @@ pub struct Analysis {
     multipv: u8,
     /// Engine escolhida entre as do gerenciador; `None` = a padrão do app.
     engine: Option<PathBuf>,
+    /// Caminho liberado pelo consentimento (`engine_consent`); nunca o do ambiente cru.
     default_engine: Option<PathBuf>,
     /// Valores confirmados (a Engine só reinicia ao soltar o controle deslizante).
     threads: u32,
@@ -311,7 +312,7 @@ impl Default for Analysis {
             enabled: false,
             multipv: 1,
             engine: None,
-            default_engine: crate::engine::resolve_engine(),
+            default_engine: None,
             threads: (limits.max_threads / 2).clamp(1, 4),
             hash_mb: DEFAULT_HASH_MB,
             pause_while_thinking: true,
@@ -481,7 +482,7 @@ impl Analysis {
         self.engine = path;
     }
 
-    #[cfg(test)]
+    /// Engine padrão da análise: o caminho já liberado pelo consentimento, se houver.
     pub fn set_default_engine(&mut self, path: Option<PathBuf>) {
         self.default_engine = path;
     }
@@ -495,10 +496,12 @@ impl Analysis {
     }
 
     fn launch(&self) -> Option<Launch> {
-        let path = self
-            .engine
-            .clone()
-            .or_else(|| self.default_engine.clone())?;
+        let registered: Vec<PathBuf> = self.choices.iter().map(|c| c.path.clone()).collect();
+        let path = crate::engine_consent::analysis_engine(
+            self.engine.as_deref(),
+            self.default_engine.as_deref(),
+            &registered,
+        )?;
         let options = self
             .choices
             .iter()
@@ -794,8 +797,15 @@ fn drive_analysis(
     session: Res<Session>,
     training: Option<Res<TrainingUi>>,
     manager: Option<Res<EngineManager>>,
+    engine_ui: Option<Res<crate::engine::EngineUi>>,
     mut analysis: ResMut<Analysis>,
 ) {
+    if let Some(ui) = engine_ui {
+        let cleared = ui.cleared_path();
+        if cleared != analysis.default_engine {
+            analysis.set_default_engine(cleared);
+        }
+    }
     if let Some(manager) = manager
         && !analysis.choices_pinned
         && analysis

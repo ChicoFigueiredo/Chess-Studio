@@ -3,10 +3,8 @@
 game-heading = Partida
 game-turn-white = Brancas jogam
 game-turn-black = Pretas jogam
-game-check = Xeque!
 game-last-move = Último lance: { $san }
 game-no-moves = Nenhum lance ainda
-game-illegal = Lance ilegal: a peça voltou à origem.
 
 game-over = Fim da Partida
 game-result-white = Brancas vencem

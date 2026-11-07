@@ -1,6 +1,5 @@
 ## Relógio e painel das Políticas competitivas (Simulação FIDE e Eliminação Imediata).
 
-clock-title = Relógio
 clock-white = Brancas
 clock-black = Pretas
 clock-paused = Partida em pausa
