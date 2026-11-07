@@ -15,3 +15,15 @@ scoresheet-notation-hidden = Notação oculta: a Súmula manual está aberta. En
 scoresheet-last-move-hidden = Último lance: oculto (Súmula aberta)
 scoresheet-review-hidden = Revisão: Lance { $ply } de { $total }
 scoresheet-pgn-hidden = Exportar PGN indisponível enquanto a Súmula está aberta.
+
+## Conferência da Súmula (V2-SUM-02)
+scoresheet-check-title = Conferência da Súmula
+scoresheet-check-readonly = A conferência só compara: não altera a Partida nem o PGN.
+scoresheet-check-clean = Todos os Lances foram anotados corretamente.
+scoresheet-verdict-correct = Corretos
+scoresheet-verdict-accepted = Aceitos com ressalva (notação diferente do padrão)
+scoresheet-verdict-wrong-notation = Notação errada
+scoresheet-verdict-swapped = Lance trocado
+scoresheet-verdict-missing = Omitidos
+scoresheet-verdict-extra = Anotações a mais
+scoresheet-check-line = Lance { $ply }: escrito { $written }, real { $expected } ({ $verdict })

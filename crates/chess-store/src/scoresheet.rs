@@ -4,7 +4,7 @@
 
 use crate::error::{Result, StoreError};
 use crate::store::{GameId, ProfileId, Store, ensure_profile, now_ms};
-use chess_training::ManualScoresheet;
+use chess_training::{EntryCheck, ManualScoresheet, ScoresheetCheck, Verdict};
 use rusqlite::{OptionalExtension, params};
 
 impl Store {
@@ -75,8 +75,107 @@ impl Store {
                 params![id, ply, text],
             )?;
         }
+        // A conferência vale para a Súmula entregue; reaberta/regravada sem entrega, some.
+        if sheet.delivered_at_ms().is_none() {
+            tx.execute(
+                "DELETE FROM manual_scoresheet_checks WHERE scoresheet_id = ?1",
+                [id],
+            )?;
+        }
         tx.commit()?;
         Ok(())
+    }
+
+    /// Grava (substituindo) o resultado da conferência da Súmula entregue (V2-SUM-02). Não
+    /// toca a Partida nem a Súmula. Sem Súmula entregue, `ScoresheetNotDelivered`.
+    pub fn save_scoresheet_check(
+        &mut self,
+        profile: ProfileId,
+        game: GameId,
+        check: &ScoresheetCheck,
+    ) -> Result<()> {
+        self.ensure_game_owner(profile, game)?;
+        let tx = self.conn.transaction()?;
+        let id: Option<i64> = tx
+            .query_row(
+                "SELECT id FROM manual_scoresheets
+                 WHERE profile_id = ?1 AND game_id = ?2 AND delivered_at_ms IS NOT NULL",
+                params![profile.0, game.0],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let id = id.ok_or(StoreError::ScoresheetNotDelivered(game))?;
+        tx.execute(
+            "DELETE FROM manual_scoresheet_checks WHERE scoresheet_id = ?1",
+            [id],
+        )?;
+        tx.execute(
+            "INSERT INTO manual_scoresheet_checks (scoresheet_id, checked_at_ms) VALUES (?1, ?2)",
+            params![id, check.checked_at_ms()],
+        )?;
+        for e in check.entries() {
+            tx.execute(
+                "INSERT INTO manual_scoresheet_check_entries
+                     (scoresheet_id, ply, written, expected, verdict)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![id, e.ply, e.written, e.expected, e.verdict.key()],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// O resultado da conferência gravado para a Súmula do `profile`, se houver.
+    pub fn load_scoresheet_check(
+        &self,
+        profile: ProfileId,
+        game: GameId,
+    ) -> Result<Option<ScoresheetCheck>> {
+        self.ensure_game_owner(profile, game)?;
+        let head: Option<(i64, i64)> = self
+            .conn
+            .query_row(
+                "SELECT c.scoresheet_id, c.checked_at_ms
+                 FROM manual_scoresheet_checks c
+                 JOIN manual_scoresheets s ON s.id = c.scoresheet_id
+                 WHERE s.profile_id = ?1 AND s.game_id = ?2",
+                params![profile.0, game.0],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let Some((id, checked_at_ms)) = head else {
+            return Ok(None);
+        };
+        let mut stmt = self.conn.prepare(
+            "SELECT ply, written, expected, verdict FROM manual_scoresheet_check_entries
+             WHERE scoresheet_id = ?1 ORDER BY ply",
+        )?;
+        let rows = stmt.query_map([id], |r| {
+            Ok((
+                r.get::<_, u16>(0)?,
+                r.get::<_, Option<String>>(1)?,
+                r.get::<_, Option<String>>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        })?;
+        let mut entries = Vec::new();
+        for row in rows {
+            let (ply, written, expected, verdict) = row?;
+            let verdict = Verdict::from_key(&verdict).ok_or_else(|| {
+                StoreError::Sqlite(rusqlite::Error::InvalidColumnType(
+                    3,
+                    "verdict".into(),
+                    rusqlite::types::Type::Text,
+                ))
+            })?;
+            entries.push(EntryCheck {
+                ply,
+                written,
+                expected,
+                verdict,
+            });
+        }
+        Ok(Some(ScoresheetCheck::from_parts(checked_at_ms, entries)))
     }
 
     /// Apaga a Súmula (não mexe na Partida). Sem Súmula, não faz nada.

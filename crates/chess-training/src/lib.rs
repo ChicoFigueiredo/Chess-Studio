@@ -33,6 +33,7 @@ mod profiles;
 mod review;
 mod run;
 mod scoresheet;
+mod scoresheet_check;
 
 pub use aids::{Aid, AidsRecord, Feedback};
 pub use catalog::{Catalog, CatalogError};
@@ -53,3 +54,6 @@ pub use profiles::{Difficulty, ProfileError, ProfileSet, ProfileStep, TrainingPr
 pub use review::{MemoryReview, NotCheckmate, PlyReview, Review};
 pub use run::{ErrorCause, ExerciseRun, Followup, RunError, RunResult, RunStatus, RunSummary};
 pub use scoresheet::{MAX_ENTRY_CHARS, MAX_PLY, ManualScoresheet, ScoresheetError};
+pub use scoresheet_check::{
+    CheckError, Counts, EntryCheck, ScoresheetCheck, Verdict, check_against_game, check_scoresheet,
+};

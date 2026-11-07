@@ -25,7 +25,7 @@ use crate::session::Session;
 use bevy::prelude::*;
 use bevy_egui::egui;
 use chess_core::Color as Side;
-use chess_training::{MAX_ENTRY_CHARS, ManualScoresheet};
+use chess_training::{MAX_ENTRY_CHARS, ManualScoresheet, ScoresheetCheck, Verdict};
 
 /// O que gravar no banco na próxima passada do `PersistencePlugin`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,6 +43,9 @@ pub struct ScoresheetUi {
     /// A Súmula gravada ainda não foi lida do banco: por segurança a notação fica oculta.
     loading: bool,
     pending: Option<PendingKind>,
+    /// Conferência da Súmula entregue (V2-SUM-02): registro à parte, só leitura da Partida.
+    check: Option<ScoresheetCheck>,
+    pending_check: Option<ScoresheetCheck>,
     /// Sessão de Exercício no lugar da Partida: a Súmula não se aplica.
     suspended: bool,
 }
@@ -82,6 +85,8 @@ impl ScoresheetUi {
         self.epoch = Some(epoch);
         self.sheet = None;
         self.pending = None;
+        self.check = None;
+        self.pending_check = None;
         self.loading = persistent;
     }
 
@@ -89,6 +94,37 @@ impl ScoresheetUi {
     pub fn loaded(&mut self, sheet: Option<ManualScoresheet>) {
         self.sheet = sheet;
         self.loading = false;
+    }
+
+    /// A conferência gravada para a Súmula da Partida atual.
+    pub fn loaded_check(&mut self, check: Option<ScoresheetCheck>) {
+        self.check = check;
+    }
+
+    pub fn check(&self) -> Option<&ScoresheetCheck> {
+        self.check.as_ref()
+    }
+
+    /// A Súmula está entregue e ainda não foi conferida (nem lida do banco)?
+    pub fn needs_check(&self) -> bool {
+        !self.suspended
+            && !self.loading
+            && self.check.is_none()
+            && self
+                .sheet
+                .as_ref()
+                .is_some_and(ManualScoresheet::is_delivered)
+    }
+
+    /// Guarda a conferência recém-feita e agenda a gravação.
+    pub fn record_check(&mut self, check: ScoresheetCheck) {
+        self.check = Some(check.clone());
+        self.pending_check = Some(check);
+    }
+
+    /// A conferência a gravar, se houver.
+    pub fn take_pending_check(&mut self) -> Option<ScoresheetCheck> {
+        self.pending_check.take()
     }
 
     /// Começa uma Súmula em branco (e passa a ocultar a notação).
@@ -126,12 +162,14 @@ impl ScoresheetUi {
     /// Descarta a Súmula (apaga o registro; a Partida não muda).
     pub fn discard(&mut self) {
         if self.sheet.take().is_some() {
+            self.check = None;
+            self.pending_check = None;
             self.pending = Some(PendingKind::Delete);
         }
     }
 
     pub fn has_pending(&self) -> bool {
-        self.pending.is_some()
+        self.pending.is_some() || self.pending_check.is_some()
     }
 
     /// O que gravar, se algo mudou desde a última chamada.
@@ -212,6 +250,12 @@ fn panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
             ui.weak(i18n.t("scoresheet-loading"));
             return;
         }
+        if state.needs_check()
+            && let Some(sheet) = state.sheet()
+            && let Ok(check) = chess_training::check_against_game(sheet, session.game(), wall_ms())
+        {
+            state.record_check(check);
+        }
         let played = session.snapshot().history.len();
         let (first_number, first_side) = session
             .game()
@@ -284,6 +328,74 @@ fn draw(
     });
     if !delivered {
         ui.small(i18n.t("scoresheet-deliver-hint"));
+    }
+    if let Some(check) = state.check() {
+        draw_check(ui, i18n, check);
+    }
+}
+
+/// Chave Fluent do rótulo da classe.
+fn verdict_key(v: Verdict) -> &'static str {
+    match v {
+        Verdict::Correct => "scoresheet-verdict-correct",
+        Verdict::AcceptedWithCaveat => "scoresheet-verdict-accepted",
+        Verdict::WrongNotation => "scoresheet-verdict-wrong-notation",
+        Verdict::Swapped => "scoresheet-verdict-swapped",
+        Verdict::Missing => "scoresheet-verdict-missing",
+        Verdict::Extra => "scoresheet-verdict-extra",
+    }
+}
+
+fn verdict_color(v: Verdict) -> egui::Color32 {
+    match v {
+        Verdict::Correct => egui::Color32::from_rgb(90, 180, 110),
+        Verdict::AcceptedWithCaveat => egui::Color32::from_rgb(220, 190, 80),
+        _ => egui::Color32::from_rgb(220, 100, 90),
+    }
+}
+
+/// Resultado da conferência: resumo por classe e, abaixo, só o que divergiu do SAN exato.
+fn draw_check(ui: &mut egui::Ui, i18n: &I18n, check: &ScoresheetCheck) {
+    ui.separator();
+    ui.strong(i18n.t("scoresheet-check-title"));
+    ui.small(i18n.t("scoresheet-check-readonly"));
+    if check.is_clean() {
+        ui.label(i18n.t("scoresheet-check-clean"));
+    }
+    let counts = check.counts();
+    for (verdict, n) in [
+        (Verdict::Correct, counts.correct),
+        (Verdict::AcceptedWithCaveat, counts.accepted),
+        (Verdict::WrongNotation, counts.wrong_notation),
+        (Verdict::Swapped, counts.swapped),
+        (Verdict::Missing, counts.missing),
+        (Verdict::Extra, counts.extra),
+    ] {
+        if n > 0 {
+            ui.colored_label(
+                verdict_color(verdict),
+                format!("{}: {n}", i18n.t(verdict_key(verdict))),
+            );
+        }
+    }
+    for e in check
+        .entries()
+        .iter()
+        .filter(|e| e.verdict != Verdict::Correct)
+    {
+        let none = "—";
+        let ply = e.ply.to_string();
+        let verdict = i18n.t(verdict_key(e.verdict));
+        let line = i18n.t_with(
+            "scoresheet-check-line",
+            &[
+                ("ply", &ply),
+                ("written", e.written.as_deref().unwrap_or(none)),
+                ("expected", e.expected.as_deref().unwrap_or(none)),
+                ("verdict", &verdict),
+            ],
+        );
+        ui.colored_label(verdict_color(e.verdict), line);
     }
 }
 
@@ -402,6 +514,55 @@ mod tests {
         assert!(s.sheet().is_some(), "a Súmula da Partida continua guardada");
         s.follow(1, false, true);
         assert!(s.hides_notation());
+    }
+
+    fn check_for(sheet: &ManualScoresheet) -> ScoresheetCheck {
+        let game = chess_game::Game::new(chess_game::GameSetup::standard(
+            chess_game::PolicyKind::Assisted,
+        ));
+        chess_training::check_against_game(sheet, &game, 3).unwrap()
+    }
+
+    #[test]
+    fn a_delivered_sheet_is_checked_once_and_the_result_is_saved_once() {
+        let mut s = active();
+        s.take_pending();
+        assert!(!s.needs_check(), "em anotação: sem conferência");
+        s.deliver(10);
+        assert!(s.needs_check());
+        let check = check_for(s.sheet().unwrap());
+        s.record_check(check.clone());
+        assert!(!s.needs_check());
+        assert_eq!(s.check(), Some(&check));
+        assert_eq!(s.take_pending_check(), Some(check));
+        assert_eq!(s.take_pending_check(), None, "grava uma vez só");
+    }
+
+    #[test]
+    fn the_check_follows_the_sheet_and_the_game() {
+        let mut s = active();
+        s.deliver(10);
+        s.record_check(check_for(s.sheet().unwrap()));
+        s.discard();
+        assert!(s.check().is_none(), "descartar a Súmula leva a conferência");
+        let mut s = active();
+        s.deliver(10);
+        s.record_check(check_for(s.sheet().unwrap()));
+        s.follow(2, false, true);
+        assert!(s.check().is_none(), "Nova Partida começa sem conferência");
+    }
+
+    #[test]
+    fn a_stored_check_is_not_recomputed() {
+        let mut s = ScoresheetUi::default();
+        s.follow(1, false, true);
+        let mut stored = ManualScoresheet::new();
+        stored.deliver(1).unwrap();
+        let check = check_for(&stored);
+        s.loaded(Some(stored));
+        s.loaded_check(Some(check));
+        assert!(!s.needs_check());
+        assert!(!s.has_pending());
     }
 
     #[test]

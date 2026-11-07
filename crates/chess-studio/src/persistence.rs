@@ -546,6 +546,26 @@ impl Persistence {
         }
     }
 
+    /// A conferência gravada da Súmula da Partida atual (V2-SUM-02).
+    pub fn load_scoresheet_check(&self) -> Option<chess_training::ScoresheetCheck> {
+        let game = self.current?;
+        match self.store.load_scoresheet_check(self.profile, game) {
+            Ok(check) => check,
+            Err(err) => {
+                warn!("Conferência da Súmula ilegível: {err}");
+                None
+            }
+        }
+    }
+
+    /// Grava a conferência da Súmula entregue (registro à parte; não toca a Partida).
+    pub fn apply_scoresheet_check(&mut self, check: &chess_training::ScoresheetCheck) {
+        let Some(game) = self.current else { return };
+        if let Err(err) = self.store.save_scoresheet_check(self.profile, game, check) {
+            self.report(&err);
+        }
+    }
+
     /// Grava (ou apaga) a Súmula manual da Partida atual, no ato. Registro separado: nunca
     /// toca a Partida, o log de eventos nem o PGN.
     pub fn apply_scoresheet(&mut self, pending: &crate::scoresheet::Pending) {
@@ -808,10 +828,15 @@ fn persist_scoresheet(
     let Ok(mut p) = handle.0.lock() else { return };
     if state.is_loading() {
         let sheet = p.load_scoresheet();
+        let check = sheet.as_ref().and_then(|_| p.load_scoresheet_check());
         state.loaded(sheet);
+        state.loaded_check(check);
     }
     if let Some(pending) = state.take_pending() {
         p.apply_scoresheet(&pending);
+    }
+    if let Some(check) = state.take_pending_check() {
+        p.apply_scoresheet_check(&check);
     }
 }
 
