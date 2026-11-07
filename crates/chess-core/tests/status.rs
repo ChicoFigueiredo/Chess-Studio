@@ -162,10 +162,13 @@ fn dead(fen: &str) -> bool {
 #[test]
 fn dead_position_by_pawn_blockade_is_detected() {
     assert!(dead(WALL), "muro total, reis separados");
-    assert!(dead(&WALL.replace(" w ", " b ")), "mesma posição, vez das pretas");
-    // Reis em cantos e do mesmo lado do muro: ainda sem captura nem xeque possíveis.
+    assert!(
+        dead(&WALL.replace(" w ", " b ")),
+        "mesma posição, vez das pretas"
+    );
+    // Reis em cantos, cada um do seu lado do muro.
     assert!(dead("8/7k/1p1p1p1p/pPpPpPpP/P1P1P1P1/8/8/K7 w - - 0 1"));
-    assert!(dead("8/8/1p1p1p1p/pPpPpPpP/P1P1P1P1/7k/8/K7 w - - 0 1"));
+    assert!(dead("7k/8/1p1p1p1p/pPpPpPpP/P1P1P1P1/8/8/K7 b - - 0 1"));
     // Material insuficiente continua sendo posição morta.
     assert!(dead("4k3/8/8/8/8/8/8/4K3 w - - 0 1"));
     assert!(dead("5b1k/8/8/8/8/8/8/2B1K3 w - - 0 1"));
@@ -192,6 +195,8 @@ fn blockade_with_possible_capture_is_not_dead() {
 fn king_that_reaches_an_enemy_pawn_is_not_dead() {
     // Peões travados em a4/a5, mas os reis chegam ao flanco e capturam.
     assert!(!dead("4k3/8/8/p7/P7/8/8/4K3 w - - 0 1"));
+    // Muro total, mas o rei preto está do lado branco: chega a g4 pela casa g3.
+    assert!(!dead("8/8/1p1p1p1p/pPpPpPpP/P1P1P1P1/7k/8/K7 w - - 0 1"));
 }
 
 #[test]
@@ -208,4 +213,37 @@ fn king_in_check_by_pawn_or_en_passant_is_not_dead() {
     assert!(!dead("4k3/3P4/8/8/8/8/8/4K3 b - - 0 1"));
     // Captura en passant disponível: conservador.
     assert!(!dead("4k3/8/8/pP6/8/8/8/4K3 w - a6 0 1"));
+}
+
+#[test]
+fn wall_is_independently_verified_by_exhaustive_search() {
+    // Verificação por força bruta, independente do detector: explora todo o espaço de
+    // estados (só os reis se movem) e confirma que nunca há captura, xeque nem mate.
+    use std::collections::HashSet;
+    let start = pos(WALL);
+    let pieces = |p: &CanonicalPosition| {
+        let board = p.to_fen();
+        board
+            .split(' ')
+            .next()
+            .unwrap()
+            .chars()
+            .filter(|c| c.is_alphabetic())
+            .count()
+    };
+    let key = |p: &CanonicalPosition| p.to_fen().split(' ').take(2).collect::<Vec<_>>().join(" ");
+    let total = pieces(&start);
+    let mut seen = HashSet::from([key(&start)]);
+    let mut stack = vec![start];
+    while let Some(p) = stack.pop() {
+        assert!(!p.is_check(), "xeque alcançável: {}", p.to_fen());
+        assert_eq!(pieces(&p), total, "captura alcançável: {}", p.to_fen());
+        for mv in p.legal_moves() {
+            let next = p.play(mv).unwrap();
+            if seen.insert(key(&next)) {
+                stack.push(next);
+            }
+        }
+    }
+    assert!(seen.len() > 500, "exploração rasa demais: {}", seen.len());
 }
