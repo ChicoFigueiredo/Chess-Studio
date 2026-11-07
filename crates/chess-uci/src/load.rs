@@ -1,0 +1,478 @@
+//! Governador de carga da análise (C10, UCI-06): decide quanto da máquina a Engine pode usar
+//! para o FPS do app não cair. Módulo **puro**: recebe o tempo de quadro recente (p95, vindo
+//! do Bevy) e devolve um [`LoadPlan`]; quem aplica o plano é o [`crate::AnalysisController`].
+//!
+//! A escada de níveis, do mais forte ao mais leve: `Full` (sem limite) → `Reduced`
+//! (metade dos threads, lote e cache da rede menores) → `Minimal` (um thread, lote mínimo) →
+//! `Intermittent` (a busca roda em rajadas e para entre elas: `stop` + retomar) → `Paused`
+//! (a análise para até o FPS voltar). Para Engines de CPU (Stockfish) só o limite de threads
+//! tem efeito: as opções de lote/cache não existem e são ignoradas.
+//!
+//! Histerese: sobe um nível quando o p95 fica acima da tolerância por um tempo, desce um nível
+//! quando fica calmo por bem mais tempo, e uma volta rápida ao nível anterior (a carga
+//! derrubou o FPS de novo) alonga a espera seguinte, para não oscilar.
+
+use std::collections::VecDeque;
+use std::time::Duration;
+
+/// Quanto da máquina a análise pode usar, escolhido pelo usuário.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LoadMode {
+    /// Sem limite: a análise usa o que for configurado, mesmo que o FPS caia.
+    Max,
+    /// Reduz só quando o FPS cai abaixo da meta.
+    #[default]
+    Balanced,
+    /// Já começa reduzida e reage cedo.
+    Light,
+}
+
+impl LoadMode {
+    pub const ALL: [Self; 3] = [Self::Max, Self::Balanced, Self::Light];
+}
+
+/// Meta de FPS (a qualidade gráfica escolhe).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FpsTarget {
+    Fps30,
+    Fps60,
+}
+
+impl FpsTarget {
+    /// Tempo de quadro da meta, em ms.
+    pub fn budget_ms(self) -> f64 {
+        match self {
+            Self::Fps30 => 1000.0 / 30.0,
+            Self::Fps60 => 1000.0 / 60.0,
+        }
+    }
+
+    pub fn fps(self) -> u32 {
+        match self {
+            Self::Fps30 => 30,
+            Self::Fps60 => 60,
+        }
+    }
+}
+
+/// Resumo dos quadros recentes.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FrameStats {
+    pub p95_ms: f64,
+    pub frames: usize,
+}
+
+/// Janela deslizante de tempos de quadro, medida em tempo real (soma dos próprios quadros).
+#[derive(Debug, Clone)]
+pub struct FrameWindow {
+    span_ms: f64,
+    samples: VecDeque<f64>,
+    total_ms: f64,
+}
+
+impl FrameWindow {
+    /// Janela que cobre os últimos `span` de quadros.
+    pub fn new(span: Duration) -> Self {
+        Self {
+            span_ms: span.as_secs_f64() * 1000.0,
+            samples: VecDeque::new(),
+            total_ms: 0.0,
+        }
+    }
+
+    pub fn push(&mut self, frame_ms: f64) {
+        let _ = frame_ms;
+        unimplemented!()
+    }
+
+    pub fn clear(&mut self) {
+        self.samples.clear();
+        self.total_ms = 0.0;
+    }
+
+    pub fn stats(&self) -> FrameStats {
+        unimplemented!()
+    }
+}
+
+/// Nível de redução da análise (ordenado: maior = mais leve para a máquina).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Level {
+    Full,
+    Reduced,
+    Minimal,
+    Intermittent,
+    Paused,
+}
+
+impl Level {
+    fn up(self) -> Self {
+        match self {
+            Self::Full => Self::Reduced,
+            Self::Reduced => Self::Minimal,
+            Self::Minimal => Self::Intermittent,
+            Self::Intermittent | Self::Paused => Self::Paused,
+        }
+    }
+
+    fn down(self) -> Self {
+        match self {
+            Self::Paused => Self::Intermittent,
+            Self::Intermittent => Self::Minimal,
+            Self::Minimal | Self::Reduced | Self::Full => {
+                if self == Self::Minimal {
+                    Self::Reduced
+                } else {
+                    Self::Full
+                }
+            }
+        }
+    }
+}
+
+/// Rajadas da busca no nível `Intermittent`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Duty {
+    pub run: Duration,
+    pub pause: Duration,
+}
+
+/// Limites que a Engine de análise deve respeitar. Cada teto só vale se a Engine anuncia a
+/// opção correspondente; `None` = sem teto.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LoadPlan {
+    pub level: Level,
+    /// Teto de `Threads`.
+    pub threads_cap: Option<u32>,
+    /// Teto de `MinibatchSize` (Lc0).
+    pub minibatch_cap: Option<u32>,
+    /// Teto de `NNCacheSize` (Lc0).
+    pub nn_cache_cap: Option<u32>,
+    pub duty: Option<Duty>,
+    pub paused: bool,
+}
+
+impl LoadPlan {
+    /// Sem limite nenhum.
+    pub const FULL: Self = Self {
+        level: Level::Full,
+        threads_cap: None,
+        minibatch_cap: None,
+        nn_cache_cap: None,
+        duty: None,
+        paused: false,
+    };
+
+    /// Plano do nível, para uma análise configurada com `threads` threads.
+    pub fn for_level(level: Level, threads: u32) -> Self {
+        let _ = (level, threads);
+        unimplemented!()
+    }
+}
+
+/// O governador.
+#[derive(Debug, Clone)]
+pub struct Governor {
+    mode: LoadMode,
+    target: FpsTarget,
+    threads: u32,
+    level: Level,
+}
+
+impl Governor {
+    pub fn new(mode: LoadMode, target: FpsTarget, threads: u32) -> Self {
+        let _ = (mode, target, threads);
+        unimplemented!()
+    }
+
+    pub fn mode(&self) -> LoadMode {
+        self.mode
+    }
+
+    pub fn target(&self) -> FpsTarget {
+        self.target
+    }
+
+    pub fn level(&self) -> Level {
+        self.level
+    }
+
+    /// Plano atual.
+    pub fn plan(&self) -> LoadPlan {
+        LoadPlan::for_level(self.level, self.threads)
+    }
+
+    /// O FPS está abaixo da meta agora (mesmo que o modo não permita reduzir)?
+    pub fn below_target(&self) -> bool {
+        unimplemented!()
+    }
+
+    /// Muda o modo; devolve o novo plano se ele mudou.
+    pub fn set_mode(&mut self, mode: LoadMode) -> Option<LoadPlan> {
+        let _ = mode;
+        unimplemented!()
+    }
+
+    pub fn set_target(&mut self, target: FpsTarget) {
+        self.target = target;
+    }
+
+    /// Threads configurados da análise (base do teto do nível `Reduced`).
+    pub fn set_threads(&mut self, threads: u32) -> Option<LoadPlan> {
+        let _ = threads;
+        unimplemented!()
+    }
+
+    /// Volta ao nível inicial do modo (análise desligada ou reiniciada).
+    pub fn reset(&mut self) {
+        unimplemented!()
+    }
+
+    /// Passa `dt_s` segundos com os quadros `stats`; devolve o novo plano quando muda.
+    pub fn observe(&mut self, dt_s: f64, stats: FrameStats) -> Option<LoadPlan> {
+        let _ = (dt_s, stats);
+        unimplemented!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const GOOD: FrameStats = FrameStats {
+        p95_ms: 16.9,
+        frames: 120,
+    };
+    const BAD: FrameStats = FrameStats {
+        p95_ms: 45.0,
+        frames: 60,
+    };
+
+    fn gov(mode: LoadMode) -> Governor {
+        Governor::new(mode, FpsTarget::Fps60, 8)
+    }
+
+    /// Alimenta o governador por `seconds` s em passos de 0,25 s; devolve os planos emitidos.
+    fn run(g: &mut Governor, seconds: f64, stats: FrameStats) -> Vec<LoadPlan> {
+        let mut plans = Vec::new();
+        let steps = (seconds / 0.25).round() as usize;
+        for _ in 0..steps {
+            if let Some(plan) = g.observe(0.25, stats) {
+                plans.push(plan);
+            }
+        }
+        plans
+    }
+
+    #[test]
+    fn the_window_reports_p95_over_the_recent_frames_only() {
+        let mut w = FrameWindow::new(Duration::from_secs(2));
+        assert_eq!(w.stats().frames, 0);
+        for _ in 0..95 {
+            w.push(10.0);
+        }
+        for _ in 0..5 {
+            w.push(50.0);
+        }
+        let s = w.stats();
+        assert_eq!(s.frames, 100);
+        assert!((s.p95_ms - 50.0).abs() < 1e-9 || (s.p95_ms - 10.0).abs() < 1e-9);
+        assert!(s.p95_ms >= 10.0);
+        // 200 quadros de 20 ms = 4 s: a janela de 2 s guarda só os últimos ~100.
+        let mut w = FrameWindow::new(Duration::from_secs(2));
+        for _ in 0..50 {
+            w.push(200.0); // fica velho
+        }
+        for _ in 0..200 {
+            w.push(20.0);
+        }
+        let s = w.stats();
+        assert!(s.frames <= 101 && s.frames >= 99, "{}", s.frames);
+        assert!((s.p95_ms - 20.0).abs() < 1e-9, "quadros velhos saíram");
+    }
+
+    #[test]
+    fn levels_map_to_concrete_limits() {
+        assert_eq!(LoadPlan::for_level(Level::Full, 8), LoadPlan::FULL);
+        let reduced = LoadPlan::for_level(Level::Reduced, 8);
+        assert_eq!(reduced.threads_cap, Some(4));
+        assert!(reduced.minibatch_cap.is_some() && reduced.nn_cache_cap.is_some());
+        assert_eq!(LoadPlan::for_level(Level::Reduced, 1).threads_cap, Some(1));
+        let minimal = LoadPlan::for_level(Level::Minimal, 8);
+        assert_eq!(minimal.threads_cap, Some(1));
+        assert!(minimal.minibatch_cap < reduced.minibatch_cap);
+        assert!(minimal.nn_cache_cap < reduced.nn_cache_cap);
+        let burst = LoadPlan::for_level(Level::Intermittent, 8);
+        let duty = burst.duty.expect("rajadas");
+        assert!(duty.pause > duty.run, "a pausa domina no nível intermitente");
+        assert!(!burst.paused);
+        let paused = LoadPlan::for_level(Level::Paused, 8);
+        assert!(paused.paused);
+    }
+
+    #[test]
+    fn max_never_reduces_but_still_reports_the_low_fps() {
+        let mut g = gov(LoadMode::Max);
+        assert!(run(&mut g, 30.0, BAD).is_empty());
+        assert_eq!(g.level(), Level::Full);
+        assert!(g.below_target(), "o aviso existe mesmo sem reduzir");
+        run(&mut g, 4.0, GOOD);
+        assert!(!g.below_target());
+    }
+
+    #[test]
+    fn balanced_reacts_to_sustained_low_fps_and_ignores_a_blip() {
+        let mut g = gov(LoadMode::Balanced);
+        assert!(run(&mut g, 10.0, GOOD).is_empty(), "FPS bom: nada muda");
+        // Um tranco de meio segundo não reduz.
+        assert!(run(&mut g, 0.5, BAD).is_empty());
+        run(&mut g, 4.0, GOOD);
+        assert_eq!(g.level(), Level::Full);
+        // Sustentado: reduz.
+        let plans = run(&mut g, 3.0, BAD);
+        assert_eq!(plans.first().map(|p| p.level), Some(Level::Reduced));
+        assert_eq!(g.level(), Level::Reduced);
+    }
+
+    #[test]
+    fn it_escalates_one_level_at_a_time_up_to_pause_and_no_further() {
+        let mut g = gov(LoadMode::Balanced);
+        let plans = run(&mut g, 60.0, BAD);
+        let levels: Vec<Level> = plans.iter().map(|p| p.level).collect();
+        assert_eq!(
+            levels,
+            [
+                Level::Reduced,
+                Level::Minimal,
+                Level::Intermittent,
+                Level::Paused
+            ]
+        );
+        assert_eq!(g.level(), Level::Paused);
+        assert!(g.plan().paused);
+    }
+
+    #[test]
+    fn each_step_waits_for_the_frame_window_to_reflect_the_last_change() {
+        let mut g = gov(LoadMode::Balanced);
+        let mut at = Vec::new();
+        for i in 0..80 {
+            if g.observe(0.25, BAD).is_some() {
+                at.push(f64::from(i) * 0.25);
+            }
+        }
+        for pair in at.windows(2) {
+            assert!(pair[1] - pair[0] >= 2.0, "passos muito próximos: {at:?}");
+        }
+    }
+
+    #[test]
+    fn it_recovers_one_level_after_a_long_calm_not_before() {
+        let mut g = gov(LoadMode::Balanced);
+        run(&mut g, 10.0, BAD);
+        let high = g.level();
+        assert!(high > Level::Reduced);
+        assert!(run(&mut g, 5.0, GOOD).is_empty(), "calma curta não solta");
+        let plans = run(&mut g, 20.0, GOOD);
+        assert!(!plans.is_empty());
+        assert!(plans[0].level < high);
+        // Com calma sustentada volta ao pleno.
+        run(&mut g, 200.0, GOOD);
+        assert_eq!(g.level(), Level::Full);
+    }
+
+    #[test]
+    fn a_quick_relapse_lengthens_the_next_recovery() {
+        let mut g = gov(LoadMode::Balanced);
+        run(&mut g, 4.0, BAD);
+        assert_eq!(g.level(), Level::Reduced);
+        // Solta depois da calma...
+        let mut calm_to_release = 0.0;
+        while g.level() == Level::Reduced && calm_to_release < 100.0 {
+            g.observe(0.25, GOOD);
+            calm_to_release += 0.25;
+        }
+        assert_eq!(g.level(), Level::Full);
+        // ...o FPS cai de novo logo em seguida: reduz e a próxima espera é maior.
+        run(&mut g, 4.0, BAD);
+        assert_eq!(g.level(), Level::Reduced);
+        let mut second = 0.0;
+        while g.level() == Level::Reduced && second < 200.0 {
+            g.observe(0.25, GOOD);
+            second += 0.25;
+        }
+        assert!(second > calm_to_release, "{second} <= {calm_to_release}");
+    }
+
+    #[test]
+    fn light_starts_reduced_and_never_goes_below_that_floor() {
+        let mut g = gov(LoadMode::Light);
+        assert_eq!(g.level(), Level::Reduced);
+        assert_eq!(g.plan().threads_cap, Some(4));
+        run(&mut g, 300.0, GOOD);
+        assert_eq!(g.level(), Level::Reduced, "calma não leva a Full no Leve");
+    }
+
+    #[test]
+    fn light_is_more_sensitive_than_balanced() {
+        let mild = FrameStats {
+            p95_ms: 19.0, // 53 FPS no p95: Equilibrado tolera, Leve não
+            frames: 100,
+        };
+        let mut balanced = gov(LoadMode::Balanced);
+        assert!(run(&mut balanced, 20.0, mild).is_empty());
+        let mut light = gov(LoadMode::Light);
+        run(&mut light, 20.0, mild);
+        assert!(light.level() > Level::Reduced);
+    }
+
+    #[test]
+    fn the_30_fps_target_tolerates_what_the_60_fps_target_does_not() {
+        let slow = FrameStats {
+            p95_ms: 30.0,
+            frames: 60,
+        };
+        let mut g60 = Governor::new(LoadMode::Balanced, FpsTarget::Fps60, 4);
+        run(&mut g60, 10.0, slow);
+        assert!(g60.level() > Level::Full);
+        let mut g30 = Governor::new(LoadMode::Balanced, FpsTarget::Fps30, 4);
+        assert!(run(&mut g30, 10.0, slow).is_empty());
+    }
+
+    #[test]
+    fn too_few_frames_say_nothing() {
+        let mut g = gov(LoadMode::Balanced);
+        let idle = FrameStats {
+            p95_ms: 500.0,
+            frames: 3,
+        };
+        assert!(run(&mut g, 30.0, idle).is_empty());
+        assert!(!g.below_target());
+    }
+
+    #[test]
+    fn changing_mode_or_resetting_restores_the_starting_plan() {
+        let mut g = gov(LoadMode::Balanced);
+        run(&mut g, 30.0, BAD);
+        assert!(g.level() > Level::Full);
+        assert_eq!(g.set_mode(LoadMode::Max), Some(LoadPlan::FULL));
+        assert_eq!(g.set_mode(LoadMode::Max), None, "nada mudou");
+        run(&mut g, 30.0, BAD);
+        g.set_mode(LoadMode::Light);
+        assert_eq!(g.level(), Level::Reduced);
+        g.reset();
+        assert_eq!(g.level(), Level::Reduced);
+        let mut g = gov(LoadMode::Balanced);
+        run(&mut g, 30.0, BAD);
+        g.reset();
+        assert_eq!(g.level(), Level::Full);
+    }
+
+    #[test]
+    fn the_reduced_cap_follows_the_configured_threads() {
+        let mut g = Governor::new(LoadMode::Light, FpsTarget::Fps60, 8);
+        assert_eq!(g.plan().threads_cap, Some(4));
+        let plan = g.set_threads(2).expect("o teto mudou");
+        assert_eq!(plan.threads_cap, Some(1));
+    }
+}

@@ -22,6 +22,7 @@ mod detect;
 mod engine;
 mod error;
 mod install;
+mod load;
 mod manager;
 mod options;
 mod player;
@@ -57,6 +58,9 @@ pub use error::{EngineError, Stage};
 pub use install::{
     INSTALL_MARKER, InstallError, InstallSpec, Installed, InstalledNetwork, NetworkSpec, Progress,
     install, install_network,
+};
+pub use load::{
+    Duty, FpsTarget, FrameStats, FrameWindow, Governor, Level, LoadMode, LoadPlan,
 };
 pub use manager::{
     InstallPlan, NETWORKS_DIR, RemoveError, Updated, install_from_catalog,
