@@ -127,8 +127,7 @@ impl InstallPlan {
 
     /// Todas as URLs são `https` de hosts oficiais (verificação feita antes de baixar).
     pub fn is_official(&self) -> bool {
-        is_official_url(&self.asset.url())
-            && self.network.is_none_or(|n| is_official_url(&n.url()))
+        is_official_url(&self.asset.url()) && self.network.is_none_or(|n| is_official_url(&n.url()))
     }
 }
 
@@ -208,8 +207,56 @@ pub fn install_network_from_catalog(
 pub fn weights_option(engines_dir: &Path, network: &Path) -> Option<(String, String)> {
     let root = fs::canonicalize(engines_dir.join(NETWORKS_DIR)).ok()?;
     let real = fs::canonicalize(network).ok()?;
-    (real.parent() == Some(root.as_path()) && real.is_file())
-        .then(|| ("WeightsFile".to_owned(), real.to_string_lossy().into_owned()))
+    (real.parent() == Some(root.as_path()) && real.is_file()).then(|| {
+        (
+            "WeightsFile".to_owned(),
+            real.to_string_lossy().into_owned(),
+        )
+    })
+}
+
+/// Opções a enviar ao iniciar a Engine a partir da configuração gravada. A configuração foi
+/// validada ao salvar; aqui é uma segunda barreira para um banco adulterado (PEND-08, T12):
+/// valores com caracteres de controle e opções de arquivo são descartados, `Threads` e
+/// `Hash` são limitados e `WeightsFile` só vale para rede instalada pelo app.
+pub fn launch_options(
+    settings: &std::collections::BTreeMap<String, String>,
+    limits: &crate::Limits,
+    engines_dir: Option<&Path>,
+) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for (name, value) in settings {
+        if name.chars().any(char::is_control) || value.chars().any(char::is_control) {
+            continue;
+        }
+        let lower = name.to_ascii_lowercase();
+        if lower == "weightsfile" {
+            if let Some(pair) = engines_dir.and_then(|d| weights_option(d, Path::new(value))) {
+                out.push(pair);
+            }
+        } else if crate::is_path_like(name) {
+            continue;
+        } else if lower == "threads" || lower == "hash" {
+            let cap = if lower == "threads" {
+                limits.max_threads
+            } else {
+                limits.max_hash_mb
+            };
+            if let Ok(n) = value.trim().parse::<u32>() {
+                out.push((name.clone(), n.clamp(1, cap).to_string()));
+            }
+        } else {
+            out.push((name.clone(), value.clone()));
+        }
+    }
+    let rank = |name: &str| match name.to_ascii_lowercase().as_str() {
+        "weightsfile" => 0,
+        "threads" => 1,
+        "hash" => 2,
+        _ => 3,
+    };
+    out.sort_by_key(|(name, _)| rank(name));
+    out
 }
 
 /// Redes neurais já baixadas (arquivos em `<engines_dir>/networks/`), em ordem de nome.
@@ -293,10 +340,7 @@ mod tests {
             asset: &lc0.assets[0],
             network: lc0.networks.first(),
         };
-        assert_eq!(
-            plan.total_size(),
-            lc0.assets[0].size + lc0.networks[0].size
-        );
+        assert_eq!(plan.total_size(), lc0.assets[0].size + lc0.networks[0].size);
         assert_eq!(plan.dir_name(), format!("lc0-{LC0_VERSION}-cpu-openblas"));
     }
 
@@ -308,6 +352,30 @@ mod tests {
         assert!(update_available("lc0", "0.31.0", "gpu-nope", "windows", "x86_64").is_none());
         assert!(update_available("desconhecida", "1", "", "linux", "x86_64").is_none());
         assert!(CATALOG.len() >= 2);
+    }
+
+    #[test]
+    fn launch_options_drop_hostile_entries_and_clamp_resources() {
+        let limits = crate::Limits {
+            max_threads: 4,
+            max_hash_mb: 1024,
+        };
+        let mut settings = std::collections::BTreeMap::new();
+        settings.insert("Threads".to_owned(), "64".to_owned());
+        settings.insert("Hash".to_owned(), "512".to_owned());
+        settings.insert("Debug Log File".to_owned(), "/etc/passwd".to_owned());
+        settings.insert("WeightsFile".to_owned(), "/etc/passwd".to_owned());
+        settings.insert("Skill Level".to_owned(), "5".to_owned());
+        settings.insert("Nickname".to_owned(), "x\nquit".to_owned());
+        let out = launch_options(&settings, &limits, Some(Path::new("/nao/existe")));
+        assert_eq!(
+            out,
+            vec![
+                ("Threads".to_owned(), "4".to_owned()),
+                ("Hash".to_owned(), "512".to_owned()),
+                ("Skill Level".to_owned(), "5".to_owned()),
+            ]
+        );
     }
 
     #[test]

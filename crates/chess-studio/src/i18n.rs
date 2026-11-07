@@ -20,6 +20,10 @@ const PT_BR: &[(&str, &str)] = &[
         "wizard.ftl",
         include_str!("../assets/i18n/pt-BR/wizard.ftl"),
     ),
+    (
+        "manager.ftl",
+        include_str!("../assets/i18n/pt-BR/manager.ftl"),
+    ),
     ("fide.ftl", include_str!("../assets/i18n/pt-BR/fide.ftl")),
     (
         "newgame.ftl",

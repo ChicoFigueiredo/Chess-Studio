@@ -357,7 +357,8 @@ fn extract(spec: &InstallSpec, archive: &Path, out: &Path) -> Result<String, Ins
         let target = out.join(&name);
         let mut file = File::create(&target).map_err(io_err(&target))?;
         // Teto por arquivo e no total: um arquivo que se expande demais é rejeitado.
-        let copied = io::copy(&mut reader.take(MAX_ENTRY + 1), &mut file).map_err(io_err(&target))?;
+        let copied =
+            io::copy(&mut reader.take(MAX_ENTRY + 1), &mut file).map_err(io_err(&target))?;
         total += copied;
         if copied > MAX_ENTRY || total > MAX_EXTRACTED {
             return Err(InstallError::Archive(format!(

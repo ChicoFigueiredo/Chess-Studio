@@ -485,7 +485,10 @@ fn configured_options_reach_the_engine_and_hostile_ones_never_do() {
     let engine = Engine::spawn(config(&[("Skill Level", "7")])).expect("spawn");
     engine.quit();
     let text = fs::read_to_string(&trace).expect("trace");
-    assert!(text.contains("setoption name Skill Level value 7"), "{text}");
+    assert!(
+        text.contains("setoption name Skill Level value 7"),
+        "{text}"
+    );
 
     let _ = fs::remove_file(&trace);
     let err = Engine::spawn(config(&[("Skill Level", "7\nquit")]));
@@ -494,7 +497,10 @@ fn configured_options_reach_the_engine_and_hostile_ones_never_do() {
         "valor com quebra de linha é recusado ao iniciar"
     );
     let text = fs::read_to_string(&trace).unwrap_or_default();
-    assert!(!text.contains("setoption name Skill Level value 7"), "{text}");
+    assert!(
+        !text.contains("setoption name Skill Level value 7"),
+        "{text}"
+    );
 }
 
 // --- rede real (só com --ignored) ---------------------------------------------------------

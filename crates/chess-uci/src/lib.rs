@@ -49,12 +49,12 @@ pub use install::{
 };
 pub use manager::{
     InstallPlan, NETWORKS_DIR, RemoveError, Updated, install_from_catalog,
-    install_network_from_catalog, installed_networks, plans_for, remove_installed, update,
-    update_available, update_from_catalog, weights_option,
+    install_network_from_catalog, installed_networks, launch_options, plans_for, remove_installed,
+    update, update_available, update_from_catalog, weights_option,
 };
 pub use options::{
     Control, Limits, OptionGroup, OptionSpec, SettingError, effective_bounds, group_of,
-    parse_option, parse_options, resolve_settings, validate_option,
+    is_path_like, parse_option, parse_options, resolve_settings, validate_option,
 };
 pub use player::{DEFAULT_MOVETIME, EnginePlayer, PlayerStatus};
 pub use protocol::{

@@ -606,6 +606,7 @@ mod tests {
             Ok(Installed {
                 dir: PathBuf::from("/engines"),
                 engine: fake_engine("Stockfish 19"),
+                options: Vec::new(),
                 sha256: String::new(),
             })
         });

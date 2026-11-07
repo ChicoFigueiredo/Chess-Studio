@@ -145,9 +145,9 @@ impl Store {
 
     /// Todas as Engines registradas, da mais antiga à mais nova.
     pub fn list_engines(&self) -> Result<Vec<(EngineId, EngineRecord)>> {
-        let mut stmt = self
-            .conn
-            .prepare(&format!("SELECT {COLUMNS} FROM engine_installations ORDER BY id"))?;
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {COLUMNS} FROM engine_installations ORDER BY id"
+        ))?;
         let rows = stmt
             .query_map([], read_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;

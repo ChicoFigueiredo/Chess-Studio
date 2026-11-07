@@ -181,7 +181,7 @@ pub fn parse_option(option: &EngineOption) -> Option<OptionSpec> {
 }
 
 /// Opções de texto que apontam para arquivos ou pastas (log, tablebases, redes, livros).
-fn is_path_like(name: &str) -> bool {
+pub fn is_path_like(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     ["file", "path", "dir", "folder", "book", "weights"]
         .iter()
