@@ -21,7 +21,7 @@ view-inverted = Invertida
 square-hover = Casa sob o cursor: { $square }
 square-none = —
 
-help-camera = Meio+mover: órbita | Shift+meio ou direito+mover: pan
-help-zoom = Roda: zoom | 1/2/3/4: Vistas | 0: reset
-help-presentation = Tab: alterna 3D profissional, Mesa imersiva e 2D técnico
-help-game = Esc cancela o gesto em curso
+
+quality-effects = Efeitos extras (bloom suave)
+quality-effects-hint = Realce suave nas partes mais claras da cena. Só no Ultra e só em GPUs que o suportam; não muda o tabuleiro nem os cliques.
+quality-effects-unavailable = Esta GPU não suporta os efeitos extras com o MSAA do Ultra; a qualidade segue sem eles.

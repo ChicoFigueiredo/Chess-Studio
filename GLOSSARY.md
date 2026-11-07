@@ -117,6 +117,14 @@ _Evitar_: preset de ajuda, nível de dificuldade
 Conjunto nomeado de Apresentação, layout do dock (painéis visíveis, abas, larguras), Perfil de auxílios, modo Foco e Vista da câmera: Jogo físico, Treinamento assistido, Estudo e análise (de fábrica) ou um salvo pelo usuário; "Personalizado" é o estado atual quando não coincide com nenhum. Trocar de perfil nunca altera a Partida. Não confundir com Perfil de auxílios (só os Auxílios) nem com Perfil de treino.
 _Evitar_: tema, workspace, modo
 
+**Perfil local** (_en_: `LocalProfile`):
+Um jogador deste computador: nome e, só dele, preferências, Perfis de interface, controles, Partidas e Resoluções. Vários podem coexistir; o seletor da abertura aparece quando há mais de um. Excluir apaga os dados do perfil; o último não se exclui. Não confundir com Perfil de interface, Perfil de auxílios nem Perfil de treino, que existem *dentro* de um perfil local.
+_Evitar_: usuário, conta, login
+
+**Mapa de controles** (_en_: `ControlMap`):
+Tabela única ação -> atalhos (tecla, botão do mouse com modificadores, roda ou gesto de trackpad), consultada por todos os sistemas de entrada. O padrão é o da DEC-51; cada Perfil local guarda o seu. Um mesmo atalho não serve a duas ações (conflito).
+_Evitar_: keybindings, hotkeys
+
 **HUD** (_en_: `Hud`):
 Sobreposição virtual de treino ou análise presa às casas e peças; não envolve câmera física.
 _Evitar_: realidade aumentada

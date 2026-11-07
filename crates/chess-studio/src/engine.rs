@@ -114,6 +114,12 @@ impl EngineUi {
         self
     }
 
+    /// Reaplica as escolhas gravadas de outro perfil local, sem tocar no resto do estado.
+    pub fn apply_saved(&mut self, user_side: Side, elo: u32) {
+        self.user_side = user_side;
+        self.elo = elo.clamp(MIN_ELO, MAX_ELO);
+    }
+
     pub fn user_side(&self) -> Side {
         self.user_side
     }

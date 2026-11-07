@@ -23,6 +23,7 @@ use bevy::prelude::*;
 use bevy::window::{MonitorSelection, PrimaryWindow, WindowMode, WindowPosition};
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use chess_core::Color as Side;
+use chess_input::controls::Action;
 
 /// Estado de interface de tela cheia e Foco. Independentes entre si.
 #[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -72,14 +73,18 @@ impl Plugin for FocusPlugin {
     }
 }
 
-/// F11 alterna a tela cheia; F10, o modo Foco. Teclas de função não digitam texto, então
+/// F11 alterna a tela cheia; F10, o modo Foco (atalhos remapeáveis, `controls`). Teclas de função não digitam texto, então
 /// valem mesmo com um campo do egui em foco.
-fn view_shortcuts(keys: Res<ButtonInput<KeyCode>>, mut state: ResMut<ViewState>) {
+fn view_shortcuts(
+    keys: Res<ButtonInput<KeyCode>>,
+    controls: Res<crate::controls::Controls>,
+    mut state: ResMut<ViewState>,
+) {
     let mut next = *state;
-    if keys.just_pressed(KeyCode::F11) {
+    if controls.key_just_pressed(Action::ToggleFullscreen, &keys) {
         next.toggle_fullscreen();
     }
-    if keys.just_pressed(KeyCode::F10) {
+    if controls.key_just_pressed(Action::ToggleFocus, &keys) {
         next.toggle_focus();
     }
     // Só escreve se mudou: `is_changed` aciona a janela e a gravação da preferência.
@@ -212,6 +217,7 @@ mod tests {
     fn app() -> App {
         let mut app = App::new();
         app.init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<crate::controls::Controls>()
             .init_resource::<ViewState>()
             .add_systems(Update, view_shortcuts);
         app

@@ -545,6 +545,7 @@ fn clock_input(
     time: Res<Time>,
     buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
+    controls: Res<crate::controls::Controls>,
     egui: Res<EguiWantsInput>,
     presentation: Res<Presentation>,
     window: Single<&Window, With<bevy::window::PrimaryWindow>>,
@@ -554,7 +555,9 @@ fn clock_input(
     mut session: ResMut<Session>,
 ) {
     session.tick();
-    if !egui.wants_keyboard_input() && keys.just_pressed(KeyCode::Space) {
+    if !egui.wants_keyboard_input()
+        && controls.key_just_pressed(chess_input::controls::Action::ClockPress, &keys)
+    {
         let slot = usize::from(session.snapshot().side_to_move != session.user_side());
         session.press_clock();
         ui.pressed = Some((slot, 0.0));
@@ -587,7 +590,7 @@ fn clock_input(
     if ui.hover != hover {
         ui.hover = hover;
     }
-    if buttons.just_pressed(MouseButton::Left)
+    if controls.select_just_pressed(&buttons, &keys)
         && let Some(slot) = hover
         && session.can_press_clock(side_of_slot(session.user_side(), slot))
     {

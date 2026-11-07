@@ -8,7 +8,7 @@ use crate::engine::{EngineUi, engine_section};
 use crate::i18n::I18n;
 use crate::new_game::NewGameDialog;
 use crate::picking::HoveredSquare;
-use crate::presentation::{GraphicsQuality, Presentation};
+use crate::presentation::{GpuSupport, GraphicsQuality, Presentation, UltraEffects};
 use crate::session::Session;
 use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
@@ -136,6 +136,17 @@ pub(crate) fn outcome_text(i18n: &I18n, outcome: Outcome) -> String {
     )
 }
 
+/// Estado das telas de Controles e de perfis locais, e o que o Ultra precisa saber.
+#[derive(bevy::ecs::system::SystemParam)]
+struct Extras<'w> {
+    controls_ui: ResMut<'w, crate::controls::ControlsUi>,
+    controls: Res<'w, crate::controls::Controls>,
+    local: ResMut<'w, crate::local_profiles::LocalProfiles>,
+    effects: ResMut<'w, UltraEffects>,
+    support: Res<'w, GpuSupport>,
+    training: Res<'w, crate::training_ui::TrainingUi>,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn info_panel(
     mut contexts: EguiContexts,
@@ -153,6 +164,7 @@ fn info_panel(
     registry: Res<crate::dock::PanelRegistry>,
     mut view_state: ResMut<crate::focus::ViewState>,
     mut profiles: ResMut<crate::profiles::InterfaceProfiles>,
+    mut extras: Extras,
 ) -> Result {
     // No modo Foco a janela principal some (as janelas da Partida, como a promoção, ficam).
     if view_state.focus || capture.as_ref().is_some_and(|c| !c.show_panel) {
@@ -163,6 +175,7 @@ fn info_panel(
     let mut chosen_presentation = *presentation;
     let mut chosen_quality = *quality;
     let mut chosen_view = *view_state;
+    let mut chosen_effects = extras.effects.0;
     let ctx = contexts.ctx_mut()?;
     let screen = ctx.viewport_rect();
     let responsive = crate::responsive::responsive_layout(
@@ -189,6 +202,17 @@ fn info_panel(
                             ui.selectable_value(&mut chosen_quality, q, i18n.t(q.label_key()));
                         }
                     });
+                if chosen_quality == GraphicsQuality::Ultra {
+                    let available = chosen_quality.bloom_for(true, *extras.support);
+                    ui.add_enabled(
+                        available,
+                        egui::Checkbox::new(&mut chosen_effects, i18n.t("quality-effects")),
+                    )
+                    .on_hover_text(i18n.t("quality-effects-hint"));
+                    if !available {
+                        ui.small(i18n.t("quality-effects-unavailable"));
+                    }
+                }
                 ui.separator();
                 game_section(ui, &i18n, &mut session, &mut dialog, &aids);
                 engine_section(ui, &i18n, &mut session, &mut engine_ui);
@@ -198,6 +222,15 @@ fn info_panel(
                 crate::focus::view_section(ui, &i18n, &mut chosen_view);
                 ui.separator();
                 crate::profiles::profiles_section(ui, &i18n, &mut profiles);
+                ui.separator();
+                crate::local_profiles::section(
+                    ui,
+                    &i18n,
+                    &mut extras.local,
+                    extras.training.session_swapped(),
+                );
+                ui.separator();
+                crate::controls::controls_section(ui, &i18n, &mut extras.controls_ui);
                 if compact {
                     return;
                 }
@@ -211,11 +244,9 @@ fn info_panel(
                     .map_or_else(|| i18n.t("view-free"), |v| i18n.t(view_key(v)));
                 ui.label(i18n.t_with("view-label", &[("name", &view)]));
                 ui.separator();
-                ui.small(i18n.t("help-camera"));
-                ui.small(i18n.t("help-zoom"));
-                ui.small(i18n.t("help-presentation"));
-                ui.small(i18n.t("help-game"));
-                ui.small(i18n.t("help-view"));
+                for line in crate::controls::help_lines(&i18n, extras.controls.map()) {
+                    ui.small(line);
+                }
             };
             if compact {
                 egui::ScrollArea::vertical()
@@ -233,6 +264,9 @@ fn info_panel(
     }
     if chosen_quality != *quality {
         *quality = chosen_quality;
+    }
+    if chosen_effects != extras.effects.0 {
+        extras.effects.0 = chosen_effects;
     }
     Ok(())
 }

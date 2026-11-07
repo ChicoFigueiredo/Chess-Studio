@@ -17,7 +17,32 @@ pub struct GameId(pub i64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ProfileId(pub i64);
 
-const DEFAULT_PROFILE: ProfileId = ProfileId(1);
+/// Tamanho máximo do nome de um perfil local, em caracteres.
+pub const MAX_PROFILE_NAME_LEN: usize = 40;
+
+/// Um perfil local (US-29): nome e quando foi criado/usado.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProfileInfo {
+    pub id: ProfileId,
+    pub name: String,
+    pub created_at_ms: i64,
+    pub last_used_at_ms: i64,
+}
+
+fn clean_profile_name(name: &str) -> Result<String> {
+    let name = name.trim();
+    if name.is_empty() || name.chars().count() > MAX_PROFILE_NAME_LEN {
+        return Err(StoreError::InvalidProfileName);
+    }
+    Ok(name.to_owned())
+}
+
+fn is_unique_violation(err: &rusqlite::Error) -> bool {
+    matches!(
+        err,
+        rusqlite::Error::SqliteFailure(e, _) if e.code == rusqlite::ErrorCode::ConstraintViolation
+    )
+}
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Metadados livres de uma Partida (listagem e exibição; não afetam as regras).
@@ -151,7 +176,8 @@ impl Store {
 
     /// Cria a Partida (sessão aberta, log vazio) no perfil padrão.
     pub fn create_game(&mut self, setup: &GameSetup, metadata: &GameMetadata) -> Result<GameId> {
-        self.create_game_for(DEFAULT_PROFILE, setup, metadata)
+        let profile = self.default_profile()?;
+        self.create_game_for(profile, setup, metadata)
     }
 
     pub fn create_game_for(
@@ -398,6 +424,19 @@ impl Store {
     }
 
     /// A Partida não terminada mais recente (para "continuar de onde parou").
+    pub fn latest_unfinished_game_for(&self, profile: ProfileId) -> Result<Option<GameId>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT id FROM games WHERE finished = 0 AND profile_id = ?1
+                 ORDER BY updated_at_ms DESC, id DESC LIMIT 1",
+                [profile.0],
+                |r| r.get(0).map(GameId),
+            )
+            .optional()?)
+    }
+
+    /// A Partida não terminada mais recente de qualquer perfil.
     pub fn latest_unfinished_game(&self) -> Result<Option<GameId>> {
         Ok(self
             .conn
@@ -411,16 +450,104 @@ impl Store {
 
     // ---- Perfis e preferências ---------------------------------------------------
 
+    /// O perfil em que as operações sem perfil explícito (nova Partida, importação) gravam:
+    /// o ativo.
     pub fn default_profile(&self) -> Result<ProfileId> {
-        Ok(DEFAULT_PROFILE)
+        self.active_profile()
     }
 
-    pub fn create_profile(&self, name: &str) -> Result<ProfileId> {
+    /// O perfil usado por último (empate: o mais antigo). Sempre existe um.
+    pub fn active_profile(&self) -> Result<ProfileId> {
+        Ok(self.conn.query_row(
+            "SELECT id FROM profiles ORDER BY last_used_at_ms DESC, id ASC LIMIT 1",
+            [],
+            |r| r.get(0).map(ProfileId),
+        )?)
+    }
+
+    /// Torna `profile` o ativo; vale também na próxima abertura do app.
+    pub fn set_active_profile(&self, profile: ProfileId) -> Result<()> {
+        ensure_profile(&self.conn, profile)?;
+        // Sempre acima de todos os outros, mesmo dentro do mesmo milissegundo.
         self.conn.execute(
+            "UPDATE profiles SET last_used_at_ms =
+                 MAX(?2, (SELECT MAX(last_used_at_ms) FROM profiles) + 1)
+             WHERE id = ?1",
+            params![profile.0, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    fn profile_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<ProfileInfo> {
+        Ok(ProfileInfo {
+            id: ProfileId(r.get(0)?),
+            name: r.get(1)?,
+            created_at_ms: r.get(2)?,
+            last_used_at_ms: r.get(3)?,
+        })
+    }
+
+    /// Todos os perfis locais, na ordem de criação.
+    pub fn list_profiles(&self) -> Result<Vec<ProfileInfo>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, name, created_at_ms, last_used_at_ms FROM profiles ORDER BY id")?;
+        let rows = stmt.query_map([], Self::profile_from_row)?;
+        Ok(rows.collect::<std::result::Result<_, _>>()?)
+    }
+
+    pub fn profile(&self, profile: ProfileId) -> Result<ProfileInfo> {
+        self.conn
+            .query_row(
+                "SELECT id, name, created_at_ms, last_used_at_ms FROM profiles WHERE id = ?1",
+                [profile.0],
+                Self::profile_from_row,
+            )
+            .optional()?
+            .ok_or(StoreError::ProfileNotFound(profile))
+    }
+
+    /// Cria um perfil local (nome sem espaços nas pontas, de 1 a 40 caracteres, único).
+    pub fn create_profile(&self, name: &str) -> Result<ProfileId> {
+        let name = clean_profile_name(name)?;
+        match self.conn.execute(
             "INSERT INTO profiles (name, created_at_ms) VALUES (?1, ?2)",
             params![name, now_ms()],
-        )?;
-        Ok(ProfileId(self.conn.last_insert_rowid()))
+        ) {
+            Ok(_) => Ok(ProfileId(self.conn.last_insert_rowid())),
+            Err(e) if is_unique_violation(&e) => Err(StoreError::ProfileNameTaken(name)),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    pub fn rename_profile(&self, profile: ProfileId, name: &str) -> Result<()> {
+        ensure_profile(&self.conn, profile)?;
+        let name = clean_profile_name(name)?;
+        match self.conn.execute(
+            "UPDATE profiles SET name = ?2 WHERE id = ?1",
+            params![profile.0, name],
+        ) {
+            Ok(_) => Ok(()),
+            Err(e) if is_unique_violation(&e) => Err(StoreError::ProfileNameTaken(name)),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Exclui o perfil e tudo que é dele (preferências, Partidas, Resoluções, importadas).
+    /// O último perfil não pode ser excluído.
+    pub fn delete_profile(&mut self, profile: ProfileId) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        ensure_profile(&tx, profile)?;
+        let count: i64 = tx.query_row("SELECT COUNT(*) FROM profiles", [], |r| r.get(0))?;
+        if count <= 1 {
+            return Err(StoreError::LastProfile);
+        }
+        // `games.profile_id` não tem ON DELETE CASCADE (esquema publicado): apaga à mão;
+        // o log e as posições caem em cascata com a Partida.
+        tx.execute("DELETE FROM games WHERE profile_id = ?1", [profile.0])?;
+        tx.execute("DELETE FROM profiles WHERE id = ?1", [profile.0])?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// Preferência (chave -> JSON) do perfil; `None` se nunca foi gravada.

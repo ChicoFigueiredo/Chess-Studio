@@ -229,6 +229,12 @@ CREATE TABLE favorite_positions (
 CREATE INDEX favorite_positions_recent ON favorite_positions (profile_id, updated_at_ms DESC, id DESC);
 ";
 
+// Vários perfis locais (#54): o perfil usado por último abre primeiro. Só acrescenta uma
+// coluna; o perfil existente continua o ativo (empate -> o de menor id).
+const V8_LOCAL_PROFILES: &str = "
+ALTER TABLE profiles ADD COLUMN last_used_at_ms INTEGER NOT NULL DEFAULT 0;
+";
+
 /// Migrações em ordem; o índice + 1 é a versão resultante.
 const MIGRATIONS: &[&str] = &[
     V1_CORE,
@@ -238,6 +244,7 @@ const MIGRATIONS: &[&str] = &[
     V5_ENGINE_MANAGER,
     V6_TRAINING_PROFILES,
     V7_LIBRARY,
+    V8_LOCAL_PROFILES,
 ];
 
 /// Versão de esquema desta build.

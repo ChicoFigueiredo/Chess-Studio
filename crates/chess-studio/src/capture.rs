@@ -101,6 +101,9 @@ pub struct CaptureScript {
     /// `--profile physical|training|study`: aplica o Perfil de interface de fábrica e tira
     /// uma única foto (C4).
     pub profile: Option<String>,
+    /// `--single <nome>`: tira uma única foto com este nome (telas novas: Controles,
+    /// seletor de perfis, comparação de qualidade).
+    pub single: Option<&'static str>,
 }
 
 impl CaptureScript {
@@ -180,8 +183,17 @@ fn run_capture(
             view: CameraView::Standard,
         })
     });
+    let single_step = mode.script.single.and_then(|file| {
+        (mode.step == 0).then_some(Step {
+            file,
+            presentation: Presentation::Professional3d,
+            view: CameraView::Standard,
+        })
+    });
     let step = if mode.script.factory_profile().is_some() {
         profile_step.as_ref()
+    } else if mode.script.single.is_some() {
+        single_step.as_ref()
     } else {
         STEPS.get(mode.step)
     };

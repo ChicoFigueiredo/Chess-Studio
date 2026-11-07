@@ -42,6 +42,7 @@ bevy = { workspace = true, features = [
     "bevy_sprite",
     "bevy_sprite_render",
     "bevy_anti_alias",
+    "bevy_post_process",
     "default_font",
     "reflect_auto_register",
     "jpeg",

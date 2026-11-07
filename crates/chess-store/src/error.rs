@@ -13,6 +13,12 @@ pub enum StoreError {
     Json(serde_json::Error),
     GameNotFound(GameId),
     ProfileNotFound(ProfileId),
+    /// Nome de perfil vazio ou longo demais.
+    InvalidProfileName,
+    /// Já existe um perfil com este nome.
+    ProfileNameTaken(String),
+    /// O último perfil local não pode ser excluído.
+    LastProfile,
     /// O banco foi criado por uma versão mais nova do app.
     SchemaTooNew {
         found: u32,
@@ -62,6 +68,13 @@ impl fmt::Display for StoreError {
             Self::Json(e) => write!(f, "JSON inválido no banco: {e}"),
             Self::GameNotFound(id) => write!(f, "Partida {} não existe", id.0),
             Self::ProfileNotFound(id) => write!(f, "perfil {} não existe", id.0),
+            Self::InvalidProfileName => write!(
+                f,
+                "o nome do perfil precisa ter de 1 a {} caracteres",
+                crate::MAX_PROFILE_NAME_LEN
+            ),
+            Self::ProfileNameTaken(name) => write!(f, "já existe um perfil chamado `{name}`"),
+            Self::LastProfile => write!(f, "o último perfil local não pode ser excluído"),
             Self::SchemaTooNew { found, supported } => write!(
                 f,
                 "banco na versão de esquema {found}, mas este app só entende até {supported}; atualize o Chess Studio"
