@@ -55,5 +55,6 @@ pub use review::{MemoryReview, NotCheckmate, PlyReview, Review};
 pub use run::{ErrorCause, ExerciseRun, Followup, RunError, RunResult, RunStatus, RunSummary};
 pub use scoresheet::{MAX_ENTRY_CHARS, MAX_PLY, ManualScoresheet, ScoresheetError};
 pub use scoresheet_check::{
-    CheckError, Counts, EntryCheck, ScoresheetCheck, Verdict, check_against_game, check_scoresheet,
+    CheckError, Counts, EntryCheck, HistoryFingerprint, ScoresheetCheck, Verdict,
+    check_against_game, check_scoresheet,
 };

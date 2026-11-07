@@ -27,3 +27,10 @@ scoresheet-verdict-swapped = Lance trocado
 scoresheet-verdict-missing = Omitidos
 scoresheet-verdict-extra = Anotações a mais
 scoresheet-check-line = Lance { $ply }: escrito { $written }, real { $expected } ({ $verdict })
+
+## Falhas do banco e anotações sem Lance
+scoresheet-load-error = Não foi possível ler a Súmula gravada. Tentando de novo; a notação segue oculta.
+scoresheet-save-error = Não foi possível gravar a Súmula agora. Tentando de novo.
+scoresheet-beyond-title = Anotações de Lances que a Partida não tem (por exemplo, após Desfazer):
+scoresheet-beyond-line = Lance { $ply }: { $text }
+scoresheet-beyond-delete = Apagar

@@ -31,6 +31,11 @@
 //!    as duas leituras e aceita o texto se **alguma** delas dá o Lance real. Se nenhuma
 //!    dá, mas alguma dá outro Lance legal, é `Swapped`.
 //!
+//! 3. **Limpeza do texto** (antes das leituras): prefixo de número de lance (`12.`, `12...`,
+//!    `12 .`, `1 ... e5`); espaços internos (`N f3`, `C f3`); símbolos Unicode de peça
+//!    (`♔♕♖♗♘` e `♚♛♜♝♞`; o símbolo é inequívoco, então só vale a leitura inglesa e `♖`
+//!    nunca vira Rei); sufixo de en passant sem pontos (`ep`, `e.p`, `e.p.`).
+//!
 //! Além do alfabeto, não geram erro (só ressalva): sufixo `+`/`#` ausente, a mais ou
 //! trocado; anotações `!`/`?`; `x` de captura omitido (`ed5` por `exd5`, `Cf3` por `Cxf3`);
 //! roque com zeros (`0-0`, `0-0-0`) ou `o` minúsculo; promoção com ou sem `=`; `e.p.`.
@@ -41,11 +46,18 @@
 //! ressalva; a *faltante* (`Cd2` quando dois cavalos chegam a `d2`) é `WrongNotation`,
 //! porque numa competição a anotação ambígua não identifica o Lance.
 //!
+//! # Histórico conferido
+//!
+//! A conferência guarda a [`HistoryFingerprint`] (nº de meios-lances e um identificador
+//! determinístico dos Lances) do histórico contra o qual foi feita. Quem a usa recalcula
+//! quando o histórico atual tem outra impressão (Entregar no meio da Partida, Desfazer,
+//! continuar a jogar): a conferência nunca fica velha.
+//!
 //! O resultado é independente da Partida e guarda, por meio-lance, o texto escrito e o
 //! SAN real, pronto para persistir e para o histórico (E3).
 
 use crate::scoresheet::ManualScoresheet;
-use chess_core::{CanonicalPosition, Move};
+use chess_core::{CanonicalPosition, Move, Piece};
 use chess_game::Game;
 use std::collections::BTreeMap;
 
@@ -116,10 +128,70 @@ pub struct Counts {
     pub extra: usize,
 }
 
+/// Impressão do histórico de Lances conferido: quantos meios-lances e um identificador
+/// determinístico (FNV-1a sobre os Lances), estável entre execuções.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HistoryFingerprint {
+    plies: u16,
+    id: u64,
+}
+
+impl HistoryFingerprint {
+    /// A impressão dos Lances jogados, em ordem.
+    pub fn of(moves: &[Move]) -> Self {
+        let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+        let mut eat = |byte: u8| {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x0100_0000_01b3);
+        };
+        for mv in moves {
+            for sq in [mv.from(), mv.to()] {
+                eat(sq.file());
+                eat(sq.rank());
+            }
+            eat(match mv.promotion() {
+                None => 0,
+                Some(Piece::Pawn) => 1,
+                Some(Piece::Knight) => 2,
+                Some(Piece::Bishop) => 3,
+                Some(Piece::Rook) => 4,
+                Some(Piece::Queen) => 5,
+                Some(Piece::King) => 6,
+            });
+        }
+        Self {
+            plies: u16::try_from(moves.len()).unwrap_or(u16::MAX),
+            id: hash,
+        }
+    }
+
+    /// A impressão do histórico atual da Partida.
+    pub fn of_game(game: &Game) -> Self {
+        let moves: Vec<Move> = game.snapshot().history.iter().map(|h| h.mv).collect();
+        Self::of(&moves)
+    }
+
+    /// Reconstrói uma impressão gravada.
+    pub fn from_parts(plies: u16, id: u64) -> Self {
+        Self { plies, id }
+    }
+
+    /// Quantos meios-lances foram conferidos.
+    pub fn plies(&self) -> u16 {
+        self.plies
+    }
+
+    /// Identificador dos Lances.
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+}
+
 /// Resultado da conferência de uma Súmula entregue.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ScoresheetCheck {
     checked_at_ms: i64,
+    history: HistoryFingerprint,
     entries: Vec<EntryCheck>,
 }
 
@@ -127,11 +199,16 @@ pub struct ScoresheetCheck {
 pub enum CheckError {
     /// Só se confere uma Súmula entregue (em anotação, ela ainda está sendo escrita).
     NotDelivered,
+    /// A Partida não informou a Posição inicial (não se cai na Posição padrão).
+    StartPositionUnavailable,
 }
 
 impl std::fmt::Display for CheckError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("a Súmula ainda não foi entregue")
+        f.write_str(match self {
+            Self::NotDelivered => "a Súmula ainda não foi entregue",
+            Self::StartPositionUnavailable => "a Posição inicial da Partida não está disponível",
+        })
     }
 }
 
@@ -139,12 +216,22 @@ impl std::error::Error for CheckError {}
 
 impl ScoresheetCheck {
     /// Reconstrói um resultado gravado (ordena por meio-lance).
-    pub fn from_parts(checked_at_ms: i64, mut entries: Vec<EntryCheck>) -> Self {
+    pub fn from_parts(
+        checked_at_ms: i64,
+        history: HistoryFingerprint,
+        mut entries: Vec<EntryCheck>,
+    ) -> Self {
         entries.sort_by_key(|e| e.ply);
         Self {
             checked_at_ms,
+            history,
             entries,
         }
+    }
+
+    /// O histórico de Lances contra o qual a conferência foi feita.
+    pub fn history(&self) -> HistoryFingerprint {
+        self.history
     }
 
     /// Instante (injetado) em que a conferência foi feita.
@@ -187,7 +274,8 @@ pub fn check_against_game(
 ) -> Result<ScoresheetCheck, CheckError> {
     let start = game
         .review_at_ply(0)
-        .map_or_else(CanonicalPosition::start, |v| v.position);
+        .ok_or(CheckError::StartPositionUnavailable)?
+        .position;
     let moves: Vec<Move> = game.snapshot().history.iter().map(|h| h.mv).collect();
     check_scoresheet(sheet, &start, &moves, at_ms)
 }
@@ -234,6 +322,7 @@ pub fn check_scoresheet(
     }
     Ok(ScoresheetCheck {
         checked_at_ms: at_ms,
+        history: HistoryFingerprint::of(real_moves),
         entries,
     })
 }
@@ -259,7 +348,11 @@ fn classify(pos: &CanonicalPosition, real: Move, real_san: &str, text: &str) -> 
 
 /// As leituras do texto: a inglesa e a pt-BR (já traduzida), sem repetir.
 fn readings(text: &str) -> Vec<String> {
-    let base = normalize_castling(text.trim());
+    let (cleaned, unicode) = clean(text);
+    let base = normalize_castling(&cleaned);
+    if unicode {
+        return vec![base];
+    }
     let pt = translate_pt(&base);
     if pt == base {
         vec![base]
@@ -311,4 +404,53 @@ fn translate_pt(text: &str) -> String {
         }
     }
     chars.into_iter().collect()
+}
+
+/// Limpeza antes das leituras: símbolos Unicode de peça, prefixo de número de lance,
+/// espaços internos e sufixo de en passant sem pontos. Devolve o texto e se havia símbolo
+/// Unicode (que dispensa a leitura pt-BR).
+fn clean(text: &str) -> (String, bool) {
+    let unicode = text.chars().any(|c| ('\u{2654}'..='\u{265F}').contains(&c));
+    let mapped: String = text
+        .trim()
+        .chars()
+        .map(|c| match c {
+            '♔' | '♚' => 'K',
+            '♕' | '♛' => 'Q',
+            '♖' | '♜' => 'R',
+            '♗' | '♝' => 'B',
+            '♘' | '♞' => 'N',
+            other => other,
+        })
+        .collect();
+    let rest = strip_move_number(&mapped);
+    let squeezed: String = rest.chars().filter(|c| !c.is_whitespace()).collect();
+    (strip_en_passant(&squeezed), unicode)
+}
+
+/// Tira `12.`, `12...`, `12 .`, `1 ... ` do começo (dígitos, depois pontos).
+fn strip_move_number(text: &str) -> &str {
+    let after_digits = text.trim_start_matches(|c: char| c.is_ascii_digit());
+    if after_digits.len() == text.len() {
+        return text;
+    }
+    let after_space = after_digits.trim_start();
+    if !after_space.starts_with(['.', '…']) {
+        return text;
+    }
+    after_space.trim_start_matches(|c: char| matches!(c, '.' | '…') || c.is_whitespace())
+}
+
+/// Tira `ep`, `e.p` e `e.p.` do fim (antes de `+ # ! ?`); o SAN nunca termina assim.
+fn strip_en_passant(text: &str) -> String {
+    let core_len = text.trim_end_matches(['+', '#', '!', '?']).len();
+    let (core, tail) = text.split_at(core_len);
+    for suffix in ["e.p.", "e.p", "ep"] {
+        if let Some(head) = core.strip_suffix(suffix)
+            && !head.is_empty()
+        {
+            return format!("{head}{tail}");
+        }
+    }
+    text.to_owned()
 }

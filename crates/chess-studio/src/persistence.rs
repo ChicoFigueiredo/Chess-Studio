@@ -122,6 +122,31 @@ pub struct Persistence {
     /// Último mapa de controles gravado (ou carregado).
     saved_controls: Option<Value>,
     failing: bool,
+    /// Sequência de falhas da Súmula (separada de `failing`).
+    scoresheet_failing: bool,
+}
+
+/// Por que a Súmula não pôde ser lida ou gravada.
+#[derive(Debug)]
+pub enum ScoresheetError {
+    /// A Partida atual ainda não existe no banco.
+    NoGame,
+    Store(StoreError),
+}
+
+impl std::fmt::Display for ScoresheetError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoGame => f.write_str("a Partida ainda não está no banco"),
+            Self::Store(err) => err.fmt(f),
+        }
+    }
+}
+
+impl From<StoreError> for ScoresheetError {
+    fn from(err: StoreError) -> Self {
+        Self::Store(err)
+    }
 }
 
 fn debug_id<T: std::fmt::Debug>(value: &T) -> Value {
@@ -159,6 +184,7 @@ impl Persistence {
             saved_profiles: None,
             saved_controls: None,
             failing: false,
+            scoresheet_failing: false,
         }
     }
 
@@ -235,6 +261,7 @@ impl Persistence {
         self.saved_profiles = None;
         self.saved_controls = None;
         self.failing = false;
+        self.scoresheet_failing = false;
         Ok(self.open_profile())
     }
 
@@ -534,51 +561,87 @@ impl Persistence {
         }
     }
 
-    /// A Súmula manual do perfil para a Partida atual (V2-SUM-01); `None` se não há.
-    pub fn load_scoresheet(&self) -> Option<chess_training::ManualScoresheet> {
-        let game = self.current?;
-        match self.store.load_scoresheet(self.profile, game) {
-            Ok(sheet) => sheet,
-            Err(err) => {
-                warn!("Súmula manual ilegível: {err}");
-                None
-            }
-        }
-    }
-
-    /// A conferência gravada da Súmula da Partida atual (V2-SUM-02).
-    pub fn load_scoresheet_check(&self) -> Option<chess_training::ScoresheetCheck> {
-        let game = self.current?;
-        match self.store.load_scoresheet_check(self.profile, game) {
-            Ok(check) => check,
-            Err(err) => {
-                warn!("Conferência da Súmula ilegível: {err}");
-                None
-            }
-        }
+    /// A Súmula manual e a conferência do perfil para a Partida atual (V2-SUM-01/02).
+    /// `Ok((None, None))` é ausência de verdade; falha de leitura (ou ainda sem Partida no
+    /// banco) é `Err`, nunca "sem Súmula": quem chama segue ocultando a notação, não deixa
+    /// iniciar/gravar e tenta de novo (senão a Súmula gravada seria sobrescrita).
+    pub fn load_scoresheet(
+        &mut self,
+    ) -> Result<
+        (
+            Option<chess_training::ManualScoresheet>,
+            Option<chess_training::ScoresheetCheck>,
+        ),
+        ScoresheetError,
+    > {
+        let result = (|| {
+            let game = self.current.ok_or(ScoresheetError::NoGame)?;
+            let sheet = self.store.load_scoresheet(self.profile, game)?;
+            let check = match &sheet {
+                Some(_) => self.store.load_scoresheet_check(self.profile, game)?,
+                None => None,
+            };
+            Ok((sheet, check))
+        })();
+        self.scoresheet_outcome(result)
     }
 
     /// Grava a conferência da Súmula entregue (registro à parte; não toca a Partida).
-    pub fn apply_scoresheet_check(&mut self, check: &chess_training::ScoresheetCheck) {
-        let Some(game) = self.current else { return };
-        if let Err(err) = self.store.save_scoresheet_check(self.profile, game, check) {
-            self.report(&err);
-        }
+    pub fn apply_scoresheet_check(
+        &mut self,
+        check: &chess_training::ScoresheetCheck,
+    ) -> Result<(), ScoresheetError> {
+        let result = (|| {
+            let game = self.current.ok_or(ScoresheetError::NoGame)?;
+            Ok(self
+                .store
+                .save_scoresheet_check(self.profile, game, check)?)
+        })();
+        self.scoresheet_outcome(result)
     }
 
     /// Grava (ou apaga) a Súmula manual da Partida atual, no ato. Registro separado: nunca
     /// toca a Partida, o log de eventos nem o PGN.
-    pub fn apply_scoresheet(&mut self, pending: &crate::scoresheet::Pending) {
-        let Some(game) = self.current else { return };
-        let result = match pending {
-            crate::scoresheet::Pending::Save(sheet) => {
-                self.store.save_scoresheet(self.profile, game, sheet)
+    pub fn apply_scoresheet(
+        &mut self,
+        pending: &crate::scoresheet::Pending,
+    ) -> Result<(), ScoresheetError> {
+        let result = (|| {
+            let game = self.current.ok_or(ScoresheetError::NoGame)?;
+            Ok(match pending {
+                crate::scoresheet::Pending::Save(sheet) => {
+                    self.store.save_scoresheet(self.profile, game, sheet)
+                }
+                crate::scoresheet::Pending::Delete => {
+                    self.store.delete_scoresheet(self.profile, game)
+                }
+            }?)
+        })();
+        self.scoresheet_outcome(result)
+    }
+
+    /// Já há Partida gravada para a Súmula se apoiar?
+    pub fn has_game(&self) -> bool {
+        self.current.is_some()
+    }
+
+    /// Falhas da Súmula têm o próprio sinalizador: o `failing` de [`Self::report`] (que
+    /// silencia repetições dos Eventos) não pode escondê-las. Avisa na primeira de uma
+    /// sequência e de novo quando volta a falhar depois de um sucesso.
+    fn scoresheet_outcome<T>(
+        &mut self,
+        result: Result<T, ScoresheetError>,
+    ) -> Result<T, ScoresheetError> {
+        match &result {
+            Ok(_) => self.scoresheet_failing = false,
+            Err(err) => {
+                if !self.scoresheet_failing {
+                    warn!("Súmula manual: {err}");
+                }
+                self.scoresheet_failing = true;
             }
-            crate::scoresheet::Pending::Delete => self.store.delete_scoresheet(self.profile, game),
-        };
-        if let Err(err) = result {
-            self.report(&err);
         }
+        result
     }
 
     /// Grava só o que mudou desde a última chamada (ou desde `load_prefs`).
@@ -746,7 +809,8 @@ impl Plugin for PersistencePlugin {
                 persist_scoresheet
                     .after(persist_session)
                     .after(PlaySet)
-                    .after(crate::scoresheet::follow_game),
+                    .after(crate::scoresheet::follow_game)
+                    .after(crate::scoresheet::follow_game_late),
             )
             .add_systems(Last, close_on_exit);
     }
@@ -826,17 +890,42 @@ fn persist_scoresheet(
         return;
     }
     let Ok(mut p) = handle.0.lock() else { return };
+    if !state.retry_due() {
+        return;
+    }
     if state.is_loading() {
-        let sheet = p.load_scoresheet();
-        let check = sheet.as_ref().and_then(|_| p.load_scoresheet_check());
-        state.loaded(sheet);
-        state.loaded_check(check);
+        match p.load_scoresheet() {
+            Ok((sheet, check)) => {
+                state.loaded(sheet);
+                state.loaded_check(check);
+            }
+            // Erro não é ausência: segue carregando (notação oculta) e tenta de novo.
+            Err(_) => {
+                state.load_failed();
+                return;
+            }
+        }
     }
-    if let Some(pending) = state.take_pending() {
-        p.apply_scoresheet(&pending);
+    // Sem Partida no banco, o pendente fica na fila (não é consumido).
+    if !p.has_game() {
+        return;
     }
-    if let Some(check) = state.take_pending_check() {
-        p.apply_scoresheet_check(&check);
+    let mut failed = false;
+    if let Some(pending) = state.take_pending()
+        && p.apply_scoresheet(&pending).is_err()
+    {
+        state.save_failed(pending);
+        failed = true;
+    }
+    if !failed
+        && let Some(check) = state.take_pending_check()
+        && p.apply_scoresheet_check(&check).is_err()
+    {
+        state.check_save_failed(check);
+        failed = true;
+    }
+    if !failed {
+        state.saved();
     }
 }
 
@@ -913,6 +1002,43 @@ mod tests {
 
     fn new_persistence() -> Persistence {
         Persistence::new(Store::open_in_memory().unwrap())
+    }
+
+    #[test]
+    fn scoresheet_without_a_stored_game_is_an_error_and_consumes_nothing() {
+        use crate::scoresheet::Pending;
+        let mut p = new_persistence();
+        assert!(!p.has_game());
+        assert!(matches!(p.load_scoresheet(), Err(ScoresheetError::NoGame)));
+        assert!(matches!(
+            p.apply_scoresheet(&Pending::Delete),
+            Err(ScoresheetError::NoGame)
+        ));
+        // Com a Partida gravada, a leitura vira ausência de verdade e a gravação funciona.
+        let mut session = p.restore().session;
+        play(&mut session, "e2", "e4");
+        p.sync(&session);
+        assert!(p.has_game());
+        assert!(matches!(p.load_scoresheet(), Ok((None, None))));
+        let mut sheet = chess_training::ManualScoresheet::new();
+        sheet.write(1, "e4").unwrap();
+        p.apply_scoresheet(&Pending::Save(sheet.clone())).unwrap();
+        let (loaded, check) = p.load_scoresheet().unwrap();
+        assert_eq!(loaded, Some(sheet));
+        assert!(check.is_none());
+    }
+
+    #[test]
+    fn scoresheet_failures_are_not_hidden_by_the_events_failing_flag() {
+        let mut p = new_persistence();
+        p.failing = true; // falha de Eventos em curso: antes escondia as da Súmula
+        assert!(p.load_scoresheet().is_err());
+        assert!(p.scoresheet_failing, "a Súmula tem sinalizador próprio");
+        let mut session = p.restore().session;
+        play(&mut session, "e2", "e4");
+        p.sync(&session);
+        assert!(p.load_scoresheet().is_ok());
+        assert!(!p.scoresheet_failing, "sucesso reabre o aviso");
     }
 
     #[test]

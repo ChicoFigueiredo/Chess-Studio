@@ -18,6 +18,19 @@
 //! Não é ocultado o que não é notação: o tabuleiro, as peças, o relógio e os Auxílios
 //! visuais, que o jogador controla no painel Auxílios. Ao **entregar** a Súmula (ou
 //! descartá-la) a notação volta. Ver [`ScoresheetUi::hides_notation`].
+//!
+//! # Decisões de robustez
+//!
+//! - **Entregar a qualquer momento, com recálculo**: a conferência grava o histórico que
+//!   conferiu (`HistoryFingerprint`) e é refeita quando ele muda (a Partida continua,
+//!   Desfazer). Não se bloqueia a entrega; a conferência é sempre do histórico atual.
+//! - **Erro de leitura não é ausência**: se o banco falha ao ler a Súmula ou a conferência,
+//!   o painel segue "carregando" (notação oculta, sem iniciar, anotar ou recalcular) e
+//!   tenta de novo depois; nada gravado é sobrescrito às cegas.
+//! - **Gravação sem perda**: sem Partida no banco, o pendente não é consumido; se a
+//!   gravação falha, volta à fila e o painel avisa.
+//! - **Anotações além dos Lances jogados** (após Desfazer) aparecem marcadas, com botão
+//!   Apagar enquanto a Súmula não foi entregue; o jogador não perde texto em silêncio.
 
 use crate::dock::{PanelAccess, PanelDef, ids};
 use crate::i18n::I18n;
@@ -25,7 +38,9 @@ use crate::session::Session;
 use bevy::prelude::*;
 use bevy_egui::egui;
 use chess_core::Color as Side;
-use chess_training::{MAX_ENTRY_CHARS, ManualScoresheet, ScoresheetCheck, Verdict};
+use chess_training::{
+    HistoryFingerprint, MAX_ENTRY_CHARS, ManualScoresheet, ScoresheetCheck, Verdict,
+};
 
 /// O que gravar no banco na próxima passada do `PersistencePlugin`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,7 +63,17 @@ pub struct ScoresheetUi {
     pending_check: Option<ScoresheetCheck>,
     /// Sessão de Exercício no lugar da Partida: a Súmula não se aplica.
     suspended: bool,
+    /// A leitura do banco falhou: continua "carregando" (notação oculta, sem iniciar nem
+    /// gravar) e tenta de novo depois, para nunca confundir erro com ausência.
+    load_error: bool,
+    /// Uma gravação falhou e está na fila para nova tentativa.
+    save_error: bool,
+    /// Quadros até a próxima tentativa de leitura/gravação depois de uma falha.
+    retry_wait: u32,
 }
+
+/// Quadros de espera entre tentativas depois de uma falha do banco (~2 s a 60 fps).
+const RETRY_FRAMES: u32 = 120;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PendingKind {
@@ -75,6 +100,54 @@ impl ScoresheetUi {
         self.loading
     }
 
+    /// Há gravação falha esperando nova tentativa.
+    pub fn save_failed_state(&self) -> bool {
+        self.save_error
+    }
+
+    /// A leitura do banco falhou: mantém o estado "carregando" (oculta a notação, não deixa
+    /// iniciar nem gravar) e espera antes de tentar de novo.
+    pub fn load_failed(&mut self) {
+        self.load_error = true;
+        self.retry_wait = RETRY_FRAMES;
+    }
+
+    /// Pode tentar o banco agora? Depois de uma falha, só passados alguns quadros.
+    pub fn retry_due(&mut self) -> bool {
+        if self.retry_wait > 0 {
+            self.retry_wait -= 1;
+            return false;
+        }
+        true
+    }
+
+    /// Devolve à fila uma gravação que falhou (não se perde a anotação).
+    pub fn save_failed(&mut self, pending: Pending) {
+        // Um pendente mais novo (editado nesse meio-tempo) vale mais que o devolvido.
+        if self.pending.is_none() {
+            self.pending = Some(match pending {
+                Pending::Save(_) => PendingKind::Save,
+                Pending::Delete => PendingKind::Delete,
+            });
+        }
+        self.save_error = true;
+        self.retry_wait = RETRY_FRAMES;
+    }
+
+    /// Devolve à fila uma conferência que não foi gravada.
+    pub fn check_save_failed(&mut self, check: ScoresheetCheck) {
+        if self.pending_check.is_none() {
+            self.pending_check = Some(check);
+        }
+        self.save_error = true;
+        self.retry_wait = RETRY_FRAMES;
+    }
+
+    /// As gravações da fila deram certo.
+    pub fn saved(&mut self) {
+        self.save_error = false;
+    }
+
     /// Acompanha a `Session`: a Súmula pertence a uma Partida, então Nova Partida/FEN/troca
     /// de perfil começam sem ela até o banco responder. `persistent` é falso sem banco.
     pub fn follow(&mut self, epoch: u64, suspended: bool, persistent: bool) {
@@ -88,12 +161,16 @@ impl ScoresheetUi {
         self.check = None;
         self.pending_check = None;
         self.loading = persistent;
+        self.load_error = false;
+        self.save_error = false;
+        self.retry_wait = 0;
     }
 
     /// A Súmula lida do banco para a Partida atual.
     pub fn loaded(&mut self, sheet: Option<ManualScoresheet>) {
         self.sheet = sheet;
         self.loading = false;
+        self.load_error = false;
     }
 
     /// A conferência gravada para a Súmula da Partida atual.
@@ -105,11 +182,14 @@ impl ScoresheetUi {
         self.check.as_ref()
     }
 
-    /// A Súmula está entregue e ainda não foi conferida (nem lida do banco)?
-    pub fn needs_check(&self) -> bool {
+    /// A Súmula está entregue e a conferência falta ou ficou velha, isto é, foi feita para
+    /// outro histórico (entregou no meio da Partida e ela continuou; Desfazer)? Enquanto a
+    /// Súmula/conferência não foram lidas do banco (ou a leitura falhou), não: nada gravado
+    /// é sobrescrito às cegas.
+    pub fn needs_check(&self, history: HistoryFingerprint) -> bool {
         !self.suspended
             && !self.loading
-            && self.check.is_none()
+            && self.check.as_ref().is_none_or(|c| c.history() != history)
             && self
                 .sheet
                 .as_ref()
@@ -129,7 +209,7 @@ impl ScoresheetUi {
 
     /// Começa uma Súmula em branco (e passa a ocultar a notação).
     pub fn start(&mut self) {
-        if self.sheet.is_none() {
+        if self.sheet.is_none() && !self.loading {
             self.sheet = Some(ManualScoresheet::new());
             self.pending = Some(PendingKind::Save);
         }
@@ -138,6 +218,9 @@ impl ScoresheetUi {
     /// Escreve a anotação do meio-lance. Recusas (Súmula entregue, texto inválido) não
     /// mudam nada.
     pub fn write(&mut self, ply: usize, text: &str) {
+        if self.loading {
+            return;
+        }
         let Some(sheet) = self.sheet.as_mut() else {
             return;
         };
@@ -152,6 +235,9 @@ impl ScoresheetUi {
 
     /// Entrega a Súmula: congela o texto e libera a notação.
     pub fn deliver(&mut self, at_ms: i64) {
+        if self.loading {
+            return;
+        }
         if let Some(sheet) = self.sheet.as_mut()
             && sheet.deliver(at_ms).is_ok()
         {
@@ -159,9 +245,23 @@ impl ScoresheetUi {
         }
     }
 
+    /// Anotações de meios-lances que a Partida não tem (por exemplo depois de Desfazer).
+    /// Não somem sozinhas: o jogador as vê e pode apagá-las com [`Self::write`] em branco.
+    pub fn beyond(&self, played: usize) -> Vec<(u16, String)> {
+        self.sheet
+            .as_ref()
+            .map(|s| {
+                s.entries()
+                    .filter(|(p, _)| usize::from(*p) > played)
+                    .map(|(p, t)| (p, t.to_owned()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     /// Descarta a Súmula (apaga o registro; a Partida não muda).
     pub fn discard(&mut self) {
-        if self.sheet.take().is_some() {
+        if !self.loading && self.sheet.take().is_some() {
             self.check = None;
             self.pending_check = None;
             self.pending = Some(PendingKind::Delete);
@@ -247,10 +347,14 @@ fn panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
             return;
         }
         if state.loading {
-            ui.weak(i18n.t("scoresheet-loading"));
+            ui.weak(i18n.t(if state.load_error {
+                "scoresheet-load-error"
+            } else {
+                "scoresheet-loading"
+            }));
             return;
         }
-        if state.needs_check()
+        if state.needs_check(HistoryFingerprint::of_game(session.game()))
             && let Some(sheet) = state.sheet()
             && let Ok(check) = chess_training::check_against_game(sheet, session.game(), wall_ms())
         {
@@ -318,6 +422,35 @@ fn draw(
                 });
             }
         });
+    let beyond = state.beyond(played);
+    if !beyond.is_empty() {
+        ui.separator();
+        ui.colored_label(
+            egui::Color32::from_rgb(220, 190, 80),
+            i18n.t("scoresheet-beyond-title"),
+        );
+        for (ply, text) in beyond {
+            ui.horizontal(|ui| {
+                ui.monospace(i18n.t_with(
+                    "scoresheet-beyond-line",
+                    &[("ply", &ply.to_string()), ("text", &text)],
+                ));
+                if !delivered
+                    && ui
+                        .small_button(i18n.t("scoresheet-beyond-delete"))
+                        .clicked()
+                {
+                    state.write(usize::from(ply), "");
+                }
+            });
+        }
+    }
+    if state.save_failed_state() {
+        ui.colored_label(
+            egui::Color32::from_rgb(220, 100, 90),
+            i18n.t("scoresheet-save-error"),
+        );
+    }
     ui.horizontal(|ui| {
         if !delivered && ui.button(i18n.t("scoresheet-deliver")).clicked() {
             state.deliver(wall_ms());
@@ -417,12 +550,24 @@ pub(crate) fn follow_game(
     }
 }
 
+/// Roda de novo depois do `PlaySet`: Nova Partida/FEN trocam a época dentro do `PlaySet`, e
+/// sem isto o SAN apareceria por um quadro antes de a Súmula "carregar".
+pub(crate) fn follow_game_late(
+    session: Res<Session>,
+    training: Res<crate::training_ui::TrainingUi>,
+    handle: Option<Res<crate::persistence::PersistenceHandle>>,
+    state: ResMut<ScoresheetUi>,
+) {
+    follow_game(session, training, handle, state);
+}
+
 pub struct ScoresheetPlugin;
 
 impl Plugin for ScoresheetPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ScoresheetUi>()
-            .add_systems(Update, follow_game.before(crate::play::PlaySet));
+            .add_systems(Update, follow_game.before(crate::play::PlaySet))
+            .add_systems(Update, follow_game_late.after(crate::play::PlaySet));
         crate::dock::register_panel(
             app,
             PanelDef {
@@ -516,6 +661,18 @@ mod tests {
         assert!(s.hides_notation());
     }
 
+    /// Impressão do histórico depois de jogar os lances (pares origem-destino).
+    fn fp(moves: &[(&str, &str)]) -> HistoryFingerprint {
+        HistoryFingerprint::of(&mvs(moves))
+    }
+
+    fn mvs(moves: &[(&str, &str)]) -> Vec<chess_core::Move> {
+        moves
+            .iter()
+            .map(|(f, t)| chess_core::Move::new(f.parse().unwrap(), t.parse().unwrap(), None))
+            .collect()
+    }
+
     fn check_for(sheet: &ManualScoresheet) -> ScoresheetCheck {
         let game = chess_game::Game::new(chess_game::GameSetup::standard(
             chess_game::PolicyKind::Assisted,
@@ -527,12 +684,12 @@ mod tests {
     fn a_delivered_sheet_is_checked_once_and_the_result_is_saved_once() {
         let mut s = active();
         s.take_pending();
-        assert!(!s.needs_check(), "em anotação: sem conferência");
+        assert!(!s.needs_check(fp(&[])), "em anotação: sem conferência");
         s.deliver(10);
-        assert!(s.needs_check());
+        assert!(s.needs_check(fp(&[])));
         let check = check_for(s.sheet().unwrap());
         s.record_check(check.clone());
-        assert!(!s.needs_check());
+        assert!(!s.needs_check(fp(&[])));
         assert_eq!(s.check(), Some(&check));
         assert_eq!(s.take_pending_check(), Some(check));
         assert_eq!(s.take_pending_check(), None, "grava uma vez só");
@@ -561,8 +718,125 @@ mod tests {
         let check = check_for(&stored);
         s.loaded(Some(stored));
         s.loaded_check(Some(check));
-        assert!(!s.needs_check());
+        assert!(!s.needs_check(fp(&[])));
         assert!(!s.has_pending());
+    }
+
+    const E4: (&str, &str) = ("e2", "e4");
+    const E5: (&str, &str) = ("e7", "e5");
+
+    fn check_at(sheet: &ManualScoresheet, moves: &[(&str, &str)]) -> ScoresheetCheck {
+        let start = chess_core::CanonicalPosition::start();
+        chess_training::check_scoresheet(sheet, &start, &mvs(moves), 3).unwrap()
+    }
+
+    #[test]
+    fn delivering_mid_game_is_rechecked_when_the_history_changes() {
+        let mut s = active();
+        s.take_pending();
+        s.write(1, "e4");
+        s.deliver(10);
+        // Entregou com 1 lance; o primeiro cálculo cobre esse histórico.
+        assert!(s.needs_check(fp(&[E4])));
+        s.record_check(check_at(s.sheet().unwrap(), &[E4]));
+        assert!(!s.needs_check(fp(&[E4])));
+        // A Partida continua: a conferência ficou velha e é refeita.
+        assert!(s.needs_check(fp(&[E4, E5])));
+        s.take_pending_check();
+        s.record_check(check_at(s.sheet().unwrap(), &[E4, E5]));
+        assert!(!s.needs_check(fp(&[E4, E5])));
+        // Desfazer: histórico menor, de novo outro.
+        assert!(s.needs_check(fp(&[E4])));
+        // Outro lance no mesmo tamanho também é outro histórico.
+        assert!(s.needs_check(fp(&[("d2", "d4")])));
+    }
+
+    #[test]
+    fn a_failed_database_read_keeps_hiding_and_blocks_start_and_writes() {
+        let mut s = ScoresheetUi::default();
+        s.follow(1, false, true);
+        s.load_failed();
+        assert!(s.is_loading(), "erro não é ausência: segue carregando");
+        assert!(s.hides_notation());
+        s.start();
+        s.write(1, "e4");
+        s.deliver(1);
+        assert!(
+            s.sheet().is_none(),
+            "não deixa iniciar sobre a anotação gravada"
+        );
+        assert_eq!(s.take_pending(), None);
+        assert!(!s.needs_check(fp(&[])), "nem recalcular a conferência");
+        // Só tenta de novo depois de algum tempo, e a leitura certa libera tudo.
+        assert!(!s.retry_due());
+        for _ in 0..RETRY_FRAMES {
+            s.retry_due();
+        }
+        assert!(s.retry_due());
+        let mut stored = ManualScoresheet::new();
+        stored.write(1, "d4").unwrap();
+        s.loaded(Some(stored));
+        assert!(!s.is_loading());
+        assert_eq!(s.sheet().unwrap().text(1), Some("d4"));
+    }
+
+    #[test]
+    fn a_failed_save_goes_back_to_the_queue_without_losing_text() {
+        let mut s = active();
+        let pending = s.take_pending().unwrap();
+        s.save_failed(pending);
+        assert!(s.save_failed_state());
+        assert!(matches!(s.take_pending(), Some(Pending::Save(_))));
+        // Uma edição nova durante a falha vale mais que o item devolvido.
+        s.write(1, "e4");
+        let Some(Pending::Save(newer)) = s.take_pending() else {
+            panic!("esperava gravar");
+        };
+        s.save_failed(Pending::Save(ManualScoresheet::new()));
+        s.save_failed(Pending::Save(newer));
+        s.saved();
+        assert!(!s.save_failed_state());
+        let check = check_for(&{
+            let mut d = ManualScoresheet::new();
+            d.deliver(1).unwrap();
+            d
+        });
+        s.check_save_failed(check.clone());
+        assert_eq!(s.take_pending_check(), Some(check));
+    }
+
+    #[test]
+    fn entries_beyond_the_played_moves_are_listed_and_can_be_erased() {
+        let mut s = active();
+        s.take_pending();
+        s.write(1, "e4");
+        s.write(2, "e5");
+        s.write(3, "Cf3");
+        assert!(s.beyond(3).is_empty());
+        // Desfazer até 1 lance: as entradas 2 e 3 continuam visíveis para o jogador.
+        assert_eq!(
+            s.beyond(1),
+            vec![(2, "e5".to_owned()), (3, "Cf3".to_owned())]
+        );
+        s.write(2, "");
+        assert_eq!(s.beyond(1), vec![(3, "Cf3".to_owned())]);
+        assert!(matches!(s.take_pending(), Some(Pending::Save(_))));
+        s.deliver(5);
+        s.write(3, "");
+        assert_eq!(s.beyond(1).len(), 1, "entregue: não se apaga");
+    }
+
+    #[test]
+    fn a_game_switch_hides_notation_until_the_sheet_loads() {
+        let mut s = ScoresheetUi::default();
+        s.follow(1, false, true);
+        s.loaded(None);
+        assert!(!s.hides_notation());
+        s.follow(2, false, true);
+        assert!(
+            s.hides_notation(),
+            "troca de Partida: carregando já neste quadro"
+        );
     }
 
     #[test]
