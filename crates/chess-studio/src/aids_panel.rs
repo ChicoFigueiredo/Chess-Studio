@@ -2,9 +2,13 @@
 //! retomada. Fica em janelas próprias para não disputar espaço com o painel principal.
 //! A interface só envia intenções à `Session` (ADR-0001); todo texto vem do i18n.
 
-use crate::aids::{AidProfile, AidSettings, ErrorExplanation, NoticeView, notice_view, reason_key};
+use crate::aids::{
+    self, AidProfile, AidSettings, ErrorExplanation, NoticeView, notice_view, reason_key,
+};
 use crate::capture::CaptureMode;
 use crate::fen_pgn::FileTools;
+use crate::hud::{AttackedSide, HudPalette, HudProfile, HudSettings, OPACITY_RANGE};
+use crate::hud_policy::{self, Allowance};
 use crate::i18n::I18n;
 use crate::paths;
 use crate::session::{IllegalNotice, Session};
@@ -24,7 +28,9 @@ impl Plugin for AidsPanelPlugin {
             crate::dock::PanelDef {
                 id: crate::dock::ids::AIDS,
                 label_key: "dock-panel-aids",
-                access: crate::dock::PanelAccess::OutsideCompetitive,
+                // Sempre acessível: o que a Política veda é filtrado dentro do painel
+                // (`hud_policy`), para o "Xeque!" e o Perfil seguirem funcionando.
+                access: crate::dock::PanelAccess::Always,
                 ui: aids_panel_ui,
             },
         );
@@ -123,20 +129,39 @@ fn notice_text(i18n: &I18n, notice: IllegalNotice) -> String {
     )
 }
 
-/// Painel Auxílios do dock: alertas (xeque, Lance ilegal) e o Perfil de auxílios. É dica,
-/// então fica inacessível nas Políticas competitivas (UI-08).
+/// Painel Auxílios do dock: alertas (xeque, Lance ilegal), o Perfil de auxílios e o HUD.
+/// Nas Políticas competitivas em andamento o painel continua aberto (o "Xeque!" segue o
+/// Perfil), mas o que a política veda aparece desabilitado e nunca é desenhado (UI-08).
 fn aids_panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
     world.resource_scope(|world, mut session: Mut<Session>| {
+        let allowed = hud_policy::allowance(&session);
         let Some(mut aids) = world.get_resource_mut::<AidSettings>() else {
             return;
         };
         // Edita uma cópia: `&mut` todo quadro marcaria `is_changed` e reaplicaria tudo.
         let mut edited = *aids;
-        alerts(ui, i18n, &mut session, &edited);
+        alerts(
+            ui,
+            i18n,
+            &mut session,
+            &aids::effective_settings(edited, &allowed),
+        );
         ui.strong(i18n.t("aid-heading"));
-        aid_controls(ui, i18n, &mut edited);
+        if allowed.restricted() {
+            ui.weak(i18n.t("aid-restricted"));
+        }
+        aid_controls(ui, i18n, &mut edited, &allowed);
         if edited != *aids {
             *aids = edited;
+        }
+        let Some(mut hud) = world.get_resource_mut::<HudSettings>() else {
+            return;
+        };
+        let mut edited_hud = *hud;
+        ui.separator();
+        hud_controls(ui, i18n, &mut edited_hud, &allowed);
+        if edited_hud != *hud {
+            *hud = edited_hud;
         }
     });
 }
@@ -183,7 +208,18 @@ fn alerts(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session, aids: &AidSetti
     }
 }
 
-fn aid_controls(ui: &mut egui::Ui, i18n: &I18n, aids: &mut AidSettings) {
+/// Caixa de seleção que a política pode vedar: desabilitada (e desmarcada na tela) quando
+/// vedada, sem mexer no ajuste guardado.
+fn gated_checkbox(ui: &mut egui::Ui, allowed: bool, value: &mut bool, label: String) {
+    if allowed {
+        ui.checkbox(value, label);
+    } else {
+        let mut shown = false;
+        ui.add_enabled(false, egui::Checkbox::new(&mut shown, label));
+    }
+}
+
+fn aid_controls(ui: &mut egui::Ui, i18n: &I18n, aids: &mut AidSettings, allowed: &Allowance) {
     let current = aids.profile();
     egui::ComboBox::from_label(i18n.t("aid-profile-label"))
         .selected_text(i18n.t(current.label_key()))
@@ -201,16 +237,116 @@ fn aid_controls(ui: &mut egui::Ui, i18n: &I18n, aids: &mut AidSettings) {
                 let _ = ui.selectable_label(true, i18n.t(AidProfile::Custom.label_key()));
             }
         });
-    ui.checkbox(&mut aids.destinations, i18n.t("aid-destinations"));
-    ui.checkbox(&mut aids.ghosts, i18n.t("aid-ghosts"));
-    ui.checkbox(&mut aids.selected, i18n.t("aid-selected"));
-    ui.checkbox(&mut aids.last_move, i18n.t("aid-last-move"));
-    ui.checkbox(&mut aids.check, i18n.t("aid-check"));
+    gated_checkbox(
+        ui,
+        allowed.destinations,
+        &mut aids.destinations,
+        i18n.t("aid-destinations"),
+    );
+    gated_checkbox(ui, allowed.ghosts, &mut aids.ghosts, i18n.t("aid-ghosts"));
+    gated_checkbox(
+        ui,
+        allowed.selection,
+        &mut aids.selected,
+        i18n.t("aid-selected"),
+    );
+    gated_checkbox(
+        ui,
+        allowed.last_move,
+        &mut aids.last_move,
+        i18n.t("aid-last-move"),
+    );
+    gated_checkbox(ui, allowed.check, &mut aids.check, i18n.t("aid-check"));
     egui::ComboBox::from_label(i18n.t("aid-explanation-label"))
         .selected_text(i18n.t(aids.explanation.label_key()))
         .show_ui(ui, |ui| {
             for e in ErrorExplanation::ALL {
                 ui.selectable_value(&mut aids.explanation, e, i18n.t(e.label_key()));
+            }
+        });
+}
+
+/// Controles do HUD virtual: perfil, elementos, transparência e paleta. Elementos vedados
+/// pela Política ficam desabilitados.
+fn hud_controls(ui: &mut egui::Ui, i18n: &I18n, hud: &mut HudSettings, allowed: &Allowance) {
+    ui.strong(i18n.t("hud-heading"));
+    ui.checkbox(&mut hud.enabled, i18n.t("hud-enabled"));
+    if allowed.restricted() {
+        ui.weak(i18n.t("hud-restricted"));
+    }
+    let current = hud.profile();
+    egui::ComboBox::from_label(i18n.t("hud-profile-label"))
+        .selected_text(i18n.t(current.label_key()))
+        .show_ui(ui, |ui| {
+            for profile in [HudProfile::Off, HudProfile::Study, HudProfile::Analysis] {
+                if ui
+                    .selectable_label(current == profile, i18n.t(profile.label_key()))
+                    .clicked()
+                    && let Some(preset) = HudSettings::for_profile(profile)
+                {
+                    // O preset troca os elementos; aparência e chave geral ficam.
+                    *hud = HudSettings {
+                        enabled: hud.enabled,
+                        opacity_pct: hud.opacity_pct,
+                        palette: hud.palette,
+                        ..preset
+                    };
+                }
+            }
+            if current == HudProfile::Custom {
+                let _ = ui.selectable_label(true, i18n.t(HudProfile::Custom.label_key()));
+            }
+        });
+    let arrows = allowed.suggestion_arrows;
+    gated_checkbox(
+        ui,
+        allowed.last_move,
+        &mut hud.last_move_arrow,
+        i18n.t("hud-last-move-arrow"),
+    );
+    gated_checkbox(
+        ui,
+        arrows && allowed.engine_line,
+        &mut hud.engine_arrow,
+        i18n.t("hud-engine-arrow"),
+    );
+    gated_checkbox(
+        ui,
+        arrows && allowed.hints,
+        &mut hud.hint,
+        i18n.t("hud-hint"),
+    );
+    gated_checkbox(
+        ui,
+        allowed.threats,
+        &mut hud.threatened,
+        i18n.t("hud-threatened"),
+    );
+    gated_checkbox(
+        ui,
+        allowed.threats,
+        &mut hud.undefended,
+        i18n.t("hud-undefended"),
+    );
+    ui.add_enabled_ui(allowed.attacked_squares, |ui| {
+        egui::ComboBox::from_label(i18n.t("hud-attacked-label"))
+            .selected_text(i18n.t(hud.attacked.label_key()))
+            .show_ui(ui, |ui| {
+                for side in AttackedSide::ALL {
+                    ui.selectable_value(&mut hud.attacked, side, i18n.t(side.label_key()));
+                }
+            });
+    });
+    ui.add(
+        egui::Slider::new(&mut hud.opacity_pct, OPACITY_RANGE)
+            .suffix("%")
+            .text(i18n.t("hud-opacity")),
+    );
+    egui::ComboBox::from_label(i18n.t("hud-palette-label"))
+        .selected_text(i18n.t(hud.palette.label_key()))
+        .show_ui(ui, |ui| {
+            for palette in HudPalette::ALL {
+                ui.selectable_value(&mut hud.palette, palette, i18n.t(palette.label_key()));
             }
         });
 }

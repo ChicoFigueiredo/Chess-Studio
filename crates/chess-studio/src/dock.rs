@@ -58,7 +58,8 @@ pub mod ids {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PanelAccess {
     Always,
-    /// Dicas, análise e anotações: inacessíveis numa Partida competitiva (UI-08).
+    /// Dicas, análise e anotações: inacessíveis numa Partida competitiva em andamento
+    /// (UI-08); liberados depois do resultado (`hud_policy`).
     OutsideCompetitive,
 }
 
@@ -81,7 +82,7 @@ pub struct PanelDef {
 impl PanelDef {
     /// O painel pode ser aberto agora, dada a Partida?
     pub fn accessible(&self, session: &Session) -> bool {
-        self.access == PanelAccess::Always || !session.is_competitive()
+        self.access == PanelAccess::Always || !crate::hud_policy::allowance(session).restricted()
     }
 }
 

@@ -14,6 +14,8 @@ aid-selected = Destaque da peça selecionada
 aid-last-move = Destaque do último lance
 aid-check = Indicação de xeque
 
+aid-restricted = Partida competitiva em andamento: destinos, fantasmas e dicas ficam vedados. Xeque, seleção e último lance seguem o Perfil.
+
 aid-explanation-label = Explicação de erro
 aid-explanation-immediate = Imediata
 aid-explanation-after-attempt = Após tentativa
@@ -62,3 +64,28 @@ pgn-error = Não foi possível salvar o PGN: { $detail }
 resume-title = Partida retomada
 resume-text = A Partida anterior voltou em Pausa, no mesmo lance em que você parou.
 resume-button = Retomar
+
+## HUD virtual (sobreposição presa às casas, nunca uma câmera física)
+
+hud-heading = HUD virtual
+hud-enabled = Mostrar o HUD (tecla H)
+hud-restricted = Partida competitiva em andamento: só o último lance pode aparecer; o resto do HUD volta depois do resultado.
+hud-profile-label = Perfil de HUD
+hud-profile-off = Desligado
+hud-profile-study = Estudo
+hud-profile-analysis = Análise
+hud-profile-custom = Personalizado
+hud-last-move-arrow = Seta do último lance
+hud-engine-arrow = Seta do melhor lance da análise
+hud-hint = Dica de lance
+hud-threatened = Peças ameaçadas
+hud-undefended = Peças indefesas
+hud-attacked-label = Casas atacadas por
+hud-attacked-off = Ninguém
+hud-attacked-white = As brancas
+hud-attacked-black = As pretas
+hud-opacity = Transparência
+hud-palette-label = Cores
+hud-palette-discreet = Discretas
+hud-palette-contrast = Alto contraste
+hud-palette-colorblind = Daltonismo

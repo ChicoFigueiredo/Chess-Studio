@@ -92,6 +92,10 @@ pub struct CaptureScript {
     pub review: Option<usize>,
     /// `--policy`, `--time`, `--side`: configuração da Partida de roteiro (B7/B8).
     pub config: Option<NewGameConfig>,
+    /// `--hud off|study|analysis`: perfil de HUD da captura (C5).
+    pub hud: Option<String>,
+    /// `--inverted`: Apresentações 3D na Vista invertida (do lado das pretas).
+    pub inverted: bool,
     /// `--new-game`: mostra a tela de Nova Partida (com a configuração acima preenchida).
     pub show_new_game: bool,
 }
@@ -143,6 +147,7 @@ fn run_capture(
     mut memory: ResMut<CameraMemory>,
     mut session: ResMut<Session>,
     mut aids: ResMut<crate::aids::AidSettings>,
+    mut hud: ResMut<crate::hud::HudSettings>,
     mut dialog: ResMut<NewGameDialog>,
     mut commands: Commands,
     mut exit: MessageWriter<AppExit>,
@@ -172,17 +177,27 @@ fn run_capture(
             },
             _ => crate::aids::AidSettings::training(),
         };
+        *hud = match mode.script.hud.as_deref() {
+            Some("study") => crate::hud::HudSettings::study(),
+            Some("analysis") => crate::hud::HudSettings::analysis(),
+            _ => crate::hud::HudSettings::off(),
+        };
         if let Some(ply) = mode.script.review {
             session.set_review_ply(Some(ply));
         }
     }
+    let view = if mode.script.inverted && step.view != CameraView::Top {
+        CameraView::Inverted
+    } else {
+        step.view
+    };
     if mode.frame == 0 {
         // A câmera da Apresentação que entra vem da memória por Apresentação (B12).
         if *presentation == step.presentation {
-            rig.pose = step.view.pose();
-            rig.view = Some(step.view);
+            rig.pose = view.pose();
+            rig.view = Some(view);
         } else {
-            memory.set(step.presentation, step.view.pose(), Some(step.view));
+            memory.set(step.presentation, view.pose(), Some(view));
             *presentation = step.presentation;
         }
     }
