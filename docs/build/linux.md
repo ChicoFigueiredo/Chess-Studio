@@ -73,6 +73,6 @@ mkdir /tmp/cs && tar -C /tmp/cs -xzf dist/chess-studio-*-linux-*.tar.gz
 cd /tmp/cs/chess-studio-* && ./chess-studio --screenshot /tmp/cs/cap   # o 3D deve aparecer nos PNGs, não preto
 ```
 
-O app acha os `assets/` (nesta ordem) por `CHESS_STUDIO_ASSETS`, `./assets` ao lado do executável, `../share/chess-studio/assets` e, por último, a pasta do código-fonte. Para regenerar `THIRD-PARTY-LICENSES` (após mudar dependências): `cargo install cargo-about --locked && scripts/gerar-licencas.sh`.
+O app acha os `assets/` (nesta ordem) por `CHESS_STUDIO_ASSETS`, `./assets` ao lado do executável, `../share/chess-studio/assets` e, por último, a pasta do código-fonte. Para regenerar `THIRD-PARTY-LICENSES` (após mudar dependências): `cargo install cargo-about --locked --features cli && scripts/gerar-licencas.sh`.
 
 Teste sem rede (PLAT-02): `unshare -rn ./chess-studio` (sem interfaces de rede) ou desligue a rede e jogue; veja `docs/instalacao.md`.
