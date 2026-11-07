@@ -156,9 +156,9 @@ pub(super) fn view(ui: &mut egui::Ui, i18n: &I18n, state: &TrainingUi) -> Option
                             .get(&step.exercise)
                             .map_or(step.exercise.as_str(), |e| e.title.as_str());
                         let mark = if done.contains(&step.exercise) {
-                            "☑"
+                            "[x]"
                         } else {
-                            "☐"
+                            "[ ]"
                         };
                         ui.small(format!(
                             "{mark} {}. {title} — {}",

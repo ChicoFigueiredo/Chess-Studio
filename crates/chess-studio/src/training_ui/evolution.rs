@@ -73,7 +73,7 @@ fn chart(ui: &mut egui::Ui, i18n: &I18n, periods: &[PeriodStats]) {
     let shown = &periods[periods.len().saturating_sub(CHART_PERIODS)..];
     let max = shown.iter().map(|p| p.tally.runs).max().unwrap_or(1).max(1);
     let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width().max(260.0), 150.0),
+        egui::vec2(ui.available_width().max(200.0), 110.0),
         egui::Sense::hover(),
     );
     let painter = ui.painter_at(rect);
@@ -150,10 +150,8 @@ fn chart(ui: &mut egui::Ui, i18n: &I18n, periods: &[PeriodStats]) {
 }
 
 fn indicators(ui: &mut egui::Ui, i18n: &I18n, report: &Evolution) {
-    egui::Grid::new("evolution-indicators")
-        .num_columns(2)
-        .spacing([14.0, 3.0])
-        .show(ui, |ui| {
+    {
+        {
             let t = &report.total;
             let rows = [
                 (
@@ -188,11 +186,13 @@ fn indicators(ui: &mut egui::Ui, i18n: &I18n, report: &Evolution) {
                 ),
             ];
             for (key, value) in rows {
-                ui.label(i18n.t(key));
-                ui.strong(value);
-                ui.end_row();
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(format!("{}:", i18n.t(key)));
+                    ui.strong(value);
+                });
             }
-        });
+        }
+    }
 }
 
 fn periods_table(ui: &mut egui::Ui, i18n: &I18n, periods: &[PeriodStats], period: Period) {
@@ -229,45 +229,48 @@ fn periods_table(ui: &mut egui::Ui, i18n: &I18n, periods: &[PeriodStats], period
 pub(super) fn view(ui: &mut egui::Ui, i18n: &I18n, state: &mut TrainingUi) -> bool {
     let mut back = false;
     ui.strong(i18n.t("evolution-heading"));
-    if state.evolution_data.report.total.runs == 0 {
-        ui.label(i18n.t("evolution-empty"));
-    } else {
-        indicators(ui, i18n, &state.evolution_data.report);
-        ui.separator();
-        ui.horizontal(|ui| {
-            ui.label(i18n.t("evolution-period"));
-            for (period, key) in [
-                (Period::Day, "evolution-by-day"),
-                (Period::Week, "evolution-by-week"),
-            ] {
-                ui.selectable_value(&mut state.evolution_view.period, period, i18n.t(key));
+    egui::ScrollArea::vertical()
+        .max_height(300.0)
+        .show(ui, |ui| {
+            if state.evolution_data.report.total.runs == 0 {
+                ui.label(i18n.t("evolution-empty"));
+            } else {
+                ui.horizontal(|ui| {
+                    ui.label(i18n.t("evolution-period"));
+                    for (period, key) in [
+                        (Period::Day, "evolution-by-day"),
+                        (Period::Week, "evolution-by-week"),
+                    ] {
+                        ui.selectable_value(&mut state.evolution_view.period, period, i18n.t(key));
+                    }
+                });
+                let period = state.evolution_view.period;
+                let periods = state.evolution_data.periods(period);
+                chart(ui, i18n, periods);
+                ui.separator();
+                indicators(ui, i18n, &state.evolution_data.report);
+                ui.separator();
+                periods_table(ui, i18n, periods, period);
+                ui.separator();
+                ui.strong(i18n.t("evolution-by-profile"));
+                for (id, tally) in &state.evolution_data.by_profile {
+                    let name = state
+                        .profiles
+                        .get(id)
+                        .map_or(id.as_str(), |p| p.name.as_str());
+                    ui.label(i18n.t_with(
+                        "evolution-profile-line",
+                        &[
+                            ("name", name),
+                            ("runs", &tally.runs.to_string()),
+                            ("correct", &tally.correct.to_string()),
+                            ("noaids", &tally.correct_without_aids.to_string()),
+                        ],
+                    ));
+                }
+                ui.small(i18n.t("evolution-utc-note"));
             }
         });
-        let period = state.evolution_view.period;
-        let periods = state.evolution_data.periods(period);
-        chart(ui, i18n, periods);
-        egui::ScrollArea::vertical()
-            .max_height(150.0)
-            .show(ui, |ui| periods_table(ui, i18n, periods, period));
-        ui.separator();
-        ui.strong(i18n.t("evolution-by-profile"));
-        for (id, tally) in &state.evolution_data.by_profile {
-            let name = state
-                .profiles
-                .get(id)
-                .map_or(id.as_str(), |p| p.name.as_str());
-            ui.label(i18n.t_with(
-                "evolution-profile-line",
-                &[
-                    ("name", name),
-                    ("runs", &tally.runs.to_string()),
-                    ("correct", &tally.correct.to_string()),
-                    ("noaids", &tally.correct_without_aids.to_string()),
-                ],
-            ));
-        }
-        ui.small(i18n.t("evolution-utc-note"));
-    }
     if ui.button(i18n.t("training-back")).clicked() {
         back = true;
     }

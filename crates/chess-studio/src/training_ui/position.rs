@@ -323,6 +323,38 @@ impl TrainingUi {
     }
 }
 
+/// Captura de evidência: monta parte da Posição (com um erro e uma peça sobrando).
+pub(super) fn demo_place(state: &mut TrainingUi, with_mistakes: bool) {
+    let Some(position) = state.position.as_mut() else {
+        return;
+    };
+    let Some(run) = position.run.as_ref() else {
+        return;
+    };
+    let pieces: Vec<_> = run.target().iter().collect();
+    for (i, (square, side, piece)) in pieces.into_iter().enumerate() {
+        if i % 3 == 2 {
+            continue; // faltando
+        }
+        let piece = if with_mistakes && i == 1 && piece == Piece::Queen {
+            Piece::Rook
+        } else {
+            piece
+        };
+        position.drop_for_demo(side, piece, square);
+    }
+    if with_mistakes && let Ok(extra) = "e4".parse() {
+        position.drop_for_demo(Side::White, Piece::Knight, extra);
+    }
+}
+
+impl PositionState {
+    fn drop_for_demo(&mut self, side: Side, piece: Piece, square: Square) {
+        self.pick_from_tray(side, piece);
+        self.drop_from_tray(Some(square));
+    }
+}
+
 // --- Sistemas ------------------------------------------------------------------------
 
 /// Espelha o estado do editor no desenho do tabuleiro (as três Apresentações).
@@ -823,5 +855,25 @@ mod tests {
             self.pick_from_tray(side, piece);
             self.drop_from_tray(Some(square));
         }
+    }
+
+    #[test]
+    fn the_capture_script_builds_a_partial_board_with_mistakes() {
+        let mut ui = TrainingUi::default();
+        let mut session = Session::new();
+        ui.start_position(
+            "memoria-posicao-003",
+            &mut session,
+            &AidSettings::training(),
+            None,
+        );
+        ui.apply_position(Cmd::BeginRecall, None);
+        demo_place(&mut ui, true);
+        let board = ui.position.as_ref().unwrap().board();
+        assert!(board.len() >= 8, "{} peças", board.len());
+        assert_eq!(
+            board.get(&"e4".parse().unwrap()),
+            Some(&(Side::White, Piece::Knight))
+        );
     }
 }

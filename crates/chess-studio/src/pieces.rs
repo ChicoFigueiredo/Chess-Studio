@@ -558,6 +558,7 @@ mod tests {
             .insert_resource(Session::new())
             .insert_resource(PieceFont(Handle::default()))
             .init_resource::<BoardPieces>()
+            .init_resource::<BoardOverride>()
             .add_systems(
                 Update,
                 (sync_pieces, apply_visibility, switch_camera).chain(),

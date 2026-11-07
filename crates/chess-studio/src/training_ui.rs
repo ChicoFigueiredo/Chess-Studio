@@ -1189,6 +1189,13 @@ fn training_demo(
         memory_demo(&mut state, &mut session, &aids, &script, *frame);
         return;
     }
+    if matches!(
+        script.as_str(),
+        "position" | "position-review" | "evolution" | "profiles"
+    ) {
+        position_demo(&mut state, &mut session, &aids, &script, *frame);
+        return;
+    }
     match *frame {
         3 => {
             state.sync_catalog(None);
@@ -1202,6 +1209,47 @@ fn training_demo(
         }
         6 if script != "list" => demo_move(&mut session, "e6e8"), // mate: erro
         14 if script == "review" => demo_move(&mut session, "e6f7"), // afogamento
+        _ => {}
+    }
+}
+
+/// Roteiros do C11 (`--training position|position-review|evolution|profiles`).
+fn position_demo(
+    state: &mut TrainingUi,
+    session: &mut Session,
+    aids: &AidSettings,
+    script: &str,
+    frame: u32,
+) {
+    match frame {
+        3 => {
+            state.sync_catalog(None);
+            match script {
+                "evolution" => {
+                    // Resoluções sintéticas (só na captura): 24 dias de treino.
+                    state.evolution_data =
+                        evolution::EvolutionData::compute(&evolution::demo_runs(), &state.profiles);
+                    state.view = View::Evolution;
+                }
+                "profiles" => {
+                    state.refresh_profiles(None);
+                    for id in ["xeque-001", "xeque-002", "mate-em-1-001", "roque-001"] {
+                        let _ = with_store(&mut state.local, None, |store, player| {
+                            store.record_profile_step(player, "regras-basicas", id)
+                        });
+                    }
+                    state.follow_profile(Some("regras-basicas".into()), None);
+                    state.refresh_profiles(None);
+                    state.view = View::Profiles;
+                }
+                _ => state.start("memoria-posicao-003", session, aids, None),
+            }
+        }
+        6 if script.starts_with("position") => {
+            state.apply_position(position::Cmd::BeginRecall, None)
+        }
+        8 if script.starts_with("position") => position::demo_place(state, true),
+        10 if script == "position-review" => state.apply_position(position::Cmd::Check, None),
         _ => {}
     }
 }
