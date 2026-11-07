@@ -186,6 +186,34 @@ impl Persistence {
         Ok(Some((session, opened.abrupt_close)))
     }
 
+    /// A Partida atual no banco (origem das Posições favoritas).
+    pub(crate) fn current_game(&self) -> Option<GameId> {
+        self.current
+    }
+
+    /// Abre uma Partida do banco (Biblioteca, #49) como a Partida atual: encerra a sessão da
+    /// atual (ela continua no banco, retomável), reabre `id` **pausada** e passa a gravar nela.
+    /// Depois de `Session::open_game(game)` chame [`Persistence::track`], senão a persistência
+    /// trataria a troca como uma Partida nova e duplicaria o log.
+    pub(crate) fn switch_to_game(&mut self, id: GameId) -> Result<Game, StoreError> {
+        let opened = self.store.open_game(id)?;
+        if self.current != Some(id) {
+            self.close();
+        }
+        let mut game = opened.game;
+        let events = game.reopen_paused().unwrap_or_default();
+        self.store.append_events(id, &events)?;
+        self.current = Some(id);
+        self.persisted = game.events().len();
+        Ok(game)
+    }
+
+    /// Acompanha a `Session` que acabou de receber a Partida de [`Self::switch_to_game`].
+    pub(crate) fn track(&mut self, session: &Session) {
+        self.epoch = session.epoch();
+        self.was_paused = session.snapshot().paused;
+    }
+
     fn fresh(&mut self) -> Session {
         let session = Session::from_game(Game::new(GameSetup::standard(PolicyKind::Assisted)));
         self.epoch = session.epoch();
@@ -729,6 +757,46 @@ mod tests {
             .collect();
         assert_eq!(sans, ["e4"]);
         assert_eq!(restored.session.game().setup().start().to_fen().len(), 31);
+    }
+
+    /// C7 (#49): reabrir uma Partida da Biblioteca troca a Partida atual sem duplicar o log;
+    /// a anterior continua guardada e o que se jogar depois vai para a reaberta.
+    #[test]
+    fn opening_a_library_game_switches_without_duplicating_the_log() {
+        let mut p = new_persistence();
+        let mut session = p.restore().session;
+        play(&mut session, "e2", "e4");
+        p.sync(&session);
+        let first = p.current_game().unwrap();
+        session.new_game();
+        p.sync(&session);
+        play(&mut session, "d2", "d4");
+        p.sync(&session);
+        let second = p.current_game().unwrap();
+        assert_ne!(first, second);
+        let games = p.store.list_games(&Default::default()).unwrap().len();
+
+        let game = p.switch_to_game(first).unwrap();
+        session.open_game(game);
+        p.track(&session);
+        p.sync(&session);
+        assert_eq!(p.current_game(), Some(first));
+        assert_eq!(
+            p.store.list_games(&Default::default()).unwrap().len(),
+            games,
+            "nenhuma Partida nova no banco"
+        );
+        assert_eq!(session.snapshot().history[0].san, "e4");
+        assert!(session.snapshot().paused, "volta pausada (DEC-42)");
+
+        // Retoma e joga: os Eventos novos vão para a Partida reaberta, não para a outra.
+        session.command(Command::Resume);
+        play(&mut session, "e7", "e5");
+        p.sync(&session);
+        let reopened = p.store.load_game(first).unwrap();
+        assert_eq!(reopened.snapshot().history.len(), 2);
+        let other = p.store.load_game(second).unwrap();
+        assert_eq!(other.snapshot().history.len(), 1);
     }
 
     #[test]

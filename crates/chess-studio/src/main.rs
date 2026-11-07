@@ -26,6 +26,7 @@ mod framing;
 mod highlight;
 mod i18n;
 mod layout;
+mod library_ui;
 mod new_game;
 mod notation;
 mod paths;
@@ -172,6 +173,7 @@ fn main() {
         responsive::ResponsivePlugin,
     ));
     app.add_plugins(training_ui::TrainingPlugin);
+    app.add_plugins(library_ui::LibraryPlugin);
     if let Some(dir) = capture {
         if let Err(err) = std::fs::create_dir_all(&dir) {
             eprintln!("não foi possível criar {}: {err}", dir.display());
