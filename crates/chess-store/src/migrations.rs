@@ -269,6 +269,30 @@ CREATE TABLE manual_scoresheet_entries (
 ) WITHOUT ROWID;
 ";
 
+// Conferência da Súmula (V2-SUM-02, #59): o resultado da conferência da Súmula entregue, um
+// registro à parte (nunca toca `games`, `game_events` nem a própria Súmula). Guarda por
+// meio-lance o texto escrito, o SAN real e a classe, pronto para o histórico (E3). Some junto
+// com a Súmula (cascata).
+const V11_SCORESHEET_CHECK: &str = "
+CREATE TABLE manual_scoresheet_checks (
+    scoresheet_id INTEGER PRIMARY KEY REFERENCES manual_scoresheets(id) ON DELETE CASCADE,
+    checked_at_ms INTEGER NOT NULL,
+    -- Histórico conferido: nº de meios-lances e identificador (FNV-1a, u64 guardado como i64);
+    -- a conferência é refeita quando o histórico da Partida muda.
+    history_plies INTEGER NOT NULL CHECK (history_plies >= 0),
+    history_id    INTEGER NOT NULL
+);
+CREATE TABLE manual_scoresheet_check_entries (
+    scoresheet_id INTEGER NOT NULL REFERENCES manual_scoresheet_checks(scoresheet_id) ON DELETE CASCADE,
+    ply           INTEGER NOT NULL CHECK (ply >= 1),
+    written       TEXT,
+    expected      TEXT,
+    verdict       TEXT NOT NULL CHECK (verdict IN
+        ('correct', 'accepted', 'wrong_notation', 'swapped', 'missing', 'extra')),
+    PRIMARY KEY (scoresheet_id, ply)
+) WITHOUT ROWID;
+";
+
 /// Migrações em ordem; o índice + 1 é a versão resultante.
 const MIGRATIONS: &[&str] = &[
     V1_CORE,
@@ -281,6 +305,7 @@ const MIGRATIONS: &[&str] = &[
     V8_LOCAL_PROFILES,
     V9_REOPEN_AFTER_UNDO,
     V10_MANUAL_SCORESHEET,
+    V11_SCORESHEET_CHECK,
 ];
 
 /// Versão de esquema desta build.
