@@ -365,10 +365,11 @@ mod tests {
             "/usr/local/bin",
             "/snap/bin",
             "/var/lib/flatpak/exports/bin",
-            "/home/u/.local/bin",
         ] {
             assert!(dirs.contains(&PathBuf::from(want)), "falta {want}");
         }
+        // `join` usa o separador do SO (no Windows `\home\u\.local\bin`).
+        assert!(dirs.contains(&PathBuf::from("/home/u").join(".local/bin")));
         assert_eq!(
             dirs.iter().filter(|d| **d == Path::new("/usr/bin")).count(),
             1
