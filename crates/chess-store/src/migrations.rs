@@ -235,6 +235,18 @@ const V8_LOCAL_PROFILES: &str = "
 ALTER TABLE profiles ADD COLUMN last_used_at_ms INTEGER NOT NULL DEFAULT 0;
 ";
 
+// Desfazer após o fim reabre a Partida (#115): `finished`/`outcome_json` passam a ser derivados
+// do último Evento terminal (`game_ended`) ou de reabertura (`move_undone`) do log. Recalcula
+// os bancos que ficaram com o flag errado.
+const V9_REOPEN_AFTER_UNDO: &str = "
+UPDATE games SET outcome_json = (
+    SELECT CASE WHEN e.kind = 'game_ended' THEN json_extract(e.payload_json, '$.kind.outcome') END
+    FROM game_events e
+    WHERE e.game_id = games.id AND e.kind IN ('game_ended', 'move_undone')
+    ORDER BY e.seq DESC LIMIT 1);
+UPDATE games SET finished = (outcome_json IS NOT NULL);
+";
+
 /// Migrações em ordem; o índice + 1 é a versão resultante.
 const MIGRATIONS: &[&str] = &[
     V1_CORE,
@@ -245,6 +257,7 @@ const MIGRATIONS: &[&str] = &[
     V6_TRAINING_PROFILES,
     V7_LIBRARY,
     V8_LOCAL_PROFILES,
+    V9_REOPEN_AFTER_UNDO,
 ];
 
 /// Versão de esquema desta build.
