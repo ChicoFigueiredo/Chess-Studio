@@ -72,6 +72,8 @@ struct Bench {
     phase_backend: Vec<Option<String>>,
     load_avg_start: Option<f64>,
     vram_before_mib: Option<f64>,
+    /// Tempo até a cena ficar pronta (B22), fora da medição.
+    scene_load_s: Option<f64>,
 }
 
 /// Engines que analisam no benchmark: as indicadas por `--engine-path` ou as do ambiente.
@@ -229,6 +231,7 @@ impl Plugin for BenchmarkPlugin {
             phase_backend,
             load_avg_start: System::load_average().one.into(),
             vram_before_mib,
+            scene_load_s: None,
         })
         .add_systems(PostStartup, apply_preset)
         .add_systems(Update, drive_camera.before(CameraSet))
@@ -333,7 +336,20 @@ fn collect(
     window: Query<&Window, With<PrimaryWindow>>,
     analysis: Res<Analysis>,
     mut exit: MessageWriter<AppExit>,
+    ready: Res<crate::ready::SceneReady>,
 ) {
+    // B22: a medição só começa com a cena pronta; o carregamento é registrado à parte.
+    if let Some(err) = ready.timeout_error() {
+        eprintln!("Benchmark abortado: {err}");
+        exit.write(AppExit::from_code(2));
+        return;
+    }
+    if !ready.is_ready() {
+        return;
+    }
+    if bench.scene_load_s.is_none() {
+        bench.scene_load_s = ready.load_time().map(|d| d.as_secs_f64());
+    }
     let now = Instant::now();
     let start = *bench.start.get_or_insert(now);
     let t = now.duration_since(start).as_secs_f64();
@@ -437,6 +453,7 @@ fn finish(bench: &mut Bench, width: u32, height: u32) -> std::io::Result<PathBuf
             requested_minutes: bench.cfg.minutes,
             measured_seconds: frame_ms.iter().sum::<f64>() / 1000.0,
             warmup_seconds: WARMUP_S,
+            scene_load_seconds: bench.scene_load_s,
             preset: bench.cfg.preset.label().into(),
             engine: bench.cfg.engine.label().into(),
             engine_integrated: bench.cfg.engine == config::EngineMode::Active,

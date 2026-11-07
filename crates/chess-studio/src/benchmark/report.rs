@@ -55,6 +55,8 @@ pub struct RunInfo {
     pub requested_minutes: f64,
     pub measured_seconds: f64,
     pub warmup_seconds: f64,
+    /// Tempo (s) do início do app até a cena pronta; não entra nas estatísticas.
+    pub scene_load_seconds: Option<f64>,
     pub preset: String,
     /// `ativa` ou `ociosa`. Hoje só registra o campo (a Engine real chega no B9).
     pub engine: String,

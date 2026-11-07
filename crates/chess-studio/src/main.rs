@@ -43,6 +43,7 @@ mod pieces;
 mod play;
 mod presentation;
 mod profiles;
+mod ready;
 mod responsive;
 mod session;
 mod study;
@@ -175,6 +176,7 @@ fn main() {
         clock::ClockPlugin,
         new_game::NewGamePlugin,
         capture::CapturePlugin,
+        ready::ScenePlugin,
         engine::EnginePlugin,
         notation::NotationPlugin,
         captured::CapturedPlugin,
@@ -223,5 +225,8 @@ fn main() {
             vsync: !no_vsync,
         });
     }
-    app.run();
+    // Falha de prontidão (B22) e demais erros viram código de saída diferente de zero.
+    if let AppExit::Error(code) = app.run() {
+        std::process::exit(i32::from(code.get()));
+    }
 }

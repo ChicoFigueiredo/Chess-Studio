@@ -182,7 +182,7 @@ pub fn clock_footprint(user_side: Side) -> [Vec3; 8] {
 // Cena 3D.
 
 #[derive(Component)]
-struct ClockRoot;
+pub(crate) struct ClockRoot;
 /// Conteúdo do relógio; escondido quando a Partida não tem controle de tempo.
 #[derive(Component)]
 struct ClockContent;

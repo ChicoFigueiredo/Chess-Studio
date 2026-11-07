@@ -61,7 +61,7 @@ impl PieceTemplates {
             .unwrap_or_default()
     }
 
-    fn complete(&self) -> bool {
+    pub fn is_complete(&self) -> bool {
         self.by_kind.len() == 12
     }
 }
@@ -94,7 +94,7 @@ impl BoardOverride {
 
 /// Peças já desenhadas (uma entidade 3D e uma 2D por casa ocupada).
 #[derive(Resource, Default, Debug)]
-struct BoardPieces {
+pub(crate) struct BoardPieces {
     by_square: HashMap<Square, Spawned>,
     /// (revisão da Partida, versão do desenho alternativo) da última sincronização.
     synced: Option<(u64, u64)>,
@@ -211,13 +211,20 @@ fn capture_templates(
         );
         templates.by_kind.insert((side, piece), out);
     }
-    if !templates.complete() {
+    if !templates.is_complete() {
         warn!(
             "moldes de peças incompletos: {}/12",
             templates.by_kind.len()
         );
     }
     commands.entity(ready.entity).despawn();
+}
+
+/// A cena já desenha a Posição atual: sincronizada com a revisão da Partida e com uma
+/// entidade por peça esperada (usado pelo estado "cena pronta", B22).
+pub(crate) fn pieces_synced(board: &BoardPieces, session: &Session, over: &BoardOverride) -> bool {
+    board.synced == Some((session.revision(), over.version))
+        && board.by_square.len() == visible_pieces(session, over).len()
 }
 
 /// Peças a desenhar: Posição visual provisória (promoção pendente, peça solta em casa
@@ -363,7 +370,7 @@ fn sync_pieces(
 ) {
     let Some(font) = font else { return };
     let stamp = (session.revision(), over.version);
-    if !templates.complete() || board.synced == Some(stamp) {
+    if !templates.is_complete() || board.synced == Some(stamp) {
         return;
     }
     board.synced = Some(stamp);
