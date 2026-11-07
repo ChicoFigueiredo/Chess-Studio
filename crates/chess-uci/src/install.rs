@@ -403,7 +403,10 @@ fn extract(spec: &InstallSpec, archive: &Path, out: &Path) -> Result<String, Ins
                 if !entry.is_file() {
                     continue;
                 }
-                let name = entry.name().to_owned();
+                let name = entry
+                    .name()
+                    .map_err(|e| InstallError::Archive(e.to_string()))?
+                    .into_owned();
                 write(&name, &mut entry)?;
             }
         }
