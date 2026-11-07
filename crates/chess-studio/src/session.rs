@@ -78,6 +78,8 @@ pub struct Session {
     illegal_at: Option<Instant>,
     /// Engine adversária (B9); `None` em Partida entre dois jogadores locais.
     engine: Option<EnginePlayer>,
+    /// Lado da Engine numa Partida reaberta, ainda sem processo: aguarda `resume_engine`.
+    pending_engine: Option<EngineSeat>,
     illegal: Option<IllegalNotice>,
     /// A explicação "após tentativa" foi pedida para o aviso atual.
     illegal_revealed: bool,
@@ -108,13 +110,12 @@ impl Session {
 
     /// Sessão sobre uma Partida existente (nova, de FEN ou reaberta do log).
     pub fn from_game(game: Game) -> Self {
-        // Partida contra a Engine reaberta (ou nova): a Engine volta a jogar o lado gravado
-        // no `GameSetup`; o executável vem do ambiente (falha vira "Tentar de novo").
-        let engine = game.setup().engine().map(|seat| {
-            let path = crate::engine::resolve_engine().unwrap_or_else(|| "stockfish".into());
-            EnginePlayer::new(seat, EngineConfig::new(path))
-        });
-        Self::with_engine(game, engine)
+        // Partida contra a Engine reaberta: o lado da Engine fica pendente e nenhum processo
+        // sobe (B25, T5/T11). Só `resume_engine`, após ação e validação do usuário, liga a Engine.
+        let pending = game.setup().engine();
+        let mut session = Self::with_engine(game, None);
+        session.pending_engine = pending;
+        session
     }
 
     fn with_engine(game: Game, engine: Option<EnginePlayer>) -> Self {
@@ -130,6 +131,7 @@ impl Session {
             hint: None,
             illegal_at: None,
             engine,
+            pending_engine: None,
             illegal: None,
             illegal_revealed: false,
             mono_offset,
@@ -550,9 +552,27 @@ impl Session {
 
     /// A Engine joga neste momento (a interface ignora o ponteiro)?
     pub fn engine_turn(&self) -> bool {
-        self.engine.as_ref().is_some_and(|e| {
-            self.snapshot.outcome.is_none() && self.snapshot.side_to_move == e.seat().color
+        let seat = self
+            .engine
+            .as_ref()
+            .map(|e| e.seat())
+            .or(self.pending_engine);
+        seat.is_some_and(|seat| {
+            self.snapshot.outcome.is_none() && self.snapshot.side_to_move == seat.color
         })
+    }
+
+    /// Partida contra a Engine reaberta, com a Engine ainda desligada (aguarda o usuário).
+    pub fn engine_pending(&self) -> Option<EngineSeat> {
+        self.pending_engine
+    }
+
+    /// Liga a Engine de uma Partida reaberta, com um executável já liberado pelo usuário.
+    /// Sem Engine pendente não faz nada.
+    pub fn resume_engine(&mut self, config: EngineConfig) {
+        if let Some(seat) = self.pending_engine.take() {
+            self.engine = Some(EnginePlayer::new(seat, config));
+        }
     }
 
     /// Há Engine adversária nesta Partida?
@@ -914,6 +934,34 @@ mod tests {
         assert_eq!(outcome.reason, EndReason::Resignation);
         // "Nova Partida" volta a dois jogadores.
         s.new_game();
+        assert!(!s.engine_active());
+    }
+
+    #[test]
+    fn reopened_engine_game_has_no_process_until_the_user_resumes() {
+        let seat = EngineSeat {
+            color: Color::Black,
+            elo: 1500,
+        };
+        let setup = GameSetup::standard(PolicyKind::Assisted).with_engine(seat);
+        let mut s = Session::from_game(Game::new(setup));
+        // B25: reabrir não executa nada; a Engine fica pendente e segura a vez dela.
+        assert!(!s.engine_active());
+        assert_eq!(s.engine_pending(), Some(seat));
+        tap(&mut s, "e2", "e4");
+        assert!(s.engine_turn(), "o usuário não joga pelas pretas");
+        drag(&mut s, "e7", "e5");
+        assert_eq!(s.snapshot().history.len(), 1);
+        // Ação explícita (já com caminho liberado): agora sim a Engine existe.
+        s.resume_engine(EngineConfig::new("/nao/existe/engine"));
+        assert!(s.engine_active());
+        assert_eq!(s.engine_pending(), None);
+    }
+
+    #[test]
+    fn resume_without_pending_engine_is_a_no_op() {
+        let mut s = Session::new();
+        s.resume_engine(EngineConfig::new("/nao/existe/engine"));
         assert!(!s.engine_active());
     }
 

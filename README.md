@@ -28,7 +28,7 @@ cargo run -p chess-studio -- --screenshot docs/evidencias/x # gera capturas e sa
 | Apresentação | `Tab` alterna 3D profissional / Mesa imersiva / 2D técnico |
 | Cancelar gesto | `Esc` |
 
-Jogar contra o Stockfish (opcional): instale-o pelo gerenciador do sistema ou baixe do [site oficial](https://stockfishchess.org/download/) e deixe `stockfish` no `PATH` (ou aponte `CHESS_STUDIO_ENGINE` para o executável). O Chess Studio nunca distribui Engines ([ADR-0003](docs/adr/0003-engines-externas-download-fixado.md)).
+Jogar contra o Stockfish (opcional): instale-o pelo gerenciador do sistema ou baixe do [site oficial](https://stockfishchess.org/download/) e registre-o no assistente/gerenciador de Engines do app (que faz o handshake UCI), ou informe o caminho do executável no painel. O Chess Studio nunca executa uma Engine sem a sua ação: `CHESS_STUDIO_ENGINE`, o `PATH` e o caminho digitado são apenas candidatos; antes de executar, o app mostra um aviso, você confirma e ele verifica que o arquivo fala UCI (Engines já registradas no gerenciador dispensam o aviso). Ao reabrir uma Partida contra a Engine, nada é executado até você clicar em "Conectar Engine e retomar". O Chess Studio nunca distribui Engines ([ADR-0003](docs/adr/0003-engines-externas-download-fixado.md)).
 
 **O que testar:** a lista de critérios de aceite manuais fica no artefato de progresso do projeto, na seção **Homologação** (cada item tem passos e campos PASS/FAIL/N/A com observação, e um botão para baixar o JSON). Os resultados de cada Gate ficam em [docs/relatorios/](docs/relatorios/).
 

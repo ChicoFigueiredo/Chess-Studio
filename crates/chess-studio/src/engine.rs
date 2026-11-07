@@ -8,9 +8,15 @@
 //! `EngineConfig` — por exemplo, a de [`resolve_engine`].
 //!
 //! O executável vem da variável `CHESS_STUDIO_ENGINE`, de `stockfish` no `PATH`, da Engine
-//! escolhida antes no assistente (B10, `engine_wizard`) ou do caminho digitado. Sem
+//! escolhida antes no assistente (B10, `engine_wizard`) ou do caminho digitado; tudo isso é
+//! só **candidato**: nada executa sem consentimento (B25, `engine_consent`): a Engine
+//! registrada e pronta no banco, a escolhida no assistente/gerenciador, ou o caminho cujo
+//! aviso de execução o usuário confirmou e que passou na sonda UCI. Reabrir uma Partida
+//! contra Engine não executa nada: o painel oferece "Conectar Engine e retomar". Sem
 //! nenhuma, "Iniciar" abre o assistente de detecção/download.
 
+use crate::engine_consent::{Consent, Intent, Request, Stage};
+use crate::engine_manager::DbLocation;
 use crate::i18n::I18n;
 use crate::play::PlaySet;
 use crate::session::Session;
@@ -21,6 +27,9 @@ use chess_game::EngineSeat;
 use chess_uci::{EngineConfig, FailureKind, PlayerStatus, StrengthApplied};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::sync::{Mutex, PoisonError};
+use std::thread;
 
 /// Variável de ambiente com o caminho do executável da Engine.
 pub const ENGINE_ENV: &str = "CHESS_STUDIO_ENGINE";
@@ -32,7 +41,7 @@ impl Plugin for EnginePlugin {
         app.init_resource::<EngineUi>()
             .add_plugins(crate::engine_wizard::EngineWizardPlugin)
             .add_plugins(crate::engine_manager::EngineManagerPlugin)
-            .add_systems(Update, tick_engine.in_set(PlaySet));
+            .add_systems(Update, (tick_engine, sync_trusted_default).in_set(PlaySet));
     }
 }
 
@@ -42,6 +51,34 @@ fn tick_engine(mut session: ResMut<Session>) {
     if session.engine_active() {
         session.tick_engine();
     }
+}
+
+/// Quando o banco fica conhecido, o caminho candidato que já é Engine registrada e pronta
+/// passa a valer sem novo aviso.
+fn sync_trusted_default(mut ui: ResMut<EngineUi>, location: Option<Res<DbLocation>>) {
+    if ui.db_path.is_some() {
+        return;
+    }
+    let Some(location) = location else {
+        return;
+    };
+    ui.db_path = Some(location.0.clone());
+    let path = PathBuf::from(ui.path_text.trim());
+    if !path.as_os_str().is_empty() && is_registered(ui.db_path.as_deref(), &path) {
+        ui.consent.clear(&path);
+    }
+}
+
+/// O caminho é de uma Engine registrada no banco, pronta e ainda existente?
+pub fn is_registered(db: Option<&Path>, path: &Path) -> bool {
+    let (Some(db), Some(text)) = (db, path.to_str()) else {
+        return false;
+    };
+    path.is_file()
+        && chess_store::Store::open(db)
+            .ok()
+            .and_then(|store| store.find_engine_by_path(text).ok().flatten())
+            .is_some_and(|(_, record)| record.status == "ready")
 }
 
 /// Executável da Engine: `CHESS_STUDIO_ENGINE` se existir; senão `stockfish` no `PATH`.
@@ -89,6 +126,12 @@ pub struct EngineUi {
     wizard_requested: bool,
     /// Opções UCI configuradas no gerenciador para a Engine escolhida (já validadas).
     options: Vec<(String, String)>,
+    /// Consentimento para executar o caminho (B25).
+    consent: Consent,
+    /// Banco das Engines registradas, quando conhecido.
+    db_path: Option<PathBuf>,
+    /// Sonda UCI em andamento (thread), com o resultado do handshake.
+    probe_rx: Option<Mutex<Receiver<Result<(), String>>>>,
 }
 
 impl Default for EngineUi {
@@ -102,6 +145,9 @@ impl Default for EngineUi {
             not_found: false,
             wizard_requested: false,
             options: Vec::new(),
+            consent: Consent::default(),
+            db_path: None,
+            probe_rx: None,
         }
     }
 }
@@ -128,10 +174,12 @@ impl EngineUi {
         self.elo
     }
 
-    /// Caminho escolhido no assistente de Engine.
+    /// Caminho escolhido no assistente ou no gerenciador de Engines (ambos já fizeram o
+    /// handshake): vale como consentimento para executá-lo.
     pub fn set_path(&mut self, path: &Path) {
         self.path_text = path.display().to_string();
         self.not_found = false;
+        self.consent.clear(path);
     }
 
     /// Opções UCI (threads, hash, nível…) a enviar à Engine ao iniciar.
@@ -144,14 +192,20 @@ impl EngineUi {
         std::mem::take(&mut self.wizard_requested)
     }
 
-    /// Há um executável de Engine configurado (variável, `PATH`, assistente ou digitado)?
+    /// Há uma Engine liberada para executar (registrada, escolhida ou confirmada)?
     pub fn has_engine(&self) -> bool {
         self.engine_config().is_some()
     }
 
-    /// Configuração da Engine a partir do caminho atual.
+    /// Configuração da Engine a partir do caminho atual, só se ele estiver liberado: um
+    /// caminho apenas digitado ou herdado do ambiente não vira processo sem passar pelo
+    /// aviso e pela sonda (`engine_consent`).
     pub fn engine_config(&self) -> Option<EngineConfig> {
-        self.config()
+        let path = self.path_text.trim();
+        self.consent
+            .is_cleared(Path::new(path))
+            .then(|| self.config_for(path))
+            .flatten()
     }
 
     /// Pede a abertura do assistente de Engine (B10).
@@ -165,8 +219,7 @@ impl EngineUi {
         self.elo = elo.clamp(MIN_ELO, MAX_ELO);
     }
 
-    fn config(&self) -> Option<EngineConfig> {
-        let text = self.path_text.trim();
+    fn config_for(&self, text: &str) -> Option<EngineConfig> {
         (!text.is_empty()).then(|| {
             self.options
                 .iter()
@@ -188,12 +241,121 @@ fn failure_key(kind: FailureKind) -> &'static str {
     }
 }
 
+/// Executa a ação liberada: Partida nova, retomada da reaberta ou troca após falha.
+fn apply_launch(session: &mut Session, state: &EngineUi, path: &Path, intent: Intent) {
+    let Some(config) = state.config_for(&path.display().to_string()) else {
+        return;
+    };
+    match intent {
+        Intent::NewGame => {
+            let seat = EngineSeat {
+                color: state.user_side.opposite(),
+                elo: state.elo,
+            };
+            session.start_engine_game(seat, config);
+        }
+        Intent::Resume => session.resume_engine(config),
+        Intent::Replace => session.engine_replace(config),
+    }
+}
+
+/// Pede a liberação do caminho atual para `intent` e, se já liberado, aplica na hora.
+fn request_launch(session: &mut Session, state: &mut EngineUi, intent: Intent) {
+    let db = state.db_path.clone();
+    let text = state.path_text.clone();
+    match state
+        .consent
+        .request(&text, intent, |p| is_registered(db.as_deref(), p))
+    {
+        Request::Ready(path, intent) => {
+            state.not_found = false;
+            apply_launch(session, state, &path, intent);
+        }
+        Request::Unconfigured => {
+            state.not_found = true;
+            state.wizard_requested = true;
+        }
+        Request::Pending => state.not_found = false,
+    }
+}
+
+/// Recolhe o resultado da sonda e, se a Engine falou UCI, aplica a ação pendente.
+fn poll_probe(session: &mut Session, state: &mut EngineUi) {
+    let Some(rx) = &state.probe_rx else {
+        return;
+    };
+    let result = match rx.lock().unwrap_or_else(PoisonError::into_inner).try_recv() {
+        Ok(result) => result,
+        Err(TryRecvError::Empty) => return,
+        Err(TryRecvError::Disconnected) => Err("a sonda terminou sem resposta".to_owned()),
+    };
+    state.probe_rx = None;
+    if let Some((path, intent)) = state.consent.probed(result) {
+        apply_launch(session, state, &path, intent);
+    }
+}
+
+/// Aviso de execução e andamento da sonda para um caminho ainda não validado.
+fn consent_prompt(ui: &mut egui::Ui, i18n: &I18n, state: &mut EngineUi) {
+    if let Some(error) = state.consent.error() {
+        ui.colored_label(
+            egui::Color32::LIGHT_RED,
+            i18n.t_with("engine-probe-failed", &[("reason", error)]),
+        );
+    }
+    let Some(launch) = state.consent.launch().cloned() else {
+        return;
+    };
+    match launch.stage {
+        Stage::Confirming => {
+            ui.group(|ui| {
+                ui.strong(i18n.t("engine-confirm-title"));
+                ui.label(i18n.t_with(
+                    "engine-confirm-body",
+                    &[("path", &launch.path.display().to_string())],
+                ));
+                ui.horizontal(|ui| {
+                    if ui.button(i18n.t("engine-confirm-run")).clicked()
+                        && let Some(path) = state.consent.confirm()
+                    {
+                        let (tx, rx) = mpsc::channel();
+                        state.probe_rx = Some(Mutex::new(rx));
+                        thread::spawn(move || {
+                            let result = chess_uci::probe_engine(&path, chess_uci::PROBE_TIMEOUT)
+                                .map(|_| ())
+                                .map_err(|err| err.to_string());
+                            let _ = tx.send(result);
+                        });
+                    }
+                    if ui.button(i18n.t("engine-confirm-cancel")).clicked() {
+                        state.consent.cancel();
+                    }
+                });
+            });
+        }
+        Stage::Probing => {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label(i18n.t("engine-probing"));
+            });
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(100));
+        }
+    }
+}
+
 /// Trecho do painel: escolha para começar contra a Engine e, durante a Partida, o estado.
 pub fn engine_section(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session, state: &mut EngineUi) {
+    poll_probe(session, state);
     ui.separator();
     ui.strong(i18n.t("engine-heading"));
     if session.engine_active() {
         playing_status(ui, i18n, session, state);
+    }
+    let pending = session.engine_pending().is_some();
+    if pending {
+        ui.colored_label(egui::Color32::YELLOW, i18n.t("engine-pending-title"));
+        ui.small(i18n.t("engine-pending-hint"));
     }
     ui.horizontal(|ui| {
         ui.label(i18n.t("engine-side-label"));
@@ -215,25 +377,16 @@ pub fn engine_section(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session, sta
             egui::TextEdit::singleline(&mut state.path_text).hint_text(i18n.t("engine-path-hint")),
         );
     });
+    if pending && ui.button(i18n.t("engine-resume")).clicked() {
+        request_launch(session, state, Intent::Resume);
+    }
     if ui.button(i18n.t("engine-start")).clicked() {
-        match state.config() {
-            Some(config) => {
-                state.not_found = false;
-                let seat = EngineSeat {
-                    color: state.user_side.opposite(),
-                    elo: state.elo,
-                };
-                session.start_engine_game(seat, config);
-            }
-            None => {
-                state.not_found = true;
-                state.wizard_requested = true;
-            }
-        }
+        request_launch(session, state, Intent::NewGame);
     }
     if ui.small_button(i18n.t("wizard-open")).clicked() {
         state.wizard_requested = true;
     }
+    consent_prompt(ui, i18n, state);
     if state.not_found {
         ui.colored_label(egui::Color32::YELLOW, i18n.t("engine-not-found"));
     }
@@ -278,11 +431,9 @@ fn playing_status(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session, state: 
                 if ui.button(i18n.t("engine-retry")).clicked() {
                     session.engine_retry();
                 }
-                // "Trocar Engine": usa o caminho digitado no campo abaixo.
-                if ui.button(i18n.t("engine-replace")).clicked()
-                    && let Some(config) = state.config()
-                {
-                    session.engine_replace(config);
+                // "Trocar Engine": usa o caminho do campo abaixo, após o aviso e a sonda.
+                if ui.button(i18n.t("engine-replace")).clicked() {
+                    request_launch(session, state, Intent::Replace);
                 }
             });
             ui.small(i18n.t("engine-replace-hint"));
