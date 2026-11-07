@@ -277,6 +277,7 @@ impl MemoryRun {
             final_fen: snapshot.position.to_fen(),
             started_at_ms: self.started_at_ms,
             session: 0,
+            position_memory: None,
             memory: Some(memory),
         }
     }

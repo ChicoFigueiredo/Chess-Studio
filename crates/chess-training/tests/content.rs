@@ -94,6 +94,8 @@ fn every_objective_can_be_met_from_the_original_position() {
                     position = position.play(mv).unwrap();
                 }
             }
+            // Memória de posição não tem Lance: o objetivo é reconstruir o FEN.
+            Solution::MemorizePosition { .. } => assert!(e.solution_line().is_empty(), "{}", e.id),
             // `validate` já exige ao menos um Lance que cumpra o critério.
             _ => assert_eq!(e.solution_line().len(), 1, "{}", e.id),
         }
@@ -186,6 +188,9 @@ fn the_solution_does_what_the_kind_promises() {
                 );
                 assert_eq!(e.solution_line().len(), line.len(), "{}", e.id);
             }
+            ExerciseKind::MemoryPosition => {
+                assert!(first.is_none(), "{}: sem Lance", e.id);
+            }
         }
     }
 }
@@ -217,5 +222,32 @@ fn ids_used_by_the_training_tests_are_still_there() {
         "promocao-001",
     ] {
         assert!(catalog.get(id).is_some(), "{id} sumiu");
+    }
+}
+
+/// C11: de 3 a 5 posições de memória, com 8 a 16 peças, as duas cores e os dois reis.
+#[test]
+fn position_memory_exercises_are_small_curated_positions() {
+    let catalog = catalog();
+    let exercises = of_kind(&catalog, ExerciseKind::MemoryPosition);
+    assert!(
+        (3..=5).contains(&exercises.len()),
+        "{} Exercícios de memória de posição",
+        exercises.len()
+    );
+    for e in exercises {
+        let placement = chess_training::PiecePlacement::from_fen(&e.fen).unwrap();
+        assert!(
+            (8..=16).contains(&placement.len()),
+            "{}: {} peças",
+            e.id,
+            placement.len()
+        );
+        let Solution::MemorizePosition { seconds } = e.solution else {
+            panic!("{}: solução errada", e.id);
+        };
+        assert!((5..=60).contains(&seconds), "{}: {seconds} s", e.id);
+        let sides: HashSet<_> = placement.iter().map(|(_, c, _)| c as u8).collect();
+        assert_eq!(sides.len(), 2, "{}: as duas cores", e.id);
     }
 }

@@ -150,6 +150,22 @@ ALTER TABLE engine_installations ADD COLUMN settings_json TEXT NOT NULL DEFAULT 
 ALTER TABLE engine_installations ADD COLUMN installed_at_ms INTEGER NOT NULL DEFAULT 0;
 ";
 
+// Perfis de treino (#53): avanço por passo cumprido e Perfil ativo de cada jogador.
+// Só acrescenta tabelas; nada do que existe é alterado (DB-06).
+const V6_TRAINING_PROFILES: &str = "
+CREATE TABLE training_profile_progress (
+    profile_id       INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    training_profile TEXT NOT NULL,
+    exercise         TEXT NOT NULL,
+    completed_at_ms  INTEGER NOT NULL,
+    PRIMARY KEY (profile_id, training_profile, exercise)
+);
+CREATE TABLE training_profile_active (
+    profile_id       INTEGER PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE,
+    training_profile TEXT NOT NULL
+);
+";
+
 /// Migrações em ordem; o índice + 1 é a versão resultante.
 const MIGRATIONS: &[&str] = &[
     V1_CORE,
@@ -157,6 +173,7 @@ const MIGRATIONS: &[&str] = &[
     V3_EXERCISE_API,
     V4_IMPORTED_GAMES,
     V5_ENGINE_MANAGER,
+    V6_TRAINING_PROFILES,
 ];
 
 /// Versão de esquema desta build.

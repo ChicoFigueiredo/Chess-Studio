@@ -135,6 +135,10 @@ _Evitar_: puzzle, problema, desafio
 Uma tentativa do usuário de resolver um Exercício, com resultado, Auxílios usados e duração.
 _Evitar_: tentativa, attempt
 
+**Perfil de treino** (_en_: `TrainingProfile`):
+Sequência nomeada de Exercícios, cada passo com uma dificuldade (ex.: "Regras básicas"); o avanço é gravado por jogador. Não confundir com Perfil de auxílios.
+_Evitar_: trilha, plano
+
 ## Engine
 
 **Engine** (_en_: `Engine`):

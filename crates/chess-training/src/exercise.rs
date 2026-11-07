@@ -16,10 +16,13 @@ pub enum ExerciseKind {
     Promotion,
     /// Memória de sequência (B15).
     Memory,
+    /// Memória de posição (C11): mostra a Posição, esvazia o tabuleiro e o usuário
+    /// recoloca as peças.
+    MemoryPosition,
 }
 
 impl ExerciseKind {
-    pub const ALL: [ExerciseKind; 7] = [
+    pub const ALL: [ExerciseKind; 8] = [
         ExerciseKind::Stalemate,
         ExerciseKind::Mate,
         ExerciseKind::Check,
@@ -27,6 +30,7 @@ impl ExerciseKind {
         ExerciseKind::Castling,
         ExerciseKind::Promotion,
         ExerciseKind::Memory,
+        ExerciseKind::MemoryPosition,
     ];
 
     /// Identificador estável (coluna `kind` do banco).
@@ -39,6 +43,7 @@ impl ExerciseKind {
             Self::Castling => "castling",
             Self::Promotion => "promotion",
             Self::Memory => "memory",
+            Self::MemoryPosition => "memory_position",
         }
     }
 }
@@ -65,6 +70,9 @@ pub enum Solution {
         #[serde(default = "default_speed_ms")]
         speed_ms: u32,
     },
+    /// Memória de posição (C11): o app mostra o FEN do Exercício por `seconds` e o
+    /// usuário recoloca as peças num tabuleiro vazio.
+    MemorizePosition { seconds: u32 },
 }
 
 /// Menor e maior sequência de um Exercício de memória (DEC-45).
@@ -73,6 +81,9 @@ pub const MEMORY_LINE_RANGE: std::ops::RangeInclusive<usize> = 3..=8;
 fn default_speed_ms() -> u32 {
     1200
 }
+
+/// Tempo de estudo aceito num Exercício de memória de posição, em segundos.
+pub const POSITION_STUDY_SECONDS: std::ops::RangeInclusive<u32> = 3..=120;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Exercise {
@@ -95,12 +106,19 @@ pub enum ExerciseError {
     BadVersion,
     InvalidFen(FenError),
     BadMove(String),
-    IllegalLine { index: usize, uci: String },
+    IllegalLine {
+        index: usize,
+        uci: String,
+    },
     LineLength(usize),
     NoSolutionFound(&'static str),
     MoveIsLegal(String),
     MemoryLength(usize),
     KindMismatch,
+    /// Tempo de estudo fora de [`POSITION_STUDY_SECONDS`].
+    StudyTime(u32),
+    /// `memorize_position` só vale para o tipo `memory_position` (e vice-versa).
+    PositionKindMismatch,
 }
 
 impl fmt::Display for ExerciseError {
@@ -125,6 +143,10 @@ impl fmt::Display for ExerciseError {
             Self::KindMismatch => {
                 f.write_str("`memorize` só vale para o tipo `memory` (e vice-versa)")
             }
+            Self::StudyTime(n) => write!(f, "o tempo de estudo ({n} s) deve ficar entre 3 e 120 s"),
+            Self::PositionKindMismatch => f.write_str(
+                "`memorize_position` só vale para o tipo `memory_position` (e vice-versa)",
+            ),
         }
     }
 }
@@ -170,7 +192,17 @@ impl Exercise {
         {
             return Err(ExerciseError::KindMismatch);
         }
+        if (self.kind == ExerciseKind::MemoryPosition)
+            != matches!(self.solution, Solution::MemorizePosition { .. })
+        {
+            return Err(ExerciseError::PositionKindMismatch);
+        }
         match &self.solution {
+            Solution::MemorizePosition { seconds } => {
+                if !POSITION_STUDY_SECONDS.contains(seconds) {
+                    return Err(ExerciseError::StudyTime(*seconds));
+                }
+            }
             Solution::Moves { line } => {
                 if line.len() % 2 == 0 {
                     return Err(ExerciseError::LineLength(line.len()));
@@ -232,7 +264,7 @@ impl Exercise {
             Solution::Moves { line } | Solution::Memorize { line, .. } => {
                 line.iter().filter_map(|m| m.parse().ok()).collect()
             }
-            Solution::RefuseIllegal { .. } => Vec::new(),
+            Solution::RefuseIllegal { .. } | Solution::MemorizePosition { .. } => Vec::new(),
             other => first_solution(&start, other).into_iter().collect(),
         }
     }
@@ -248,9 +280,10 @@ pub(crate) fn satisfied(solution: &Solution, after: &CanonicalPosition) -> bool 
         Solution::MateInOne => matches!(after.status(), GameStatus::Checkmate { .. }),
         Solution::ForceStalemate => matches!(after.status(), GameStatus::Stalemate),
         Solution::GiveCheck => after.is_check(),
-        Solution::Moves { .. } | Solution::RefuseIllegal { .. } | Solution::Memorize { .. } => {
-            false
-        }
+        Solution::Moves { .. }
+        | Solution::RefuseIllegal { .. }
+        | Solution::Memorize { .. }
+        | Solution::MemorizePosition { .. } => false,
     }
 }
 

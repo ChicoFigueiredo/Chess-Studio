@@ -33,6 +33,10 @@ const BUNDLED: &[(&str, &str)] = &[
     ),
     ("xeques.json", include_str!("../exercises/xeques.json")),
     (
+        "memoria-posicao.json",
+        include_str!("../exercises/memoria-posicao.json"),
+    ),
+    (
         "regras-peao.json",
         include_str!("../exercises/regras-peao.json"),
     ),
