@@ -247,6 +247,28 @@ UPDATE games SET outcome_json = (
 UPDATE games SET finished = (outcome_json IS NOT NULL);
 ";
 
+// Súmula manual (V2-SUM-01, #58): registro separado, por perfil local e por Partida. Só
+// acrescenta tabelas; não toca `games` nem `game_events` (a Súmula nunca altera a Partida,
+// o log nem o PGN) e some junto com a Partida ou o perfil (cascata).
+const V10_MANUAL_SCORESHEET: &str = "
+CREATE TABLE manual_scoresheets (
+    id              INTEGER PRIMARY KEY,
+    profile_id      INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    game_id         INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+    created_at_ms   INTEGER NOT NULL,
+    updated_at_ms   INTEGER NOT NULL,
+    -- NULL: em anotação; preenchido: entregue (imutável, pronta para a conferência).
+    delivered_at_ms INTEGER,
+    UNIQUE (profile_id, game_id)
+);
+CREATE TABLE manual_scoresheet_entries (
+    scoresheet_id INTEGER NOT NULL REFERENCES manual_scoresheets(id) ON DELETE CASCADE,
+    ply           INTEGER NOT NULL CHECK (ply >= 1),
+    text          TEXT NOT NULL,
+    PRIMARY KEY (scoresheet_id, ply)
+) WITHOUT ROWID;
+";
+
 /// Migrações em ordem; o índice + 1 é a versão resultante.
 const MIGRATIONS: &[&str] = &[
     V1_CORE,
@@ -258,6 +280,7 @@ const MIGRATIONS: &[&str] = &[
     V7_LIBRARY,
     V8_LOCAL_PROFILES,
     V9_REOPEN_AFTER_UNDO,
+    V10_MANUAL_SCORESHEET,
 ];
 
 /// Versão de esquema desta build.

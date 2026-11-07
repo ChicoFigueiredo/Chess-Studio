@@ -145,6 +145,7 @@ struct Extras<'w> {
     effects: ResMut<'w, UltraEffects>,
     support: Res<'w, GpuSupport>,
     training: Res<'w, crate::training_ui::TrainingUi>,
+    scoresheet: Option<Res<'w, crate::scoresheet::ScoresheetUi>>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -214,7 +215,11 @@ fn info_panel(
                     }
                 }
                 ui.separator();
-                game_section(ui, &i18n, &mut session, &mut dialog, &aids);
+                let hide_notation = extras
+                    .scoresheet
+                    .as_deref()
+                    .is_some_and(crate::scoresheet::ScoresheetUi::hides_notation);
+                game_section(ui, &i18n, &mut session, &mut dialog, &aids, hide_notation);
                 engine_section(ui, &i18n, &mut session, &mut engine_ui);
                 ui.separator();
                 crate::dock::panels_section(ui, &i18n, &mut dock, &registry, &session);
@@ -277,6 +282,7 @@ fn game_section(
     session: &mut Session,
     dialog: &mut NewGameDialog,
     aids: &crate::aids::AidSettings,
+    hide_notation: bool,
 ) {
     let snapshot = session.snapshot().clone();
     ui.strong(i18n.t("game-heading"));
@@ -294,6 +300,8 @@ fn game_section(
         }
     }
     match snapshot.history.last() {
+        // Súmula manual aberta: o último lance em SAN é notação pronta (V2-SUM-01).
+        Some(_) if hide_notation => ui.label(i18n.t("scoresheet-last-move-hidden")),
         Some(last) => ui.label(i18n.t_with("game-last-move", &[("san", &last.san)])),
         None => ui.label(i18n.t("game-no-moves")),
     };

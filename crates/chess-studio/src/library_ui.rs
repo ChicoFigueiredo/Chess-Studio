@@ -769,6 +769,14 @@ fn result_text(i18n: &I18n, entry: &LibraryEntry) -> String {
 
 /// Conteúdo do painel (registrado no dock).
 fn library_panel(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
+    // Abrir a própria Partida na Biblioteca mostraria a notação: oculta com a Súmula aberta.
+    if world
+        .get_resource::<crate::scoresheet::ScoresheetUi>()
+        .is_some_and(crate::scoresheet::ScoresheetUi::hides_notation)
+    {
+        crate::scoresheet::hidden_notice(ui, i18n);
+        return;
+    }
     world.resource_scope(|world, mut lib: Mut<LibraryUi>| {
         world.resource_scope(|world, mut session: Mut<Session>| {
             let swapped = world

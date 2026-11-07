@@ -845,6 +845,14 @@ fn capture_setup(
 // --- painel ------------------------------------------------------------------------------
 
 fn analysis_panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
+    // Linhas da Engine em SAN são resposta pronta: ocultas com a Súmula manual aberta.
+    if world
+        .get_resource::<crate::scoresheet::ScoresheetUi>()
+        .is_some_and(crate::scoresheet::ScoresheetUi::hides_notation)
+    {
+        crate::scoresheet::hidden_notice(ui, i18n);
+        return;
+    }
     let db = world.get_resource::<DbLocation>().map(|d| d.0.clone());
     if let Some(mut manager) = world.get_resource_mut::<EngineManager>() {
         manager.ensure_loaded(db);

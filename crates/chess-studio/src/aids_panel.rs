@@ -174,11 +174,14 @@ fn review_panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
         .zip(epoch)
         .map(|(notes, epoch)| notes.export(epoch))
         .unwrap_or_default();
+    let hide_notation = world
+        .get_resource::<crate::scoresheet::ScoresheetUi>()
+        .is_some_and(crate::scoresheet::ScoresheetUi::hides_notation);
     world.resource_scope(|world, mut session: Mut<Session>| {
         world.resource_scope(|_, mut tools: Mut<FileTools>| {
-            review_section(ui, i18n, &mut session);
+            review_section(ui, i18n, &mut session, hide_notation);
             ui.separator();
-            file_section(ui, i18n, &mut session, &mut tools, &notes);
+            file_section(ui, i18n, &mut session, &mut tools, &notes, hide_notation);
         });
     });
 }
@@ -351,7 +354,7 @@ fn hud_controls(ui: &mut egui::Ui, i18n: &I18n, hud: &mut HudSettings, allowed: 
         });
 }
 
-fn review_section(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session) {
+fn review_section(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session, hide_notation: bool) {
     let total = session.snapshot().history.len();
     let ply = session.review().map_or(total, |r| r.ply);
     let reviewing = session.review().is_some();
@@ -377,14 +380,22 @@ fn review_section(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session) {
             .review()
             .and_then(|r| r.last_move.as_ref())
             .map_or_else(|| i18n.t("review-start"), |h| h.san.clone());
-        ui.label(i18n.t_with(
-            "review-position",
-            &[
-                ("ply", &ply.to_string()),
-                ("total", &total.to_string()),
-                ("san", &san),
-            ],
-        ));
+        if hide_notation {
+            // Súmula manual aberta: sem a SAN do Lance (V2-SUM-01).
+            ui.label(i18n.t_with(
+                "scoresheet-review-hidden",
+                &[("ply", &ply.to_string()), ("total", &total.to_string())],
+            ));
+        } else {
+            ui.label(i18n.t_with(
+                "review-position",
+                &[
+                    ("ply", &ply.to_string()),
+                    ("total", &total.to_string()),
+                    ("san", &san),
+                ],
+            ));
+        }
         ui.small(i18n.t("review-readonly"));
         if ui.button(i18n.t("review-back")).clicked() {
             session.set_review_ply(None);
@@ -419,6 +430,7 @@ fn file_section(
     session: &mut Session,
     tools: &mut FileTools,
     notes: &[(usize, String)],
+    hide_notation: bool,
 ) {
     egui::CollapsingHeader::new(i18n.t("fen-heading")).show(ui, |ui| {
         ui.add(
@@ -444,6 +456,11 @@ fn file_section(
         }
     });
     egui::CollapsingHeader::new(i18n.t("pgn-heading")).show(ui, |ui| {
+        if hide_notation {
+            // O arquivo PGN traria a notação inteira: bloqueado com a Súmula aberta.
+            ui.weak(i18n.t("scoresheet-pgn-hidden"));
+            return;
+        }
         ui.checkbox(&mut tools.include_comments, i18n.t("pgn-comments"));
         if ui.button(i18n.t("pgn-export")).clicked() {
             let dir = paths::documents_dir(paths::Platform::current(), &paths::process_env);

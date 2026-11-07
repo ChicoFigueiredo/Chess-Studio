@@ -12,6 +12,7 @@ dock-panel-arbitration = Arbitragem
 dock-panel-training = Treino
 dock-panel-engines = Engines
 dock-panel-analysis = Análise
+dock-panel-scoresheet = Súmula
 dock-unavailable-competitive = Indisponível em Partida competitiva.
 
 notation-empty = Nenhum lance ainda.
@@ -38,6 +39,7 @@ captured-material = Material no tabuleiro — Brancas: { $white } | Pretas: { $b
 
 study-start = Posição inicial
 study-ply = Lance { $ply }: { $san }
+study-ply-hidden = Lance { $ply }
 study-hint = Escreva sua anotação para este Lance…
 study-note-no-effect = Anotações são só suas: não alteram a Partida e saem como comentários no PGN.
 study-list = Anotações ({ $count })

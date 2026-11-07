@@ -50,8 +50,10 @@ fn bancos_com_o_flag_errado_sao_corrigidos_ao_migrar() {
             [id.0],
         )
         .unwrap();
-        conn.pragma_update(None, "user_version", chess_store::LATEST_SCHEMA_VERSION - 1)
+        // Volta ao esquema v8 (anterior à correção): sem as tabelas das migrações seguintes.
+        conn.execute_batch("DROP TABLE manual_scoresheet_entries; DROP TABLE manual_scoresheets;")
             .unwrap();
+        conn.pragma_update(None, "user_version", 8).unwrap();
         id
     };
     let store = Store::open(db.path()).unwrap();

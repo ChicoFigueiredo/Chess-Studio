@@ -32,6 +32,7 @@ mod position_memory;
 mod profiles;
 mod review;
 mod run;
+mod scoresheet;
 
 pub use aids::{Aid, AidsRecord, Feedback};
 pub use catalog::{Catalog, CatalogError};
@@ -51,3 +52,4 @@ pub use position_memory::{
 pub use profiles::{Difficulty, ProfileError, ProfileSet, ProfileStep, TrainingProfile};
 pub use review::{MemoryReview, NotCheckmate, PlyReview, Review};
 pub use run::{ErrorCause, ExerciseRun, Followup, RunError, RunResult, RunStatus, RunSummary};
+pub use scoresheet::{MAX_ENTRY_CHARS, MAX_PLY, ManualScoresheet, ScoresheetError};

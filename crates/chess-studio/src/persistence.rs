@@ -534,6 +534,33 @@ impl Persistence {
         }
     }
 
+    /// A Súmula manual do perfil para a Partida atual (V2-SUM-01); `None` se não há.
+    pub fn load_scoresheet(&self) -> Option<chess_training::ManualScoresheet> {
+        let game = self.current?;
+        match self.store.load_scoresheet(self.profile, game) {
+            Ok(sheet) => sheet,
+            Err(err) => {
+                warn!("Súmula manual ilegível: {err}");
+                None
+            }
+        }
+    }
+
+    /// Grava (ou apaga) a Súmula manual da Partida atual, no ato. Registro separado: nunca
+    /// toca a Partida, o log de eventos nem o PGN.
+    pub fn apply_scoresheet(&mut self, pending: &crate::scoresheet::Pending) {
+        let Some(game) = self.current else { return };
+        let result = match pending {
+            crate::scoresheet::Pending::Save(sheet) => {
+                self.store.save_scoresheet(self.profile, game, sheet)
+            }
+            crate::scoresheet::Pending::Delete => self.store.delete_scoresheet(self.profile, game),
+        };
+        if let Err(err) = result {
+            self.report(&err);
+        }
+    }
+
     /// Grava só o que mudou desde a última chamada (ou desde `load_prefs`).
     pub fn sync_prefs(&mut self, now: SavedPrefs) {
         let before = match self.saved {
@@ -694,6 +721,13 @@ impl Plugin for PersistencePlugin {
                     .after(PlaySet),
             )
             .add_systems(Update, persist_notes.after(persist_session).after(PlaySet))
+            .add_systems(
+                Update,
+                persist_scoresheet
+                    .after(persist_session)
+                    .after(PlaySet)
+                    .after(crate::scoresheet::follow_game),
+            )
             .add_systems(Last, close_on_exit);
     }
 }
@@ -754,6 +788,30 @@ fn persist_notes(
         && let Ok(mut p) = handle.0.lock()
     {
         p.save_notes(&dirty);
+    }
+}
+
+/// Lê a Súmula manual da Partida atual quando a Partida muda e grava as mudanças dela.
+/// Depois de `persist_session` (que cria a Partida no banco); durante o Treino a `Session`
+/// não é a Partida do usuário.
+fn persist_scoresheet(
+    training: Res<TrainingUi>,
+    mut state: ResMut<crate::scoresheet::ScoresheetUi>,
+    handle: Res<PersistenceHandle>,
+) {
+    if training.session_swapped() {
+        return;
+    }
+    if !state.is_loading() && !state.has_pending() {
+        return;
+    }
+    let Ok(mut p) = handle.0.lock() else { return };
+    if state.is_loading() {
+        let sheet = p.load_scoresheet();
+        state.loaded(sheet);
+    }
+    if let Some(pending) = state.take_pending() {
+        p.apply_scoresheet(&pending);
     }
 }
 
