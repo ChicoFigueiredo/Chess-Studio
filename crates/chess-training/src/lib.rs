@@ -25,13 +25,15 @@
 mod aids;
 mod catalog;
 mod exercise;
+mod memory;
 mod metrics;
 mod review;
 mod run;
 
 pub use aids::{Aid, AidsRecord, Feedback};
 pub use catalog::{Catalog, CatalogError};
-pub use exercise::{Exercise, ExerciseError, ExerciseKind, Solution};
+pub use exercise::{Exercise, ExerciseError, ExerciseKind, MEMORY_LINE_RANGE, Solution};
+pub use memory::{MemoryPhase, MemoryRun, MemorySummary, PlyResult};
 pub use metrics::{Metrics, Tally};
-pub use review::{NotCheckmate, Review};
+pub use review::{MemoryReview, NotCheckmate, PlyReview, Review};
 pub use run::{ErrorCause, ExerciseRun, Followup, RunError, RunResult, RunStatus, RunSummary};

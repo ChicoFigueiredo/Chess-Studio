@@ -6,6 +6,11 @@
 //! escreve a Partida; o juiz [`ExerciseRun`] apenas lê os Eventos e pede desfazer ou a
 //! resposta do adversário). Nada do Treino é gravado como Partida do histórico, então o
 //! treino não pode alterar resultados competitivos (TRN-05). Texto vem do i18n (Fluent).
+//!
+//! Memória de sequência (B15, TRN-04): a **apresentação** anima a sequência numa
+//! `Session` só de leitura (a revisão Lance a Lance avança no ritmo do Exercício); depois
+//! a **reprodução** troca por uma `Session` nova na posição inicial, onde a pessoa joga os
+//! dois lados com a movimentação normal e o [`MemoryRun`] julga cada Lance.
 
 use crate::aids::{AidSettings, ErrorExplanation, NoticeView, notice_view, reason_key};
 use crate::capture::CaptureMode;
@@ -19,8 +24,9 @@ use chess_core::{Color as Side, Square};
 use chess_game::Command;
 use chess_store::{ProfileId, RunId, RunQuery, Store};
 use chess_training::{
-    Aid, AidsRecord, Catalog, ErrorCause, Exercise, ExerciseKind, ExerciseRun, Feedback, Metrics,
-    Review, RunError, RunStatus, RunSummary, Tally,
+    Aid, AidsRecord, Catalog, ErrorCause, Exercise, ExerciseKind, ExerciseRun, Feedback,
+    MemoryPhase, MemoryRun, Metrics, PlyResult, Review, RunError, RunStatus, RunSummary, Solution,
+    Tally,
 };
 use std::sync::Mutex;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -58,6 +64,13 @@ struct ActiveRun {
     shown_errors: usize,
 }
 
+/// Resolução de memória em curso (apresentação ou reprodução).
+#[derive(Debug)]
+struct MemoryActive {
+    run: MemoryRun,
+    run_id: Option<RunId>,
+}
+
 #[derive(Debug)]
 struct ReviewState {
     review: Review,
@@ -75,11 +88,14 @@ pub struct TrainingUi {
     /// A Partida em andamento, guardada enquanto a `Session` mostra o Exercício.
     stashed: Option<Session>,
     active: Option<ActiveRun>,
+    memory: Option<MemoryActive>,
     review: Option<ReviewState>,
     metrics: Metrics,
     /// Identifica a sessão do app nas métricas.
     session_id: u64,
     clock: Instant,
+    /// Avanço artificial do relógio (só nas capturas e nos testes).
+    clock_skew_ms: u64,
 }
 
 impl std::fmt::Debug for TrainingUi {
@@ -109,10 +125,12 @@ impl Default for TrainingUi {
             synced: false,
             stashed: None,
             active: None,
+            memory: None,
             review: None,
             metrics: Metrics::default(),
             session_id: wall,
             clock: Instant::now(),
+            clock_skew_ms: 0,
         }
     }
 }
@@ -180,7 +198,9 @@ impl TrainingUi {
     }
 
     fn now_ms(&self) -> u64 {
-        u64::try_from(self.clock.elapsed().as_millis()).unwrap_or(u64::MAX)
+        u64::try_from(self.clock.elapsed().as_millis())
+            .unwrap_or(u64::MAX)
+            .saturating_add(self.clock_skew_ms)
     }
 
     /// Espelha o catálogo no SQLite uma vez por execução.
@@ -214,7 +234,7 @@ impl TrainingUi {
 
     fn open(&mut self, handle: Option<&PersistenceHandle>) {
         self.sync_catalog(handle);
-        self.view = if self.active.is_some() {
+        self.view = if self.active.is_some() || self.memory.is_some() {
             View::Exercise
         } else {
             View::List
@@ -224,12 +244,23 @@ impl TrainingUi {
     /// Sai do Exercício e volta a mostrar a Partida que estava em andamento.
     fn leave(&mut self, session: &mut Session, view: View) {
         self.active = None;
+        self.memory = None;
         self.review = None;
         self.view = view;
         if let Some(mut original) = self.stashed.take() {
             original.set_move_method(session.move_method());
             original.supersede(session);
             *session = original;
+        }
+    }
+
+    /// Coloca `fresh` no lugar da `Session` do app, guardando a Partida em andamento.
+    fn install(&mut self, session: &mut Session, mut fresh: Session) {
+        fresh.set_move_method(session.move_method());
+        fresh.supersede(session);
+        let previous = std::mem::replace(session, fresh);
+        if self.stashed.is_none() {
+            self.stashed = Some(previous);
         }
     }
 
@@ -244,16 +275,16 @@ impl TrainingUi {
         let Some(exercise) = self.catalog.get(id).cloned() else {
             return;
         };
-        let Ok(game) = exercise.new_game() else {
+        let is_memory = matches!(exercise.solution, Solution::Memorize { .. });
+        let fresh = if is_memory {
+            presentation_session(&exercise)
+        } else {
+            exercise.new_game().ok().map(Session::from_game)
+        };
+        let Some(fresh) = fresh else {
             return;
         };
-        let mut fresh = Session::from_game(game);
-        fresh.set_move_method(session.move_method());
-        fresh.supersede(session);
-        let previous = std::mem::replace(session, fresh);
-        if self.stashed.is_none() {
-            self.stashed = Some(previous);
-        }
+        self.install(session, fresh);
         let session_id = self.session_id;
         let run_id = with_store(&mut self.local, handle, |store, profile| {
             store.start_run(profile, &exercise.id, session_id)
@@ -262,14 +293,22 @@ impl TrainingUi {
             r.map_err(|e| warn!("Treino: Resolução sem registro: {e}"))
                 .ok()
         });
+        self.review = None;
+        if is_memory {
+            let run = MemoryRun::start(&exercise, aids_record(aids), self.now_ms());
+            self.memory = Some(MemoryActive { run, run_id });
+            self.active = None;
+            self.view = View::Exercise;
+            return;
+        }
         let run = ExerciseRun::start(&exercise, aids_record(aids), self.now_ms());
+        self.memory = None;
         self.active = Some(ActiveRun {
             run,
             run_id,
             revealed: false,
             shown_errors: 0,
         });
-        self.review = None;
         self.view = View::Exercise;
     }
 
@@ -311,6 +350,9 @@ fn training_judge(
     if state.active.is_some() {
         state.judge(&mut session, &aids, handle.as_deref());
     }
+    if state.memory.is_some() {
+        state.memory_step(&mut session, &aids, handle.as_deref());
+    }
 }
 
 impl TrainingUi {
@@ -346,12 +388,308 @@ impl TrainingUi {
 }
 
 enum Action {
+    ShowAgain,
     Open,
     Close,
     Start(String),
     GiveUp,
     BackToList,
     Reveal,
+}
+
+fn promotion_piece(uci: &str) -> Option<chess_core::Piece> {
+    match uci.get(4..5)? {
+        "q" => Some(chess_core::Piece::Queen),
+        "r" => Some(chess_core::Piece::Rook),
+        "b" => Some(chess_core::Piece::Bishop),
+        "n" => Some(chess_core::Piece::Knight),
+        _ => None,
+    }
+}
+
+/// `Session` da apresentação: a sequência inteira já jogada, mostrada Lance a Lance pela
+/// revisão (somente leitura, sem gestos). Começa na posição inicial.
+fn presentation_session(exercise: &Exercise) -> Option<Session> {
+    let Solution::Memorize { line, .. } = &exercise.solution else {
+        return None;
+    };
+    let mut session = Session::from_game(exercise.new_game().ok()?);
+    for uci in line {
+        demo_move(&mut session, uci);
+        if let Some(piece) = promotion_piece(uci) {
+            session.command(Command::ChoosePromotion { piece });
+        }
+    }
+    session.set_review_ply(Some(0));
+    Some(session)
+}
+
+/// `Session` da reprodução: Partida nova na posição inicial do Exercício.
+fn recall_session(exercise: &Exercise) -> Option<Session> {
+    exercise.new_game().ok().map(Session::from_game)
+}
+
+impl TrainingUi {
+    /// Avança a Resolução de memória: anima a apresentação, passa à reprodução e julga.
+    fn memory_step(
+        &mut self,
+        session: &mut Session,
+        aids: &AidSettings,
+        handle: Option<&PersistenceHandle>,
+    ) {
+        let now = self.now_ms();
+        let Some(memory) = self.memory.as_mut() else {
+            return;
+        };
+        memory.run.note_aids(&aids_record(aids));
+        match memory.run.phase() {
+            MemoryPhase::Presentation => {
+                session.set_review_ply(Some(memory.run.presentation_ply(now)));
+                if memory.run.presentation_finished(now) {
+                    self.begin_recall(session);
+                }
+            }
+            MemoryPhase::Recall => {
+                for _ in 0..MAX_ROUNDS {
+                    let followups = memory.run.observe(session.game());
+                    if followups.is_empty() {
+                        break;
+                    }
+                    for followup in followups {
+                        for command in followup.commands() {
+                            session.command(command);
+                        }
+                    }
+                }
+                if memory.run.status() == RunStatus::Solved {
+                    self.finish_memory(session, handle);
+                }
+            }
+            MemoryPhase::Done => {}
+        }
+    }
+
+    /// Volta ao início: Partida nova na posição inicial, onde a pessoa reproduz.
+    fn begin_recall(&mut self, session: &mut Session) {
+        let Some(memory) = self.memory.as_mut() else {
+            return;
+        };
+        memory.run.begin_recall();
+        if let Some(fresh) = recall_session(memory.run.exercise()) {
+            self.install(session, fresh);
+        }
+    }
+
+    /// "Mostrar de novo": a sequência é apresentada outra vez; o já julgado fica.
+    fn show_again(&mut self, session: &mut Session) {
+        let now = self.now_ms();
+        let Some(memory) = self.memory.as_mut() else {
+            return;
+        };
+        memory.run.show_again(now);
+        if let Some(fresh) = presentation_session(memory.run.exercise()) {
+            self.install(session, fresh);
+        }
+    }
+
+    /// Encerra a Resolução de memória (sequência completa ou desistência).
+    fn finish_memory(&mut self, session: &mut Session, handle: Option<&PersistenceHandle>) {
+        if self
+            .memory
+            .as_ref()
+            .is_some_and(|m| m.run.phase() == MemoryPhase::Presentation)
+        {
+            self.begin_recall(session);
+        }
+        let Some(memory) = self.memory.take() else {
+            return;
+        };
+        let exercise = memory.run.exercise().clone();
+        let summary: RunSummary = memory
+            .run
+            .finish(session.game(), self.now_ms())
+            .in_session(self.session_id);
+        if let Some(run_id) = memory.run_id {
+            let stored = with_store(&mut self.local, handle, |store, _| {
+                store.finish_run(run_id, &summary)
+            });
+            if let Some(Err(err)) = stored {
+                warn!("Treino: não foi possível gravar a Resolução: {err}");
+            }
+        }
+        let review = Review::new(&exercise, &summary);
+        self.review = Some(ReviewState { review, exercise });
+        let plies = session.snapshot().history.len();
+        session.set_review_ply(Some(plies));
+        self.view = View::Review;
+        self.refresh_metrics(handle);
+    }
+
+    /// Salta o tempo (capturas e testes): termina a apresentação em curso.
+    fn skip_presentation(&mut self) {
+        self.clock_skew_ms += 600_000;
+    }
+}
+
+fn ply_marks(ui: &mut egui::Ui, plies: &[PlyResult]) {
+    ui.horizontal_wrapped(|ui| {
+        for (i, ply) in plies.iter().enumerate() {
+            let color = match ply {
+                PlyResult::Hit => egui::Color32::LIGHT_GREEN,
+                PlyResult::Miss => egui::Color32::LIGHT_RED,
+                PlyResult::Pending => egui::Color32::GRAY,
+            };
+            ui.colored_label(color, egui::RichText::new((i + 1).to_string()).strong());
+        }
+    });
+}
+
+fn memory_view(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    memory: &MemoryActive,
+    session: &Session,
+    now_ms: u64,
+) -> Option<Action> {
+    let mut action = None;
+    let run = &memory.run;
+    let total = run.line().len();
+    ui.strong(&run.exercise().title);
+    ui.label(i18n.t_with("training-objective", &[("text", &run.exercise().objective)]));
+    match run.phase() {
+        MemoryPhase::Presentation => {
+            let shown = run.presentation_ply(now_ms);
+            if shown == 0 {
+                ui.label(i18n.t("training-memory-present-start"));
+            } else {
+                ui.label(i18n.t_with(
+                    "training-memory-present",
+                    &[("n", &shown.to_string()), ("total", &total.to_string())],
+                ));
+            }
+            ui.small(i18n.t("training-memory-present-hint"));
+        }
+        _ => {
+            let n = (session.snapshot().history.len() + 1).min(total);
+            ui.label(i18n.t_with(
+                "training-memory-recall",
+                &[("n", &n.to_string()), ("total", &total.to_string())],
+            ));
+            ui.label(i18n.t(match session.snapshot().side_to_move {
+                Side::White => "training-memory-turn-white",
+                Side::Black => "training-memory-turn-black",
+            }));
+            ply_marks(ui, run.plies());
+            if !run.errors().is_empty() {
+                ui.colored_label(
+                    egui::Color32::YELLOW,
+                    i18n.t_with(
+                        "training-memory-errors",
+                        &[("count", &run.errors().len().to_string())],
+                    ),
+                );
+            }
+            if ui.button(i18n.t("training-memory-show-again")).clicked() {
+                action = Some(Action::ShowAgain);
+            }
+        }
+    }
+    ui.horizontal(|ui| {
+        if ui.button(i18n.t("training-give-up")).clicked() {
+            action = Some(Action::GiveUp);
+        }
+        if ui.button(i18n.t("training-back")).clicked() {
+            action = Some(Action::BackToList);
+        }
+    });
+    action
+}
+
+fn memory_review(ui: &mut egui::Ui, i18n: &I18n, memory: &chess_training::MemoryReview) {
+    ui.separator();
+    ui.strong(i18n.t("training-memory-review-heading"));
+    let hits = memory
+        .plies
+        .iter()
+        .filter(|p| p.result == PlyResult::Hit)
+        .count();
+    ui.label(i18n.t_with(
+        "training-memory-review-hits",
+        &[
+            ("hits", &hits.to_string()),
+            ("total", &memory.plies.len().to_string()),
+        ],
+    ));
+    match memory.first_error {
+        Some(index) => {
+            ui.label(i18n.t_with(
+                "training-memory-review-first-error",
+                &[("n", &(index + 1).to_string())],
+            ));
+        }
+        None => {
+            ui.label(i18n.t("training-memory-review-no-error"));
+        }
+    }
+    if memory.replays > 0 {
+        ui.label(i18n.t_with(
+            "training-memory-review-replays",
+            &[("count", &memory.replays.to_string())],
+        ));
+    }
+    for (i, ply) in memory.plies.iter().enumerate() {
+        let (color, key) = match ply.result {
+            PlyResult::Hit => (egui::Color32::LIGHT_GREEN, "training-memory-ply-hit"),
+            PlyResult::Miss => (egui::Color32::LIGHT_RED, "training-memory-ply-miss"),
+            PlyResult::Pending => (egui::Color32::GRAY, "training-memory-ply-pending"),
+        };
+        ui.colored_label(
+            color,
+            i18n.t_with(
+                "training-memory-ply-line",
+                &[
+                    ("n", &(i + 1).to_string()),
+                    ("san", &ply.san),
+                    ("result", &i18n.t(key)),
+                ],
+            ),
+        );
+    }
+}
+
+/// Roteiro de memória (`--training memory` / `memory-review`): `memory` pára a apresentação
+/// no 3º Lance; `memory-review` reproduz a abertura italiana com um erro e um "mostrar de
+/// novo" e abre a revisão.
+fn memory_demo(
+    state: &mut TrainingUi,
+    session: &mut Session,
+    aids: &AidSettings,
+    script: &str,
+    frame: u32,
+) {
+    const PLAY: [&str; 7] = ["e2e4", "e7e5", "b1c3", "g1f3", "b8c6", "f1c4", "f8c5"];
+    match frame {
+        3 => {
+            state.sync_catalog(None);
+            state.view = View::List;
+            state.start("memoria-italiana-001", session, aids, None);
+            if script == "memory" {
+                // 3 Lances e meio de 1400 ms: mostra o 3º Lance e segura.
+                state.clock_skew_ms = 3 * 1400 + 200;
+            }
+        }
+        6 if script == "memory-review" => state.skip_presentation(),
+        8 if script == "memory-review" => state.show_again(session),
+        10 if script == "memory-review" => state.skip_presentation(),
+        _ => {}
+    }
+    if script == "memory-review"
+        && frame >= 14
+        && frame.is_multiple_of(2)
+        && let Some(uci) = PLAY.get(((frame - 14) / 2) as usize)
+    {
+        demo_move(session, uci);
+    }
 }
 
 fn error_text(i18n: &I18n, error: &RunError) -> String {
@@ -414,6 +752,15 @@ fn metrics_section(ui: &mut egui::Ui, i18n: &I18n, metrics: &Metrics, session_id
                 ("noaids", &t.correct_without_aids.to_string()),
             ],
         ));
+        if t.memory_plies > 0 {
+            ui.label(i18n.t_with(
+                "training-metrics-memory",
+                &[
+                    ("hits", &t.memory_hits.to_string()),
+                    ("plies", &t.memory_plies.to_string()),
+                ],
+            ));
+        }
         ui.strong(i18n.t("training-metrics-by-kind"));
         for (kind, tally) in &metrics.by_kind {
             ui.label(tally_line(i18n, &i18n.t(&kind_key(*kind)), tally));
@@ -576,8 +923,13 @@ fn review_view(ui: &mut egui::Ui, i18n: &I18n, review: &ReviewState) -> Option<A
         }
         ui.label(i18n.t("training-not-mate-rule"));
     }
+    if let Some(memory) = &r.memory {
+        memory_review(ui, i18n, memory);
+    }
     ui.separator();
-    if r.errors.is_empty() {
+    if r.memory.is_some() {
+        // Os erros de memória aparecem Lance a Lance acima.
+    } else if r.errors.is_empty() {
         ui.label(i18n.t("training-review-no-errors"));
     } else {
         ui.label(i18n.t_with(
@@ -655,10 +1007,16 @@ fn training_window(
             view => {
                 let inner = match view {
                     View::List => list_view(ui, &i18n, &state),
-                    View::Exercise => state
-                        .active
-                        .as_ref()
-                        .and_then(|a| exercise_view(ui, &i18n, a, &session, &aids)),
+                    View::Exercise => {
+                        if let Some(memory) = state.memory.as_ref() {
+                            memory_view(ui, &i18n, memory, &session, state.now_ms())
+                        } else {
+                            state
+                                .active
+                                .as_ref()
+                                .and_then(|a| exercise_view(ui, &i18n, a, &session, &aids))
+                        }
+                    }
                     _ => state
                         .review
                         .as_ref()
@@ -681,7 +1039,14 @@ fn training_window(
         Some(Action::Open) => state.open(handle),
         Some(Action::Close) => state.leave(&mut session, View::Closed),
         Some(Action::Start(id)) => state.start(&id, &mut session, &aids, handle),
-        Some(Action::GiveUp) => state.finish(&mut session, handle),
+        Some(Action::GiveUp) => {
+            if state.memory.is_some() {
+                state.finish_memory(&mut session, handle);
+            } else {
+                state.finish(&mut session, handle);
+            }
+        }
+        Some(Action::ShowAgain) => state.show_again(&mut session),
         // Sair sem resolver nem desistir descarta a Resolução (não vira erro).
         Some(Action::BackToList) => state.leave(&mut session, View::List),
         Some(Action::Reveal) => {
@@ -728,6 +1093,10 @@ fn training_demo(
     }
     let Some(script) = demo_script() else { return };
     *frame += 1;
+    if script.starts_with("memory") {
+        memory_demo(&mut state, &mut session, &aids, &script, *frame);
+        return;
+    }
     match *frame {
         3 => {
             state.sync_catalog(None);
@@ -846,6 +1215,81 @@ mod tests {
         assert_eq!(session.snapshot(), &before);
         assert_eq!(session.game().events().len(), events_before);
         assert_eq!(session.epoch(), epoch);
+    }
+
+    /// Memória de sequência no app: apresentação só leitura, volta ao início, erro por
+    /// Lance, "mostrar de novo" e revisão com as métricas por Lance (TRN-04, DEC-45).
+    #[test]
+    fn memory_flow_presents_then_recalls_from_the_start_and_reviews_each_ply() {
+        let mut state = TrainingUi::default();
+        let aids = AidSettings::physical();
+        let mut session = Session::new();
+        play(&mut session, "e2e4");
+        let before = session.snapshot().clone();
+
+        state.open(None);
+        state.start("memoria-italiana-001", &mut session, &aids, None);
+        assert!(state.memory.is_some() && state.active.is_none());
+        // Apresentação: posição inicial em revisão (sem gestos).
+        state.memory_step(&mut session, &aids, None);
+        assert!(session.review().is_some(), "apresentação é só leitura");
+        assert_eq!(
+            session.game().snapshot().history.len(),
+            6,
+            "sequência pronta"
+        );
+
+        // Termina a apresentação: volta ao início.
+        state.skip_presentation();
+        state.memory_step(&mut session, &aids, None);
+        let fresh = state
+            .catalog
+            .get("memoria-italiana-001")
+            .unwrap()
+            .fen
+            .clone();
+        assert_eq!(
+            session.snapshot().position.to_fen(),
+            fresh,
+            "volta ao início"
+        );
+        assert!(session.review().is_none(), "agora os gestos valem");
+        assert_eq!(
+            state.memory.as_ref().unwrap().run.phase(),
+            MemoryPhase::Recall
+        );
+
+        play(&mut session, "e2e4");
+        play(&mut session, "e7e6"); // erro no Lance 2
+        state.memory_step(&mut session, &aids, None);
+        assert_eq!(state.memory.as_ref().unwrap().run.errors().len(), 1);
+        assert_eq!(session.snapshot().history.len(), 1, "Lance errado desfeito");
+
+        state.show_again(&mut session);
+        assert_eq!(session.game().snapshot().history.len(), 6);
+        state.skip_presentation();
+        state.memory_step(&mut session, &aids, None);
+        for uci in ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5"] {
+            play(&mut session, uci);
+            state.memory_step(&mut session, &aids, None);
+        }
+        assert_eq!(state.view, View::Review);
+        let memory = state
+            .review
+            .as_ref()
+            .unwrap()
+            .review
+            .memory
+            .clone()
+            .unwrap();
+        assert_eq!(memory.first_error, Some(1));
+        assert_eq!(memory.replays, 1);
+        assert_eq!(state.metrics.total.correct, 1, "Exercício completo");
+        assert_eq!(state.metrics.total.memory_plies, 6);
+        assert_eq!(state.metrics.total.memory_hits, 5);
+
+        state.leave(&mut session, View::Closed);
+        assert_eq!(session.snapshot(), &before);
     }
 
     #[test]

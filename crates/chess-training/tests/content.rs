@@ -25,15 +25,11 @@ fn the_bundled_catalog_is_the_exercises_directory() {
 }
 
 #[test]
-fn every_p0_kind_has_at_least_three_exercises_and_memory_is_not_here() {
+fn every_kind_has_at_least_three_exercises() {
     let catalog = catalog();
     for kind in ExerciseKind::ALL {
         let n = of_kind(&catalog, kind).len();
-        if kind == ExerciseKind::Memory {
-            assert_eq!(n, 0, "memória é do B15");
-        } else {
-            assert!(n >= 3, "{kind:?} tem só {n} Exercício(s)");
-        }
+        assert!(n >= 3, "{kind:?} tem só {n} Exercício(s)");
     }
 }
 
@@ -48,7 +44,12 @@ fn ids_and_titles_are_unique_and_every_text_is_filled_in() {
             "título repetido: {}",
             e.title
         );
-        assert!(fens.insert(e.fen.clone()), "FEN repetido: {}", e.id);
+        // Memória parte da posição inicial: o que as distingue é a linha, não o FEN.
+        let key = match &e.solution {
+            Solution::Memorize { line, .. } => format!("{} {}", e.fen, line.join(" ")),
+            _ => e.fen.clone(),
+        };
+        assert!(fens.insert(key), "FEN (ou linha) repetido: {}", e.id);
         assert!(
             e.explanation.trim().chars().count() >= 60,
             "{}: explicação curta demais",
@@ -60,8 +61,9 @@ fn ids_and_titles_are_unique_and_every_text_is_filled_in() {
             e.id
         );
         assert!(e.title.chars().count() <= 48, "{}: título longo", e.id);
+        // Memória treina sequências de abertura, não uma regra: não cita artigo.
         assert!(
-            e.explanation.contains("art. "),
+            e.kind == ExerciseKind::Memory || e.explanation.contains("art. "),
             "{}: cite a regra (art. ...)",
             e.id
         );
@@ -82,6 +84,15 @@ fn every_objective_can_be_met_from_the_original_position() {
             Solution::RefuseIllegal { uci } => {
                 let mv = uci.parse().unwrap();
                 assert!(!start.is_legal(mv), "{}: devia ser ilegal", e.id);
+            }
+            // Memória (B15, DEC-45): a linha a memorizar é jogável desde a posição inicial.
+            Solution::Memorize { line, .. } => {
+                let mut position = start.clone();
+                for uci in line {
+                    let mv = uci.parse().unwrap();
+                    assert!(position.is_legal(mv), "{}: {uci} ilegal na linha", e.id);
+                    position = position.play(mv).unwrap();
+                }
             }
             // `validate` já exige ao menos um Lance que cumpra o critério.
             _ => assert_eq!(e.solution_line().len(), 1, "{}", e.id),
@@ -163,7 +174,18 @@ fn the_solution_does_what_the_kind_promises() {
                 assert_eq!(piece, Piece::Pawn, "{}: o Lance ilegal é de peão", e.id);
                 assert!(first.is_none(), "{}", e.id);
             }
-            ExerciseKind::Memory => unreachable!("sem Exercícios de memória no B14"),
+            ExerciseKind::Memory => {
+                let Solution::Memorize { line, .. } = &e.solution else {
+                    panic!("{}: memória usa memorize", e.id);
+                };
+                assert!(
+                    (3..=8).contains(&line.len()),
+                    "{}: memória pede de 3 a 8 Lances, tem {}",
+                    e.id,
+                    line.len()
+                );
+                assert_eq!(e.solution_line().len(), line.len(), "{}", e.id);
+            }
         }
     }
 }

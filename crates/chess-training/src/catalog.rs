@@ -11,7 +11,7 @@
 //! ```
 //!
 //! `solution.type`: `moves` (+ `line`), `mate_in_one`, `force_stalemate`, `give_check`,
-//! `refuse_illegal` (+ `uci`). Cada Exercício é validado pelo chess-core ao carregar.
+//! `refuse_illegal` (+ `uci`), `memorize` (+ `line` de 3 a 8 Lances e `speed_ms`, só no tipo `memory`). Cada Exercício é validado pelo chess-core ao carregar.
 
 use crate::exercise::{Exercise, ExerciseError};
 use serde::Deserialize;
@@ -41,6 +41,7 @@ const BUNDLED: &[(&str, &str)] = &[
         "promocoes.json",
         include_str!("../exercises/promocoes.json"),
     ),
+    ("memoria.json", include_str!("../exercises/memoria.json")),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
