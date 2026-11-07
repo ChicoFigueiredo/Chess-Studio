@@ -101,8 +101,23 @@ CREATE TABLE engine_installations (
 );
 ";
 
+// Esquema de Exercícios do B13: identificador estável (`slug`), definição completa do
+// catálogo e o registro imutável de cada Resolução. As linhas antigas são preservadas
+// (`finished` = 1, sem `summary_json`, ficam fora das listagens).
+const V3_EXERCISE_API: &str = "
+ALTER TABLE exercises ADD COLUMN slug TEXT;
+ALTER TABLE exercises ADD COLUMN definition_json TEXT NOT NULL DEFAULT '{}';
+UPDATE exercises SET slug = 'legacy-' || id WHERE slug IS NULL;
+CREATE UNIQUE INDEX exercises_slug ON exercises (slug);
+
+ALTER TABLE exercise_runs ADD COLUMN finished INTEGER NOT NULL DEFAULT 1 CHECK (finished IN (0, 1));
+ALTER TABLE exercise_runs ADD COLUMN errors INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE exercise_runs ADD COLUMN session INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE exercise_runs ADD COLUMN summary_json TEXT NOT NULL DEFAULT '{}';
+";
+
 /// Migrações em ordem; o índice + 1 é a versão resultante.
-const MIGRATIONS: &[&str] = &[V1_CORE, V2_TRAINING_AND_ENGINES];
+const MIGRATIONS: &[&str] = &[V1_CORE, V2_TRAINING_AND_ENGINES, V3_EXERCISE_API];
 
 /// Versão de esquema desta build.
 pub const LATEST_VERSION: u32 = MIGRATIONS.len() as u32;

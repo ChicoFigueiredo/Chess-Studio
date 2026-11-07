@@ -9,6 +9,7 @@ presentation-technical2d = 2D técnico
 quality-label = Qualidade
 quality-economic = Econômico
 quality-balanced = Equilibrado
+quality-ultra = Ultra
 
 view-label = Vista: { $name }
 view-free = Livre

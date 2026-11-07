@@ -6,6 +6,7 @@ use crate::camera::CameraRig;
 use crate::capture::CaptureMode;
 use crate::engine::{EngineUi, engine_section};
 use crate::i18n::I18n;
+use crate::new_game::NewGameDialog;
 use crate::picking::HoveredSquare;
 use crate::presentation::{GraphicsQuality, Presentation};
 use crate::session::Session;
@@ -111,11 +112,17 @@ fn reason_key(reason: EndReason) -> &'static str {
         EndReason::SeventyFiveMoveRule => "game-reason-seventy-five-move",
         EndReason::Resignation => "game-reason-resignation",
         EndReason::DrawAgreement => "game-reason-draw-agreement",
+        EndReason::Timeout => "game-reason-timeout",
+        EndReason::TimeoutDraw => "game-reason-timeout-draw",
+        EndReason::SecondIllegalMove => "game-reason-second-illegal",
+        EndReason::SecondIllegalMoveDraw => "game-reason-second-illegal-draw",
+        EndReason::EliminatedByInfraction => "game-reason-eliminated",
+        EndReason::EliminatedByInfractionDraw => "game-reason-eliminated-draw",
         _ => "game-reason-other",
     }
 }
 
-fn outcome_text(i18n: &I18n, outcome: Outcome) -> String {
+pub(crate) fn outcome_text(i18n: &I18n, outcome: Outcome) -> String {
     format!(
         "{} — {}",
         i18n.t(result_key(outcome.result)),
@@ -130,10 +137,12 @@ fn info_panel(
     hovered: Res<HoveredSquare>,
     rig: Res<CameraRig>,
     mut session: ResMut<Session>,
+    mut dialog: ResMut<NewGameDialog>,
     mut presentation: ResMut<Presentation>,
     mut quality: ResMut<GraphicsQuality>,
     capture: Option<Res<CaptureMode>>,
     mut engine_ui: ResMut<EngineUi>,
+    aids: Res<crate::aids::AidSettings>,
 ) -> Result {
     if capture.as_ref().is_some_and(|c| !c.show_panel) {
         return Ok(());
@@ -156,7 +165,7 @@ fn info_panel(
                 }
             });
         ui.separator();
-        game_section(ui, &i18n, &mut session);
+        game_section(ui, &i18n, &mut session, &mut dialog, &aids);
         engine_section(ui, &i18n, &mut session, &mut engine_ui);
         ui.separator();
         ui.label(i18n.t_with(
@@ -182,7 +191,13 @@ fn info_panel(
     Ok(())
 }
 
-fn game_section(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session) {
+fn game_section(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    session: &mut Session,
+    dialog: &mut NewGameDialog,
+    aids: &crate::aids::AidSettings,
+) {
     let snapshot = session.snapshot().clone();
     ui.strong(i18n.t("game-heading"));
     match snapshot.outcome {
@@ -203,6 +218,7 @@ fn game_section(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session) {
         None => ui.label(i18n.t("game-no-moves")),
     };
     // O aviso de Lance ilegal segue a política de explicação (`aids_panel`).
+    crate::fide_panel::arbitration_section(ui, i18n, session);
     ui.horizontal(|ui| {
         if ui
             .add_enabled(snapshot.can_undo, egui::Button::new(i18n.t("button-undo")))
@@ -224,7 +240,8 @@ fn game_section(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session) {
             session.resign_side_to_move();
         }
         if ui.button(i18n.t("button-new-game")).clicked() {
-            session.new_game();
+            // A Nova Partida abre a tela de configuração (AC-01); a atual segue até "Iniciar".
+            dialog.open_from(session.config(), aids);
         }
     });
     let mut method = session.move_method();
@@ -249,6 +266,7 @@ fn promotion_selector(
         return Ok(());
     }
     let mut choice = None;
+    let competitive = session.is_competitive();
     let mut always_queen = session.always_queen();
     egui::Window::new(i18n.t("promotion-title"))
         .collapsible(false)
@@ -268,8 +286,13 @@ fn promotion_selector(
                     }
                 }
             });
-            ui.checkbox(&mut always_queen, i18n.t("promotion-always-queen"));
-            ui.small(i18n.t("promotion-cancel-hint"));
+            if competitive {
+                // Sem dama automática nas Políticas competitivas (DEC-40).
+                ui.small(i18n.t("promotion-competitive-hint"));
+            } else {
+                ui.checkbox(&mut always_queen, i18n.t("promotion-always-queen"));
+                ui.small(i18n.t("promotion-cancel-hint"));
+            }
         });
     if always_queen != session.always_queen() {
         session.set_always_queen(always_queen);

@@ -248,15 +248,36 @@ impl Plugin for AidsPlugin {
     }
 }
 
+/// Chave de cache de [`update_marks`]: revisão, seleção, Auxílios efetivos, competitiva.
+type MarksKey = (u64, Option<Square>, AidSettings, bool);
+
+/// Auxílios efetivos: nas Políticas competitivas, sem destinos legais nem fantasmas.
+pub fn effective_settings(settings: AidSettings, competitive: bool) -> AidSettings {
+    if competitive {
+        AidSettings {
+            destinations: false,
+            ghosts: false,
+            ..settings
+        }
+    } else {
+        settings
+    }
+}
+
 /// Recalcula as marcações só quando algo relevante muda (revisão, seleção, ajustes).
 fn update_marks(
     session: Res<Session>,
     settings: Res<AidSettings>,
     mut marks: ResMut<Marks>,
-    mut key: Local<Option<(u64, Option<Square>, AidSettings)>>,
+    mut key: Local<Option<MarksKey>>,
 ) {
     let origin = session.gesture_visual().origin;
-    let now = (session.revision(), origin, *settings);
+    // Destinos legais e fantasmas são Auxílios do Assistido: nas Políticas competitivas
+    // (DEC-32) ficam sempre desligados, qualquer que seja o Perfil. "Xeque!", seleção e
+    // último Lance seguem o Perfil.
+    let competitive = session.is_competitive();
+    let effective = effective_settings(*settings, competitive);
+    let now = (session.revision(), origin, effective, competitive);
     if *key == Some(now) {
         return;
     }
@@ -264,7 +285,7 @@ fn update_marks(
     let snapshot = session.snapshot();
     let next = match session.review() {
         Some(view) => compute_marks(
-            &settings,
+            &effective,
             ShownPosition {
                 position: &view.position,
                 side_to_move: view.side_to_move,
@@ -277,7 +298,7 @@ fn update_marks(
         None => {
             let dests = origin.map_or_else(Vec::new, |o| snapshot.legal_destinations(o));
             compute_marks(
-                &settings,
+                &effective,
                 ShownPosition {
                     position: &snapshot.position,
                     side_to_move: snapshot.side_to_move,
@@ -323,6 +344,24 @@ mod tests {
         assert!(!training.ghosts, "fantasmas são opcionais no Treinamento");
         assert_eq!(training.explanation, ErrorExplanation::Immediate);
         assert!(AidSettings::for_profile(AidProfile::Custom).is_none());
+    }
+
+    #[test]
+    fn competitive_policies_never_show_destinations_or_ghosts() {
+        let mut all = AidSettings::training();
+        all.ghosts = true;
+        let eff = effective_settings(all, true);
+        assert!(!eff.destinations && !eff.ghosts);
+        assert!(
+            eff.check && eff.selected && eff.last_move,
+            "o resto segue o Perfil"
+        );
+        assert_eq!(effective_settings(all, false), all);
+        let pos = CanonicalPosition::start();
+        let dests = [sq("e3"), sq("e4")];
+        let marks = compute_marks(&eff, shown(&pos, None), Some(sq("e2")), &dests);
+        assert!(marks.destinations.is_empty() && marks.ghosts.is_empty());
+        assert_eq!(marks.selected, Some(sq("e2")));
     }
 
     #[test]
