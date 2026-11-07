@@ -21,6 +21,11 @@
 //! profundidade) com `multipv` linhas cada; `--mate` troca o placar por `score mate 2`.
 //! A linha `i` joga o `i`-ésimo Lance legal em ordem alfabética, seguido de respostas.
 //!
+//! Lc0 falso (C10): `--lc0` anuncia `Backend` (lista de `--backends a,b`, padrão
+//! `cuda-auto,blas`), `MinibatchSize`, `NNCacheSize` e `Threads`; `--fail-backend <nome>` faz a
+//! Engine morrer ao receber `go` com esse backend escolhido, escrevendo no stderr um erro de
+//! driver CUDA (como o Lc0 real, que só carrega a rede na primeira busca).
+//!
 //! Opções extras: `--elo` anuncia `UCI_Elo` (min 1320, max 3190); `--trace <arquivo>`
 //! acrescenta ao arquivo cada linha recebida (para os testes inspecionarem `position`,
 //! `go` e `setoption`).
@@ -46,6 +51,10 @@ fn main() {
     let mut info_depths: u32 = 5;
     let mut multipv: usize = 1;
     let mut trace: Option<std::fs::File> = None;
+    let mut lc0 = false;
+    let mut backends = String::from("cuda-auto,blas");
+    let mut fail_backend: Option<String> = None;
+    let mut backend = String::new();
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -54,6 +63,9 @@ fn main() {
             "--options" => extra_options = true,
             "--info" => info = true,
             "--mate" => mate = true,
+            "--lc0" => lc0 = true,
+            "--backends" => backends = args.next().unwrap_or_default(),
+            "--fail-backend" => fail_backend = args.next(),
             "--info-depths" => info_depths = args.next().and_then(|v| v.parse().ok()).unwrap_or(5),
             "--trace" => {
                 trace = args.next().and_then(|p| {
@@ -96,6 +108,22 @@ fn main() {
                     say("option name Debug Log File type string default <empty>");
                     say("option name WeightsFile type string default <autodiscover>");
                 }
+                if lc0 {
+                    if !extra_options {
+                        say("option name Threads type spin default 0 min 0 max 128");
+                    }
+                    say("option name MinibatchSize type spin default 0 min 0 max 1024");
+                    say("option name NNCacheSize type spin default 2000000 min 0 max 999999999");
+                    let mut line = format!(
+                        "option name Backend type combo default {}",
+                        backends.split(',').next().unwrap_or_default()
+                    );
+                    for b in backends.split(',') {
+                        line.push_str(" var ");
+                        line.push_str(b);
+                    }
+                    say(&line);
+                }
                 if info {
                     say("option name MultiPV type spin default 1 min 1 max 256");
                 }
@@ -111,6 +139,9 @@ fn main() {
                 if let Some(rest) = line.strip_prefix("setoption name MultiPV value ") {
                     multipv = rest.trim().parse().unwrap_or(1).max(1);
                 }
+                if let Some(rest) = line.strip_prefix("setoption name Backend value ") {
+                    rest.trim().clone_into(&mut backend);
+                }
             }
             Some("position") => {
                 if let Some(p) = parse_position(&line) {
@@ -118,6 +149,10 @@ fn main() {
                 }
             }
             Some("go") => {
+                if fail_backend.as_deref() == Some(backend.as_str()) {
+                    eprintln!("CUDA error: no CUDA-capable device is detected");
+                    std::process::exit(3);
+                }
                 if mode == "crash" {
                     say("info depth 1 score cp 10");
                     std::process::exit(3);
