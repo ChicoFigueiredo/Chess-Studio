@@ -450,7 +450,7 @@ impl Store {
 
     fn draft_imported(&self, id: i64, profile: i64, signature: i64) -> Draft {
         let hidden = || Draft::hidden(LibrarySource::Imported, id, profile, signature);
-        let Ok(game) = self.load_imported(crate::ImportedId(id)) else {
+        let Ok(game) = self.load_imported_any(crate::ImportedId(id)) else {
             return hidden();
         };
         let imported_at: i64 = self

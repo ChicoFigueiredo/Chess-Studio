@@ -21,6 +21,7 @@ pub struct ImportReport {
 }
 
 /// Filtro de [`Store::list_imported`]; o padrão lista tudo, da mais recente à mais antiga.
+/// `profile: None` lista de todos os perfis (testes/administração): a interface sempre passa o ativo.
 #[derive(Debug, Clone, Default)]
 pub struct ImportedQuery {
     /// Trecho (sem distinguir maiúsculas) de evento, brancas ou pretas.
@@ -140,8 +141,26 @@ impl Store {
         Ok(rows.collect::<std::result::Result<_, _>>()?)
     }
 
-    /// A árvore completa (linha principal, variações, comentários e NAGs).
-    pub fn load_imported(&self, id: ImportedId) -> Result<PgnGame> {
+    /// A árvore completa (linha principal, variações, comentários e NAGs) de uma partida
+    /// do `profile`; `WrongProfile` se ela é de outro perfil.
+    pub fn load_imported(&self, profile: ProfileId, id: ImportedId) -> Result<PgnGame> {
+        let row: Option<(i64, String)> = self
+            .conn
+            .query_row(
+                "SELECT profile_id, tree_json FROM imported_games WHERE id = ?1",
+                [id.0],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let (owner, json) = row.ok_or(StoreError::ImportedGameNotFound(id))?;
+        if owner != profile.0 {
+            return Err(StoreError::WrongProfile { profile });
+        }
+        Ok(serde_json::from_str(&json)?)
+    }
+
+    /// Leitura sem filtro de perfil, só para o índice interno da Biblioteca.
+    pub(crate) fn load_imported_any(&self, id: ImportedId) -> Result<PgnGame> {
         let json: Option<String> = self
             .conn
             .query_row(
@@ -154,13 +173,12 @@ impl Store {
         Ok(serde_json::from_str(&json)?)
     }
 
-    pub fn delete_imported(&self, id: ImportedId) -> Result<()> {
-        let n = self
-            .conn
-            .execute("DELETE FROM imported_games WHERE id = ?1", [id.0])?;
-        if n == 0 {
-            return Err(StoreError::ImportedGameNotFound(id));
-        }
+    pub fn delete_imported(&self, profile: ProfileId, id: ImportedId) -> Result<()> {
+        self.load_imported(profile, id)?;
+        self.conn.execute(
+            "DELETE FROM imported_games WHERE id = ?1 AND profile_id = ?2",
+            params![id.0, profile.0],
+        )?;
         Ok(())
     }
 }

@@ -324,7 +324,7 @@ impl Persistence {
     /// Depois de `Session::open_game(game)` chame [`Persistence::track`], senão a persistência
     /// trataria a troca como uma Partida nova e duplicaria o log.
     pub(crate) fn switch_to_game(&mut self, id: GameId) -> Result<Game, StoreError> {
-        let opened = self.store.open_game(id)?;
+        let opened = self.store.open_game_for(self.profile, id)?;
         if self.current != Some(id) {
             self.close();
         }

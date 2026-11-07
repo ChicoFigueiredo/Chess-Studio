@@ -59,6 +59,10 @@ pub enum StoreError {
     InvalidFen(String),
     /// Posição favorita que não existe (ou foi removida).
     FavoriteNotFound(FavoriteId),
+    /// O registro existe, mas pertence a outro perfil local (Biblioteca isolada, #114).
+    WrongProfile {
+        profile: ProfileId,
+    },
 }
 
 impl fmt::Display for StoreError {
@@ -109,6 +113,9 @@ impl fmt::Display for StoreError {
             Self::ImportedGameNotFound(id) => write!(f, "partida importada {} não existe", id.0),
             Self::InvalidFen(detail) => write!(f, "FEN inválido: {detail}"),
             Self::FavoriteNotFound(id) => write!(f, "posição favorita {} não existe", id.0),
+            Self::WrongProfile { profile } => {
+                write!(f, "o registro não pertence ao perfil {}", profile.0)
+            }
         }
     }
 }
