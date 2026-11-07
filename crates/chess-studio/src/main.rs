@@ -25,6 +25,9 @@ mod fide_panel;
 mod focus;
 mod framing;
 mod highlight;
+mod hud;
+mod hud_draw;
+mod hud_policy;
 mod i18n;
 mod layout;
 mod new_game;
@@ -70,6 +73,8 @@ fn capture_script() -> capture::CaptureScript {
         select: option_value("--select").and_then(|s| s.parse().ok()),
         show_panel: std::env::args().any(|a| a == "--panel"),
         aids: option_value("--aids"),
+        hud: option_value("--hud"),
+        inverted: std::env::args().any(|a| a == "--inverted"),
         review: option_value("--review").and_then(|s| s.parse().ok()),
         config: capture::parse_config(
             option_value("--policy").as_deref(),
@@ -161,6 +166,7 @@ fn main() {
         fide_panel::ArbitrationPlugin,
         analysis::AnalysisPlugin,
     ));
+    app.add_plugins((hud::HudPlugin, hud_draw::HudDrawPlugin));
     app.add_plugins(training_ui::TrainingPlugin);
     if let Some(dir) = capture {
         if let Err(err) = std::fs::create_dir_all(&dir) {

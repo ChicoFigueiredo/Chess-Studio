@@ -59,7 +59,8 @@ pub mod ids {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PanelAccess {
     Always,
-    /// Dicas, análise e anotações: inacessíveis numa Partida competitiva (UI-08).
+    /// Dicas, análise e anotações: inacessíveis numa Partida competitiva em andamento
+    /// (UI-08); liberados depois do resultado (`hud_policy`).
     OutsideCompetitive,
 }
 

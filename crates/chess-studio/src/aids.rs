@@ -6,6 +6,7 @@
 //! Auxílios nunca mudam legalidade, penalidades nem Eventos (UX-03). A lógica é pura
 //! ([`AidSettings`], [`compute_marks`]); os sistemas Bevy apenas desenham o resultado.
 
+use crate::hud_policy::Allowance;
 use crate::play::PlaySet;
 use crate::session::Session;
 use bevy::prelude::*;
@@ -248,19 +249,19 @@ impl Plugin for AidsPlugin {
     }
 }
 
-/// Chave de cache de [`update_marks`]: revisão, seleção, Auxílios efetivos, competitiva.
-type MarksKey = (u64, Option<Square>, AidSettings, bool);
+/// Chave de cache de [`update_marks`]: revisão, seleção, Auxílios efetivos.
+type MarksKey = (u64, Option<Square>, AidSettings);
 
-/// Auxílios efetivos: nas Políticas competitivas, sem destinos legais nem fantasmas.
-pub fn effective_settings(settings: AidSettings, competitive: bool) -> AidSettings {
-    if competitive {
-        AidSettings {
-            destinations: false,
-            ghosts: false,
-            ..settings
-        }
-    } else {
-        settings
+/// Auxílios efetivos: o que o usuário ligou, limitado pelo que a Política permite agora
+/// (`hud_policy`). Nas competitivas em andamento sobram xeque, seleção e último Lance.
+pub fn effective_settings(settings: AidSettings, allowed: &Allowance) -> AidSettings {
+    AidSettings {
+        destinations: settings.destinations && allowed.destinations,
+        ghosts: settings.ghosts && allowed.ghosts,
+        selected: settings.selected && allowed.selection,
+        last_move: settings.last_move && allowed.last_move,
+        check: settings.check && allowed.check,
+        explanation: settings.explanation,
     }
 }
 
@@ -272,12 +273,10 @@ fn update_marks(
     mut key: Local<Option<MarksKey>>,
 ) {
     let origin = session.gesture_visual().origin;
-    // Destinos legais e fantasmas são Auxílios do Assistido: nas Políticas competitivas
-    // (DEC-32) ficam sempre desligados, qualquer que seja o Perfil. "Xeque!", seleção e
-    // último Lance seguem o Perfil.
-    let competitive = session.is_competitive();
-    let effective = effective_settings(*settings, competitive);
-    let now = (session.revision(), origin, effective, competitive);
+    // Destinos legais e fantasmas são vedados nas competitivas em andamento (DEC-32,
+    // UI-08), qualquer que seja o Perfil; "Xeque!", seleção e último Lance seguem o Perfil.
+    let effective = effective_settings(*settings, &crate::hud_policy::allowance(&session));
+    let now = (session.revision(), origin, effective);
     if *key == Some(now) {
         return;
     }
@@ -350,13 +349,13 @@ mod tests {
     fn competitive_policies_never_show_destinations_or_ghosts() {
         let mut all = AidSettings::training();
         all.ghosts = true;
-        let eff = effective_settings(all, true);
+        let eff = effective_settings(all, &Allowance::COMPETITIVE_LIVE);
         assert!(!eff.destinations && !eff.ghosts);
         assert!(
             eff.check && eff.selected && eff.last_move,
             "o resto segue o Perfil"
         );
-        assert_eq!(effective_settings(all, false), all);
+        assert_eq!(effective_settings(all, &Allowance::ALL), all);
         let pos = CanonicalPosition::start();
         let dests = [sq("e3"), sq("e4")];
         let marks = compute_marks(&eff, shown(&pos, None), Some(sq("e2")), &dests);

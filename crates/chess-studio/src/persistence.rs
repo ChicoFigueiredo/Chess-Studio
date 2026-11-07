@@ -11,6 +11,7 @@ use crate::aids::AidSettings;
 use crate::dock::{Dock, DockLayout};
 use crate::engine::{EngineUi, MAX_ELO, MIN_ELO};
 use crate::focus::ViewState;
+use crate::hud::HudSettings;
 use crate::play::PlaySet;
 use crate::presentation::{GraphicsQuality, Presentation};
 use crate::session::Session;
@@ -27,6 +28,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 const KEY_AIDS: &str = "aids";
+/// HUD virtual (C5): elementos, transparência e paleta.
+const KEY_HUD: &str = "hud";
 const KEY_MOVE_METHOD: &str = "move_method";
 const KEY_PRESENTATION: &str = "presentation";
 const KEY_QUALITY: &str = "quality";
@@ -44,6 +47,7 @@ const KEY_STUDY_NOTES: &str = "study_notes";
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SavedPrefs {
     pub aids: AidSettings,
+    pub hud: HudSettings,
     pub move_method: MoveMethod,
     pub presentation: Presentation,
     pub quality: GraphicsQuality,
@@ -59,6 +63,7 @@ impl Default for SavedPrefs {
     fn default() -> Self {
         Self {
             aids: AidSettings::default(),
+            hud: HudSettings::default(),
             move_method: MoveMethod::default(),
             presentation: Presentation::default(),
             quality: GraphicsQuality::default(),
@@ -261,6 +266,9 @@ impl Persistence {
             aids: get(KEY_AIDS)
                 .and_then(|v| serde_json::from_value(v).ok())
                 .unwrap_or(defaults.aids),
+            hud: get(KEY_HUD)
+                .and_then(|v| serde_json::from_value(v).ok())
+                .unwrap_or(defaults.hud),
             move_method: from_debug_id(
                 &[MoveMethod::Both, MoveMethod::TwoTaps, MoveMethod::Drag],
                 get(KEY_MOVE_METHOD),
@@ -350,6 +358,9 @@ impl Persistence {
         if before.aids != now.aids {
             writes.push((KEY_AIDS, json!(now.aids)));
         }
+        if before.hud != now.hud {
+            writes.push((KEY_HUD, json!(now.hud)));
+        }
         if before.move_method != now.move_method {
             writes.push((KEY_MOVE_METHOD, debug_id(&now.move_method)));
         }
@@ -433,6 +444,7 @@ impl Plugin for PersistencePlugin {
         // Os plugins seguintes usam `init_resource`, que preserva estes valores.
         app.insert_resource(restored.session)
             .insert_resource(prefs.aids)
+            .insert_resource(prefs.hud)
             .insert_resource(prefs.presentation)
             .insert_resource(prefs.quality)
             .insert_resource(prefs.view)
@@ -466,9 +478,11 @@ fn persist_session(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn persist_prefs(
     session: Res<Session>,
     aids: Res<AidSettings>,
+    hud: Res<HudSettings>,
     presentation: Res<Presentation>,
     quality: Res<GraphicsQuality>,
     engine_ui: Res<EngineUi>,
@@ -478,6 +492,7 @@ fn persist_prefs(
     if let Ok(mut p) = handle.0.lock() {
         p.sync_prefs(SavedPrefs {
             aids: *aids,
+            hud: *hud,
             move_method: session.move_method(),
             presentation: *presentation,
             quality: *quality,
@@ -714,6 +729,11 @@ mod tests {
             aids: AidSettings {
                 ghosts: true,
                 ..AidSettings::physical()
+            },
+            hud: HudSettings {
+                palette: crate::hud::HudPalette::ColorBlind,
+                opacity_pct: 25,
+                ..HudSettings::analysis()
             },
             move_method: MoveMethod::Drag,
             presentation: Presentation::Technical2d,

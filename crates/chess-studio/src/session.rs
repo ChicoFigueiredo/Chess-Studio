@@ -437,9 +437,10 @@ impl Session {
     }
 
     /// Partida competitiva ainda sem resultado: dicas, anotações e análise ficam travadas
-    /// (UI-08). Com o resultado, a Partida pode ser revisada e analisada.
+    /// (UI-08). Com o resultado, a Partida pode ser revisada e analisada. Fonte única da
+    /// verdade: delega a `hud_policy` (Política x momento).
     pub fn competitive_in_progress(&self) -> bool {
-        self.is_competitive() && self.snapshot.outcome.is_none()
+        crate::hud_policy::allowance(self).restricted()
     }
 
     /// Aviso da arbitragem ainda visível.
