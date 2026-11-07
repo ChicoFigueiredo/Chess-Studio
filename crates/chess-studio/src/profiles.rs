@@ -557,7 +557,11 @@ mod tests {
         let mut s = state();
         FactoryProfile::StudyAnalysis.profile().apply(&mut s);
         assert_eq!(s.presentation, Presentation::Technical2d);
-        assert_eq!(visible_ids(&s.dock), vec![ids::NOTATION, ids::STUDY]);
+        // O painel Análise (C8) já está no layout padrão; a Biblioteca (C7) ainda não.
+        assert_eq!(
+            visible_ids(&s.dock),
+            vec![PANEL_ANALYSIS, ids::NOTATION, ids::STUDY]
+        );
     }
 
     #[test]

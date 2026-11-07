@@ -88,6 +88,8 @@ pub struct Session {
     epoch: u64,
     /// Revisão Lance a Lance em curso (somente leitura, DEC-39).
     review: Option<ReviewView>,
+    /// A revisão em curso é uma variante da análise (C8), não um Lance do histórico.
+    variation: bool,
     /// Configuração da Nova Partida (derivada do `GameSetup` ao reabrir).
     config: NewGameConfig,
     notice: Option<(Notice, Instant)>,
@@ -133,6 +135,7 @@ impl Session {
             mono_offset,
             epoch: 0,
             review: None,
+            variation: false,
             config,
             notice: None,
         }
@@ -168,12 +171,29 @@ impl Session {
             },
             None => None,
         };
-        if next != self.review {
+        if next != self.review || self.variation {
             self.review = next;
+            self.variation = false;
             self.interpreter
                 .handle(GestureEvent::PanelInteraction, &self.snapshot);
             self.revision = self.revision.wrapping_add(1);
         }
+    }
+
+    /// Mostra uma variante da análise no tabuleiro (C8), como numa revisão: somente leitura,
+    /// nenhum Comando e nenhum Evento. `view.ply` é o meio-lance de onde a variante parte.
+    /// Qualquer navegação da revisão (`set_review_ply`) a substitui.
+    pub fn show_variation(&mut self, view: ReviewView) {
+        self.review = Some(view);
+        self.variation = true;
+        self.interpreter
+            .handle(GestureEvent::PanelInteraction, &self.snapshot);
+        self.revision = self.revision.wrapping_add(1);
+    }
+
+    /// A revisão em curso é uma variante da análise?
+    pub fn showing_variation(&self) -> bool {
+        self.variation && self.review.is_some()
     }
 
     /// Aviso do último Lance ilegal, enquanto recente.
@@ -428,6 +448,13 @@ impl Session {
 
     pub fn is_competitive(&self) -> bool {
         self.snapshot.policy != PolicyKind::Assisted
+    }
+
+    /// Partida competitiva ainda sem resultado: dicas, anotações e análise ficam travadas
+    /// (UI-08). Com o resultado, a Partida pode ser revisada e analisada. Fonte única da
+    /// verdade: delega a `hud_policy` (Política x momento).
+    pub fn competitive_in_progress(&self) -> bool {
+        crate::hud_policy::allowance(self).restricted()
     }
 
     /// Aviso da arbitragem ainda visível.

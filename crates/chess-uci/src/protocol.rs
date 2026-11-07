@@ -213,3 +213,74 @@ pub struct LogEntry {
     pub source: LogSource,
     pub line: String,
 }
+
+/// Placar como a Engine o envia: do ponto de vista de **quem joga**.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UciScore {
+    /// Centipeões.
+    Cp(i32),
+    /// Mate em N lances de quem joga (negativo: quem joga leva mate).
+    Mate(i32),
+}
+
+/// Se o placar é exato ou só um limite (`lowerbound`/`upperbound`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Bound {
+    #[default]
+    Exact,
+    Lower,
+    Upper,
+}
+
+/// Uma linha `info` da busca. Campos ausentes ou ilegíveis ficam `None`; a Engine é
+/// externa e não confiável: nada aqui entra em pânico por texto estranho.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct InfoLine {
+    pub depth: Option<u32>,
+    pub seldepth: Option<u32>,
+    pub multipv: Option<u32>,
+    pub score: Option<UciScore>,
+    pub bound: Bound,
+    pub nodes: Option<u64>,
+    pub nps: Option<u64>,
+    pub time_ms: Option<u64>,
+    /// Lances da variante principal, em texto UCI cru (quem consome valida pelo núcleo).
+    pub pv: Vec<String>,
+}
+
+impl InfoLine {
+    /// Interpreta `info ...`; `None` se a linha não começa por `info`.
+    pub fn parse(line: &str) -> Option<Self> {
+        let mut words = line.split_whitespace();
+        if words.next()? != "info" {
+            return None;
+        }
+        let mut info = Self::default();
+        while let Some(word) = words.next() {
+            match word {
+                // O resto da linha é texto livre.
+                "string" => break,
+                "pv" => info.pv = words.by_ref().map(str::to_owned).collect(),
+                "depth" => info.depth = words.next().and_then(|v| v.parse().ok()),
+                "seldepth" => info.seldepth = words.next().and_then(|v| v.parse().ok()),
+                "multipv" => info.multipv = words.next().and_then(|v| v.parse().ok()),
+                "nodes" => info.nodes = words.next().and_then(|v| v.parse().ok()),
+                "nps" => info.nps = words.next().and_then(|v| v.parse().ok()),
+                "time" => info.time_ms = words.next().and_then(|v| v.parse().ok()),
+                "score" => {
+                    let kind = words.next();
+                    let value = words.next().and_then(|v| v.parse::<i32>().ok());
+                    info.score = match (kind, value) {
+                        (Some("cp"), Some(v)) => Some(UciScore::Cp(v)),
+                        (Some("mate"), Some(v)) => Some(UciScore::Mate(v)),
+                        _ => None,
+                    };
+                }
+                "lowerbound" => info.bound = Bound::Lower,
+                "upperbound" => info.bound = Bound::Upper,
+                _ => {}
+            }
+        }
+        Some(info)
+    }
+}

@@ -7,6 +7,7 @@
 
 mod aids;
 mod aids_panel;
+mod analysis;
 mod asset_dir;
 mod benchmark;
 mod board;
@@ -24,6 +25,9 @@ mod fide_panel;
 mod focus;
 mod framing;
 mod highlight;
+mod hud;
+mod hud_draw;
+mod hud_policy;
 mod i18n;
 mod layout;
 mod library_ui;
@@ -73,6 +77,8 @@ fn capture_script() -> capture::CaptureScript {
         show_panel: std::env::args().any(|a| a == "--panel") || option_value("--profile").is_some(),
         profile: option_value("--profile"),
         aids: option_value("--aids"),
+        hud: option_value("--hud"),
+        inverted: std::env::args().any(|a| a == "--inverted"),
         review: option_value("--review").and_then(|s| s.parse().ok()),
         config: capture::parse_config(
             option_value("--policy").as_deref(),
@@ -169,9 +175,11 @@ fn main() {
         captured::CapturedPlugin,
         study::StudyPlugin,
         fide_panel::ArbitrationPlugin,
+        analysis::AnalysisPlugin,
         profiles::ProfilesPlugin,
         responsive::ResponsivePlugin,
     ));
+    app.add_plugins((hud::HudPlugin, hud_draw::HudDrawPlugin));
     app.add_plugins(training_ui::TrainingPlugin);
     app.add_plugins(library_ui::LibraryPlugin);
     if let Some(dir) = capture {

@@ -52,6 +52,7 @@ pub mod ids {
     pub const REVIEW: &str = "Review";
     pub const ARBITRATION: &str = "Arbitration";
     pub const TRAINING: &str = "Training";
+    pub const ANALYSIS: &str = "Analysis";
     pub const LIBRARY: &str = "Library";
 }
 
@@ -59,7 +60,8 @@ pub mod ids {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PanelAccess {
     Always,
-    /// Dicas, análise e anotações: inacessíveis numa Partida competitiva (UI-08).
+    /// Dicas, análise e anotações: inacessíveis numa Partida competitiva em andamento
+    /// (UI-08); liberados depois do resultado (`hud_policy`).
     OutsideCompetitive,
 }
 
@@ -82,7 +84,7 @@ pub struct PanelDef {
 impl PanelDef {
     /// O painel pode ser aberto agora, dada a Partida?
     pub fn accessible(&self, session: &Session) -> bool {
-        self.access == PanelAccess::Always || !session.is_competitive()
+        self.access == PanelAccess::Always || !session.competitive_in_progress()
     }
 }
 
@@ -130,7 +132,13 @@ pub(crate) const MAX_WIDTH: f32 = 640.0;
 const DEFAULT_GROUPS: [&[&str]; 3] = [
     &[ids::CLOCK, ids::CAPTURED],
     &[ids::NOTATION, ids::STUDY],
-    &[ids::AIDS, ids::REVIEW, ids::ARBITRATION, ids::TRAINING],
+    &[
+        ids::AIDS,
+        ids::REVIEW,
+        ids::ANALYSIS,
+        ids::ARBITRATION,
+        ids::TRAINING,
+    ],
 ];
 
 fn default_rank(id: &str) -> usize {
@@ -912,6 +920,7 @@ mod tests {
             crate::aids_panel::AidsPanelPlugin,
             crate::clock::ClockPlugin,
             crate::training_ui::TrainingPlugin,
+            crate::analysis::AnalysisPlugin,
         ))
         .init_resource::<crate::aids::AidSettings>()
         .insert_resource(I18n::pt_br())

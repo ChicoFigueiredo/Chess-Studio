@@ -11,6 +11,7 @@ dock-panel-review = Revisão
 dock-panel-arbitration = Arbitragem
 dock-panel-training = Treino
 dock-panel-engines = Engines
+dock-panel-analysis = Análise
 dock-unavailable-competitive = Indisponível em Partida competitiva.
 
 notation-empty = Nenhum lance ainda.

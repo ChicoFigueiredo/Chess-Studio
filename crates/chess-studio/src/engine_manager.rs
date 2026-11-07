@@ -250,6 +250,17 @@ impl EngineManager {
         self.form.as_ref()
     }
 
+    /// Garante a lista de Engines carregada (painéis que só escolhem uma Engine, como a
+    /// Análise): aponta o banco, se ainda não apontado, e abre uma única vez.
+    pub fn ensure_loaded(&mut self, db: Option<PathBuf>) {
+        if self.db_path.is_none() {
+            self.db_path = db;
+        }
+        if !self.open {
+            self.open();
+        }
+    }
+
     /// Marca como aberto e atualiza a lista.
     pub fn open(&mut self) {
         self.open = true;
