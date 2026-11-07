@@ -208,6 +208,12 @@ impl EngineUi {
             .flatten()
     }
 
+    /// Caminho atual, se já liberado pelo consentimento (base da Engine padrão da análise).
+    pub fn cleared_path(&self) -> Option<PathBuf> {
+        let path = PathBuf::from(self.path_text.trim());
+        (!path.as_os_str().is_empty() && self.consent.is_cleared(&path)).then_some(path)
+    }
+
     /// Pede a abertura do assistente de Engine (B10).
     pub fn request_wizard(&mut self) {
         self.wizard_requested = true;

@@ -1,6 +1,5 @@
 ## Auxílios visuais, Perfis de auxílios, explicação de erro, revisão, FEN e PGN.
 
-aid-window-title = Auxílios e revisão
 aid-heading = Auxílios visuais
 
 aid-profile-label = Perfil

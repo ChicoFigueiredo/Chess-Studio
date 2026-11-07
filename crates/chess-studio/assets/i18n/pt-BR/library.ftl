@@ -22,6 +22,7 @@ library-search-hint = Pesquisar: jogador, evento, abertura (e4 c5)…
 library-filters = Filtros
 library-filter-player = Jogador ou Engine
 library-filter-date = Data
+library-filter-date-hint = AAAA.MM.DD
 library-filter-position = Posição (FEN) — acha Partidas que passam por ela
 library-position-current = Usar a posição do tabuleiro
 library-filters-clear = Limpar filtros

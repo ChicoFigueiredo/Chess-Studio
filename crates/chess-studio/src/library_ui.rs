@@ -1022,13 +1022,13 @@ fn draw_games(
             ui.label(i18n.t("library-filter-date"));
             ui.add(
                 egui::TextEdit::singleline(&mut lib.date_from)
-                    .hint_text("AAAA.MM.DD")
+                    .hint_text(i18n.t("library-filter-date-hint"))
                     .desired_width(86.0),
             );
             ui.label("–");
             ui.add(
                 egui::TextEdit::singleline(&mut lib.date_to)
-                    .hint_text("AAAA.MM.DD")
+                    .hint_text(i18n.t("library-filter-date-hint"))
                     .desired_width(86.0),
             );
         });
