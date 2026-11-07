@@ -113,6 +113,10 @@ _Evitar_: dica, ajuda, hint
 Conjunto nomeado de Auxílios visuais ligados e desligados, como Jogo físico (nenhum) ou Treinamento.
 _Evitar_: preset de ajuda, nível de dificuldade
 
+**Perfil de interface** (_en_: `InterfaceProfile`):
+Conjunto nomeado de Apresentação, layout do dock (painéis visíveis, abas, larguras), Perfil de auxílios, modo Foco e Vista da câmera: Jogo físico, Treinamento assistido, Estudo e análise (de fábrica) ou um salvo pelo usuário; "Personalizado" é o estado atual quando não coincide com nenhum. Trocar de perfil nunca altera a Partida. Não confundir com Perfil de auxílios (só os Auxílios) nem com Perfil de treino.
+_Evitar_: tema, workspace, modo
+
 **HUD** (_en_: `Hud`):
 Sobreposição virtual de treino ou análise presa às casas e peças; não envolve câmera física.
 _Evitar_: realidade aumentada

@@ -122,8 +122,8 @@ pub fn register_panel(app: &mut App, def: PanelDef) {
 
 /// Largura padrão e limites da região de dock, em pontos do egui.
 const DEFAULT_WIDTH: f32 = 340.0;
-const MIN_WIDTH: f32 = 180.0;
-const MAX_WIDTH: f32 = 640.0;
+pub(crate) const MIN_WIDTH: f32 = 180.0;
+pub(crate) const MAX_WIDTH: f32 = 640.0;
 
 /// Grupos de abas do layout padrão, de cima para baixo.
 const DEFAULT_GROUPS: [&[&str]; 3] = [
@@ -306,6 +306,10 @@ pub struct Dock {
     pixels_per_point: f32,
     /// `--tabs` das capturas já aplicado.
     tabs_applied: bool,
+    /// Janela pequena: o dock é sobreposição e está aberto pelo botão "Painéis" (C4, UI-10).
+    pub overlay_open: bool,
+    /// Região da sobreposição aberta, que não é tabuleiro para o ponteiro.
+    blocked: Option<egui::Rect>,
 }
 
 impl Default for Dock {
@@ -323,6 +327,8 @@ impl Dock {
             board_rect: None,
             pixels_per_point: 1.0,
             tabs_applied: false,
+            overlay_open: false,
+            blocked: None,
         }
     }
 
@@ -342,8 +348,9 @@ impl Dock {
     /// O ponteiro está sobre a área do tabuleiro (não sobre a região do dock)?
     /// Sem layout conhecido (primeiro quadro), vale a janela toda.
     pub fn pointer_in_board(&self, cursor: Vec2) -> bool {
-        self.board_rect
-            .is_none_or(|r| r.contains(egui::pos2(cursor.x, cursor.y)))
+        let at = egui::pos2(cursor.x, cursor.y);
+        self.board_rect.is_none_or(|r| r.contains(at))
+            && !self.blocked.is_some_and(|b| b.contains(at))
     }
 
     /// Tamanho da área do tabuleiro em pontos; sem layout conhecido, a janela toda.
@@ -475,15 +482,24 @@ fn draw_dock(
     generation: u32,
     layout: &mut DockLayout,
     behavior: &mut DockBehavior<'_>,
+    width: f32,
+    overlay: bool,
 ) -> f32 {
     let screen = ctx.viewport_rect();
-    let max_width = MAX_WIDTH.min(screen.width() * 0.6).max(MIN_WIDTH);
-    let width = layout.width.clamp(MIN_WIDTH, max_width);
+    let max_width = if overlay {
+        width
+    } else {
+        MAX_WIDTH.min(screen.width() * 0.6).max(MIN_WIDTH)
+    };
     let rect = egui::Rect::from_min_max(egui::pos2(screen.max.x - width, screen.min.y), screen.max);
     let id = egui::Id::new(("chess-studio-dock", generation));
     let mut new_width = width;
     egui::Area::new(id)
-        .order(egui::Order::Middle)
+        .order(if overlay {
+            egui::Order::Foreground
+        } else {
+            egui::Order::Middle
+        })
         .fixed_pos(rect.min)
         .constrain(false)
         .show(ctx, |ui| {
@@ -504,7 +520,10 @@ fn draw_dock(
                 new_width = (width - response.drag_delta().x).clamp(MIN_WIDTH, max_width);
             }
         });
-    layout.width = new_width;
+    // Só o arrasto do usuário muda a largura guardada: o layout responsivo não a sobrescreve.
+    if (new_width - width).abs() > f32::EPSILON && !overlay {
+        layout.width = new_width;
+    }
     new_width
 }
 
@@ -552,7 +571,16 @@ fn dock_ui(world: &mut World) {
                 let dock = &mut *dock;
                 dock.pixels_per_point = ctx.pixels_per_point();
                 dock.layout.reconcile(&registry);
-                if hidden || !dock.layout.any_visible() {
+                let responsive = crate::responsive::responsive_layout(
+                    Vec2::new(screen.width(), screen.height()),
+                    dock.layout.width,
+                );
+                let (placed_width, overlay) = match responsive.dock {
+                    crate::responsive::DockPlacement::Side { width } => (width, false),
+                    crate::responsive::DockPlacement::Overlay { width } => (width, true),
+                };
+                dock.blocked = None;
+                if hidden || !dock.layout.any_visible() || (overlay && !dock.overlay_open) {
                     dock.inset = 0.0;
                     dock.board_rect = Some(screen);
                     return;
@@ -562,12 +590,29 @@ fn dock_ui(world: &mut World) {
                     registry: &registry,
                     world,
                 };
-                let width = draw_dock(&ctx, dock.generation, &mut dock.layout, &mut behavior);
-                dock.inset = width;
-                dock.board_rect = Some(egui::Rect::from_min_max(
-                    screen.min,
-                    egui::pos2(screen.max.x - width, screen.max.y),
-                ));
+                let width = draw_dock(
+                    &ctx,
+                    dock.generation,
+                    &mut dock.layout,
+                    &mut behavior,
+                    placed_width,
+                    overlay,
+                );
+                if overlay {
+                    // Sobre o tabuleiro: ele segue com a janela toda, mas a área coberta não é dele.
+                    dock.inset = 0.0;
+                    dock.board_rect = Some(screen);
+                    dock.blocked = Some(egui::Rect::from_min_max(
+                        egui::pos2(screen.max.x - width, screen.min.y),
+                        screen.max,
+                    ));
+                } else {
+                    dock.inset = width;
+                    dock.board_rect = Some(egui::Rect::from_min_max(
+                        screen.min,
+                        egui::pos2(screen.max.x - width, screen.max.y),
+                    ));
+                }
             });
         });
     });
@@ -963,7 +1008,8 @@ mod tests {
                     world: &mut world,
                 };
                 let mut output = ctx.run_ui(input, |_| {
-                    draw_dock(&ctx, 0, &mut layout, &mut behavior);
+                    let width = layout.width;
+                    draw_dock(&ctx, 0, &mut layout, &mut behavior, width, false);
                 });
                 output.textures_delta.clear();
                 over = ctx.is_pointer_over_egui();
