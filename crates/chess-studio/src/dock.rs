@@ -122,8 +122,8 @@ pub fn register_panel(app: &mut App, def: PanelDef) {
 
 /// Largura padrão e limites da região de dock, em pontos do egui.
 const DEFAULT_WIDTH: f32 = 340.0;
-const MIN_WIDTH: f32 = 180.0;
-const MAX_WIDTH: f32 = 640.0;
+pub(crate) const MIN_WIDTH: f32 = 180.0;
+pub(crate) const MAX_WIDTH: f32 = 640.0;
 
 /// Grupos de abas do layout padrão, de cima para baixo.
 const DEFAULT_GROUPS: [&[&str]; 3] = [
