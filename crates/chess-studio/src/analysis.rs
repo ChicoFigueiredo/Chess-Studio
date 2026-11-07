@@ -568,6 +568,39 @@ impl Analysis {
     }
 }
 
+/// Melhor Lance (MultiPV 1) da análise exibida, para a seta da Engine do HUD. Vedado pela
+/// política (`engine_line`) nas competitivas em andamento; o HUD ainda confere que o FEN
+/// bate com a posição mostrada.
+pub fn hud_best(
+    shown: Option<&Shown>,
+    allowed: &crate::hud_policy::Allowance,
+) -> Option<crate::hud::AnalysisBest> {
+    if !allowed.engine_line {
+        return None;
+    }
+    let shown = shown?;
+    let line = shown.update.lines.iter().find(|l| l.multipv == 1)?;
+    let mv = line.pv.first()?;
+    Some(crate::hud::AnalysisBest {
+        fen: shown.base.to_fen(),
+        from: mv.from(),
+        to: mv.to(),
+    })
+}
+
+/// Copia o melhor Lance da análise para o HUD.
+fn sync_hud_analysis(
+    session: Res<Session>,
+    analysis: Res<Analysis>,
+    mut hud: ResMut<crate::hud::HudAnalysis>,
+) {
+    let allowed = crate::hud_policy::allowance(&session);
+    let best = hud_best(analysis.shown(), &allowed);
+    if hud.best != best {
+        hud.best = best;
+    }
+}
+
 /// Engines do gerenciador utilizáveis na análise.
 fn choices_from(manager: &EngineManager) -> Vec<Choice> {
     let limits = Limits::for_host();
@@ -593,8 +626,12 @@ pub struct AnalysisPlugin;
 
 impl Plugin for AnalysisPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Analysis>()
-            .add_systems(Update, (capture_setup, drive_analysis).chain());
+        app.init_resource::<Analysis>().add_systems(
+            Update,
+            (capture_setup, drive_analysis, sync_hud_analysis)
+                .chain()
+                .before(crate::hud::HudSet),
+        );
         crate::dock::register_panel(
             app,
             PanelDef {
@@ -974,6 +1011,52 @@ mod tests {
         analysis.set_default_engine(Some(PathBuf::from("/nao/existe/engine")));
         analysis.set_enabled(true);
         analysis
+    }
+
+    fn shown_with(session: &Session, lines: Vec<chess_uci::AnalysisLine>) -> Shown {
+        Shown {
+            update: chess_uci::AnalysisUpdate { id: 1, lines },
+            base: session.snapshot().position.clone(),
+            base_ply: 0,
+            total: 0,
+        }
+    }
+
+    fn pv_line(multipv: usize, mv: &str, position: &CanonicalPosition) -> chess_uci::AnalysisLine {
+        let mv = position
+            .legal_moves()
+            .into_iter()
+            .find(|m| m.to_string() == mv)
+            .unwrap();
+        chess_uci::AnalysisLine {
+            multipv,
+            depth: 10,
+            seldepth: None,
+            score: chess_uci::Score::Cp(10),
+            nodes: None,
+            nps: None,
+            time_ms: None,
+            pv: vec![mv],
+            san: vec!["x".into()],
+        }
+    }
+
+    #[test]
+    fn hud_arrow_comes_from_multipv_one_and_is_forbidden_in_live_competitive() {
+        use crate::hud_policy::{Allowance, allowance};
+        let session = Session::new();
+        let pos = session.snapshot().position.clone();
+        let shown = shown_with(
+            &session,
+            vec![pv_line(2, "d2d4", &pos), pv_line(1, "e2e4", &pos)],
+        );
+        let best = hud_best(Some(&shown), &allowance(&session)).unwrap();
+        assert_eq!(best.fen, pos.to_fen());
+        assert_eq!(format!("{}{}", best.from, best.to), "e2e4");
+        assert!(hud_best(None, &Allowance::ALL).is_none());
+        assert!(hud_best(Some(&shown), &Allowance::COMPETITIVE_LIVE).is_none());
+        let live = competitive_session();
+        assert!(hud_best(Some(&shown), &allowance(&live)).is_none());
     }
 
     #[test]
