@@ -1,0 +1,52 @@
+{
+  "format": 1,
+  "exercises": [
+    {
+      "id": "promocao-001",
+      "kind": "promotion",
+      "title": "Promoção a dama",
+      "fen": "8/P6k/8/8/8/8/8/K7 w - - 0 1",
+      "objective": "Promova o peão a dama.",
+      "solution": {
+        "type": "moves",
+        "line": [
+          "a7a8q"
+        ]
+      },
+      "explanation": "Ao chegar à última fileira o peão precisa virar dama, torre, bispo ou cavalo da mesma cor, no mesmo Lance (art. 3.7). A dama é a escolha mais forte na maioria das posições.",
+      "version": 1
+    },
+    {
+      "id": "promocao-002",
+      "kind": "promotion",
+      "title": "Promoção com captura",
+      "fen": "1r5k/P7/8/8/8/8/8/K7 w - - 0 1",
+      "objective": "Promova o peão a dama capturando a torre.",
+      "solution": {
+        "type": "moves",
+        "line": [
+          "a7b8q"
+        ]
+      },
+      "explanation": "O peão captura na diagonal e, ao chegar à oitava fileira, também promove (art. 3.7). axb8=Q+ ganha a torre e ainda dá xeque pela oitava fileira, o que a promoção simples em a8 não faria.",
+      "version": 1
+    },
+    {
+      "id": "promocao-003",
+      "kind": "promotion",
+      "title": "Subpromoção a cavalo",
+      "fen": "8/3q1P1k/8/8/8/8/8/K7 w - - 0 1",
+      "objective": "Promova o peão de modo a dar xeque e atacar a dama preta ao mesmo tempo.",
+      "solution": {
+        "type": "moves",
+        "line": [
+          "f7f8n",
+          "h7h6",
+          "f8d7"
+        ]
+      },
+      "explanation": "Nem sempre a dama é a melhor escolha (art. 3.7). f8=N+ dá xeque ao rei em h7 e ataca a dama de d7 ao mesmo tempo, um garfo: o rei sai do xeque e o cavalo captura a dama (Nxd7). Promover a dama aqui não ganharia material.",
+      "version": 1
+    }
+  ]
+}

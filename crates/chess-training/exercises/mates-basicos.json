@@ -1,0 +1,41 @@
+{
+  "format": 1,
+  "exercises": [
+    {
+      "id": "mate-em-1-001",
+      "kind": "mate",
+      "title": "Mate de corredor",
+      "fen": "6k1/5ppp/8/8/8/8/8/R3K3 w - - 0 1",
+      "objective": "Dê xeque-mate em um Lance.",
+      "solution": {
+        "type": "mate_in_one"
+      },
+      "explanation": "Ra8 dá xeque na oitava fileira e os peões pretos bloqueiam as fugas do rei: o rei está em xeque e não tem como sair, ou seja, é xeque-mate (art. 5.1.1).",
+      "version": 1
+    },
+    {
+      "id": "mate-em-1-002",
+      "kind": "mate",
+      "title": "Mate do pastor",
+      "fen": "r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4",
+      "objective": "Dê xeque-mate em um Lance.",
+      "solution": {
+        "type": "mate_in_one"
+      },
+      "explanation": "Qxf7 captura o peão de f7, defendido apenas pelo rei, e a dama fica protegida pelo bispo de c4. O rei não pode capturá-la, e as casas d8, f8 e d7 estão ocupadas pelas próprias peças e e7 é vigiada pela dama: xeque-mate (art. 5.1.1).",
+      "version": 1
+    },
+    {
+      "id": "mate-em-1-003",
+      "kind": "mate",
+      "title": "Mate sufocado",
+      "fen": "6rk/6pp/8/6N1/8/8/8/K7 w - - 0 1",
+      "objective": "Dê xeque-mate em um Lance.",
+      "solution": {
+        "type": "mate_in_one"
+      },
+      "explanation": "Nf7 dá xeque ao rei em h8. Cavalo não é bloqueado nem pode ser capturado por peça preta, e o rei está sufocado pelas próprias peças: a torre em g8 e os peões em g7 e h7 tiram todas as casas de fuga. É o mate sufocado, que só o cavalo consegue dar (art. 5.1.1).",
+      "version": 1
+    }
+  ]
+}

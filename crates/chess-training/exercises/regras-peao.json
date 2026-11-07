@@ -1,0 +1,44 @@
+{
+  "format": 1,
+  "exercises": [
+    {
+      "id": "peao-ilegal-001",
+      "kind": "illegal_pawn",
+      "title": "Peão cravado",
+      "fen": "6k1/8/8/b7/8/8/3P4/4K3 w - - 0 1",
+      "objective": "Tente avançar o peão de d2 para d3 e veja por que o Lance é recusado.",
+      "solution": {
+        "type": "refuse_illegal",
+        "uci": "d2d3"
+      },
+      "explanation": "O peão está cravado: o bispo em a5 ataca o rei em e1 pela diagonal e o peão é a única peça no caminho. Mover o peão deixaria o próprio rei em xeque, o que nunca é permitido (art. 3.9).",
+      "version": 1
+    },
+    {
+      "id": "peao-ilegal-002",
+      "kind": "illegal_pawn",
+      "title": "En passant que já expirou",
+      "fen": "4k3/8/8/3pP3/8/8/8/4K3 w - - 0 1",
+      "objective": "O peão preto chegou a d5 há alguns Lances. Tente capturá-lo en passant com e5xd6.",
+      "solution": {
+        "type": "refuse_illegal",
+        "uci": "e5d6"
+      },
+      "explanation": "A captura en passant só vale no Lance imediatamente seguinte ao avanço de duas casas do peão adversário (art. 3.7). Se não for feita na hora, o direito se perde: aqui não há casa-alvo de en passant, e e5xd6 é ilegal.",
+      "version": 1
+    },
+    {
+      "id": "peao-ilegal-003",
+      "kind": "illegal_pawn",
+      "title": "Avanço de duas casas bloqueado",
+      "fen": "4k3/8/8/8/8/4n3/4P3/4K3 w - - 0 1",
+      "objective": "Tente avançar o peão de e2 para e4 e veja por que o Lance é recusado.",
+      "solution": {
+        "type": "refuse_illegal",
+        "uci": "e2e4"
+      },
+      "explanation": "O peão pode avançar duas casas apenas da casa inicial e só se as duas casas à frente estiverem livres (art. 3.7). O cavalo em e3 bloqueia o caminho: o peão não salta peças nem captura para a frente, então e2e4 é ilegal.",
+      "version": 1
+    }
+  ]
+}
