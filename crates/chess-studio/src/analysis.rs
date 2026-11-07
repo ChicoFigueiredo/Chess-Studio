@@ -11,6 +11,12 @@
 //!   do resultado a análise é liberada para revisão, mas volta desligada.
 //! - **Carga.** Threads e Hash dentro dos limites do gerenciador de Engines (C9); a análise
 //!   pode pausar sozinha enquanto a Engine adversária pensa (Assistido contra a Engine).
+//! - **Controle de carga (C10, UCI-06).** O governador (`chess_uci::Governor`) lê o p95 do
+//!   tempo de quadro e reduz a análise quando o FPS cai abaixo da meta da qualidade gráfica
+//!   (threads, lote e cache da rede, rajadas, pausa); o painel avisa "Análise reduzida para
+//!   manter o FPS" e o usuário escolhe Máximo, Equilibrado ou Leve.
+//! - **Backend (Lc0).** Automático pelo que a Engine anuncia e pela máquina, ou escolhido à
+//!   mão; se a GPU não sobe, a análise recua para a CPU e o painel diz por quê.
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -21,13 +27,15 @@ use chess_core::{CanonicalPosition, Color as Side};
 use chess_game::{HistoryEntry, ReviewView};
 use chess_uci::{
     AnalysisConfig, AnalysisController, AnalysisEvent, AnalysisLine, AnalysisUpdate, EngineConfig,
-    Limits, OptionGroup, PositionSpec, Score,
+    Hardware, Limits, LoadMode, OptionGroup, PositionSpec, Score,
 };
 
 use crate::dock::{PanelAccess, PanelDef, ids};
 use crate::engine_manager::{DbLocation, EngineManager};
 use crate::i18n::I18n;
+use crate::load_control::{LoadControl, Notice, target_for};
 use crate::notation;
+use crate::presentation::GraphicsQuality;
 use crate::session::Session;
 use crate::training_ui::TrainingUi;
 
@@ -35,6 +43,12 @@ use crate::training_ui::TrainingUi;
 const CHOICES_REFRESH: Duration = Duration::from_secs(2);
 /// Hash padrão da análise (MB).
 const DEFAULT_HASH_MB: u32 = 128;
+
+/// A GPU da máquina, detectada uma vez (chama `nvidia-smi -L`, barato mas não de graça).
+pub fn host_hardware() -> Hardware {
+    static HARDWARE: std::sync::OnceLock<Hardware> = std::sync::OnceLock::new();
+    *HARDWARE.get_or_init(chess_uci::detect_hardware)
+}
 
 // --- política: quando a análise pode rodar -----------------------------------------------
 
@@ -205,6 +219,8 @@ struct Launch {
     options: Vec<(String, String)>,
     threads: u32,
     hash_mb: u32,
+    /// Backend escolhido à mão (Lc0); `None` = automático.
+    backend: Option<String>,
 }
 
 /// Qual Posição está sendo analisada.
@@ -259,6 +275,8 @@ pub struct Analysis {
     hash_mb: u32,
     pause_while_thinking: bool,
     choices: Vec<Choice>,
+    /// A lista foi fixada de fora (benchmark): o gerenciador não a substitui.
+    choices_pinned: bool,
     choices_at: Option<Instant>,
     controller: Option<AnalysisController>,
     launched: Option<Launch>,
@@ -274,6 +292,16 @@ pub struct Analysis {
     preview: Option<(usize, usize)>,
     limits: Limits,
     interval: Duration,
+    /// Governador de carga por FPS (C10).
+    load: LoadControl,
+    /// Backend do Lc0 escolhido pelo usuário; `None` = automático.
+    backend: Option<String>,
+    /// Backends que a Engine em uso anuncia (vazio: não tem a opção).
+    backends: Vec<String>,
+    /// Backend em uso agora.
+    backend_active: Option<String>,
+    /// Aviso de que a GPU não subiu e a análise recuou para a CPU.
+    backend_note: Option<String>,
 }
 
 impl Default for Analysis {
@@ -288,6 +316,7 @@ impl Default for Analysis {
             hash_mb: DEFAULT_HASH_MB,
             pause_while_thinking: true,
             choices: Vec::new(),
+            choices_pinned: false,
             choices_at: None,
             controller: None,
             launched: None,
@@ -300,8 +329,17 @@ impl Default for Analysis {
             view: None,
             status: Status::Off,
             preview: None,
+            load: LoadControl::new(
+                LoadMode::default(),
+                target_for(GraphicsQuality::default()),
+                (limits.max_threads / 2).clamp(1, 4),
+            ),
             limits,
             interval: chess_uci::DEFAULT_INTERVAL,
+            backend: None,
+            backends: Vec::new(),
+            backend_active: None,
+            backend_note: None,
         }
     }
 }
@@ -319,6 +357,91 @@ impl Analysis {
 
     pub fn shown(&self) -> Option<&Shown> {
         self.view.as_ref()
+    }
+
+    pub fn load_mode(&self) -> LoadMode {
+        self.load.mode()
+    }
+
+    /// Modo de carga escolhido pelo usuário (Máximo, Equilibrado ou Leve).
+    pub fn set_load_mode(&mut self, mode: LoadMode) {
+        self.load.set_mode(mode);
+    }
+
+    /// Aviso de carga a mostrar no painel.
+    pub fn load_notice(&self) -> Option<Notice> {
+        self.load.notice()
+    }
+
+    #[cfg(test)]
+    pub fn load_level(&self) -> chess_uci::Level {
+        self.load.level()
+    }
+
+    pub fn backend_active(&self) -> Option<&str> {
+        self.backend_active.as_deref()
+    }
+
+    pub fn backend_note(&self) -> Option<&str> {
+        self.backend_note.as_deref()
+    }
+
+    /// Escolhe o backend do Lc0 (`None` = automático); a Engine reinicia.
+    pub fn set_backend(&mut self, backend: Option<String>) {
+        self.backend = backend;
+    }
+
+    /// Um quadro de `frame_ms`: alimenta o governador enquanto a análise roda e entrega à
+    /// Engine o plano de carga novo. Chamado uma vez por quadro, antes de [`Self::drive`].
+    pub fn frame(&mut self, frame_ms: f64, quality: GraphicsQuality) {
+        self.load.set_target(target_for(quality));
+        self.load.set_threads(self.threads);
+        let running = self.controller.is_some()
+            && self.ready
+            && matches!(self.status, Status::Starting | Status::Running);
+        self.load.frame(frame_ms, running);
+        if running
+            && let Some(plan) = self.load.take_plan_change()
+            && let Some(controller) = &mut self.controller
+        {
+            controller.set_load(plan);
+        }
+    }
+
+    /// Ligada e com Engine de análise de pé (usado pelo benchmark).
+    pub fn is_active(&self) -> bool {
+        self.enabled && self.controller.is_some()
+    }
+
+    /// Nível do governador como número (0 = pleno … 4 = pausado), para o benchmark.
+    pub fn load_level_index(&self) -> u8 {
+        match self.load.level() {
+            chess_uci::Level::Full => 0,
+            chess_uci::Level::Reduced => 1,
+            chess_uci::Level::Minimal => 2,
+            chess_uci::Level::Intermittent => 3,
+            chess_uci::Level::Paused => 4,
+        }
+    }
+
+    /// Profundidade e nós/s da melhor linha mostrada agora.
+    pub fn latest_metrics(&self) -> Option<(u32, Option<u64>)> {
+        let line = self.view.as_ref()?.update.lines.first()?;
+        Some((line.depth, line.nps))
+    }
+
+    /// Benchmark (`--engine ativa`): usa esta Engine, com estas opções, no modo de carga
+    /// pedido. A lista do gerenciador deixa de sobrescrever a escolha.
+    pub fn bench_use(&mut self, path: PathBuf, options: Vec<(String, String)>, mode: LoadMode) {
+        self.choices = vec![Choice {
+            name: path.display().to_string(),
+            path: path.clone(),
+            options,
+        }];
+        self.choices_pinned = true;
+        self.engine = Some(path);
+        self.load.set_mode(mode);
+        self.failure = None;
     }
 
     /// Há uma Engine de análise em execução (processo vivo ou subindo)?
@@ -387,6 +510,7 @@ impl Analysis {
             options,
             threads: self.threads,
             hash_mb: self.hash_mb,
+            backend: self.backend.clone(),
         })
     }
 
@@ -398,6 +522,7 @@ impl Analysis {
         self.view = None;
         self.preview = None;
         self.applied = (None, None);
+        self.backend_active = None;
     }
 
     fn start(&mut self, launch: &Launch) {
@@ -413,6 +538,10 @@ impl Analysis {
         config.hash_mb = Some(launch.hash_mb);
         config.limits = self.limits;
         config.interval = self.interval;
+        config.backend.clone_from(&launch.backend);
+        config.hardware = Some(host_hardware());
+        self.backend_note = None;
+        self.load.mark_unsent();
         self.controller = Some(AnalysisController::start(config));
         self.launched = Some(launch.clone());
     }
@@ -428,10 +557,17 @@ impl Analysis {
                     name,
                     threads,
                     hash_mb,
+                    backend,
+                    backends,
                 } => {
                     self.ready = true;
                     self.engine_name = name;
                     self.applied = (threads, hash_mb);
+                    self.backend_active = backend;
+                    self.backends = backends;
+                }
+                AnalysisEvent::BackendFallback { message, .. } => {
+                    self.backend_note = Some(message);
                 }
                 AnalysisEvent::Update(update) => {
                     if update.id == self.request
@@ -627,7 +763,7 @@ impl Plugin for AnalysisPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Analysis>().add_systems(
             Update,
-            (capture_setup, drive_analysis, sync_hud_analysis)
+            (capture_setup, feed_load, drive_analysis, sync_hud_analysis)
                 .chain()
                 .before(crate::hud::HudSet),
         );
@@ -643,6 +779,16 @@ impl Plugin for AnalysisPlugin {
     }
 }
 
+/// Todo quadro: o tempo do quadro alimenta o governador de carga (C10).
+fn feed_load(
+    time: Res<Time<Real>>,
+    quality: Option<Res<GraphicsQuality>>,
+    mut analysis: ResMut<Analysis>,
+) {
+    let quality = quality.map_or_else(GraphicsQuality::default, |q| *q);
+    analysis.frame(time.delta_secs_f64() * 1000.0, quality);
+}
+
 /// Todo quadro: aplica o bloqueio competitivo e mantém a Engine de análise.
 fn drive_analysis(
     session: Res<Session>,
@@ -651,6 +797,7 @@ fn drive_analysis(
     mut analysis: ResMut<Analysis>,
 ) {
     if let Some(manager) = manager
+        && !analysis.choices_pinned
         && analysis
             .choices_at
             .is_none_or(|t| t.elapsed() >= CHOICES_REFRESH)
@@ -705,6 +852,7 @@ fn panel(ui: &mut egui::Ui, i18n: &I18n, analysis: &mut Analysis, session: &mut 
         return;
     }
     toggle_row(ui, i18n, analysis);
+    load_notice_ui(ui, i18n, analysis);
     status_line(ui, i18n, analysis);
     if analysis.enabled
         && let Some(shown) = analysis.view.clone()
@@ -733,6 +881,25 @@ fn toggle_row(ui: &mut egui::Ui, i18n: &I18n, analysis: &mut Analysis) {
             ui.spinner();
         }
     });
+}
+
+/// Aviso de carga (C10) e, se a GPU não subiu, o recuo para a CPU.
+fn load_notice_ui(ui: &mut egui::Ui, i18n: &I18n, analysis: &Analysis) {
+    if !analysis.enabled {
+        return;
+    }
+    let (key, color) = match analysis.load_notice() {
+        Some(Notice::Reduced) => ("analysis-load-reduced", egui::Color32::YELLOW),
+        Some(Notice::Paused) => ("analysis-load-paused", egui::Color32::YELLOW),
+        Some(Notice::BelowTarget) => ("analysis-load-below-target", egui::Color32::YELLOW),
+        None => ("", egui::Color32::YELLOW),
+    };
+    if !key.is_empty() {
+        ui.colored_label(color, i18n.t(key));
+    }
+    if let Some(note) = analysis.backend_note() {
+        ui.colored_label(egui::Color32::YELLOW, note);
+    }
 }
 
 fn status_line(ui: &mut egui::Ui, i18n: &I18n, analysis: &mut Analysis) {
@@ -941,7 +1108,96 @@ fn settings(ui: &mut egui::Ui, i18n: &I18n, analysis: &mut Analysis) {
     {
         analysis.set_pause_while_thinking(pause);
     }
+    load_mode_row(ui, i18n, analysis);
+    backend_row(ui, i18n, analysis);
     ui.small(i18n.t("analysis-load-note"));
+}
+
+/// Máximo / Equilibrado / Leve (UCI-06): quanto o governador pode tirar da análise.
+fn load_mode_row(ui: &mut egui::Ui, i18n: &I18n, analysis: &mut Analysis) {
+    ui.horizontal(|ui| {
+        ui.label(i18n.t("analysis-load-label"));
+        let mut mode = analysis.load_mode();
+        for (value, key) in [
+            (LoadMode::Max, "analysis-load-max"),
+            (LoadMode::Balanced, "analysis-load-balanced"),
+            (LoadMode::Light, "analysis-load-light"),
+        ] {
+            ui.selectable_value(&mut mode, value, i18n.t(key));
+        }
+        if mode != analysis.load_mode() {
+            analysis.set_load_mode(mode);
+        }
+    });
+    let key = match analysis.load_mode() {
+        LoadMode::Max => "analysis-load-max-hint",
+        LoadMode::Balanced => "analysis-load-balanced-hint",
+        LoadMode::Light => "analysis-load-light-hint",
+    };
+    ui.small(i18n.t_with(key, &[("fps", &analysis.load.target().fps().to_string())]));
+}
+
+/// Backend do Lc0: automático ou escolhido à mão. Só aparece para Engines que o anunciam.
+fn backend_row(ui: &mut egui::Ui, i18n: &I18n, analysis: &mut Analysis) {
+    let known: Vec<String> = analysis
+        .backends
+        .iter()
+        .filter(|b| chess_uci::backend_info(b).is_some())
+        .cloned()
+        .collect();
+    if known.is_empty() || !analysis.has_engine() {
+        return;
+    }
+    let label_of = |id: &str| {
+        let info = chess_uci::backend_info(id);
+        let kind = match info.map(|i| i.class) {
+            Some(chess_uci::BackendClass::Gpu) => "GPU",
+            _ => "CPU",
+        };
+        format!("{id} · {kind}")
+    };
+    let current = analysis.backend.clone();
+    let mut picked: Option<Option<String>> = None;
+    ui.horizontal(|ui| {
+        ui.label(i18n.t("analysis-backend-label"));
+        let selected = current
+            .as_deref()
+            .map_or_else(|| i18n.t("analysis-backend-auto"), label_of);
+        egui::ComboBox::from_id_salt("analysis_backend_picker")
+            .selected_text(selected)
+            .show_ui(ui, |ui| {
+                if ui
+                    .selectable_label(current.is_none(), i18n.t("analysis-backend-auto"))
+                    .clicked()
+                {
+                    picked = Some(None);
+                }
+                for id in &known {
+                    let supported = chess_uci::supported_on(id, std::env::consts::OS);
+                    let text = if supported {
+                        label_of(id)
+                    } else {
+                        format!(
+                            "{} ({})",
+                            label_of(id),
+                            i18n.t("analysis-backend-unsupported")
+                        )
+                    };
+                    if ui
+                        .selectable_label(current.as_deref() == Some(id.as_str()), text)
+                        .clicked()
+                    {
+                        picked = Some(Some(id.clone()));
+                    }
+                }
+            });
+    });
+    if let Some(choice) = picked {
+        analysis.set_backend(choice);
+    }
+    if let Some(active) = analysis.backend_active() {
+        ui.small(i18n.t_with("analysis-backend-active", &[("backend", &label_of(active))]));
+    }
 }
 
 fn engine_picker(ui: &mut egui::Ui, i18n: &I18n, analysis: &mut Analysis) {
@@ -1239,6 +1495,91 @@ mod tests {
         let launch = analysis.launch().unwrap();
         assert_eq!(launch.path, PathBuf::from("/e/lc0"));
         assert_eq!(launch.options.len(), 1);
+    }
+
+    /// Análise "rodando" sem Engine real: o controlador existe, a Engine está pronta.
+    fn running() -> (Analysis, Session) {
+        let session = Session::new();
+        let mut analysis = armed();
+        analysis.drive(&session, false);
+        assert!(analysis.has_engine());
+        analysis.ready = true;
+        analysis.status = Status::Running;
+        (analysis, session)
+    }
+
+    fn frames(analysis: &mut Analysis, seconds: f64, frame_ms: f64) {
+        for _ in 0..(seconds * 1000.0 / frame_ms) as usize {
+            analysis.frame(frame_ms, GraphicsQuality::Balanced);
+        }
+    }
+
+    #[test]
+    fn low_fps_lightens_the_running_analysis_and_raises_the_notice() {
+        let (mut analysis, _session) = running();
+        frames(&mut analysis, 10.0, 16.7);
+        assert_eq!(analysis.load_notice(), None, "FPS bom: sem aviso");
+        frames(&mut analysis, 8.0, 40.0);
+        assert!(analysis.load_level() > chess_uci::Level::Full);
+        assert_eq!(analysis.load_notice(), Some(Notice::Reduced));
+    }
+
+    #[test]
+    fn the_user_can_choose_maximum_balanced_or_light() {
+        let (mut analysis, _session) = running();
+        assert_eq!(analysis.load_mode(), LoadMode::Balanced, "padrão");
+        analysis.set_load_mode(LoadMode::Max);
+        frames(&mut analysis, 20.0, 40.0);
+        assert_eq!(analysis.load_level(), chess_uci::Level::Full);
+        assert_eq!(analysis.load_notice(), Some(Notice::BelowTarget));
+        analysis.set_load_mode(LoadMode::Light);
+        assert_eq!(analysis.load_level(), chess_uci::Level::Reduced);
+    }
+
+    #[test]
+    fn a_slow_app_without_analysis_is_not_blamed_on_the_analysis() {
+        let mut analysis = Analysis::default();
+        frames(&mut analysis, 30.0, 50.0);
+        assert_eq!(analysis.load_level(), chess_uci::Level::Full);
+        assert_eq!(analysis.load_notice(), None);
+    }
+
+    #[test]
+    fn turning_the_analysis_off_resets_the_governor() {
+        let (mut analysis, session) = running();
+        frames(&mut analysis, 12.0, 40.0);
+        assert!(analysis.load_level() > chess_uci::Level::Full);
+        analysis.set_enabled(false);
+        analysis.drive(&session, false);
+        analysis.frame(16.0, GraphicsQuality::Balanced);
+        assert_eq!(analysis.load_level(), chess_uci::Level::Full);
+    }
+
+    #[test]
+    fn the_economic_quality_targets_30_fps() {
+        let (mut analysis, _session) = running();
+        // 25 ms = 40 FPS: abaixo de 60, mas dentro da meta de 30.
+        for _ in 0..800 {
+            analysis.frame(25.0, GraphicsQuality::Economic);
+        }
+        assert_eq!(analysis.load_level(), chess_uci::Level::Full);
+        let (mut analysis, _session) = running();
+        for _ in 0..800 {
+            analysis.frame(25.0, GraphicsQuality::Balanced);
+        }
+        assert!(analysis.load_level() > chess_uci::Level::Full);
+    }
+
+    #[test]
+    fn a_manual_backend_goes_into_the_launch_and_restarts_the_engine() {
+        let mut analysis = Analysis::default();
+        analysis.set_default_engine(Some(PathBuf::from("/e/lc0")));
+        let auto = analysis.launch().unwrap();
+        assert_eq!(auto.backend, None);
+        analysis.set_backend(Some("blas".into()));
+        let manual = analysis.launch().unwrap();
+        assert_eq!(manual.backend.as_deref(), Some("blas"));
+        assert_ne!(auto, manual, "mudou o backend: a Engine reinicia");
     }
 
     #[test]

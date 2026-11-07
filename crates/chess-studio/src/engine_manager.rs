@@ -74,6 +74,9 @@ type Runner =
 enum Msg {
     Step(Progress),
     Done(Result<JobDone, InstallError>),
+    /// Download só da rede neural (Lc0 do sistema), fora de uma instalação do catálogo.
+    NetStep(Progress),
+    NetDone(Result<InstalledNetwork, InstallError>),
     Detected(Vec<DetectedEngine>),
     Added(Result<DetectedEngine, String>),
     Options(EngineId, Result<Vec<EngineOption>, String>),
@@ -179,6 +182,10 @@ pub struct EngineManager {
     chosen: Option<Chosen>,
     /// Instalar também a rede recomendada (Lc0) ao confirmar.
     with_network: bool,
+    /// Rede neural à espera de consentimento (Lc0 detectado, sem instalação do catálogo).
+    net_pending: Option<&'static chess_uci::Network>,
+    /// Download da rede em andamento.
+    net_job: Option<Progress>,
 }
 
 impl std::fmt::Debug for EngineManager {
@@ -211,6 +218,8 @@ impl Default for EngineManager {
             form: None,
             chosen: None,
             with_network: true,
+            net_pending: None,
+            net_job: None,
         }
     }
 }
@@ -243,7 +252,7 @@ impl EngineManager {
     }
 
     pub fn is_busy(&self) -> bool {
-        self.job.is_some() || self.detecting || self.adding
+        self.job.is_some() || self.net_job.is_some() || self.detecting || self.adding
     }
 
     pub fn form(&self) -> Option<&ConfigForm> {
@@ -440,6 +449,42 @@ impl EngineManager {
                 let _ = step_tx.send(Msg::Step(p));
             });
             let _ = tx.send(Msg::Done(result));
+        });
+    }
+
+    /// Pede o consentimento para baixar a rede recomendada do Lc0 (nada é baixado ainda).
+    pub fn request_network(&mut self) {
+        self.notice = None;
+        self.net_pending =
+            chess_uci::catalog_entry("lc0").and_then(|e| e.networks.iter().find(|n| n.recommended));
+    }
+
+    pub fn cancel_network_request(&mut self) {
+        self.net_pending = None;
+    }
+
+    /// O usuário aceitou: baixa a rede (hash conferido) para `<dados>/engines/networks/`.
+    pub fn confirm_network(&mut self) {
+        let Some(net) = self.net_pending.take() else {
+            return;
+        };
+        let Some(root) = self.engines_dir.clone() else {
+            self.notice = Some(Notice::error("manager-error-nodir", ""));
+            return;
+        };
+        if self.net_job.is_some() {
+            return;
+        }
+        self.cancel = Arc::new(AtomicBool::new(false));
+        let cancel = Arc::clone(&self.cancel);
+        let tx = self.tx.clone();
+        self.net_job = Some(Progress::Verifying);
+        thread::spawn(move || {
+            let step_tx = tx.clone();
+            let result = chess_uci::install_network_from_catalog(net, &root, &cancel, &mut |p| {
+                let _ = step_tx.send(Msg::NetStep(p));
+            });
+            let _ = tx.send(Msg::NetDone(result));
         });
     }
 
@@ -674,6 +719,42 @@ impl EngineManager {
                     }
                 }
                 Msg::Done(result) => self.finish_job(result),
+                Msg::NetStep(step) => {
+                    if self.net_job.is_some() {
+                        self.net_job = Some(step);
+                    }
+                }
+                Msg::NetDone(result) => {
+                    self.net_job = None;
+                    match result {
+                        Ok(net) => {
+                            if let Some(form) = &mut self.form {
+                                form.networks = self
+                                    .engines_dir
+                                    .as_deref()
+                                    .map(chess_uci::installed_networks)
+                                    .unwrap_or_default();
+                                form.values.insert(
+                                    "WeightsFile".to_owned(),
+                                    net.path.to_string_lossy().into_owned(),
+                                );
+                            }
+                            self.notice = Some(Notice::info("manager-network-installed"));
+                        }
+                        Err(InstallError::Cancelled) => {
+                            self.notice = Some(Notice::info("manager-cancelled"));
+                        }
+                        Err(err) => {
+                            self.notice = Some(Notice {
+                                code: match &err {
+                                    InstallError::Http(code) => code.to_string(),
+                                    _ => String::new(),
+                                },
+                                ..Notice::error(install_error_key(&err), err)
+                            });
+                        }
+                    }
+                }
                 Msg::Detected(found) => {
                     self.detecting = false;
                     for engine in &found {
@@ -1020,6 +1101,9 @@ fn catalog_section(ui: &mut egui::Ui, i18n: &I18n, manager: &mut EngineManager) 
                     ("arch", std::env::consts::ARCH),
                 ],
             ));
+            if entry.id == "lc0" {
+                ui.small(chess_uci::lc0_install_help(std::env::consts::OS));
+            }
             continue;
         }
         for plan in mine {
@@ -1209,6 +1293,65 @@ fn job_progress(ui: &mut egui::Ui, i18n: &I18n, manager: &EngineManager, step: P
     }
 }
 
+/// Baixar a rede recomendada do Lc0 para uma Engine que o app não instalou (Linux/macOS):
+/// consentimento por ação, hash conferido, só do host oficial (PEND-08).
+fn network_download(ui: &mut egui::Ui, i18n: &I18n, manager: &mut EngineManager) {
+    if let Some(step) = manager.net_job {
+        let text = match step {
+            Progress::Downloading {
+                done,
+                total: Some(total),
+            } => i18n.t_with(
+                "wizard-step-downloading",
+                &[
+                    ("done", &format_megabytes(done)),
+                    ("total", &format_megabytes(total)),
+                ],
+            ),
+            Progress::Downloading { done, .. } => i18n.t_with(
+                "wizard-step-downloading-unknown",
+                &[("done", &format_megabytes(done))],
+            ),
+            Progress::Verifying => i18n.t("wizard-step-verifying"),
+            Progress::Extracting | Progress::Validating => i18n.t("wizard-step-validating"),
+        };
+        ui.horizontal(|ui| {
+            ui.spinner();
+            ui.label(text);
+            if ui.button(i18n.t("wizard-download-cancel")).clicked() {
+                manager.cancel_job();
+            }
+        });
+        return;
+    }
+    if let Some(net) = manager.net_pending {
+        ui.label(i18n.t_with(
+            "manager-network-confirm",
+            &[("name", net.name), ("size", &format_megabytes(net.size))],
+        ));
+        ui.small(net.url());
+        ui.small(i18n.t("wizard-download-network-notice"));
+        ui.horizontal(|ui| {
+            if ui.button(i18n.t("manager-network-accept")).clicked() {
+                manager.confirm_network();
+            }
+            if ui.button(i18n.t("wizard-download-cancel")).clicked() {
+                manager.cancel_network_request();
+            }
+        });
+    } else if let Some(net) =
+        chess_uci::catalog_entry("lc0").and_then(|e| e.networks.iter().find(|n| n.recommended))
+        && ui
+            .button(i18n.t_with(
+                "manager-network-download",
+                &[("name", net.name), ("size", &format_megabytes(net.size))],
+            ))
+            .clicked()
+    {
+        manager.request_network();
+    }
+}
+
 /// Rótulo do grupo do formulário.
 fn group_key(group: OptionGroup) -> &'static str {
     match group {
@@ -1258,6 +1401,24 @@ fn config_form(ui: &mut egui::Ui, i18n: &I18n, manager: &mut EngineManager) {
             option_row(ui, i18n, spec, &limits, &values, &mut edits);
         }
     }
+    // Backend (Lc0): o que a máquina recomenda entre os que a Engine anuncia.
+    if let Some(Control::Combo { vars, .. }) = specs
+        .iter()
+        .find(|s| s.name == "Backend")
+        .map(|s| &s.control)
+    {
+        let recommended = chess_uci::recommended_backend(
+            std::env::consts::OS,
+            crate::analysis::host_hardware(),
+            vars,
+        );
+        ui.add_space(4.0);
+        ui.small(i18n.t_with(
+            "manager-backend-recommended",
+            &[("backend", recommended.as_deref().unwrap_or("-"))],
+        ));
+        ui.small(i18n.t("manager-backend-fallback-note"));
+    }
     // Rede neural do Lc0: só entre as baixadas pelo app.
     if specs.iter().any(|s| s.name == "WeightsFile") {
         ui.add_space(6.0);
@@ -1265,6 +1426,7 @@ fn config_form(ui: &mut egui::Ui, i18n: &I18n, manager: &mut EngineManager) {
         if networks.is_empty() {
             ui.small(i18n.t("manager-network-none"));
         }
+        network_download(ui, i18n, manager);
         let current = values.get("WeightsFile").cloned().unwrap_or_default();
         for net in &networks {
             let path = net.to_string_lossy().into_owned();
@@ -1329,11 +1491,27 @@ fn option_row(
             }
             Control::Combo { default, vars } => {
                 let selected = current.cloned().unwrap_or_else(|| default.clone());
+                let label_of = |var: &str| -> String {
+                    match chess_uci::backend_info(var) {
+                        Some(info) if spec.name == "Backend" => {
+                            let kind = if info.class == chess_uci::BackendClass::Gpu {
+                                "GPU"
+                            } else {
+                                "CPU"
+                            };
+                            format!("{var} · {kind}")
+                        }
+                        _ => var.to_owned(),
+                    }
+                };
                 egui::ComboBox::from_id_salt(&spec.name)
-                    .selected_text(&selected)
+                    .selected_text(label_of(&selected))
                     .show_ui(ui, |ui| {
                         for var in vars {
-                            if ui.selectable_label(*var == selected, var).clicked() {
+                            if ui
+                                .selectable_label(*var == selected, label_of(var))
+                                .clicked()
+                            {
                                 edits.push((spec.name.clone(), Some(var.clone())));
                             }
                         }
@@ -1741,6 +1919,11 @@ mod tests {
             "manager-group-advanced",
             "manager-group-network",
             "manager-network-none",
+            "manager-backend-recommended",
+            "manager-backend-fallback-note",
+            "manager-network-confirm",
+            "manager-network-accept",
+            "manager-network-installed",
             "manager-config-heading",
             "manager-config-invalid",
             "manager-config-save",

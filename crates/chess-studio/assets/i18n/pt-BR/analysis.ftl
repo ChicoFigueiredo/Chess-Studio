@@ -27,3 +27,20 @@ analysis-back-to-game = Voltar à Partida
 analysis-showing-line = Mostrando uma linha da análise (somente leitura).
 analysis-mate-white = Mate das Brancas em { $n }
 analysis-mate-black = Mate das Pretas em { $n }
+
+## Controle de carga e backend (C10, UCI-06).
+
+analysis-load-label = Carga
+analysis-load-max = Máximo
+analysis-load-balanced = Equilibrado
+analysis-load-light = Leve
+analysis-load-max-hint = Usa tudo o que está configurado, mesmo que o FPS caia abaixo de { $fps }.
+analysis-load-balanced-hint = Reduz a análise sozinha quando o FPS cai abaixo de { $fps } e a devolve quando o app se recupera.
+analysis-load-light-hint = Já começa reduzida e reage cedo; o app fica fluido (meta de { $fps } FPS).
+analysis-load-reduced = Análise reduzida para manter o FPS.
+analysis-load-paused = Análise pausada para manter o FPS; ela volta quando o app se recuperar.
+analysis-load-below-target = O FPS está abaixo da meta e o modo Máximo não reduz a análise. Escolha Equilibrado ou Leve para protegê-lo.
+analysis-backend-label = Backend
+analysis-backend-auto = Automático
+analysis-backend-unsupported = indisponível neste sistema
+analysis-backend-active = Em uso: { $backend }

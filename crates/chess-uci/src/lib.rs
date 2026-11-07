@@ -49,7 +49,7 @@ pub use controller::{
     StrengthApplied,
 };
 pub use detect::{
-    DetectedEngine, PROBE_TIMEOUT, SearchEnv, app_data_dir, detect_host, detect_in,
+    DetectedEngine, LC0_ENV, PROBE_TIMEOUT, SearchEnv, app_data_dir, detect_host, detect_in,
     engine_files_in, engines_dir, load_preferred, probe_config, probe_engine, probe_full,
     save_preferred, search_dirs,
 };
