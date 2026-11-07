@@ -699,6 +699,7 @@ fn clock_widget_2d(
     i18n: Res<I18n>,
     presentation: Res<Presentation>,
     mut session: ResMut<Session>,
+    dock: Res<crate::dock::Dock>,
 ) -> Result {
     if *presentation != Presentation::Technical2d {
         return Ok(());
@@ -713,7 +714,7 @@ fn clock_widget_2d(
         .title_bar(false)
         .collapsible(false)
         .resizable(false)
-        .anchor(egui::Align2::RIGHT_CENTER, [-16.0, 0.0])
+        .anchor(egui::Align2::RIGHT_CENTER, [dock.right_offset(16.0), 0.0])
         .show(contexts.ctx_mut()?, |ui| {
             for slot in 0..2 {
                 let side = side_of_slot(user, slot);

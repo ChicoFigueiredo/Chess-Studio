@@ -13,6 +13,7 @@ mod board2d;
 mod camera;
 mod capture;
 mod clock;
+mod dock;
 mod engine;
 mod engine_wizard;
 mod fen_pgn;
@@ -21,6 +22,7 @@ mod highlight;
 mod i18n;
 mod layout;
 mod new_game;
+mod notation;
 mod paths;
 mod persistence;
 mod picking;
@@ -130,6 +132,7 @@ fn main() {
         camera::CameraPlugin,
         picking::PickingPlugin,
         ui::UiPlugin,
+        dock::DockPlugin,
     ))
     .add_plugins((
         aids_panel::AidsPanelPlugin,
