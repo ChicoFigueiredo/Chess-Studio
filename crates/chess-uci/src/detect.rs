@@ -8,7 +8,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use crate::{Engine, EngineConfig, EngineError, Timeouts};
+use crate::{Engine, EngineConfig, EngineError, EngineOption, Timeouts};
 
 /// Prefixos (em minúsculas) de nomes de executáveis de Engines UCI conhecidas.
 const KNOWN_ENGINES: &[&str] = &[
@@ -190,6 +190,15 @@ pub fn engine_files_in(dir: &Path) -> Vec<PathBuf> {
 
 /// Inicia o executável, faz o handshake UCI com `timeout` e o encerra.
 pub fn probe_engine(path: &Path, timeout: Duration) -> Result<DetectedEngine, EngineError> {
+    probe_full(path, timeout).map(|(engine, _)| engine)
+}
+
+/// Como [`probe_engine`], devolvendo também as opções anunciadas (para o formulário de
+/// configuração do gerenciador).
+pub fn probe_full(
+    path: &Path,
+    timeout: Duration,
+) -> Result<(DetectedEngine, Vec<EngineOption>), EngineError> {
     let timeouts = Timeouts {
         handshake: timeout,
         ready: timeout,
@@ -197,20 +206,29 @@ pub fn probe_engine(path: &Path, timeout: Duration) -> Result<DetectedEngine, En
         ..Timeouts::default()
     };
     let config = EngineConfig::new(path).timeouts(timeouts).log_capacity(0);
-    probe_config(config)
+    probe_config_full(config)
 }
 
 /// Como [`probe_engine`], com a configuração completa (argumentos extras, nos testes).
 pub fn probe_config(config: EngineConfig) -> Result<DetectedEngine, EngineError> {
+    probe_config_full(config).map(|(engine, _)| engine)
+}
+
+fn probe_config_full(
+    config: EngineConfig,
+) -> Result<(DetectedEngine, Vec<EngineOption>), EngineError> {
     let path = config.program.clone();
     let engine = spawn_retrying_busy(&config)?;
     let info = engine.info().clone();
     engine.quit();
-    Ok(DetectedEngine {
-        path,
-        name: info.name,
-        author: info.author,
-    })
+    Ok((
+        DetectedEngine {
+            path,
+            name: info.name,
+            author: info.author,
+        },
+        info.options,
+    ))
 }
 
 /// `Engine::spawn` que tolera "arquivo de texto ocupado" (ETXTBSY): um executável recém-gravado

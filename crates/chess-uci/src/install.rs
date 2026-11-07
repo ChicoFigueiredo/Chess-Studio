@@ -16,10 +16,15 @@ use sha2::{Digest, Sha256};
 
 use crate::EngineError;
 use crate::catalog::{ArchiveKind, Asset};
-use crate::detect::{DetectedEngine, probe_engine};
+use crate::detect::{DetectedEngine, probe_full};
+use crate::protocol::EngineOption;
 
-/// Arquivos extraídos além do executável: a licença e os autores acompanham o binário.
-const KEEP_FILES: &[&str] = &["Copying.txt", "AUTHORS"];
+/// Marcador gravado na pasta de toda Engine instalada pelo app: só pastas com ele podem ser
+/// apagadas pelo gerenciador (PEND-08, remoção segura).
+pub const INSTALL_MARKER: &str = ".chess-studio-install";
+/// Teto de cada arquivo extraído e do total (defesa contra "zip bomb").
+const MAX_ENTRY: u64 = 1 << 30;
+const MAX_EXTRACTED: u64 = 2 << 30;
 /// Prazo do handshake de validação (o binário universal tem ~100 MB).
 const VALIDATE_TIMEOUT: Duration = Duration::from_secs(15);
 /// Teto de segurança do corpo baixado, além do tamanho esperado.
@@ -34,6 +39,9 @@ pub struct InstallSpec {
     pub kind: ArchiveKind,
     /// Caminho do executável dentro do arquivo.
     pub executable: String,
+    /// Outros arquivos a extrair, por nome-base, da mesma pasta do executável (licenças e
+    /// bibliotecas). Qualquer outra entrada do arquivo é ignorada.
+    pub keep: Vec<String>,
 }
 
 impl From<&Asset> for InstallSpec {
@@ -43,6 +51,7 @@ impl From<&Asset> for InstallSpec {
             sha256: asset.sha256.to_owned(),
             kind: asset.kind,
             executable: asset.executable.to_owned(),
+            keep: asset.keep.iter().map(|k| (*k).to_owned()).collect(),
         }
     }
 }
@@ -101,18 +110,28 @@ impl std::error::Error for InstallError {}
 pub struct Installed {
     pub dir: PathBuf,
     pub engine: DetectedEngine,
+    /// Opções anunciadas no handshake de validação (alimentam o formulário de configuração).
+    pub options: Vec<EngineOption>,
     /// SHA-256 verificado do arquivo baixado.
     pub sha256: String,
 }
 
 /// Apaga o diretório temporário se a instalação não chegar ao fim.
 struct PartGuard {
-    dir: PathBuf,
+    path: PathBuf,
+}
+
+impl PartGuard {
+    fn file(path: PathBuf) -> Self {
+        Self { path }
+    }
 }
 
 impl Drop for PartGuard {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.dir);
+        // Diretório de staging ou arquivo parcial: o que sobrar some.
+        let _ = fs::remove_dir_all(&self.path);
+        let _ = fs::remove_file(&self.path);
     }
 }
 
@@ -139,7 +158,7 @@ pub fn install(
     let part = engines_dir.join(format!(".{dir_name}.part"));
     let _ = fs::remove_dir_all(&part);
     fs::create_dir_all(&part).map_err(io_err(&part))?;
-    let _guard = PartGuard { dir: part.clone() };
+    let _guard = PartGuard::file(part.clone());
 
     let archive_path = part.join("download.bin");
     let actual = download(spec, &archive_path, cancel, progress)?;
@@ -161,8 +180,9 @@ pub fn install(
 
     progress(Progress::Validating);
     let staged_exe = extract_dir.join(&exe_name);
-    let mut engine =
-        probe_engine(&staged_exe, VALIDATE_TIMEOUT).map_err(InstallError::Handshake)?;
+    let (mut engine, options) =
+        probe_full(&staged_exe, VALIDATE_TIMEOUT).map_err(InstallError::Handshake)?;
+    write_marker(&extract_dir, spec, &actual)?;
 
     let final_dir = engines_dir.join(dir_name);
     if final_dir.exists() {
@@ -174,6 +194,77 @@ pub fn install(
     Ok(Installed {
         dir: final_dir,
         engine,
+        options,
+        sha256: actual,
+    })
+}
+
+/// Grava o marcador de procedência na pasta instalada.
+fn write_marker(dir: &Path, spec: &InstallSpec, sha256: &str) -> Result<(), InstallError> {
+    let path = dir.join(INSTALL_MARKER);
+    let text = format!(
+        "chess-studio-install 1\nurl={}\nsha256={sha256}\n",
+        spec.url
+    );
+    fs::write(&path, text).map_err(io_err(&path))
+}
+
+/// Rede neural (ou outro arquivo único) a baixar: URL, hash esperado e nome do arquivo final.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NetworkSpec {
+    pub url: String,
+    pub sha256: String,
+    /// Nome-base do arquivo em `networks_dir`; qualquer separador ou `..` é recusado.
+    pub file_name: String,
+}
+
+/// Arquivo único instalado.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstalledNetwork {
+    pub path: PathBuf,
+    pub sha256: String,
+}
+
+/// Baixa um arquivo único para `<networks_dir>/<file_name>`, conferindo o SHA-256 antes de
+/// o colocar no lugar. Falha deixa o diretório como estava.
+pub fn install_network(
+    spec: &NetworkSpec,
+    networks_dir: &Path,
+    cancel: &AtomicBool,
+    progress: &mut dyn FnMut(Progress),
+) -> Result<InstalledNetwork, InstallError> {
+    let name = spec.file_name.as_str();
+    if name.is_empty()
+        || name.starts_with('.')
+        || name.contains(['/', '\\', '\0'])
+        || name.contains("..")
+    {
+        return Err(InstallError::Archive(format!(
+            "nome de arquivo inválido: {name:?}"
+        )));
+    }
+    fs::create_dir_all(networks_dir).map_err(io_err(networks_dir))?;
+    let part = networks_dir.join(format!(".{name}.part"));
+    let _guard = PartGuard::file(part.clone());
+    let inner = InstallSpec {
+        url: spec.url.clone(),
+        sha256: spec.sha256.clone(),
+        kind: ArchiveKind::TarGz,
+        executable: String::new(),
+        keep: Vec::new(),
+    };
+    let actual = download(&inner, &part, cancel, progress)?;
+    progress(Progress::Verifying);
+    if !actual.eq_ignore_ascii_case(&spec.sha256) {
+        return Err(InstallError::HashMismatch {
+            expected: spec.sha256.to_lowercase(),
+            actual,
+        });
+    }
+    let final_path = networks_dir.join(name);
+    fs::rename(&part, &final_path).map_err(io_err(&final_path))?;
+    Ok(InstalledNetwork {
+        path: final_path,
         sha256: actual,
     })
 }
@@ -187,6 +278,9 @@ fn download(
 ) -> Result<String, InstallError> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_connect(Some(Duration::from_secs(20)))
+        // Um download que começa em HTTPS nunca é rebaixado para HTTP por redirecionamento.
+        .https_only(spec.url.starts_with("https://"))
+        .max_redirects(5)
         .build()
         .into();
     let mut response = agent.get(&spec.url).call().map_err(|e| match e {
@@ -248,20 +342,29 @@ fn extract(spec: &InstallSpec, archive: &Path, out: &Path) -> Result<String, Ins
         if entry == spec.executable {
             return Some(exe_name.clone());
         }
-        KEEP_FILES
+        spec.keep
             .iter()
             .find(|keep| entry == format!("{prefix}{keep}"))
-            .map(|keep| (*keep).to_owned())
+            .cloned()
     };
 
     let mut found_exe = false;
+    let mut total = 0u64;
     let mut write = |entry: &str, reader: &mut dyn Read| -> Result<(), InstallError> {
         let Some(name) = wanted(entry) else {
             return Ok(());
         };
         let target = out.join(&name);
         let mut file = File::create(&target).map_err(io_err(&target))?;
-        io::copy(reader, &mut file).map_err(io_err(&target))?;
+        // Teto por arquivo e no total: um arquivo que se expande demais é rejeitado.
+        let copied =
+            io::copy(&mut reader.take(MAX_ENTRY + 1), &mut file).map_err(io_err(&target))?;
+        total += copied;
+        if copied > MAX_ENTRY || total > MAX_EXTRACTED {
+            return Err(InstallError::Archive(format!(
+                "{name} excede o tamanho máximo permitido"
+            )));
+        }
         if name == exe_name {
             make_executable(&target)?;
             found_exe = true;

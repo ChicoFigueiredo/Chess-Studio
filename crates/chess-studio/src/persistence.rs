@@ -419,6 +419,7 @@ impl Plugin for PersistencePlugin {
             .insert_resource(
                 EngineUi::default().with_saved(prefs.engine_user_side, prefs.engine_elo),
             )
+            .insert_resource(crate::engine_manager::DbLocation(path.clone()))
             .insert_resource(PersistenceHandle(Mutex::new(persistence)))
             .add_systems(
                 Update,

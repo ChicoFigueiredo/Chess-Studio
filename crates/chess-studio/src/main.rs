@@ -16,6 +16,7 @@ mod captured;
 mod clock;
 mod dock;
 mod engine;
+mod engine_manager;
 mod engine_wizard;
 mod fen_pgn;
 mod fide_panel;

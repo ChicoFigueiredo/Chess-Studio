@@ -10,6 +10,7 @@ dock-panel-aids = Auxílios
 dock-panel-review = Revisão
 dock-panel-arbitration = Arbitragem
 dock-panel-training = Treino
+dock-panel-engines = Engines
 dock-unavailable-competitive = Indisponível em Partida competitiva.
 
 notation-empty = Nenhum lance ainda.

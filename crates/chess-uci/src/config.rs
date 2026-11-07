@@ -43,6 +43,9 @@ pub struct EngineConfig {
     pub timeouts: Timeouts,
     /// Quantas linhas trocadas o log guarda (as mais recentes).
     pub log_capacity: usize,
+    /// Opções UCI enviadas (`setoption`) logo após o handshake, em ordem. Já devem ter sido
+    /// validadas (veja `resolve_settings`); nome e valor com quebra de linha são recusados.
+    pub options: Vec<(String, String)>,
 }
 
 impl EngineConfig {
@@ -53,7 +56,14 @@ impl EngineConfig {
             envs: Vec::new(),
             timeouts: Timeouts::default(),
             log_capacity: 200,
+            options: Vec::new(),
         }
+    }
+
+    /// Acrescenta uma opção UCI a enviar ao iniciar.
+    pub fn option(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.options.push((name.into(), value.into()));
+        self
     }
 
     pub fn arg(mut self, arg: impl Into<OsString>) -> Self {

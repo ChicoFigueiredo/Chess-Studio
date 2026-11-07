@@ -35,12 +35,14 @@ fn main() {
     let mut mode = String::from("normal");
     let mut delay_ms: u64 = 0;
     let mut elo = false;
+    let mut extra_options = false;
     let mut trace: Option<std::fs::File> = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--mode" => mode = args.next().unwrap_or_default(),
             "--elo" => elo = true,
+            "--options" => extra_options = true,
             "--trace" => {
                 trace = args.next().and_then(|p| {
                     std::fs::OpenOptions::new()
@@ -76,6 +78,12 @@ fn main() {
                 say("id author Chess Studio tests");
                 say("option name Skill Level type spin default 20 min 0 max 20");
                 say("option name UCI_LimitStrength type check default false");
+                if extra_options {
+                    say("option name Threads type spin default 1 min 1 max 1024");
+                    say("option name Hash type spin default 16 min 1 max 33554432");
+                    say("option name Debug Log File type string default <empty>");
+                    say("option name WeightsFile type string default <autodiscover>");
+                }
                 if elo {
                     say("option name UCI_Elo type spin default 1320 min 1320 max 3190");
                 }
