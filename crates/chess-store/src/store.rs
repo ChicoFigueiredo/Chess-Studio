@@ -489,9 +489,9 @@ impl Store {
 
     /// Todos os perfis locais, na ordem de criação.
     pub fn list_profiles(&self) -> Result<Vec<ProfileInfo>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, created_at_ms, last_used_at_ms FROM profiles ORDER BY id",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, name, created_at_ms, last_used_at_ms FROM profiles ORDER BY id")?;
         let rows = stmt.query_map([], Self::profile_from_row)?;
         Ok(rows.collect::<std::result::Result<_, _>>()?)
     }

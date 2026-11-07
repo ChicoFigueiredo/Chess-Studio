@@ -386,7 +386,10 @@ fn defaults_for(action: Action) -> Vec<Trigger> {
 impl Default for ControlMap {
     fn default() -> Self {
         Self {
-            bindings: Action::ALL.into_iter().map(|a| (a, defaults_for(a))).collect(),
+            bindings: Action::ALL
+                .into_iter()
+                .map(|a| (a, defaults_for(a)))
+                .collect(),
         }
     }
 }
@@ -547,11 +550,9 @@ impl ControlMap {
             }
             map.bindings.insert(action, triggers);
         }
-        let conflicting = Action::ALL.into_iter().any(|a| {
-            map.triggers(a)
-                .iter()
-                .any(|t| map.conflict(a, t).is_some())
-        });
+        let conflicting = Action::ALL
+            .into_iter()
+            .any(|a| map.triggers(a).iter().any(|t| map.conflict(a, t).is_some()));
         if conflicting { Self::default() } else { map }
     }
 }

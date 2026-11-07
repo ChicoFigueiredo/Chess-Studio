@@ -2,13 +2,30 @@
 //! mesma posição (ver `layout`); aqui só se alterna o que é visível, as luzes, o fundo e a
 //! câmera ativa. Tab alterna ciclicamente.
 //!
-//! Qualidade gráfica (MSAA e sombras) fica em `GraphicsQuality`, independente da Apresentação.
+//! Qualidade gráfica (MSAA, sombras e efeitos opcionais) fica em `GraphicsQuality`,
+//! independente da Apresentação.
+//!
+//! # Ultra (US-30)
+//!
+//! MSAA 8x, mapa de sombras 4096 com filtro gaussiano e, opcionalmente, **bloom suave** com
+//! o mapeamento de tons (`Tonemapping::TonyMcMapface`) já no pipeline HDR. Tudo isso é
+//! escolhido contra o que a GPU declara suportar ([`GpuSupport`]): sem 8x o Ultra cai para
+//! o maior MSAA que existe, sem HDR com esse MSAA o bloom simplesmente não liga. O picking
+//! é matemática pura de `chess_input` e não é tocado.
+//!
+//! **SSAO não entra**: no Bevy ele exige `Msaa::Off`, o que contradiz o MSAA 8x do Ultra
+//! e a regra de MSAA único entre as câmeras (issue #82). Idem o filtro de sombras temporal
+//! (precisa de TAA).
 
 use crate::camera::MainCamera;
+use bevy::camera::Hdr;
 use bevy::light::{DirectionalLightShadowMap, ShadowFilteringMethod};
+use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
-use bevy::render::view::Msaa;
+use bevy::render::renderer::RenderAdapter;
+use bevy::render::view::{Msaa, Tonemapping};
 use bevy_egui::input::EguiWantsInput;
+use wgpu_types::TextureFormat;
 
 #[derive(
     Resource, Clone, Copy, Debug, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
@@ -70,6 +87,83 @@ pub enum GraphicsQuality {
     Ultra,
 }
 
+/// Efeitos opcionais do Ultra (bloom suave). Só valem com a qualidade Ultra e com suporte
+/// da GPU; fora disso este recurso não faz nada.
+#[derive(Resource, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UltraEffects(pub bool);
+
+impl Default for UltraEffects {
+    fn default() -> Self {
+        Self(true)
+    }
+}
+
+/// O que a GPU declara suportar: máscara de contagens de amostras de MSAA por formato
+/// (bit 0 = 1x, bit 1 = 2x, bit 2 = 4x, bit 3 = 8x).
+#[derive(Resource, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GpuSupport {
+    /// Formato da textura principal em LDR (o padrão).
+    ldr: u8,
+    /// Formato HDR intermediário (`Rgba16Float`), exigido pelo bloom.
+    hdr: u8,
+}
+
+fn sample_bit(samples: u32) -> u8 {
+    match samples {
+        1 => 1,
+        2 => 2,
+        4 => 4,
+        8 => 8,
+        _ => 0,
+    }
+}
+
+impl GpuSupport {
+    /// Tudo suportado: o valor antes da detecção e nos testes sem GPU.
+    pub const FULL: GpuSupport = GpuSupport {
+        ldr: 0b1111,
+        hdr: 0b1111,
+    };
+
+    /// Só o que cada contagem de `ldr` e `hdr` permitir (testes e detecção).
+    pub fn from_counts(ldr: &[u32], hdr: &[u32]) -> Self {
+        let mask = |counts: &[u32]| counts.iter().fold(1, |m, c| m | sample_bit(*c));
+        Self {
+            ldr: mask(ldr),
+            hdr: mask(hdr),
+        }
+    }
+
+    /// Consulta o adaptador real.
+    pub fn detect(adapter: &RenderAdapter) -> Self {
+        let counts = |format: TextureFormat| {
+            let flags = adapter.get_texture_format_features(format).flags;
+            [1, 2, 4, 8]
+                .into_iter()
+                .filter(|n| flags.sample_count_supported(*n))
+                .collect::<Vec<u32>>()
+        };
+        Self::from_counts(
+            &counts(TextureFormat::Rgba8UnormSrgb),
+            &counts(TextureFormat::Rgba16Float),
+        )
+    }
+
+    /// A maior contagem de amostras `<= wanted` que a máscara aceita (1 = MSAA desligado).
+    fn best(mask: u8, wanted: u32) -> u32 {
+        [8, 4, 2]
+            .into_iter()
+            .find(|n| *n <= wanted && mask & sample_bit(*n) != 0)
+            .unwrap_or(1)
+    }
+}
+
+impl Default for GpuSupport {
+    fn default() -> Self {
+        Self::FULL
+    }
+}
+
 impl GraphicsQuality {
     pub const ALL: [GraphicsQuality; 3] = [
         GraphicsQuality::Economic,
@@ -92,6 +186,20 @@ impl GraphicsQuality {
             GraphicsQuality::Balanced => Msaa::Sample4,
             GraphicsQuality::Ultra => Msaa::Sample8,
         }
+    }
+
+    /// O MSAA que a GPU realmente aceita: o desta qualidade ou o maior abaixo dele.
+    pub fn msaa_for(self, support: GpuSupport) -> Msaa {
+        Msaa::from_samples(GpuSupport::best(support.ldr, self.msaa().samples()))
+    }
+
+    /// O bloom suave liga? Só no Ultra, com a preferência ligada e com a GPU renderizando
+    /// o formato HDR com o MSAA efetivo desta qualidade.
+    pub fn bloom_for(self, enabled: bool, support: GpuSupport) -> bool {
+        let samples = self.msaa_for(support).samples();
+        self == GraphicsQuality::Ultra
+            && enabled
+            && (samples == 1 || support.hdr & sample_bit(samples) != 0)
     }
 
     pub fn shadow_map_size(self) -> usize {
@@ -167,12 +275,15 @@ impl Plugin for PresentationPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Presentation>()
             .init_resource::<GraphicsQuality>()
+            .init_resource::<UltraEffects>()
+            .init_resource::<GpuSupport>()
             .add_systems(
                 Update,
                 (
                     cycle_with_tab,
                     apply_visibility,
                     apply_presentation,
+                    detect_gpu_support,
                     apply_quality,
                     show_new_entities,
                 )
@@ -183,10 +294,13 @@ impl Plugin for PresentationPlugin {
 
 fn cycle_with_tab(
     keys: Res<ButtonInput<KeyCode>>,
+    controls: Res<crate::controls::Controls>,
     egui: Res<EguiWantsInput>,
     mut presentation: ResMut<Presentation>,
 ) {
-    if !egui.wants_keyboard_input() && keys.just_pressed(KeyCode::Tab) {
+    if !egui.wants_keyboard_input()
+        && controls.key_just_pressed(chess_input::controls::Action::CyclePresentation, &keys)
+    {
         *presentation = presentation.next();
     }
 }
@@ -293,24 +407,57 @@ fn apply_presentation(
     };
 }
 
+/// Lê o adaptador uma vez, quando o renderizador já existe.
+fn detect_gpu_support(
+    adapter: Option<Res<RenderAdapter>>,
+    mut support: ResMut<GpuSupport>,
+    mut done: Local<bool>,
+) {
+    if *done {
+        return;
+    }
+    let Some(adapter) = adapter else { return };
+    *done = true;
+    let detected = GpuSupport::detect(&adapter);
+    info!("GPU: MSAA suportado {detected:?}");
+    *support = detected;
+}
+
+#[allow(clippy::too_many_arguments)]
 fn apply_quality(
     quality: Res<GraphicsQuality>,
+    effects: Res<UltraEffects>,
+    support: Res<GpuSupport>,
     mut commands: Commands,
     camera: Single<Entity, With<MainCamera>>,
     cameras: Query<Entity, With<Camera>>,
     mut lights: Query<(&LightRole, &mut DirectionalLight)>,
     mut shadow_map: ResMut<DirectionalLightShadowMap>,
 ) {
-    if !quality.is_changed() {
+    if !(quality.is_changed() || effects.is_changed() || support.is_changed()) {
         return;
     }
+    let msaa = quality.msaa_for(*support);
     // Todas as câmeras da janela (3D, 2D técnico e egui) precisam do mesmo MSAA: câmeras com
     // MSAA diferente não compartilham a textura principal e, conforme a ordem das entidades,
     // a Apresentação 3D sai preta (issue #82).
     for entity in &cameras {
-        commands.entity(entity).insert(quality.msaa());
+        commands.entity(entity).insert(msaa);
     }
     commands.entity(*camera).insert(quality.shadow_filter());
+    // Efeitos opcionais do Ultra, só na câmera 3D (a do egui e a do 2D ficam como estão).
+    if quality.bloom_for(effects.0, *support) {
+        commands.entity(*camera).insert((
+            Hdr,
+            Tonemapping::TonyMcMapface,
+            Bloom {
+                intensity: 0.06,
+                ..Bloom::NATURAL
+            },
+        ));
+    } else {
+        commands.entity(*camera).remove::<(Hdr, Bloom)>();
+    }
     shadow_map.size = quality.shadow_map_size();
     for (role, mut light) in &mut lights {
         // Só a luz principal projeta sombra.
@@ -328,6 +475,53 @@ mod tests {
         commands.spawn((Camera3d::default(), MainCamera));
     }
 
+    /// US-30: o preset desce ao que a GPU suporta, sem nunca pedir uma contagem inexistente.
+    #[test]
+    fn quality_falls_back_to_what_the_gpu_supports() {
+        let full = GpuSupport::FULL;
+        assert_eq!(GraphicsQuality::Ultra.msaa_for(full), Msaa::Sample8);
+        assert_eq!(GraphicsQuality::Balanced.msaa_for(full), Msaa::Sample4);
+        assert_eq!(GraphicsQuality::Economic.msaa_for(full), Msaa::Sample2);
+        // Sem 8x: o Ultra usa 4x.
+        let no_8x = GpuSupport::from_counts(&[1, 2, 4], &[1, 2, 4]);
+        assert_eq!(GraphicsQuality::Ultra.msaa_for(no_8x), Msaa::Sample4);
+        // Só 2x: Ultra e Equilibrado caem para 2x.
+        let only_2x = GpuSupport::from_counts(&[1, 2], &[1, 2]);
+        assert_eq!(GraphicsQuality::Ultra.msaa_for(only_2x), Msaa::Sample2);
+        assert_eq!(GraphicsQuality::Balanced.msaa_for(only_2x), Msaa::Sample2);
+        // Sem MSAA nenhum: desligado.
+        let none = GpuSupport::from_counts(&[], &[]);
+        for q in GraphicsQuality::ALL {
+            assert_eq!(q.msaa_for(none), Msaa::Off);
+        }
+        // Lacuna (4x sem 8x e sem 2x): ainda acha o 4x.
+        let gap = GpuSupport::from_counts(&[4], &[4]);
+        assert_eq!(GraphicsQuality::Ultra.msaa_for(gap), Msaa::Sample4);
+        assert_eq!(GraphicsQuality::Economic.msaa_for(gap), Msaa::Off);
+    }
+
+    #[test]
+    fn bloom_only_in_ultra_when_enabled_and_hdr_is_supported_at_the_effective_msaa() {
+        let full = GpuSupport::FULL;
+        assert!(GraphicsQuality::Ultra.bloom_for(true, full));
+        assert!(
+            !GraphicsQuality::Ultra.bloom_for(false, full),
+            "preferência desligada"
+        );
+        assert!(!GraphicsQuality::Balanced.bloom_for(true, full));
+        assert!(!GraphicsQuality::Economic.bloom_for(true, full));
+        // HDR sem 8x, mas o Ultra efetivo é 4x e o HDR rende 4x: liga.
+        let ldr8_hdr4 = GpuSupport::from_counts(&[1, 2, 4, 8], &[1, 2, 4]);
+        assert_eq!(GraphicsQuality::Ultra.msaa_for(ldr8_hdr4), Msaa::Sample8);
+        assert!(
+            !GraphicsQuality::Ultra.bloom_for(true, ldr8_hdr4),
+            "HDR sem 8x"
+        );
+        // HDR indisponível: sem bloom, a qualidade segue.
+        let no_hdr = GpuSupport::from_counts(&[1, 2, 4, 8], &[]);
+        assert!(!GraphicsQuality::Ultra.bloom_for(true, no_hdr));
+    }
+
     /// Regressão da issue #82: câmeras da mesma janela com MSAA diferente não compartilham a
     /// textura principal; conforme a ordem das entidades (que muda ao registrar qualquer
     /// `Resource` extra), a Apresentação 3D saía toda preta nas capturas.
@@ -336,6 +530,7 @@ mod tests {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins)
             .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<crate::controls::Controls>()
             .init_resource::<EguiWantsInput>()
             .init_resource::<ClearColor>()
             .init_resource::<GlobalAmbientLight>()
@@ -358,7 +553,9 @@ mod tests {
             let found: Vec<Msaa> = cameras.iter(app.world()).map(|(_, m)| *m).collect();
             assert_eq!(found.len(), 3, "câmeras 3D, 2D técnico e egui");
             assert!(
-                found.iter().all(|m| *m == quality.msaa()),
+                found
+                    .iter()
+                    .all(|m| *m == quality.msaa_for(GpuSupport::FULL)),
                 "{quality:?}: MSAA divergente entre câmeras: {found:?}"
             );
         }

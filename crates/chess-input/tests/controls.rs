@@ -146,10 +146,7 @@ fn stealing_moves_the_trigger_to_the_new_action() {
         resolve(&map, key("Digit2"), ModSet::NONE),
         Some(Action::ViewTop)
     );
-    assert_eq!(
-        map.triggers(Action::ViewOblique),
-        [Trigger::key("Numpad2")]
-    );
+    assert_eq!(map.triggers(Action::ViewOblique), [Trigger::key("Numpad2")]);
 }
 
 #[test]
@@ -186,7 +183,10 @@ fn input_kind_must_suit_the_action() {
 #[test]
 fn selection_never_loses_its_last_trigger() {
     let mut map = ControlMap::default();
-    assert_eq!(map.remove(Action::Select, 0), Err(AssignError::WouldLeaveEmpty));
+    assert_eq!(
+        map.remove(Action::Select, 0),
+        Err(AssignError::WouldLeaveEmpty)
+    );
     assert_eq!(
         map.assign_stealing(
             Action::Orbit,
@@ -211,7 +211,10 @@ fn resetting_restores_defaults_even_when_another_action_took_them() {
         map.triggers(Action::ViewOblique),
         [Trigger::key("Digit2"), Trigger::key("Numpad2")]
     );
-    assert!(!map.triggers(Action::ViewTop).contains(&Trigger::key("Digit2")));
+    assert!(
+        !map.triggers(Action::ViewTop)
+            .contains(&Trigger::key("Digit2"))
+    );
     map.reset_all();
     assert!(map.is_default());
 }
@@ -249,12 +252,8 @@ fn the_map_serializes_and_loads_back() {
     assert_eq!(roundtrip(&map), map);
     map.assign(Action::ViewTop, Trigger::key("KeyT"), AssignMode::Replace)
         .unwrap();
-    map.assign(
-        Action::Pan,
-        Trigger::mouse(MouseBtn::Back),
-        AssignMode::Add,
-    )
-    .unwrap();
+    map.assign(Action::Pan, Trigger::mouse(MouseBtn::Back), AssignMode::Add)
+        .unwrap();
     map.remove(Action::Cancel, 0).unwrap();
     assert_eq!(roundtrip(&map), map);
 }
@@ -270,7 +269,10 @@ fn loading_is_tolerant_of_missing_unknown_and_broken_entries() {
     ]);
     let defaults = ControlMap::default();
     assert_eq!(loaded.triggers(Action::ViewTop), [Trigger::key("KeyT")]);
-    assert_eq!(loaded.triggers(Action::Orbit), defaults.triggers(Action::Orbit));
+    assert_eq!(
+        loaded.triggers(Action::Orbit),
+        defaults.triggers(Action::Orbit)
+    );
     assert_eq!(loaded.triggers(Action::Pan), defaults.triggers(Action::Pan));
     assert_eq!(
         loaded.triggers(Action::Select),

@@ -13,7 +13,7 @@ use crate::engine::{EngineUi, MAX_ELO, MIN_ELO};
 use crate::focus::ViewState;
 use crate::hud::HudSettings;
 use crate::play::PlaySet;
-use crate::presentation::{GraphicsQuality, Presentation};
+use crate::presentation::{GraphicsQuality, Presentation, UltraEffects};
 use crate::profiles::{InterfaceProfiles, ProfilesState};
 use crate::session::Session;
 use crate::training_ui::TrainingUi;
@@ -22,7 +22,8 @@ use bevy::window::WindowCloseRequested;
 use chess_core::Color;
 use chess_game::{Game, GameSetup, PolicyKind};
 use chess_input::MoveMethod;
-use chess_store::{GameId, GameMetadata, ProfileId, Store, StoreError};
+use chess_input::controls::ControlMap;
+use chess_store::{GameId, GameMetadata, ProfileId, ProfileInfo, Store, StoreError};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -43,6 +44,10 @@ const KEY_FOCUS: &str = "focus_mode";
 const KEY_DOCK_LAYOUT: &str = "dock_layout";
 /// Perfis de interface (C4, UI-09): o ativo e os salvos pelo usuário.
 const KEY_INTERFACE_PROFILES: &str = "interface_profiles";
+/// Mapa de controles (US-28): ação -> atalhos, por perfil de usuário.
+const KEY_CONTROLS: &str = "controls";
+/// Efeitos opcionais da qualidade Ultra (US-30): ligados ou desligados.
+const KEY_ULTRA_EFFECTS: &str = "ultra_effects";
 /// Prefixo da chave das Anotações de estudo (C2): uma preferência por Partida.
 const KEY_STUDY_NOTES: &str = "study_notes";
 
@@ -60,6 +65,8 @@ pub struct SavedPrefs {
     pub engine_user_side: Color,
     /// Tela cheia (F11) e modo Foco (F10), independentes.
     pub view: ViewState,
+    /// Efeitos opcionais do Ultra (bloom suave).
+    pub ultra_effects: UltraEffects,
 }
 
 impl Default for SavedPrefs {
@@ -73,8 +80,20 @@ impl Default for SavedPrefs {
             engine_elo: 1500,
             engine_user_side: Color::White,
             view: ViewState::default(),
+            ultra_effects: UltraEffects::default(),
         }
     }
+}
+
+/// Tudo que pertence a um perfil local e é carregado ao abri-lo ou trocar para ele.
+#[derive(Debug)]
+pub struct ProfileData {
+    pub prefs: SavedPrefs,
+    pub restored: Restored,
+    pub layout: DockLayout,
+    pub interface: ProfilesState,
+    pub controls: ControlMap,
+    pub notes: BTreeMap<usize, String>,
 }
 
 /// Resultado de abrir o app: a Partida a jogar e se ela veio do banco.
@@ -100,6 +119,8 @@ pub struct Persistence {
     saved_layout: Option<Value>,
     /// Últimos Perfis de interface gravados (ou carregados).
     saved_profiles: Option<Value>,
+    /// Último mapa de controles gravado (ou carregado).
+    saved_controls: Option<Value>,
     failing: bool,
 }
 
@@ -124,7 +145,8 @@ impl Persistence {
     }
 
     pub fn new(store: Store) -> Self {
-        let profile = store.default_profile().unwrap_or(ProfileId(1));
+        // O perfil local usado por último (US-29).
+        let profile = store.active_profile().unwrap_or(ProfileId(1));
         Self {
             store,
             profile,
@@ -135,7 +157,108 @@ impl Persistence {
             saved: None,
             saved_layout: None,
             saved_profiles: None,
+            saved_controls: None,
             failing: false,
+        }
+    }
+
+    /// O perfil local em uso.
+    pub fn profile(&self) -> ProfileId {
+        self.profile
+    }
+
+    /// Todos os perfis locais (vazio se o banco falhar).
+    pub fn profiles(&self) -> Vec<ProfileInfo> {
+        self.store.list_profiles().unwrap_or_default()
+    }
+
+    /// Cria um perfil local; não troca para ele.
+    pub fn create_profile(&mut self, name: &str) -> Result<ProfileId, StoreError> {
+        self.store.create_profile(name)
+    }
+
+    pub fn rename_profile(&mut self, id: ProfileId, name: &str) -> Result<(), StoreError> {
+        self.store.rename_profile(id, name)
+    }
+
+    /// Exclui um perfil local e os dados dele. O perfil em uso não pode ser excluído:
+    /// troque antes.
+    pub fn delete_profile(&mut self, id: ProfileId) -> Result<(), StoreError> {
+        if id == self.profile {
+            return Err(StoreError::LastProfile);
+        }
+        self.store.delete_profile(id)
+    }
+
+    /// Carrega o perfil em uso: preferências, Partida (retomada em Pausa, ou nova),
+    /// layout, Perfis de interface, controles e Anotações.
+    pub fn open_profile(&mut self) -> ProfileData {
+        let prefs = self.load_prefs();
+        let mut restored = self.restore();
+        restored.session.set_move_method(prefs.move_method);
+        self.saved = Some(prefs);
+        let layout = self.load_layout();
+        let interface = self.load_profiles();
+        let controls = self.load_controls();
+        let notes = self.load_notes();
+        ProfileData {
+            prefs,
+            restored,
+            layout,
+            interface,
+            controls,
+            notes,
+        }
+    }
+
+    /// Troca o perfil local em uso: grava o que falta da Partida atual (`current`), fecha-a
+    /// e abre o perfil `id` (US-29). A Partida e as preferências do perfil de partida
+    /// ficam como estavam.
+    pub fn switch_profile(
+        &mut self,
+        id: ProfileId,
+        current: Option<&Session>,
+    ) -> Result<ProfileData, StoreError> {
+        // Falha antes de mexer em qualquer coisa se o perfil não existe.
+        self.store.profile(id)?;
+        if let Some(session) = current {
+            self.sync(session);
+        }
+        self.close();
+        self.store.set_active_profile(id)?;
+        self.profile = id;
+        self.current = None;
+        self.persisted = 0;
+        self.was_paused = false;
+        self.saved = None;
+        self.saved_layout = None;
+        self.saved_profiles = None;
+        self.saved_controls = None;
+        self.failing = false;
+        Ok(self.open_profile())
+    }
+
+    /// Mapa de controles gravado; ausente ou ilegível volta ao padrão da DEC-51.
+    pub fn load_controls(&mut self) -> ControlMap {
+        let stored = self
+            .store
+            .get_pref(self.profile, KEY_CONTROLS)
+            .ok()
+            .flatten();
+        let map = controls_from_json(stored.as_ref());
+        self.saved_controls = Some(controls_to_json(&map));
+        map
+    }
+
+    /// Grava o mapa de controles se mudou desde a última chamada.
+    pub fn sync_controls(&mut self, map: &ControlMap) {
+        let json = controls_to_json(map);
+        if self.saved_controls.as_ref() == Some(&json) {
+            return;
+        }
+        match self.store.set_pref(self.profile, KEY_CONTROLS, &json) {
+            Ok(()) => self.saved_controls = Some(json),
+            Err(err) => self.report(&err),
         }
     }
 
@@ -175,7 +298,7 @@ impl Persistence {
     }
 
     fn try_resume(&mut self) -> Result<Option<(Session, bool)>, StoreError> {
-        let Some(id) = self.store.latest_unfinished_game()? else {
+        let Some(id) = self.store.latest_unfinished_game_for(self.profile)? else {
             return Ok(None);
         };
         let opened = self.store.open_game(id)?;
@@ -329,6 +452,11 @@ impl Persistence {
                     .and_then(|v| v.as_bool())
                     .unwrap_or(defaults.view.focus),
             },
+            ultra_effects: UltraEffects(
+                get(KEY_ULTRA_EFFECTS)
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(defaults.ultra_effects.0),
+            ),
         }
     }
 
@@ -443,6 +571,9 @@ impl Persistence {
         if before.view.focus != now.view.focus {
             writes.push((KEY_FOCUS, json!(now.view.focus)));
         }
+        if before.ultra_effects != now.ultra_effects {
+            writes.push((KEY_ULTRA_EFFECTS, json!(now.ultra_effects.0)));
+        }
         for (key, value) in writes {
             if let Err(err) = self.store.set_pref(self.profile, key, &value) {
                 self.report(&err);
@@ -451,6 +582,34 @@ impl Persistence {
         }
         self.saved = Some(now);
     }
+}
+
+fn controls_to_json(map: &ControlMap) -> Value {
+    Value::Object(
+        map.to_entries()
+            .into_iter()
+            .map(|(id, triggers)| (id, json!(triggers)))
+            .collect(),
+    )
+}
+
+/// Lê o mapa gravado; qualquer coisa ilegível vira o padrão (DEC-51).
+fn controls_from_json(value: Option<&Value>) -> ControlMap {
+    let Some(Value::Object(object)) = value else {
+        return ControlMap::default();
+    };
+    let entries: Vec<(&str, Vec<String>)> = object
+        .iter()
+        .filter_map(|(id, v)| {
+            let list = v
+                .as_array()?
+                .iter()
+                .map(|t| t.as_str().map(str::to_owned))
+                .collect::<Option<Vec<_>>>()?;
+            Some((id.as_str(), list))
+        })
+        .collect();
+    ControlMap::from_entries(entries)
 }
 
 /// Caminho do banco: `--db <arquivo>`, o padrão do usuário, ou nenhum (sem persistência).
@@ -485,9 +644,14 @@ impl Plugin for PersistencePlugin {
                 return;
             }
         };
-        let prefs = persistence.load_prefs();
-        let mut restored = persistence.restore();
-        restored.session.set_move_method(prefs.move_method);
+        let ProfileData {
+            prefs,
+            restored,
+            layout,
+            interface: profiles,
+            controls,
+            notes,
+        } = persistence.open_profile();
         if restored.resumed {
             info!(
                 "Partida retomada em Pausa{}",
@@ -498,17 +662,17 @@ impl Plugin for PersistencePlugin {
                 }
             );
         }
-        persistence.saved = Some(prefs);
-        let layout = persistence.load_layout();
-        let profiles = persistence.load_profiles();
-        let notes =
-            crate::study::StudyNotes::loaded(restored.session.epoch(), persistence.load_notes());
+        let notes = crate::study::StudyNotes::loaded(restored.session.epoch(), notes);
+        let local_profiles = crate::local_profiles::LocalProfiles::from_persistence(&persistence);
         // Os plugins seguintes usam `init_resource`, que preserva estes valores.
         app.insert_resource(restored.session)
             .insert_resource(prefs.aids)
             .insert_resource(prefs.hud)
             .insert_resource(prefs.presentation)
             .insert_resource(prefs.quality)
+            .insert_resource(prefs.ultra_effects)
+            .insert_resource(crate::controls::Controls::with_map(controls))
+            .insert_resource(local_profiles)
             .insert_resource(prefs.view)
             .insert_resource(Dock::with_layout(layout))
             .insert_resource(InterfaceProfiles::with_state(profiles))
@@ -525,6 +689,7 @@ impl Plugin for PersistencePlugin {
                     persist_prefs,
                     persist_layout,
                     persist_profiles,
+                    persist_controls,
                 )
                     .after(PlaySet),
             )
@@ -554,6 +719,7 @@ fn persist_prefs(
     hud: Res<HudSettings>,
     presentation: Res<Presentation>,
     quality: Res<GraphicsQuality>,
+    ultra_effects: Res<UltraEffects>,
     engine_ui: Res<EngineUi>,
     view: Res<ViewState>,
     handle: Res<PersistenceHandle>,
@@ -568,6 +734,7 @@ fn persist_prefs(
             engine_elo: engine_ui.elo(),
             engine_user_side: engine_ui.user_side(),
             view: *view,
+            ultra_effects: *ultra_effects,
         });
     }
 }
@@ -612,6 +779,13 @@ fn persist_profiles(profiles: Res<InterfaceProfiles>, handle: Res<PersistenceHan
     }
 }
 
+/// Grava o mapa de controles quando muda.
+fn persist_controls(controls: Res<crate::controls::Controls>, handle: Res<PersistenceHandle>) {
+    if let Ok(mut p) = handle.0.lock() {
+        p.sync_controls(controls.map());
+    }
+}
+
 /// Janela fechada ou saída do app: encerra a sessão da Partida e grava o que faltar.
 fn close_on_exit(
     mut close_requested: MessageReader<WindowCloseRequested>,
@@ -621,6 +795,7 @@ fn close_on_exit(
     training: Res<TrainingUi>,
     dock: Res<Dock>,
     profiles: Res<InterfaceProfiles>,
+    controls: Res<crate::controls::Controls>,
 ) {
     let closing = close_requested.read().count() > 0 || exits.read().count() > 0;
     if closing && let Ok(mut p) = handle.0.lock() {
@@ -629,6 +804,7 @@ fn close_on_exit(
         }
         p.sync_layout(&dock.layout);
         p.sync_profiles(&profiles.state);
+        p.sync_controls(controls.map());
         p.close();
     }
 }
@@ -862,6 +1038,7 @@ mod tests {
                 focus: true,
                 fullscreen: true,
             },
+            ultra_effects: UltraEffects(false),
         };
         p.sync_prefs(custom);
         let p2 = Persistence::new(p.into_store());
@@ -948,6 +1125,95 @@ mod tests {
         next.new_game();
         p2.sync(&next);
         assert!(p2.load_notes().is_empty());
+    }
+
+    /// US-28: o mapa de controles é por perfil, persiste e volta ao reabrir.
+    #[test]
+    fn control_map_round_trips_through_sqlite() {
+        use chess_input::controls::{Action, AssignMode, Trigger};
+        let mut p = new_persistence();
+        assert!(p.load_controls().is_default(), "banco novo: DEC-51");
+        let mut map = ControlMap::default();
+        map.assign(Action::ViewTop, Trigger::key("KeyT"), AssignMode::Replace)
+            .unwrap();
+        p.sync_controls(&map);
+        let mut p2 = Persistence::new(p.into_store());
+        assert_eq!(p2.load_controls(), map);
+        // Restaurar o padrão também é gravado.
+        p2.sync_controls(&ControlMap::default());
+        let mut p3 = Persistence::new(p2.into_store());
+        assert!(p3.load_controls().is_default());
+    }
+
+    #[test]
+    fn unreadable_control_map_falls_back_to_the_default() {
+        let mut p = new_persistence();
+        p.store
+            .set_pref(p.profile, KEY_CONTROLS, &json!(["lixo"]))
+            .unwrap();
+        assert!(p.load_controls().is_default());
+        p.store
+            .set_pref(p.profile, KEY_CONTROLS, &json!({"view-top": [1, 2]}))
+            .unwrap();
+        assert!(p.load_controls().is_default());
+    }
+
+    /// US-29: cada perfil local tem as suas preferências, controles e Partida; trocar não
+    /// vaza nada de um para o outro e a Partida do perfil que sai fica gravada.
+    #[test]
+    fn switching_local_profile_swaps_prefs_controls_and_game() {
+        use chess_input::controls::{Action, AssignMode, Trigger};
+        let mut p = new_persistence();
+        let first = p.profile();
+        let mut data = p.open_profile();
+        // O primeiro perfil joga e personaliza.
+        play(&mut data.restored.session, "e2", "e4");
+        p.sync(&data.restored.session);
+        p.sync_prefs(SavedPrefs {
+            quality: GraphicsQuality::Ultra,
+            ..SavedPrefs::default()
+        });
+        let mut map = ControlMap::default();
+        map.assign(Action::ViewTop, Trigger::key("KeyT"), AssignMode::Replace)
+            .unwrap();
+        p.sync_controls(&map);
+
+        let ana = p.create_profile("Ana").unwrap();
+        let ana_data = p.switch_profile(ana, Some(&data.restored.session)).unwrap();
+        assert_eq!(p.profile(), ana);
+        assert_eq!(
+            ana_data.prefs,
+            SavedPrefs::default(),
+            "perfil novo: padrões"
+        );
+        assert!(ana_data.controls.is_default());
+        assert!(!ana_data.restored.resumed, "Partida própria, nova");
+        assert!(ana_data.restored.session.snapshot().history.is_empty());
+
+        // Volta ao primeiro: tudo como ele deixou, a Partida retomada em Pausa.
+        let back = p
+            .switch_profile(first, Some(&ana_data.restored.session))
+            .unwrap();
+        assert_eq!(back.prefs.quality, GraphicsQuality::Ultra);
+        assert_eq!(back.controls, map);
+        assert!(back.restored.resumed);
+        assert_eq!(back.restored.session.snapshot().history.len(), 1);
+        assert_eq!(p.store.active_profile().unwrap(), first);
+    }
+
+    #[test]
+    fn the_last_used_profile_opens_first_and_the_active_one_cannot_be_deleted() {
+        let mut p = new_persistence();
+        let first = p.profile();
+        let ana = p.create_profile("Ana").unwrap();
+        p.switch_profile(ana, None).unwrap();
+        assert!(p.delete_profile(ana).is_err(), "em uso");
+        assert_eq!(p.profiles().len(), 2);
+        let p2 = Persistence::new(p.into_store());
+        assert_eq!(p2.profile(), ana, "abre no último usado");
+        let mut p2 = p2;
+        p2.delete_profile(first).unwrap();
+        assert_eq!(p2.profiles().len(), 1);
     }
 
     #[test]

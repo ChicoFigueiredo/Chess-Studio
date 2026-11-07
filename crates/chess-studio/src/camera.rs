@@ -1,7 +1,7 @@
 //! Câmera orbital própria. Toda a matemática (órbita/pan/zoom/limites/Vistas) vive em
 //! `chess_input::view`; aqui só se traduzem eventos de entrada em chamadas a ela.
 //!
-//! Mapeamento (DEC-51): botão do meio + mover = órbita; Shift+meio ou direito + mover =
+//! Mapeamento (DEC-51, remapeável em `controls`): botão do meio + mover = órbita; Shift+meio ou direito + mover =
 //! pan; roda = zoom; 1/2/3/4 = Vistas; 0 = reset; trackpad: dois dedos = órbita,
 //! Shift + dois dedos = pan, pinça = zoom.
 //!
@@ -9,11 +9,13 @@
 //! winit não os emite; dois dedos chegam como `MouseWheel` com unidade `Pixel` (tratado
 //! como órbita/pan) e a roda do mouse, com unidade `Line`, é zoom.
 
+use crate::controls::Controls;
 use crate::presentation::Presentation;
 use bevy::input::gestures::{PanGesture, PinchGesture};
 use bevy::input::mouse::{AccumulatedMouseMotion, MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
+use chess_input::controls::{Action, GestureKind, Input};
 use chess_input::{CameraPose, CameraView};
 use std::collections::HashMap;
 
@@ -131,6 +133,7 @@ fn pose_transform(pose: &CameraPose) -> Transform {
 
 fn view_keys(
     keys: Res<ButtonInput<KeyCode>>,
+    controls: Res<Controls>,
     egui: Res<EguiWantsInput>,
     mut rig: ResMut<CameraRig>,
 ) {
@@ -138,19 +141,14 @@ fn view_keys(
         return;
     }
     let bindings = [
-        (KeyCode::Digit1, CameraView::Top),
-        (KeyCode::Digit2, CameraView::Oblique),
-        (KeyCode::Digit3, CameraView::Standard),
-        (KeyCode::Digit4, CameraView::Inverted),
-        (KeyCode::Digit0, CameraView::Standard), // reset = Vista padrão
-        (KeyCode::Numpad1, CameraView::Top),
-        (KeyCode::Numpad2, CameraView::Oblique),
-        (KeyCode::Numpad3, CameraView::Standard),
-        (KeyCode::Numpad4, CameraView::Inverted),
-        (KeyCode::Numpad0, CameraView::Standard),
+        (Action::ViewTop, CameraView::Top),
+        (Action::ViewOblique, CameraView::Oblique),
+        (Action::ViewStandard, CameraView::Standard),
+        (Action::ViewInverted, CameraView::Inverted),
+        (Action::ResetCamera, CameraView::Standard), // reset = Vista padrão
     ];
-    for (key, view) in bindings {
-        if keys.just_pressed(key) {
+    for (action, view) in bindings {
+        if controls.key_just_pressed(action, &keys) {
             rig.pose = view.pose();
             rig.view = Some(view);
         }
@@ -161,6 +159,7 @@ fn view_keys(
 fn pointer_controls(
     buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
+    controls: Res<Controls>,
     motion: Res<AccumulatedMouseMotion>,
     egui: Res<EguiWantsInput>,
     mut wheel: MessageReader<MouseWheel>,
@@ -172,41 +171,69 @@ fn pointer_controls(
     let wheel: Vec<MouseWheel> = wheel.read().cloned().collect();
     let pinch: Vec<f32> = pinch.read().map(|p| p.0).collect();
     let pans: Vec<Vec2> = pan_gesture.read().map(|p| p.0).collect();
-    let dragging = buttons.any_pressed([MouseButton::Middle, MouseButton::Right]);
-    if egui.wants_pointer_input() && !dragging {
+    // Quais botões apertados agora órbitam ou fazem pan, segundo o mapa de controles
+    // (com os modificadores de agora: Shift+meio é pan, meio sozinho é órbita).
+    let mut orbit_drag = false;
+    let mut pan_drag = false;
+    for button in [
+        MouseButton::Left,
+        MouseButton::Middle,
+        MouseButton::Right,
+        MouseButton::Back,
+        MouseButton::Forward,
+    ] {
+        if !buttons.pressed(button) {
+            continue;
+        }
+        match controls.mouse_action(button, &keys) {
+            Some(Action::Orbit) => orbit_drag = true,
+            Some(Action::Pan) => pan_drag = true,
+            _ => {}
+        }
+    }
+    if egui.wants_pointer_input() && !(orbit_drag || pan_drag) {
         return;
     }
 
-    let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
     let before = rig.pose;
     let mut pose = before;
 
     let delta = motion.delta;
-    let middle = buttons.pressed(MouseButton::Middle);
-    let right = buttons.pressed(MouseButton::Right);
     if delta != Vec2::ZERO {
-        if (middle && shift) || right {
+        if pan_drag {
             pose = pan(pose, delta);
-        } else if middle {
+        } else if orbit_drag {
             pose = orbit(pose, delta);
         }
     }
 
+    // Dois dedos (roda em pixels no Linux/Windows, `PanGesture` no macOS): órbita ou pan.
+    let two_finger = controls.input_action(&Input::Gesture(GestureKind::TwoFinger), &keys);
+    let two_finger_move = |pose: CameraPose, d: Vec2| match two_finger {
+        Some(Action::Orbit) => orbit(pose, d),
+        Some(Action::Pan) => pan(pose, d),
+        _ => pose,
+    };
+    let wheel_zoom = controls.input_action(&Input::Wheel, &keys) == Some(Action::Zoom);
     for ev in wheel {
         match ev.unit {
-            MouseScrollUnit::Line => pose = pose.zoom(WHEEL_LINE_ZOOM.powf(ev.y)),
-            // Trackpad de dois dedos (Linux/Windows): arrastar o conteúdo, como no mouse.
-            MouseScrollUnit::Pixel => {
-                let d = Vec2::new(ev.x, ev.y);
-                pose = if shift { pan(pose, d) } else { orbit(pose, d) };
+            MouseScrollUnit::Line if wheel_zoom => {
+                pose = pose.zoom(WHEEL_LINE_ZOOM.powf(ev.y));
             }
+            MouseScrollUnit::Line => {}
+            // Trackpad de dois dedos (Linux/Windows): arrastar o conteúdo, como no mouse.
+            MouseScrollUnit::Pixel => pose = two_finger_move(pose, Vec2::new(ev.x, ev.y)),
         }
     }
     for p in pans {
-        pose = if shift { pan(pose, p) } else { orbit(pose, p) };
+        pose = two_finger_move(pose, p);
     }
+    let pinch_zoom =
+        controls.input_action(&Input::Gesture(GestureKind::Pinch), &keys) == Some(Action::Zoom);
     for p in pinch {
-        pose = pose.zoom((-p * PINCH_ZOOM).exp());
+        if pinch_zoom {
+            pose = pose.zoom((-p * PINCH_ZOOM).exp());
+        }
     }
 
     if pose != before {

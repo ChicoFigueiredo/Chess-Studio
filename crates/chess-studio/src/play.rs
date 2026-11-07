@@ -4,12 +4,14 @@
 //! Partida decide o Lance (ADR-0001).
 
 use crate::camera::CameraSet;
+use crate::controls::Controls;
 use crate::picking::{CursorWorld, HoveredSquare, PickSet};
 use crate::presentation::Presentation;
 use crate::session::Session;
 use bevy::prelude::*;
 use bevy::window::WindowFocused;
 use bevy_egui::input::EguiWantsInput;
+use chess_input::controls::Action;
 use chess_input::{GestureEvent, Modifiers, PointerButton};
 
 /// Sistemas que alimentam a Partida a partir da entrada (a cena se reconstrói depois).
@@ -31,38 +33,48 @@ impl Plugin for PlayPlugin {
     }
 }
 
-/// Teclas que mudam a Vista; trocar a câmera no meio de um gesto o cancela.
-const VIEW_KEYS: [KeyCode; 10] = [
-    KeyCode::Digit0,
-    KeyCode::Digit1,
-    KeyCode::Digit2,
-    KeyCode::Digit3,
-    KeyCode::Digit4,
-    KeyCode::Numpad0,
-    KeyCode::Numpad1,
-    KeyCode::Numpad2,
-    KeyCode::Numpad3,
-    KeyCode::Numpad4,
+/// Ações que mudam a Vista; trocar a câmera no meio de um gesto o cancela.
+const VIEW_ACTIONS: [Action; 5] = [
+    Action::ViewTop,
+    Action::ViewOblique,
+    Action::ViewStandard,
+    Action::ViewInverted,
+    Action::ResetCamera,
+];
+
+/// Os botões do mouse que o mapa de controles pode usar.
+const MOUSE_BUTTONS: [MouseButton; 5] = [
+    MouseButton::Left,
+    MouseButton::Middle,
+    MouseButton::Right,
+    MouseButton::Back,
+    MouseButton::Forward,
 ];
 
 #[allow(clippy::too_many_arguments)]
 fn gesture_input(
     buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
+    controls: Res<Controls>,
     hovered: Res<HoveredSquare>,
     cursor: Res<CursorWorld>,
     egui: Res<EguiWantsInput>,
     presentation: Res<Presentation>,
     mut focus: MessageReader<WindowFocused>,
     mut session: ResMut<Session>,
-    mut was_pressed: Local<bool>,
+    mut held_button: Local<Option<MouseButton>>,
     mut last_world: Local<Vec3>,
     mut last_presentation: Local<Option<Presentation>>,
     editor: Res<crate::pieces::BoardOverride>,
 ) {
     // O editor de posição (C11) usa o tabuleiro: os gestos não chegam à Partida.
     if editor.is_active() {
-        *was_pressed = false;
+        *held_button = None;
+        return;
+    }
+    // Capturando um novo atalho na tela "Controles": o tabuleiro não recebe nada.
+    if controls.is_capturing() {
+        *held_button = None;
         return;
     }
     let over_ui = egui.wants_pointer_input() || egui.is_pointer_over_area();
@@ -71,7 +83,7 @@ fn gesture_input(
     if focus.read().any(|f| !f.focused) {
         session.gesture(GestureEvent::FocusLost);
     }
-    if keys.just_pressed(KeyCode::Escape) {
+    if controls.key_just_pressed(Action::Cancel, &keys) {
         session.gesture(GestureEvent::Escape);
     }
     // `is_changed` não serve: o egui toma `&mut` do recurso todo quadro. Compara o valor.
@@ -79,41 +91,56 @@ fn gesture_input(
         session.gesture(GestureEvent::PanelInteraction);
     }
     *last_presentation = Some(*presentation);
-    if !egui.wants_keyboard_input() && keys.any_just_pressed(VIEW_KEYS) {
+    if !egui.wants_keyboard_input()
+        && VIEW_ACTIONS
+            .iter()
+            .any(|a| controls.key_just_pressed(*a, &keys))
+    {
         session.gesture(GestureEvent::OrbitStarted);
     }
-    for (button, mapped) in [
-        (MouseButton::Middle, PointerButton::Middle),
-        (MouseButton::Right, PointerButton::Secondary),
-    ] {
-        if buttons.just_pressed(button) {
-            session.gesture(GestureEvent::PointerDown {
-                button: mapped,
-                square: hovered.0,
-                modifiers: Modifiers::default(),
-            });
-            session.gesture(GestureEvent::OrbitStarted);
+    // Cada botão apertado vira a ação que o mapa de controles diz (DEC-51 por padrão):
+    // órbita e pan cancelam o gesto em curso; seleção e Ajuste tocam/arrastam a peça.
+    for button in MOUSE_BUTTONS {
+        if !buttons.just_pressed(button) {
+            continue;
+        }
+        match controls.mouse_action(button, &keys) {
+            Some(action @ (Action::Orbit | Action::Pan)) => {
+                session.gesture(GestureEvent::PointerDown {
+                    button: if action == Action::Orbit {
+                        PointerButton::Middle
+                    } else {
+                        PointerButton::Secondary
+                    },
+                    square: hovered.0,
+                    modifiers: Modifiers::default(),
+                });
+                session.gesture(GestureEvent::OrbitStarted);
+            }
+            Some(action @ (Action::Select | Action::Adjust)) => {
+                if over_ui {
+                    session.gesture(GestureEvent::PanelInteraction);
+                } else {
+                    *held_button = Some(button);
+                    session.gesture(GestureEvent::PointerDown {
+                        button: PointerButton::Primary,
+                        square: hovered.0,
+                        modifiers: Modifiers {
+                            // O Ajuste (j'adoube) é o `alt` do intérprete, onde quer que o
+                            // usuário o tenha posto.
+                            alt: action == Action::Adjust,
+                            shift: keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]),
+                            ctrl: keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]),
+                        },
+                    });
+                }
+            }
+            _ => {}
         }
     }
-
-    // Botão esquerdo.
-    if buttons.just_pressed(MouseButton::Left) {
-        if over_ui {
-            session.gesture(GestureEvent::PanelInteraction);
-        } else {
-            *was_pressed = true;
-            session.gesture(GestureEvent::PointerDown {
-                button: PointerButton::Primary,
-                square: hovered.0,
-                modifiers: Modifiers {
-                    alt: keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]),
-                    shift: keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]),
-                    ctrl: keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]),
-                },
-            });
-        }
-    }
-    if *was_pressed && buttons.pressed(MouseButton::Left) {
+    if let Some(button) = *held_button
+        && buttons.pressed(button)
+    {
         // Sobre a interface o cursor não tem ponto no tabuleiro: mantém o último.
         *last_world = cursor.0.unwrap_or(*last_world);
         session.gesture(GestureEvent::PointerMove {
@@ -121,8 +148,10 @@ fn gesture_input(
             world: *last_world,
         });
     }
-    if buttons.just_released(MouseButton::Left) && *was_pressed {
-        *was_pressed = false;
+    if let Some(button) = *held_button
+        && buttons.just_released(button)
+    {
+        *held_button = None;
         // Soltar sobre a interface cancela o arrasto (a casa é `None`).
         session.gesture(GestureEvent::PointerUp {
             square: if over_ui { None } else { hovered.0 },

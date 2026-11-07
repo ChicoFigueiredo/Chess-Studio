@@ -16,6 +16,7 @@ mod camera;
 mod capture;
 mod captured;
 mod clock;
+mod controls;
 mod dock;
 mod engine;
 mod engine_manager;
@@ -32,6 +33,7 @@ mod i18n;
 mod layout;
 mod library_ui;
 mod load_control;
+mod local_profiles;
 mod new_game;
 mod notation;
 mod paths;
@@ -77,6 +79,8 @@ fn capture_script() -> capture::CaptureScript {
         select: option_value("--select").and_then(|s| s.parse().ok()),
         show_panel: std::env::args().any(|a| a == "--panel") || option_value("--profile").is_some(),
         profile: option_value("--profile"),
+        // Vazamento único na partida do processo de captura: o nome vive até o fim.
+        single: option_value("--single").map(|s| &*Box::leak(s.into_boxed_str())),
         aids: option_value("--aids"),
         hud: option_value("--hud"),
         inverted: std::env::args().any(|a| a == "--inverted"),
@@ -179,6 +183,8 @@ fn main() {
         analysis::AnalysisPlugin,
         profiles::ProfilesPlugin,
         responsive::ResponsivePlugin,
+        controls::ControlsPlugin,
+        local_profiles::LocalProfilesPlugin,
     ));
     app.add_plugins((hud::HudPlugin, hud_draw::HudDrawPlugin));
     app.add_plugins(training_ui::TrainingPlugin);
@@ -188,6 +194,21 @@ fn main() {
             eprintln!("não foi possível criar {}: {err}", dir.display());
         }
         app.insert_resource(capture::CaptureMode::new(dir, capture_script()));
+        // C12: telas e qualidades para as evidências.
+        if std::env::args().any(|a| a == "--controls") {
+            app.insert_resource(controls::ControlsUi::opened());
+        }
+        let picker = std::env::args().any(|a| a == "--profile-picker");
+        let manager = std::env::args().any(|a| a == "--profile-manager");
+        if picker || manager {
+            app.insert_resource(local_profiles::LocalProfiles::sample(picker, manager));
+        }
+        match option_value("--quality").as_deref() {
+            Some("economic") => app.insert_resource(presentation::GraphicsQuality::Economic),
+            Some("balanced") => app.insert_resource(presentation::GraphicsQuality::Balanced),
+            Some("ultra") => app.insert_resource(presentation::GraphicsQuality::Ultra),
+            _ => &mut app,
+        };
         // `--focus`: a evidência do modo Foco (sem banco, o estado não vem das preferências).
         if std::env::args().any(|a| a == "--focus") {
             app.insert_resource(focus::ViewState {
