@@ -18,7 +18,25 @@ pub struct AidsPanelPlugin;
 impl Plugin for AidsPanelPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<FileTools>()
-            .add_systems(EguiPrimaryContextPass, (aids_panel, resume_banner));
+            .add_systems(EguiPrimaryContextPass, resume_banner);
+        crate::dock::register_panel(
+            app,
+            crate::dock::PanelDef {
+                id: crate::dock::ids::AIDS,
+                label_key: "dock-panel-aids",
+                access: crate::dock::PanelAccess::OutsideCompetitive,
+                ui: aids_panel_ui,
+            },
+        );
+        crate::dock::register_panel(
+            app,
+            crate::dock::PanelDef {
+                id: crate::dock::ids::REVIEW,
+                label_key: "dock-panel-review",
+                access: crate::dock::PanelAccess::Always,
+                ui: review_panel_ui,
+            },
+        );
     }
 }
 
@@ -105,36 +123,39 @@ fn notice_text(i18n: &I18n, notice: IllegalNotice) -> String {
     )
 }
 
-#[allow(clippy::too_many_arguments)]
-fn aids_panel(
-    mut contexts: EguiContexts,
-    i18n: Res<I18n>,
-    mut session: ResMut<Session>,
-    mut aids: ResMut<AidSettings>,
-    mut tools: ResMut<FileTools>,
-    capture: Option<Res<CaptureMode>>,
-    dock: Res<crate::dock::Dock>,
-) -> Result {
-    if capture.as_ref().is_some_and(|c| !c.show_panel) {
-        return Ok(());
-    }
-    let mut edited = *aids;
-    egui::Window::new(i18n.t("aid-window-title"))
-        .anchor(egui::Align2::RIGHT_TOP, [dock.right_offset(8.0), 8.0])
-        .default_width(280.0)
-        .show(contexts.ctx_mut()?, |ui| {
-            alerts(ui, &i18n, &mut session, &edited);
-            ui.strong(i18n.t("aid-heading"));
-            aid_controls(ui, &i18n, &mut edited);
+/// Painel Auxílios do dock: alertas (xeque, Lance ilegal) e o Perfil de auxílios. É dica,
+/// então fica inacessível nas Políticas competitivas (UI-08).
+fn aids_panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
+    world.resource_scope(|world, mut session: Mut<Session>| {
+        let Some(mut aids) = world.get_resource_mut::<AidSettings>() else {
+            return;
+        };
+        // Edita uma cópia: `&mut` todo quadro marcaria `is_changed` e reaplicaria tudo.
+        let mut edited = *aids;
+        alerts(ui, i18n, &mut session, &edited);
+        ui.strong(i18n.t("aid-heading"));
+        aid_controls(ui, i18n, &mut edited);
+        if edited != *aids {
+            *aids = edited;
+        }
+    });
+}
+
+/// Painel Revisão do dock: navegação Lance a Lance, incidentes, FEN e PGN.
+fn review_panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
+    let epoch = world.get_resource::<Session>().map(Session::epoch);
+    let notes = world
+        .get_resource::<crate::study::StudyNotes>()
+        .zip(epoch)
+        .map(|(notes, epoch)| notes.export(epoch))
+        .unwrap_or_default();
+    world.resource_scope(|world, mut session: Mut<Session>| {
+        world.resource_scope(|_, mut tools: Mut<FileTools>| {
+            review_section(ui, i18n, &mut session);
             ui.separator();
-            review_section(ui, &i18n, &mut session);
-            ui.separator();
-            file_section(ui, &i18n, &mut session, &mut tools);
+            file_section(ui, i18n, &mut session, &mut tools, &notes);
         });
-    if edited != *aids {
-        *aids = edited;
-    }
-    Ok(())
+    });
 }
 
 /// Xeque (se o Auxílio estiver ligado) e aviso de Lance ilegal conforme a explicação.
@@ -256,7 +277,13 @@ fn review_section(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session) {
     }
 }
 
-fn file_section(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session, tools: &mut FileTools) {
+fn file_section(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    session: &mut Session,
+    tools: &mut FileTools,
+    notes: &[(usize, String)],
+) {
     egui::CollapsingHeader::new(i18n.t("fen-heading")).show(ui, |ui| {
         ui.add(
             egui::TextEdit::singleline(&mut tools.fen_text)
@@ -284,7 +311,7 @@ fn file_section(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session, tools: &m
         ui.checkbox(&mut tools.include_comments, i18n.t("pgn-comments"));
         if ui.button(i18n.t("pgn-export")).clicked() {
             let dir = paths::documents_dir(paths::Platform::current(), &paths::process_env);
-            tools.export(session, &dir);
+            tools.export(session, notes, &dir);
         }
         match &tools.pgn_result {
             Some(Ok(path)) => {

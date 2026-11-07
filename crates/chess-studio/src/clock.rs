@@ -14,8 +14,8 @@ use crate::session::Session;
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
+use bevy_egui::egui;
 use bevy_egui::input::EguiWantsInput;
-use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use chess_core::Color as Side;
 
 /// Altura do tampo da mesa (a mesma do `board`): o relógio apoia nele.
@@ -234,8 +234,16 @@ impl Plugin for ClockPlugin {
                     .chain()
                     .after(PlaySet)
                     .after(crate::picking::PickSet),
-            )
-            .add_systems(EguiPrimaryContextPass, clock_widget_2d);
+            );
+        crate::dock::register_panel(
+            app,
+            crate::dock::PanelDef {
+                id: crate::dock::ids::CLOCK,
+                label_key: "dock-panel-clock",
+                access: crate::dock::PanelAccess::Always,
+                ui: clock_panel_ui,
+            },
+        );
     }
 }
 
@@ -692,72 +700,95 @@ fn update_clock(
 }
 
 // ---------------------------------------------------------------------------------------
-// Widget do 2D técnico (egui).
+// Painel Relógio do dock (egui): o widget que era do 2D técnico, agora em todas as
+// Apresentações. O relógio 3D continua na mesa; ambos acionam o mesmo Comando.
 
-fn clock_widget_2d(
-    mut contexts: EguiContexts,
-    i18n: Res<I18n>,
-    presentation: Res<Presentation>,
-    mut session: ResMut<Session>,
-    dock: Res<crate::dock::Dock>,
-) -> Result {
-    if *presentation != Presentation::Technical2d {
-        return Ok(());
+/// Texto do controle de tempo: `15 min + 10 s` (ou só a base, sem incremento).
+pub fn control_text(base_ms: u64, increment_ms: u64) -> String {
+    let base = if base_ms.is_multiple_of(60_000) {
+        format!("{} min", base_ms / 60_000)
+    } else {
+        format!("{} s", base_ms / 1_000)
+    };
+    if increment_ms == 0 {
+        base
+    } else {
+        format!("{base} + {} s", increment_ms / 1_000)
     }
+}
+
+fn clock_panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
+    let Some(mut session) = world.get_resource_mut::<Session>() else {
+        return;
+    };
     let Some(reading) = session.clock_reading() else {
-        return Ok(());
+        ui.weak(i18n.t("clock-none"));
+        return;
     };
     let user = session.user_side();
     let snapshot = session.snapshot().clone();
     let mut press = false;
-    egui::Window::new(i18n.t("clock-title"))
-        .title_bar(false)
-        .collapsible(false)
-        .resizable(false)
-        .anchor(egui::Align2::RIGHT_CENTER, [dock.right_offset(16.0), 0.0])
-        .show(contexts.ctx_mut()?, |ui| {
-            for slot in 0..2 {
-                let side = side_of_slot(user, slot);
-                let ms = reading.remaining(side);
-                let running = reading.running == Some(side) && !reading.paused;
-                let color = if ms == 0 {
-                    egui::Color32::from_rgb(255, 60, 40)
-                } else if running {
-                    egui::Color32::from_rgb(255, 189, 36)
-                } else {
-                    egui::Color32::from_rgb(160, 118, 30)
-                };
-                ui.horizontal(|ui| {
-                    ui.label(i18n.t(match side {
-                        Side::White => "clock-white",
-                        Side::Black => "clock-black",
-                    }));
-                    ui.label(
-                        egui::RichText::new(clock_text(ms))
-                            .monospace()
-                            .size(34.0)
-                            .color(color),
-                    );
-                });
-            }
-            if reading.paused {
-                ui.colored_label(egui::Color32::LIGHT_YELLOW, i18n.t("clock-paused"));
-            }
-            let enabled = session.can_press_clock(snapshot.side_to_move);
-            if ui
-                .add_enabled(
-                    enabled,
-                    egui::Button::new(i18n.t("clock-press")).min_size(egui::vec2(200.0, 40.0)),
-                )
-                .clicked()
-            {
-                press = true;
-            }
+    for slot in 0..2 {
+        let side = side_of_slot(user, slot);
+        let ms = reading.remaining(side);
+        let running = reading.running == Some(side) && !reading.paused;
+        let color = if ms == 0 {
+            egui::Color32::from_rgb(255, 60, 40)
+        } else if running {
+            egui::Color32::from_rgb(255, 189, 36)
+        } else {
+            egui::Color32::from_rgb(160, 118, 30)
+        };
+        ui.horizontal(|ui| {
+            ui.label(i18n.t(match side {
+                Side::White => "clock-white",
+                Side::Black => "clock-black",
+            }));
+            ui.label(
+                egui::RichText::new(clock_text(ms))
+                    .monospace()
+                    .size(34.0)
+                    .color(color),
+            );
         });
+    }
+    if let Some(time) = session.config().time {
+        ui.small(i18n.t_with(
+            "clock-control",
+            &[("control", &control_text(time.base_ms, time.increment_ms))],
+        ));
+    }
+    if snapshot.outcome.is_none() {
+        ui.label(i18n.t(match snapshot.side_to_move {
+            Side::White => "game-turn-white",
+            Side::Black => "game-turn-black",
+        }));
+    }
+    if reading.paused {
+        ui.colored_label(egui::Color32::LIGHT_YELLOW, i18n.t("clock-paused"));
+    }
+    if session.is_competitive() {
+        ui.small(i18n.t_with(
+            "clock-penalties",
+            &[
+                ("white", &snapshot.infractions_white.to_string()),
+                ("black", &snapshot.infractions_black.to_string()),
+            ],
+        ));
+    }
+    let enabled = session.can_press_clock(snapshot.side_to_move);
+    if ui
+        .add_enabled(
+            enabled,
+            egui::Button::new(i18n.t("clock-press")).min_size(egui::vec2(200.0, 40.0)),
+        )
+        .clicked()
+    {
+        press = true;
+    }
     if press {
         session.press_clock();
     }
-    Ok(())
 }
 
 #[cfg(test)]

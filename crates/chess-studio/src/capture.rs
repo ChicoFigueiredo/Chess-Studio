@@ -14,6 +14,17 @@ use chess_input::{CameraView, GestureEvent, Modifiers, PointerButton};
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
+/// Valor de uma opção `--<nome> <valor>` da linha de comando (roteiros de evidência).
+pub fn option_value(name: &str) -> Option<String> {
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        if arg == name {
+            return args.next();
+        }
+    }
+    None
+}
+
 /// Quadros de espera depois de trocar a cena (carregar assets, sombras, mipmaps).
 const SETTLE_FRAMES: u32 = 150;
 /// Quadros usados para medir o tempo médio antes de capturar.
