@@ -29,6 +29,8 @@ pub enum EndReason {
     Checkmate,
     Stalemate,
     InsufficientMaterial,
+    /// Posição morta além do material: bloqueio total de peões (art. 5.2.2).
+    DeadPosition,
     ThreefoldRepetition,
     FivefoldRepetition,
     FiftyMoveRule,

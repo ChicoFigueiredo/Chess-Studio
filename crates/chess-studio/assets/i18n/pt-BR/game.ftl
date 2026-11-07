@@ -16,6 +16,7 @@ game-result-draw = Empate
 game-reason-checkmate = Xeque-mate
 game-reason-stalemate = Afogamento
 game-reason-insufficient-material = Material insuficiente
+game-reason-dead-position = Posição morta
 game-reason-threefold = Tripla repetição
 game-reason-fivefold = Quíntupla repetição
 game-reason-fifty-move = Regra dos 50 lances

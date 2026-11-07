@@ -67,6 +67,8 @@ pub(crate) fn automatic_outcome(
         draw(EndReason::FivefoldRepetition)
     } else if position.is_insufficient_material() {
         draw(EndReason::InsufficientMaterial)
+    } else if position.is_dead_position() {
+        draw(EndReason::DeadPosition)
     } else if auto.threefold && occurrences >= 3 {
         draw(EndReason::ThreefoldRepetition)
     } else if auto.fifty_move && position.can_claim_fifty_move() {
