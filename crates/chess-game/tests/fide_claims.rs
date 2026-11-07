@@ -218,6 +218,14 @@ fn material_insuficiente_encerra_automaticamente_art_5_2_2() {
 }
 
 #[test]
+fn posicao_morta_por_bloqueio_encerra_automaticamente_art_5_2_2() {
+    let mut game = fide_from("4k3/8/1p1p1p1p/pPpPpPpP/P1P1P1P1/8/3r4/4K3 w - - 0 1");
+    touch(&mut game, 1, "e1").unwrap();
+    drop_piece(&mut game, 2, "e1", "d2").unwrap(); // Kxd2: só reis e peões travados
+    assert_eq!(reason(&game), Some(EndReason::DeadPosition));
+}
+
+#[test]
 fn a_engine_reclama_pela_mesma_via_quando_o_empate_e_reclamavel() {
     // API para o B9: o snapshot diz se há empate reclamável (para o lado da vez) e a
     // Engine, brancas aqui, envia ClaimDraw na sua vez; o usuário joga de pretas.
