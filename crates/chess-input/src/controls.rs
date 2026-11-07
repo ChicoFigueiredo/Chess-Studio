@@ -44,10 +44,12 @@ pub enum Action {
     CyclePresentation,
     ToggleFullscreen,
     ToggleFocus,
+    /// Liga e desliga o HUD inteiro.
+    ToggleHud,
 }
 
 impl Action {
-    pub const ALL: [Action; 15] = [
+    pub const ALL: [Action; 16] = [
         Action::Select,
         Action::Adjust,
         Action::Orbit,
@@ -63,6 +65,7 @@ impl Action {
         Action::CyclePresentation,
         Action::ToggleFullscreen,
         Action::ToggleFocus,
+        Action::ToggleHud,
     ];
 
     /// Identificador estável (gravado no banco; nunca muda).
@@ -83,6 +86,7 @@ impl Action {
             Action::CyclePresentation => "cycle-presentation",
             Action::ToggleFullscreen => "toggle-fullscreen",
             Action::ToggleFocus => "toggle-focus",
+            Action::ToggleHud => "toggle-hud",
         }
     }
 
@@ -380,6 +384,7 @@ fn defaults_for(action: Action) -> Vec<Trigger> {
         Action::CyclePresentation => vec![key("Tab")],
         Action::ToggleFullscreen => vec![key("F11")],
         Action::ToggleFocus => vec![key("F10")],
+        Action::ToggleHud => vec![key("KeyH")],
     }
 }
 

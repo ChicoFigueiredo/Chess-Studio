@@ -378,15 +378,16 @@ impl Plugin for HudPlugin {
     }
 }
 
-/// H liga e desliga o HUD inteiro (útil no Foco, sem painéis). Não escreve se o egui quer
+/// H (remapeável, `controls`) liga e desliga o HUD inteiro (útil no Foco, sem painéis). Não escreve se o egui quer
 /// o teclado.
 fn hud_shortcut(
     keys: Res<ButtonInput<KeyCode>>,
+    controls: Res<crate::controls::Controls>,
     egui: Option<Res<bevy_egui::input::EguiWantsInput>>,
     mut settings: ResMut<HudSettings>,
 ) {
     let typing = egui.is_some_and(|e| e.wants_keyboard_input());
-    if !typing && keys.just_pressed(KeyCode::KeyH) {
+    if !typing && controls.key_just_pressed(chess_input::controls::Action::ToggleHud, &keys) {
         settings.enabled = !settings.enabled;
     }
 }
@@ -778,6 +779,7 @@ mod tests {
     fn h_key_toggles_the_master_switch() {
         let mut app = App::new();
         app.init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<crate::controls::Controls>()
             .init_resource::<HudSettings>()
             .add_systems(Update, hud_shortcut);
         for expected in [false, true] {

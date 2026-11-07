@@ -69,6 +69,7 @@ fn defaults_follow_dec_51() {
         ("Tab", Action::CyclePresentation),
         ("F11", Action::ToggleFullscreen),
         ("F10", Action::ToggleFocus),
+        ("KeyH", Action::ToggleHud),
     ] {
         assert_eq!(resolve(&map, key(name), none), Some(action), "{name}");
     }

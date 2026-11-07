@@ -5,7 +5,7 @@ Registra as escolhas de implementação de US-28, US-29 e US-30. Estende a DEC-5
 ## US-28 — mapa de controles
 
 - **Um recurso único.** `chess_input::controls::ControlMap` (puro, sem Bevy) guarda ação -> atalhos. Todos os sistemas de entrada consultam `Controls` (`crates/chess-studio/src/controls.rs`): câmera, jogo, relógio, Apresentação, Foco e tela cheia. Nenhuma tecla fixa sobrou nesses sistemas.
-- **Padrões = DEC-51.** Seleção (esquerdo), Ajuste (Alt+esquerdo), órbita (meio / dois dedos), pan (Shift+meio, direito, Shift+dois dedos), zoom (roda / pinça), Esc, Espaço, 1–4/0 (e teclado numérico), Tab, F10, F11.
+- **Padrões = DEC-51.** Seleção (esquerdo), Ajuste (Alt+esquerdo), órbita (meio / dois dedos), pan (Shift+meio, direito, Shift+dois dedos), zoom (roda / pinça), Esc, Espaço, 1–4/0 (e teclado numérico), Tab, F10, F11, H (HUD).
 - **Resolução.** Vale o atalho **mais específico** cujos modificadores estão apertados (Alt+esquerdo é Ajuste, esquerdo é seleção; Shift+esquerdo continua selecionando).
 - **Conflito.** Um mesmo atalho (entrada + modificadores) não serve a duas ações. A tela "Controles" avisa e oferece "Substituir" (tira da outra ação) ou cancelar. A Seleção nunca perde o último atalho.
 - **Tipo de entrada por ação.** Teclas só em ações de teclado; botões/dois dedos em órbita e pan; roda/pinça no zoom.

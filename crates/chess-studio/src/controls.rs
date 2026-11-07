@@ -324,7 +324,7 @@ const POINTER_ACTIONS: [Action; 5] = [
     Action::Pan,
     Action::Zoom,
 ];
-const KEY_ACTIONS: [Action; 10] = [
+const KEY_ACTIONS: [Action; 11] = [
     Action::Cancel,
     Action::ClockPress,
     Action::ViewTop,
@@ -335,6 +335,7 @@ const KEY_ACTIONS: [Action; 10] = [
     Action::CyclePresentation,
     Action::ToggleFullscreen,
     Action::ToggleFocus,
+    Action::ToggleHud,
 ];
 
 pub fn action_label(i18n: &I18n, action: Action) -> String {

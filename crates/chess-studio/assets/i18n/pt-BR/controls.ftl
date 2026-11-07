@@ -45,3 +45,4 @@ ctl-conflict-replace = Substituir
 ctl-unsupported = Esse tipo de atalho não serve para «{ $action }».
 ctl-needs-one = «{ $action }» precisa de pelo menos um atalho.
 ctl-replaced = «{ $action }» agora usa o atalho que era de «{ $from }».
+ctl-action-toggle-hud = Ligar/desligar o HUD
