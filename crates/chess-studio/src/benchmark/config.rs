@@ -1,5 +1,6 @@
 //! Argumentos de linha de comando do modo benchmark (parser puro, sem Bevy).
 
+use crate::presentation::GraphicsQuality;
 use chess_uci::LoadMode;
 use std::path::PathBuf;
 
@@ -51,6 +52,10 @@ pub struct BenchmarkConfig {
     pub load: LoadMode,
     /// `--backend`: backend do Lc0 (padrão: automático).
     pub backend: Option<String>,
+    /// `--hud`: liga o HUD virtual com os elementos padrão (perfil Análise) para medir o custo.
+    pub hud: bool,
+    /// `--quality`: qualidade gráfica (MSAA/sombras) do app; `None` = a padrão (Equilibrado).
+    pub quality: Option<GraphicsQuality>,
 }
 
 impl Default for BenchmarkConfig {
@@ -66,6 +71,8 @@ impl Default for BenchmarkConfig {
             network: None,
             load: LoadMode::Balanced,
             backend: None,
+            hud: false,
+            quality: None,
         }
     }
 }
@@ -120,6 +127,10 @@ where
                     other => return Err(format!("--engine inválido: {other}")),
                 };
             }
+            "--hud" => cfg.hud = true,
+            "--quality" => {
+                cfg.quality = Some(parse_quality(&value("economico|equilibrado|ultra")?)?);
+            }
             "--out" => cfg.out = Some(PathBuf::from(value("diretório")?)),
             "--engine-path" => cfg.engine_paths.push(PathBuf::from(value("executável")?)),
             "--network" => cfg.network = Some(PathBuf::from(value("arquivo da rede")?)),
@@ -136,6 +147,26 @@ where
         }
     }
     Ok(enabled.then_some(cfg))
+}
+
+/// Nome em pt-BR da qualidade gráfica, como na linha de comando e no JSON.
+pub fn quality_label(q: GraphicsQuality) -> &'static str {
+    match q {
+        GraphicsQuality::Economic => "economico",
+        GraphicsQuality::Balanced => "equilibrado",
+        GraphicsQuality::Ultra => "ultra",
+    }
+}
+
+fn parse_quality(text: &str) -> Result<GraphicsQuality, String> {
+    match text {
+        "economico" => Ok(GraphicsQuality::Economic),
+        "equilibrado" => Ok(GraphicsQuality::Balanced),
+        "ultra" => Ok(GraphicsQuality::Ultra),
+        other => Err(format!(
+            "--quality inválido: {other} (use economico, equilibrado ou ultra)"
+        )),
+    }
 }
 
 fn parse_resolution(text: &str) -> Result<(u32, u32), String> {
@@ -221,6 +252,35 @@ mod tests {
     }
 
     #[test]
+    fn parses_hud_quality_and_resolution() {
+        let cfg = parse_args([
+            "--benchmark",
+            "--hud",
+            "--quality",
+            "economico",
+            "--resolution",
+            "1280x720",
+        ])
+        .unwrap()
+        .unwrap();
+        assert!(cfg.hud);
+        assert_eq!(cfg.quality, Some(GraphicsQuality::Economic));
+        assert_eq!((cfg.width, cfg.height), (1280, 720));
+        for (name, q) in [
+            ("equilibrado", GraphicsQuality::Balanced),
+            ("ultra", GraphicsQuality::Ultra),
+        ] {
+            let cfg = parse_args(["--benchmark", &format!("--quality={name}")])
+                .unwrap()
+                .unwrap();
+            assert_eq!(cfg.quality, Some(q));
+            assert_eq!(quality_label(q), name);
+        }
+        let plain = parse_args(["--benchmark"]).unwrap().unwrap();
+        assert!(!plain.hud && plain.quality.is_none());
+    }
+
+    #[test]
     fn rejects_invalid_values() {
         for bad in [
             vec!["--benchmark", "--minutes", "0"],
@@ -232,6 +292,8 @@ mod tests {
             vec!["--benchmark", "--load", "turbo"],
             vec!["--benchmark", "--engine-path"],
             vec!["--benchmark", "--out"],
+            vec!["--benchmark", "--quality", "alta"],
+            vec!["--benchmark", "--quality"],
         ] {
             assert!(parse_args(bad.clone()).is_err(), "{bad:?}");
         }
