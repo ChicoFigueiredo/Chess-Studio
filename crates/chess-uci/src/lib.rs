@@ -59,9 +59,7 @@ pub use install::{
     INSTALL_MARKER, InstallError, InstallSpec, Installed, InstalledNetwork, NetworkSpec, Progress,
     install, install_network,
 };
-pub use load::{
-    Duty, FpsTarget, FrameStats, FrameWindow, Governor, Level, LoadMode, LoadPlan,
-};
+pub use load::{Duty, FpsTarget, FrameStats, FrameWindow, Governor, Level, LoadMode, LoadPlan};
 pub use manager::{
     InstallPlan, NETWORKS_DIR, RemoveError, Updated, install_from_catalog,
     install_network_from_catalog, installed_networks, launch_options, plans_for, remove_installed,

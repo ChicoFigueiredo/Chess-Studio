@@ -4,7 +4,7 @@
 //! Lc0 falso (`fake_uci --lc0`).
 #![allow(clippy::unwrap_used)]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use chess_uci::{
@@ -38,7 +38,7 @@ fn trace_path(name: &str) -> PathBuf {
     path
 }
 
-fn config(extra: &[&str], trace: &PathBuf) -> AnalysisConfig {
+fn config(extra: &[&str], trace: &Path) -> AnalysisConfig {
     let mut engine = EngineConfig::new(FAKE)
         .arg("--info")
         .arg("--options")
@@ -73,7 +73,7 @@ fn wait_for(
     panic!("evento esperado não chegou");
 }
 
-fn trace_lines(path: &PathBuf) -> Vec<String> {
+fn trace_lines(path: &Path) -> Vec<String> {
     std::fs::read_to_string(path)
         .unwrap_or_default()
         .lines()
@@ -81,14 +81,17 @@ fn trace_lines(path: &PathBuf) -> Vec<String> {
         .collect()
 }
 
-fn wait_trace(path: &PathBuf, pred: impl Fn(&[String]) -> bool) -> Vec<String> {
+fn wait_trace(path: &Path, pred: impl Fn(&[String]) -> bool) -> Vec<String> {
     let deadline = Instant::now() + Duration::from_secs(8);
     loop {
         let lines = trace_lines(path);
         if pred(&lines) {
             return lines;
         }
-        assert!(Instant::now() < deadline, "trace esperado não chegou: {lines:?}");
+        assert!(
+            Instant::now() < deadline,
+            "trace esperado não chegou: {lines:?}"
+        );
         std::thread::sleep(ms(10));
     }
 }
@@ -131,7 +134,10 @@ fn a_reduced_plan_caps_threads_batch_and_cache_and_restarts_the_search() {
         .expect("MinibatchSize");
     assert!(has(&lines, "setoption name NNCacheSize value 400000"));
     let second_go = lines.iter().rposition(|l| l == "go infinite").unwrap();
-    assert!(stop < threads && stop < batch && threads < second_go, "{lines:?}");
+    assert!(
+        stop < threads && stop < batch && threads < second_go,
+        "{lines:?}"
+    );
 }
 
 #[test]
@@ -145,7 +151,8 @@ fn going_back_to_full_restores_the_configured_values() {
     wait_trace(&trace, |l| has(l, "setoption name Threads value 1"));
     ctrl.set_load(LoadPlan::FULL);
     let lines = wait_trace(&trace, |l| {
-        has(l, "setoption name MinibatchSize value 0") && has(l, "setoption name NNCacheSize value 2000000")
+        has(l, "setoption name MinibatchSize value 0")
+            && has(l, "setoption name NNCacheSize value 2000000")
     });
     let last_threads = lines
         .iter()
@@ -180,7 +187,10 @@ fn the_paused_plan_stops_the_engine_and_resuming_restarts_the_search() {
     std::thread::sleep(ms(250));
     assert!(ctrl.poll().is_none(), "pausada não emite");
     assert_eq!(count(&trace_lines(&trace), "go infinite"), 1);
-    assert!(ctrl.is_analyzing(), "o pedido segue valendo, só está em espera");
+    assert!(
+        ctrl.is_analyzing(),
+        "o pedido segue valendo, só está em espera"
+    );
     ctrl.set_load(LoadPlan::FULL);
     wait_trace(&trace, |l| count(l, "go infinite") == 2);
     wait_for(&mut ctrl, |e| matches!(e, AnalysisEvent::Update(_)));
@@ -200,11 +210,20 @@ fn the_intermittent_plan_alternates_bursts_and_pauses() {
     };
     ctrl.set_load(plan);
     let lines = wait_trace(&trace, |l| count(l, "go infinite") >= 4);
-    assert!(count(&lines, "stop") >= 3, "uma parada por rajada: {lines:?}");
+    assert!(
+        count(&lines, "stop") >= 3,
+        "uma parada por rajada: {lines:?}"
+    );
     // Rajadas devolvem análise, e uma nova posição durante a pausa é atendida.
     wait_for(&mut ctrl, |e| matches!(e, AnalysisEvent::Update(_)));
-    let id = ctrl.analyze(PositionSpec::startpos().with_moves(["e2e4".parse().unwrap()]), 1);
-    let event = wait_for(&mut ctrl, |e| matches!(e, AnalysisEvent::Update(u) if u.id == id));
+    let id = ctrl.analyze(
+        PositionSpec::startpos().with_moves(["e2e4".parse().unwrap()]),
+        1,
+    );
+    let event = wait_for(
+        &mut ctrl,
+        |e| matches!(e, AnalysisEvent::Update(u) if u.id == id),
+    );
     assert!(matches!(event, AnalysisEvent::Update(_)));
 }
 
@@ -213,16 +232,25 @@ fn a_new_position_while_paused_waits_for_the_resume() {
     let trace = trace_path("paused-new");
     let mut ctrl = started(config(&[], &trace));
     ctrl.analyze(PositionSpec::startpos(), 1);
+    wait_for(&mut ctrl, |e| matches!(e, AnalysisEvent::Update(_)));
     ctrl.set_load(LoadPlan::for_level(Level::Paused, 4));
     wait_trace(&trace, |l| has(l, "stop"));
-    let id = ctrl.analyze(PositionSpec::startpos().with_moves(["e2e4".parse().unwrap()]), 1);
+    let id = ctrl.analyze(
+        PositionSpec::startpos().with_moves(["e2e4".parse().unwrap()]),
+        1,
+    );
     std::thread::sleep(ms(300));
     assert!(
-        !trace_lines(&trace).iter().any(|l| l == "position startpos moves e2e4"),
+        !trace_lines(&trace)
+            .iter()
+            .any(|l| l == "position startpos moves e2e4"),
         "pausada: não envia a posição"
     );
     ctrl.set_load(LoadPlan::FULL);
-    wait_for(&mut ctrl, |e| matches!(e, AnalysisEvent::Update(u) if u.id == id));
+    wait_for(
+        &mut ctrl,
+        |e| matches!(e, AnalysisEvent::Update(u) if u.id == id),
+    );
 }
 
 // --- backends ------------------------------------------------------------------------------
@@ -243,7 +271,10 @@ fn the_backend_is_chosen_automatically_from_what_the_engine_announces() {
     let (backend, backends) = ready(&mut ctrl);
     assert_eq!(backend.as_deref(), Some("cuda-auto"), "NVIDIA + Linux");
     assert_eq!(backends, ["cuda-auto", "blas"]);
-    assert!(has(&trace_lines(&trace), "setoption name Backend value cuda-auto"));
+    assert!(has(
+        &trace_lines(&trace),
+        "setoption name Backend value cuda-auto"
+    ));
 }
 
 #[test]
@@ -287,19 +318,30 @@ fn a_manual_backend_the_engine_does_not_have_is_refused_before_it_is_sent() {
 fn a_gpu_backend_that_dies_on_the_first_search_falls_back_to_the_cpu() {
     let trace = trace_path("fallback");
     let mut ctrl = AnalysisController::start(config(&["--fail-backend", "cuda-auto"], &trace));
-    let event = wait_for(&mut ctrl, |e| matches!(e, AnalysisEvent::BackendFallback { .. }));
+    let event = wait_for(&mut ctrl, |e| {
+        matches!(e, AnalysisEvent::BackendFallback { .. })
+    });
     let AnalysisEvent::BackendFallback { from, to, message } = event else {
         unreachable!()
     };
     assert_eq!((from.as_str(), to.as_str()), ("cuda-auto", "blas"));
-    assert!(message.contains("cuda-auto") && message.contains("blas"), "{message}");
+    assert!(
+        message.contains("cuda-auto") && message.contains("blas"),
+        "{message}"
+    );
     assert!(message.to_lowercase().contains("driver"), "{message}");
     let (backend, _) = ready(&mut ctrl);
     assert_eq!(backend.as_deref(), Some("blas"));
     // E a análise funciona na CPU.
     let id = ctrl.analyze(PositionSpec::startpos(), 1);
-    wait_for(&mut ctrl, |e| matches!(e, AnalysisEvent::Update(u) if u.id == id));
-    assert!(has(&trace_lines(&trace), "setoption name Backend value blas"));
+    wait_for(
+        &mut ctrl,
+        |e| matches!(e, AnalysisEvent::Update(u) if u.id == id),
+    );
+    assert!(has(
+        &trace_lines(&trace),
+        "setoption name Backend value blas"
+    ));
 }
 
 #[test]
@@ -314,7 +356,11 @@ fn fallback_can_be_turned_off_and_the_error_is_then_explained() {
     };
     assert_eq!(failure.kind, FailureKind::Crashed);
     assert!(failure.message.contains("cuda-auto"), "{}", failure.message);
-    assert!(failure.message.to_lowercase().contains("driver"), "{}", failure.message);
+    assert!(
+        failure.message.to_lowercase().contains("driver"),
+        "{}",
+        failure.message
+    );
 }
 
 #[test]

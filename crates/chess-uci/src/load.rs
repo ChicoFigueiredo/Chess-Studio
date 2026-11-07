@@ -394,8 +394,7 @@ impl Governor {
         } else if stats.p95_ms <= budget * tuning.calm {
             self.over_s = 0.0;
             self.calm_s += dt_s;
-            if self.calm_s >= tuning.recover_s * self.recover_scale
-                && self.level > floor(self.mode)
+            if self.calm_s >= tuning.recover_s * self.recover_scale && self.level > floor(self.mode)
             {
                 self.level = self.level.down();
                 self.lowered_at_s = Some(self.clock_s);
@@ -486,7 +485,10 @@ mod tests {
         assert!(minimal.nn_cache_cap < reduced.nn_cache_cap);
         let burst = LoadPlan::for_level(Level::Intermittent, 8);
         let duty = burst.duty.expect("rajadas");
-        assert!(duty.pause > duty.run, "a pausa domina no nível intermitente");
+        assert!(
+            duty.pause > duty.run,
+            "a pausa domina no nível intermitente"
+        );
         assert!(!burst.paused);
         let paused = LoadPlan::for_level(Level::Paused, 8);
         assert!(paused.paused);

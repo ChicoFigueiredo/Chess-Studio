@@ -275,7 +275,12 @@ pub fn classify_failure(text: &str) -> BackendProblem {
         "cuda driver",
     ]) {
         BackendProblem::NoDevice
-    } else if has(&["unknown backend", "unsupported", "not supported", "not compiled"]) {
+    } else if has(&[
+        "unknown backend",
+        "unsupported",
+        "not supported",
+        "not compiled",
+    ]) {
         BackendProblem::Unsupported
     } else {
         BackendProblem::Unknown
@@ -368,7 +373,14 @@ mod tests {
     #[test]
     fn the_map_knows_every_backend_of_the_issue_per_platform() {
         for id in [
-            "cuda", "cudnn", "onnx-cuda", "onnx-dml", "onnx-trt", "metal", "blas", "eigen",
+            "cuda",
+            "cudnn",
+            "onnx-cuda",
+            "onnx-dml",
+            "onnx-trt",
+            "metal",
+            "blas",
+            "eigen",
         ] {
             assert!(backend_info(id).is_some(), "{id}");
         }
@@ -454,7 +466,10 @@ mod tests {
             recommended_backend("linux", NONE, &cuda_build).as_deref(),
             Some("blas")
         );
-        assert_eq!(recommended_backend("linux", NVIDIA, &adv(&["random"])), None);
+        assert_eq!(
+            recommended_backend("linux", NVIDIA, &adv(&["random"])),
+            None
+        );
         assert_eq!(recommended_backend("linux", NVIDIA, &[]), None);
     }
 
@@ -482,10 +497,19 @@ mod tests {
         use BackendProblem::*;
         let cases = [
             ("CUDA error: no CUDA-capable device is detected", NoDevice),
-            ("cudaGetDeviceCount failed: CUDA driver version is insufficient", NoDevice),
+            (
+                "cudaGetDeviceCount failed: CUDA driver version is insufficient",
+                NoDevice,
+            ),
             ("Failed to create D3D12 device", NoDevice),
-            ("error while loading shared libraries: libcudart.so.12: cannot open shared object file", MissingLibrary),
-            ("The code execution cannot proceed because directml.dll was not found", MissingLibrary),
+            (
+                "error while loading shared libraries: libcudart.so.12: cannot open shared object file",
+                MissingLibrary,
+            ),
+            (
+                "The code execution cannot proceed because directml.dll was not found",
+                MissingLibrary,
+            ),
             ("cudaMalloc failed: out of memory", OutOfMemory),
             ("Unknown backend: metal", Unsupported),
             ("alguma coisa estranha", Unknown),
