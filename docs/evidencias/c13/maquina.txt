@@ -1,0 +1,88 @@
+== antes de dock-analise-ativa (2026-11-07T00:38:59-03:00)
+uptime:  00:38:59 up 11 days,  5:52,  1 user,  load average: 10,43, 31,41, 37,12
+name, driver_version, utilization.gpu [%], memory.used [MiB], memory.total [MiB], temperature.gpu
+NVIDIA GeForce RTX 4080 SUPER, 595.99.02, 0 %, 10303 MiB, 16376 MiB, 43
+processos mais pesados:
+%CPU %MEM COMMAND
+15.2 18.0 python
+13.7  0.0 bun
+ 8.5  3.2 vivaldi
+ 5.8  0.0 chrome
+ 4.6  0.3 chrome
+== depois de dock-analise-ativa (2026-11-07T00:44:02-03:00)
+uptime:  00:44:02 up 11 days,  5:57,  1 user,  load average: 32,02, 29,14, 34,02
+name, driver_version, utilization.gpu [%], memory.used [MiB], memory.total [MiB], temperature.gpu
+NVIDIA GeForce RTX 4080 SUPER, 595.99.02, 4 %, 10586 MiB, 16376 MiB, 51
+processos mais pesados:
+%CPU %MEM COMMAND
+ 600  0.0 ps
+ 100  0.0 pgrep
+88.6  0.5 rustc
+86.9  0.2 rustc
+82.3  0.1 rustc
+== antes de dock-ociosa (2026-11-07T00:44:02-03:00)
+uptime:  00:44:02 up 11 days,  5:57,  1 user,  load average: 32,02, 29,14, 34,02
+name, driver_version, utilization.gpu [%], memory.used [MiB], memory.total [MiB], temperature.gpu
+NVIDIA GeForce RTX 4080 SUPER, 595.99.02, 1 %, 10586 MiB, 16376 MiB, 51
+processos mais pesados:
+%CPU %MEM COMMAND
+ 500  0.0 ps
+88.3  0.4 rustc
+83.0  0.2 rustc
+81.9  1.0 lc0
+81.5  0.5 rustc
+== depois de dock-ociosa (2026-11-07T00:49:05-03:00)
+uptime:  00:49:05 up 11 days,  6:02,  1 user,  load average: 46,65, 38,45, 36,67
+name, driver_version, utilization.gpu [%], memory.used [MiB], memory.total [MiB], temperature.gpu
+NVIDIA GeForce RTX 4080 SUPER, 595.99.02, 6 %, 10303 MiB, 16376 MiB, 40
+processos mais pesados:
+%CPU %MEM COMMAND
+ 465  0.1 cargo-about
+ 350  0.0 ps
+ 121  0.5 rustc
+98.8  1.2 rustc
+42.2  0.2 rustc
+== antes de baseline-sem-paineis (2026-11-07T00:49:06-03:00)
+uptime:  00:49:06 up 11 days,  6:02,  1 user,  load average: 46,19, 38,49, 36,69
+name, driver_version, utilization.gpu [%], memory.used [MiB], memory.total [MiB], temperature.gpu
+NVIDIA GeForce RTX 4080 SUPER, 595.99.02, 0 %, 10303 MiB, 16376 MiB, 40
+processos mais pesados:
+%CPU %MEM COMMAND
+ 700  0.0 ps
+ 467  0.1 cargo-about
+ 120  0.3 rustc
+98.8  1.2 rustc
+42.0  0.1 rustc
+== depois de baseline-sem-paineis (2026-11-07T00:54:10-03:00)
+uptime:  00:54:10 up 11 days,  6:07,  1 user,  load average: 43,32, 42,47, 39,00
+name, driver_version, utilization.gpu [%], memory.used [MiB], memory.total [MiB], temperature.gpu
+NVIDIA GeForce RTX 4080 SUPER, 595.99.02, 1 %, 10303 MiB, 16376 MiB, 39
+processos mais pesados:
+%CPU %MEM COMMAND
+ 105  0.0 pgrep
+83.3  0.0 pgrep
+61.1  0.3 rustc
+50.1  0.4 rustc
+49.7  0.8 rustc
+== antes das capturas (2026-11-07T00:54:11-03:00)
+uptime:  00:54:11 up 11 days,  6:07,  1 user,  load average: 43,32, 42,47, 39,00
+name, driver_version, utilization.gpu [%], memory.used [MiB], memory.total [MiB], temperature.gpu
+NVIDIA GeForce RTX 4080 SUPER, 595.99.02, 0 %, 10303 MiB, 16376 MiB, 39
+processos mais pesados:
+%CPU %MEM COMMAND
+ 600  0.0 ps
+60.4  0.3 rustc
+49.4  0.4 rustc
+49.1  0.8 rustc
+48.8  0.4 rustc
+== depois das capturas (2026-11-07T00:57:40-03:00)
+uptime:  00:57:40 up 11 days,  6:11,  1 user,  load average: 58,49, 51,19, 43,22
+name, driver_version, utilization.gpu [%], memory.used [MiB], memory.total [MiB], temperature.gpu
+NVIDIA GeForce RTX 4080 SUPER, 595.99.02, 10 %, 10303 MiB, 16376 MiB, 41
+processos mais pesados:
+%CPU %MEM COMMAND
+ 350  0.0 ps
+ 100  0.1 rustc
+61.3  0.3 rustc
+45.5  0.2 rustc
+37.2  0.5 rustc

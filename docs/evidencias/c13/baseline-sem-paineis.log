@@ -1,0 +1,19 @@
+[2m2026-11-07T03:49:07.782415Z[0m [32m INFO[0m [2mbevy_render::renderer[0m[2m:[0m AdapterInfo { name: "NVIDIA GeForce RTX 4080 SUPER", vendor: 4318, device: 9986, device_type: DiscreteGpu, device_pci_bus_id: "0000:08:00.0", driver: "NVIDIA", driver_info: "595.99.02", backend: Vulkan, subgroup_min_size: 32, subgroup_max_size: 32, transient_saves_memory: Some(false), limit_bucket: None }
+[2m2026-11-07T03:49:08.973018Z[0m [32m INFO[0m [2mbevy_pbr::cluster[0m[2m:[0m GPU clustering is supported on this device.
+[2m2026-11-07T03:49:08.977618Z[0m [32m INFO[0m [2mbevy_render::batching::gpu_preprocessing[0m[2m:[0m GPU preprocessing is fully supported on this device.
+[2m2026-11-07T03:49:08.982921Z[0m [32m INFO[0m [2mbevy_egui::render[0m[2m:[0m Using bindless_mode_array_size 16 (Device maximum 1048576)
+[2m2026-11-07T03:49:08.986555Z[0m [32m INFO[0m [2mbevy_winit::system[0m[2m:[0m Creating new window Chess Studio (63v0)
+=== Benchmark Chess Studio ===
+Versão 0.1.0 (desconhecido), 2026-11-07T03:49:08Z UTC
+1920x1020 | preset equilibrado | engine ociosa | present vsync | 297 s medidos
+SO: Linux (Ubuntu 26.04) (7.0.0-38-generic)
+CPU: AMD Ryzen 7 3700X 8-Core Processor (16 threads), RAM total 128689 MiB
+GPU: NVIDIA GeForce RTX 4080 SUPER [DiscreteGpu] driver NVIDIA 595.99.02 (Vulkan)
+FPS médio 43.3 | 1% low 10.3 | frames 12861
+Frame time (ms): p1 10.27 | p5 11.46 | p50 19.19 | p95 46.72 | p99 76.65 | máx 183.84
+RAM do processo: média 862.7 MiB | máx 870.9 MiB
+CPU do processo: média 50.8% | máx 72.8%
+VRAM usada (GPU inteira): média 10782.1 MiB | máx 10783.0 MiB
+Utilização da GPU: média 28.2% | máx 59.0%
+
+Arquivos gravados em docs/evidencias/c13/baseline-sem-paineis

@@ -1,0 +1,411 @@
+#!/usr/bin/env python3
+"""Gera docs/homologacao/matriz-v1.md (C13, issue #55) e valida as referências.
+
+Mesmo padrão de `gerar_matriz_p0.py`: cada teste citado precisa existir como `fn <nome>` no
+arquivo indicado (caminho relativo a `crates/`); cada evidência citada entre crases
+(`docs/...`, `scripts/...`) precisa existir no disco. Se algo não existir, o script falha e
+não escreve a matriz: a matriz nunca cita teste ou arquivo inventado.
+
+Uso (na raiz do repositório):
+    python3 scripts/gerar_matriz_v1.py            # valida e reescreve a matriz
+    python3 scripts/gerar_matriz_v1.py --check    # só valida (sem escrever)
+"""
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+RAIZ = Path(__file__).resolve().parent.parent
+SAIDA = RAIZ / "docs" / "homologacao" / "matriz-v1.md"
+
+# Atalhos de caminho (relativos a crates/).
+STU = "chess-studio/src/"
+INP = "chess-input/src/"
+UCI_T = "chess-uci/tests/"
+UCI_S = "chess-uci/src/"
+PGN = "chess-pgn/tests/"
+STO = "chess-store/tests/"
+TRN = "chess-training/tests/"
+
+STATUS_VALIDOS = ("PASS", "UNVERIFIED", "FAIL", "N/A")
+
+# IDs que a matriz precisa conter (UI-01..12, UCI-05/06 e as histórias US-14..US-30).
+IDS_OBRIGATORIOS = (
+    [f"UI-{n:02d}" for n in range(1, 13)]
+    + ["UCI-05", "UCI-06"]
+    + [f"US-{n}" for n in range(14, 31)]
+)
+
+
+def t(arquivo, *nomes):
+    return [(arquivo, n) for n in nomes]
+
+
+# (id, requisito, onde está implementado, testes, evidência, status, nota)
+LINHAS = [
+    # ---- 14.5 UI modular ----
+    ("UI-01", "Cada painel é exibido/ocultado sem mudar estado da partida.",
+     "C1/C2/C7/C8: `dock.rs` (registro de painéis, `DockLayout::set_visible`), painéis Notação, Relógio, Peças capturadas, Anotações, Treino, Análise, Biblioteca, Engines",
+     t(STU + "dock.rs", "ui01_showing_and_hiding_every_panel_never_changes_the_game", "hiding_a_panel_does_not_touch_the_game",
+       "default_layout_shows_every_builtin_panel"),
+     "PRs #96, #98; `docs/evidencias/c1/dock-notacao-2d.png`; `docs/evidencias/c2/casual-3d.png`", "PASS",
+     "O teste percorre todos os painéis registrados e confere que a Partida (histórico, relógio, resultado) não muda."),
+    ("UI-02", "Layout, tamanhos e visibilidade dos painéis persistem no SQLite.",
+     "C1: `dock.rs` (serde do layout), `persistence.rs` (preferência `dock_layout`)",
+     t(STU + "persistence.rs", "dock_layout_round_trips_through_sqlite", "unreadable_dock_layout_falls_back_to_the_default")
+     + t(STU + "dock.rs", "layout_survives_a_json_round_trip_with_size_and_visibility", "unreadable_or_incomplete_layouts_fall_back_to_the_default",
+         "a_layout_saved_by_c1_still_loads_and_gains_the_new_panels", "reset_restores_the_default_layout_and_forgets_the_dragged_width"),
+     "PR #96; `docs/decisoes/spike-docking.md`", "PASS",
+     "Reabrir o app com o layout arrastado em janela real fica no roteiro manual."),
+    ("UI-03", "F11 alterna tela cheia quando disponível; menu alternativo funciona.",
+     "C3: `focus.rs` (F11, `ViewState::fullscreen`), item \"Tela cheia (F11)\" na janela principal",
+     t(STU + "focus.rs", "f11_and_f10_toggle_independent_states", "window_mode_follows_the_fullscreen_flag")
+     + t(STU + "persistence.rs", "preferences_round_trip_and_default_to_training"),
+     "PR #100; `docs/decisoes/2026-11-06-tela-cheia-foco.md`", "UNVERIFIED",
+     "A lógica do atalho e do modo de janela passa em teste, mas tela cheia real, a restauração de tamanho/posição e o F11 interceptado (macOS, Wayland) nunca foram vistos em janela. Roteiro manual."),
+    ("UI-04", "Modo Foco não interrompe relógio nem modifica partida.",
+     "C3: `focus.rs` (F10, `ViewState::focus`)",
+     t(STU + "focus.rs", "fullscreen_and_focus_never_touch_the_game_or_the_clock", "f11_and_f10_toggle_independent_states"),
+     "PR #100; `docs/evidencias/c3/foco/3d-profissional-padrao.png`; `docs/evidencias/c3/foco/2d-tecnico.png`", "PASS",
+     "O teste corre com a Partida em andamento e o relógio correndo (BDD-09)."),
+    ("UI-05", "Todas as dicas podem sumir, restando somente mesa, tabuleiro e peças.",
+     "C3/C5: modo Foco, chave geral do HUD (tecla H), perfil de Auxílios Jogo físico",
+     t(STU + "hud.rs", "master_switch_hides_everything_without_losing_the_settings", "default_hud_shows_nothing",
+       "focus_keeps_the_allowed_hud_and_the_master_switch_clears_it", "h_key_toggles_the_master_switch")
+     + t(STU + "profiles.rs", "physical_game_is_the_immersive_table_with_no_dock_and_no_aids"),
+     "PRs #100, #109; `docs/evidencias/c3/foco/mesa-imersiva-padrao.png`", "PASS",
+     "Foco esconde painéis e barras; o HUD sai pela chave geral; o perfil Jogo físico não tem Auxílios. O Foco sozinho não apaga um HUD permitido (decisão do PR #100)."),
+    ("UI-06", "HUD segue as 64 casas após câmera orbitar/inverter/zoom.",
+     "C5: `hud_draw.rs` + `chess-input/src/arrow.rs` (HUD preso às casas, a câmera nunca entra na conta)",
+     t(INP + "view.rs", "every_square_is_pickable_in_every_view", "every_square_is_pickable_after_any_rotation",
+       "inverting_the_view_does_not_change_logical_interpretation", "zoom_is_limited")
+     + t(INP + "arrow.rs", "knight_move_and_reversed_direction_work", "tip_lies_just_before_the_target_center_on_the_line")
+     + t(STU + "hud_draw.rs", "items_follow_the_marks_in_3d_and_2d", "arrow_3d_faces_up_in_every_direction"),
+     "PRs #105, #109; `docs/evidencias/c5/hud-padrao/3d-profissional-obliqua.png`; `docs/evidencias/c5/hud-invertida/3d-profissional-obliqua.png`", "PASS",
+     "O HUD é função das casas, não da câmera; órbita com o mouse na janela real segue no roteiro manual."),
+    ("UI-07", "Notação automática corresponde aos lances legais registrados.",
+     "C1: `notation.rs` (painel Notação, leitura do histórico legal)",
+     t(STU + "notation.rs", "notation_matches_the_registered_legal_moves_and_ignores_illegal_attempts",
+       "navigating_is_read_only_and_the_last_move_returns_to_live", "a_list_that_starts_with_black_uses_the_fen_move_number"),
+     "PR #96; `docs/evidencias/c1/dock-notacao-3d.png`", "PASS", ""),
+    ("UI-08", "Painéis de engine/dicas proibidas ficam inacessíveis em competição.",
+     "C5/C8: `hud_policy.rs` (fonte única), `dock.rs` (`PanelAccess`), `analysis.rs` (bloqueio), `study.rs`, `library_ui.rs`",
+     t(STU + "hud_policy.rs", "visibility_table_by_policy_and_stage", "competitive_live_forbids_every_hint_like_aid_and_keeps_the_table_ones",
+       "stage_comes_from_outcome_and_review")
+     + t(STU + "hud.rs", "competitive_live_blocks_everything_but_the_last_move_arrow", "competitive_finished_or_review_releases_everything",
+         "system_hides_forbidden_elements_in_a_live_competitive_game")
+     + t(STU + "dock.rs", "competitive_games_lock_hint_and_analysis_panels")
+     + t(STU + "analysis.rs", "competitive_game_in_progress_blocks_and_switches_the_analysis_off", "the_dock_panel_is_inaccessible_until_the_result",
+         "the_result_releases_the_analysis_for_review", "hud_arrow_comes_from_multipv_one_and_is_forbidden_in_live_competitive"),
+     "PRs #98, #109; `docs/evidencias/c8/analise-bloqueada-competitiva.png`; `docs/evidencias/c2/competitiva-3d.png`", "PASS",
+     "Cobre HUD, Análise, Dicas, Anotações e Biblioteca; os painéis voltam depois do resultado."),
+    ("UI-09", "Perfis de interface persistem e podem ser restaurados.",
+     "C4: `profiles.rs` (Jogo físico, Treinamento assistido, Estudo e análise, Personalizado; salvar, excluir, restaurar), `persistence.rs`",
+     t(STU + "profiles.rs", "restoring_a_factory_profile_undoes_manual_changes", "a_saved_profile_brings_back_the_whole_layout",
+       "user_profiles_are_saved_replaced_and_deleted_by_name", "profiles_state_survives_a_json_round_trip",
+       "switching_profiles_never_changes_the_game")
+     + t(STU + "persistence.rs", "interface_profiles_round_trip_through_sqlite"),
+     "PR #105; `docs/evidencias/c4/perfil-estudo.png`; `docs/evidencias/c4/perfil-jogo-fisico.png`; `docs/evidencias/c4/perfil-treinamento.png`", "PASS", ""),
+    ("UI-10", "Reorganização responde a tamanhos de janela sem esconder controles essenciais.",
+     "C4: `responsive.rs` (função pura por tamanho: dock lateral, dock estreito, sobreposição)",
+     t(STU + "responsive.rs", "essentials_are_always_reachable_at_every_size", "svga_800x600_compacts_and_leaves_room_for_the_board",
+       "a_very_narrow_window_turns_the_dock_into_an_overlay_over_the_whole_board", "full_hd_keeps_the_side_dock_and_the_full_main_window",
+       "a_short_window_compacts_even_when_wide"),
+     "PR #105; `docs/evidencias/c4/janela-800x600-3d.png`; `docs/evidencias/c4/janela-600x500-sobreposicao.png`", "PASS",
+     "Varredura 320..2560 x 240..1440 no PR #105; redimensionar a janela real com o mouse fica no roteiro manual."),
+    ("UI-11", "2D, 3D e mesa mantêm preferências aplicáveis.",
+     "C4: `profiles.rs` (memória de câmera por Apresentação sobrevive à troca de perfil), `pieces.rs`",
+     t(STU + "profiles.rs", "camera_preferences_of_each_presentation_survive_profile_switches",
+       "a_saved_profile_restores_the_camera_view_of_its_presentation"),
+     "PR #105; `docs/evidencias/c4/perfil-estudo.png`", "PASS", ""),
+    ("UI-12", "Benchmarks com HUD/painéis validam metas ou renegociação formal.",
+     "C13: `scripts/rodar_benchmark_ui12.sh` sobre o benchmark do A6/C10 (`--benchmark`, `--engine ativa`)",
+     [],
+     "PR #113 (B22) e esta homologação; `docs/evidencias/c13/dock-analise-ativa/benchmark.json`; `docs/evidencias/c13/dock-ociosa/benchmark.json`; `docs/evidencias/c13/baseline-sem-paineis/benchmark.json`; `docs/evidencias/c13/maquina.txt`; `docs/evidencias/c13/captura-dock-hud-analise/desempenho.txt`; `docs/evidencias/c13/captura-foco-hud-analise/desempenho.txt`", "UNVERIFIED",
+     "1080p (janela 1920x1020) Equilibrado, vsync (teto de 60 FPS), 297 s, RTX 4080 SUPER, binário com o B22 (#113). "
+     "Dock aberto com Análise ativa: 56,4 FPS (p95 26,6 ms, 1% low 18,2); fases do mesmo run: sem análise 59,5, Stockfish 54,4 (-8,6%), Lc0/CUDA 55,9 (-6,0%). "
+     "Dock aberto, Engine ociosa: 40,2 FPS; baseline sem painéis (binário de antes do dock, Merge #97): 43,3 FPS. "
+     "**Ressalvas:** (1) a máquina estava saturada por builds de outros agentes (load average de 10 a 58 em 16 threads; ver `docs/evidencias/c13/maquina.txt`) e os runs ocioso e baseline pegaram a parte pior (load 32 a 46): o número só vale como comparação dentro de um run, e a diferença dock x baseline (-7%) está dentro do ruído. "
+     "Uma rodada anterior, com o binário pré-B22 e a máquina menos carregada (load 5 a 30), deu 59,1 / 59,9 / 56,1 FPS (Análise ativa / dock ocioso / baseline), mas os arquivos dela não foram preservados. "
+     "(2) O benchmark não tem argumento de HUD e não lê o banco: o HUD fica desligado nas medições longas, e o custo dele em captura curta (`docs/evidencias/c13/captura-dock-hud-analise/desempenho.txt`) está encoberto pela carga. "
+     "(3) O B22 já está na `main` e o JSON registra `scene_load_seconds` (1,0 s), mas esta rodada não foi em máquina ociosa. (4) Não há meta numérica formal nem GPU integrada medida. "
+     "Continua UNVERIFIED até repetir em máquina ociosa e o usuário aprovar as metas ou renegociá-las."),
+
+    # ---- 14.6 Motores V1 ----
+    ("UCI-05", "Múltiplos engines são detectados/instalados/atualizados com confirmação, fonte e integridade verificável.",
+     "C9: `chess-uci` (`catalog`, `manager`, `install`, `detect`, `options`), `chess-store` (`engines`), `engine_manager.rs`, `engine_wizard.rs`",
+     t(UCI_T + "manager.rs", "update_installs_the_new_version_then_removes_the_old_one", "a_failing_update_keeps_the_previous_version_working",
+       "network_with_the_right_hash_is_installed_and_wrong_hash_is_rejected", "removal_refuses_anything_outside_the_engines_directory",
+       "values_cannot_inject_uci_commands", "only_declared_files_are_extracted_and_traversal_entries_are_ignored")
+     + t(UCI_T + "install.rs", "correct_hash_installs_validates_and_keeps_only_the_needed_files", "tampered_download_is_rejected_and_deleted",
+         "executable_that_does_not_speak_uci_is_rejected_and_removed")
+     + t(UCI_T + "detect.rs", "only_candidates_that_speak_uci_are_listed")
+     + t(UCI_S + "catalog.rs", "every_asset_has_a_well_formed_pinned_hash_and_official_url", "only_https_urls_of_official_hosts_are_accepted")
+     + t(STU + "engine_manager.rs", "instalar_so_pede_confirmacao_e_nao_baixa_nada_antes")
+     + t(STO + "engines.rs", "engines_are_registered_listed_updated_and_removed"),
+     "PR #99; `docs/decisoes/seguranca-engines.md`", "PASS",
+     "Linux oferece só o Stockfish no catálogo (o Lc0 é compilado/apontado pelo usuário, ver `docs/lc0-gpu.md`); os builds do Lc0 para Windows existem no catálogo mas nunca foram instalados em Windows. Os downloads reais (`#[ignore]`, exigem rede) passaram nos PRs #85 e #99."),
+    ("UCI-06", "Análise Lc0/engine GPU não causa perda de responsividade sem aviso/controle de carga.",
+     "C10: `chess-uci` (`load` governador, `backend`), `load_control.rs`, painel Análise (Máximo/Equilibrado/Leve, aviso na interface)",
+     t(UCI_S + "load.rs", "balanced_reacts_to_sustained_low_fps_and_ignores_a_blip", "it_escalates_one_level_at_a_time_up_to_pause_and_no_further",
+       "a_pause_that_does_not_help_is_not_kept_forever", "max_never_reduces_but_still_reports_the_low_fps")
+     + t(UCI_T + "load.rs", "a_reduced_plan_caps_threads_batch_and_cache_and_restarts_the_search", "a_gpu_backend_that_dies_on_the_first_search_falls_back_to_the_cpu",
+         "the_paused_plan_stops_the_engine_and_resuming_restarts_the_search")
+     + t(UCI_T + "lc0.rs", "lc0_picks_a_backend_analyses_and_obeys_the_load_plan")
+     + t(STU + "load_control.rs", "slow_frames_reduce_the_analysis_and_raise_the_notice", "a_long_enough_slowdown_pauses_and_says_so")
+     + t(STU + "analysis.rs", "low_fps_lightens_the_running_analysis_and_raises_the_notice", "a_slow_app_without_analysis_is_not_blamed_on_the_analysis"),
+     "PR #110; `docs/evidencias/c10/README.md`; `docs/evidencias/c10/analise-lc0-gpu-cuda-3d.png`", "PASS",
+     "Provado no Linux com Lc0 0.32.1/CUDA e Stockfish (a máquina do C10 estava saturada; leitura relativa, ver UI-12). Backends AMD/DirectML (Windows) e Metal (macOS) só têm a lógica de escolha testada, sem o hardware."),
+
+    # ---- Histórias de usuário US-14..US-30 ----
+    ("US-14", "Comentários e variações fora das Partidas competitivas.",
+     "C2/C6/C7/C8: `study.rs` (Anotações por Lance, exportadas no PGN), árvore de variações da Biblioteca, linhas MultiPV da Análise",
+     t(STU + "study.rs", "notes_are_set_cleared_and_marked_dirty_only_when_they_change", "notes_survive_the_json_round_trip_and_bad_json_is_empty",
+       "a_new_game_starts_without_notes_and_never_exports_the_old_ones")
+     + t(STU + "library_ui.rs", "the_tree_lists_the_mainline_first_and_every_variation")
+     + t(STU + "analysis.rs", "clicking_a_line_move_shows_the_variation_without_changing_the_game")
+     + t(STU + "dock.rs", "competitive_games_lock_hint_and_analysis_panels"),
+     "PRs #98, #106, #109", "PASS",
+     "Variações são exploradas (lidas) na Biblioteca e na Análise; não há edição de variações novas dentro de uma Partida jogada."),
+    ("US-15", "Importar PGN (inclusive variações e comentários) com validação pelo núcleo de regras.",
+     "C6: crate `chess-pgn` (lexer, parser, modelo em árvore, exportador), `chess-store` (`import_pgn`), botão na Biblioteca",
+     t(PGN + "import.rs", "corpus_variacoes_aninhadas_comentarios_e_nags_ficam_na_arvore", "lance_ilegal_informa_linha_coluna_e_o_lance",
+       "modo_tolerante_pula_a_partida_ruim_e_importa_as_outras", "nenhum_prefixo_truncado_do_corpus_causa_panic")
+     + t(PGN + "roundtrip.rs", "exportar_e_reimportar_o_corpus_da_a_mesma_arvore", "pgn_exportado_pelo_app_e_importado_sem_perda")
+     + t(PGN + "perf.rs", "mil_partidas_importam_em_menos_de_dois_segundos")
+     + t(STO + "pgn_import.rs", "import_pgn_grava_a_arvore_e_relata_os_erros_sem_perder_as_boas", "importar_sobrevive_a_reabertura_do_banco")
+     + t(STU + "library_ui.rs", "importing_a_file_reports_the_good_games_and_the_errors"),
+     "PRs #95, #106", "PASS",
+     "O teste de desempenho é `#[ignore]` em debug (0,2 s em release no PR #95). Limitações do PR #95: sem deduplicação, lance nulo é erro."),
+    ("US-16", "Biblioteca pesquisável de Partidas, posições favoritas e Exercícios no SQLite.",
+     "C7: `chess-store` (`library`, índice de busca), `library_ui.rs`",
+     t(STO + "library.rs", "a_busca_cobre_partidas_jogadas_e_importadas", "filtros_por_jogador_resultado_politica_e_data",
+       "busca_por_posicao_acha_por_fen_ignorando_contadores", "exercicios_sao_encontraveis_por_tipo_e_texto", "banco_da_versao_anterior_migra_sem_perder_dados")
+     + t(STU + "library_ui.rs", "filters_become_a_query", "exercises_are_found_by_kind_and_the_catalog_loads_on_first_use"),
+     "PR #106; `docs/evidencias/c7/biblioteca-search.png`; `docs/evidencias/c7/biblioteca-list.png`; `docs/evidencias/c7/biblioteca-exercises.png`", "PASS", ""),
+    ("US-17", "Marcar posições favoritas e voltar a elas.",
+     "C7: `chess-store` (favoritas), `library_ui.rs`",
+     t(STO + "library.rs", "favoritas_crud_com_origem", "favorita_com_fen_invalido_e_recusada")
+     + t(STU + "library_ui.rs", "marking_a_favorite_stores_the_position_on_screen_and_the_origin_game", "a_favorite_opens_as_an_assisted_study_game"),
+     "PR #106; `docs/evidencias/c7/biblioteca-favorites.png`", "PASS", ""),
+    ("US-18", "Consultar avaliação, linha principal e profundidade da Engine em estudo, sem interferir em Partidas competitivas.",
+     "C8: `chess-uci` (`analysis`: MultiPV, pontuação do ponto de vista das Brancas), `analysis.rs` (painel, instância separada da Engine adversária)",
+     t(UCI_T + "analysis.rs", "reports_depth_score_and_principal_lines_in_san_with_multipv", "scores_are_always_from_whites_point_of_view",
+       "changing_position_sends_stop_then_a_new_position_and_drops_stale_updates", "engine_crash_is_a_failure_event_and_the_controller_dies")
+     + t(STU + "analysis.rs", "analysis_is_paused_while_the_opponent_engine_thinks_and_resumes_after", "missing_engine_is_reported_without_starting_anything",
+         "score_text_and_bar_share")
+     + t(UCI_T + "stockfish_analysis.rs", "real_stockfish_analyses_with_multipv_and_switches_position"),
+     "PR #109; `docs/evidencias/c8/analise-2d-stockfish-multipv3.png`; `docs/evidencias/integracao/hud-analise-2d-stockfish.png`", "PASS",
+     "O teste com Stockfish real é `#[ignore]` (precisa do executável) e foi usado nas capturas do C8."),
+    ("US-19", "Painéis de Engine e dicas proibidas inacessíveis em Partida competitiva e liberados depois do resultado.",
+     "C5/C8: ver UI-08",
+     t(STU + "analysis.rs", "competitive_lock_clears_a_running_analysis_immediately", "the_result_releases_the_analysis_for_review",
+       "training_exercise_locks_the_analysis_too", "lock_reason_prefers_competitive_then_training")
+     + t(STU + "hud_policy.rs", "visibility_table_by_policy_and_stage")
+     + t(STU + "dock.rs", "competitive_games_lock_hint_and_analysis_panels"),
+     "PR #109; `docs/evidencias/c8/analise-bloqueada-competitiva.png`", "PASS", ""),
+    ("US-20", "O app detecta Engines instaladas e lista versão, protocolo e estado.",
+     "C9: `chess-uci` (`detect`, handshake), `chess-store` (`engines`), painel Engines",
+     t(UCI_T + "detect.rs", "handshake_returns_name_author_and_path", "only_candidates_that_speak_uci_are_listed",
+       "symlinks_to_the_same_engine_appear_once", "preferred_engine_round_trips_and_forgets_deleted_files")
+     + t(UCI_S + "detect.rs", "lc0_build_and_install_locations_are_searched_on_linux_and_macos", "linux_dirs_cover_common_locations_without_duplicates")
+     + t(STO + "engines.rs", "settings_and_status_persist"),
+     "PR #99", "PASS", "A listagem na janela real (aparência do painel Engines) segue no roteiro manual."),
+    ("US-21", "Instalar, atualizar e remover Engines (Stockfish, Lc0, outras UCI) com confirmação, fonte oficial, integridade e licença visível.",
+     "C9: ver UCI-05; design de segurança em `docs/decisoes/seguranca-engines.md`",
+     t(UCI_T + "manager.rs", "removal_deletes_only_an_app_installed_directory", "removal_refuses_a_symlink_pointing_outside",
+       "an_update_whose_engine_fails_the_handshake_keeps_the_previous_version", "network_file_names_cannot_escape_the_directory")
+     + t(UCI_T + "install.rs", "tampered_download_is_rejected_and_deleted", "a_failed_reinstall_keeps_the_previous_good_install", "cancelling_stops_and_cleans_up")
+     + t(UCI_S + "catalog.rs", "catalog_ids_and_install_dirs_are_unique_and_safe")
+     + t(STU + "engine_manager.rs", "instalar_so_pede_confirmacao_e_nao_baixa_nada_antes", "todas_as_chaves_fluent_do_gerenciador_existem"),
+     "PR #99; `docs/decisoes/seguranca-engines.md`", "PASS",
+     "A licença visível é texto Fluent do painel; o aspecto na janela real segue no roteiro manual."),
+    ("US-22", "Configurar threads, hash, níveis e parâmetros por Engine.",
+     "C9: `chess-uci` (`options`: opções anunciadas viram controles tipados e validados), painéis Engines e Análise",
+     t(UCI_T + "manager.rs", "announced_options_become_typed_controls", "values_are_validated_against_the_announced_option",
+       "settings_resolve_to_ordered_setoption_pairs_and_reject_the_bad_ones", "configured_options_reach_the_engine_and_hostile_ones_never_do")
+     + t(UCI_T + "analysis.rs", "threads_and_hash_are_clamped_to_the_app_limits_before_analysis")
+     + t(STU + "analysis.rs", "limits_clamp_threads_and_hash", "chosen_engine_options_come_from_the_manager_choice")
+     + t(STO + "engines.rs", "settings_and_status_persist"),
+     "PR #99", "PASS", ""),
+    ("US-23", "Usar Lc0 onde o backend for suportado, com controle de carga para não derrubar o FPS.",
+     "C10: `chess-uci` (`backend`, `load`), seleção automática/manual de backend, queda para CPU",
+     t(UCI_S + "backend.rs", "nvidia_on_linux_prefers_cuda_and_has_no_directml", "nvidia_on_windows_prefers_cuda_then_directml_then_cpu",
+       "amd_on_windows_goes_to_directml_and_never_tries_cuda", "macos_prefers_metal_and_machines_without_gpu_only_get_cpu_backends")
+     + t(UCI_T + "load.rs", "the_backend_is_chosen_automatically_from_what_the_engine_announces", "a_manual_backend_the_engine_does_not_have_is_refused_before_it_is_sent",
+         "a_gpu_backend_that_dies_on_the_first_search_falls_back_to_the_cpu", "without_a_gpu_the_automatic_choice_is_the_cpu_backend")
+     + t(UCI_T + "lc0.rs", "lc0_picks_a_backend_analyses_and_obeys_the_load_plan")
+     + t(STU + "analysis.rs", "a_manual_backend_goes_into_the_launch_and_restarts_the_engine"),
+     "PR #110; `docs/lc0-gpu.md`; `docs/evidencias/c10/README.md`", "PASS",
+     "Só NVIDIA/CUDA no Linux foi exercitado com hardware real; DirectML, Metal e AMD estão cobertos pela lógica de escolha, sem GPU para provar."),
+    ("US-24", "Ser avisado quando a análise por GPU afetar a responsividade.",
+     "C10: `load_control.rs` (aviso na interface), governador `chess_uci::Governor`",
+     t(STU + "load_control.rs", "slow_frames_reduce_the_analysis_and_raise_the_notice", "a_long_enough_slowdown_pauses_and_says_so",
+       "max_only_warns_and_light_starts_reduced_without_a_warning")
+     + t(STU + "analysis.rs", "low_fps_lightens_the_running_analysis_and_raises_the_notice", "the_user_can_choose_maximum_balanced_or_light"),
+     "PR #110; `docs/evidencias/c10/README.md`", "PASS",
+     "O aviso aparece na janela real? Só a lógica está em teste; ver o roteiro manual."),
+    ("US-25", "Reconstruir uma posição memorizada colocando as peças no tabuleiro (memória de posição).",
+     "C11: `chess-training` (`position_memory`), `training_ui/position.rs`",
+     t(TRN + "position_memory.rs", "an_exact_reconstruction_is_perfect", "every_kind_of_mistake_is_told_apart_square_by_square",
+       "the_study_countdown_follows_the_injected_clock", "the_board_only_accepts_edits_during_recall", "checking_judges_and_closes_the_run")
+     + t(STU + "training_ui/position.rs", "click_a_tray_piece_then_click_a_square_places_it", "checking_a_perfect_reconstruction_records_a_correct_run",
+         "nothing_is_editable_outside_the_recall_phase"),
+     "PR #101; `docs/evidencias/c11/posicao/3d-profissional-padrao.png`", "PASS", ""),
+    ("US-26", "Métricas pedagógicas ampliadas: evolução por período e perfil, exercícios sem Auxílios, acerto de memória, finais.",
+     "C11: `chess-training` (`evolution`, `metrics`), `training_ui/evolution.rs`",
+     t(TRN + "evolution.rs", "by_week_starts_on_monday", "by_training_profile_counts_only_the_profiles_exercises", "completed_without_aids_is_a_share_of_the_exercises_solved",
+       "position_memory_average_uses_each_runs_percent", "endgames_count_stalemate_and_mate_with_stalemate_mistakes")
+     + t(STO + "training_profiles.rs", "dated_runs_carry_the_timestamp_and_the_player_for_the_evolution")
+     + t(STO + "training.rs", "metrics_by_kind_and_session_never_touch_competitive_games"),
+     "PR #101; `docs/evidencias/c11/evolucao/2d-tecnico.png`", "PASS", ""),
+    ("US-27", "Perfis de treinamento com sequência de Exercícios e dificuldade.",
+     "C11: `chess-training` (`profiles`), `chess-store` (progresso), `training_ui/profiles.rs`",
+     t(TRN + "profiles.rs", "the_bundled_profiles_are_valid_against_the_catalog", "profiles_grow_from_easy_to_hard", "progress_follows_the_order_of_the_steps")
+     + t(STO + "training_profiles.rs", "a_correct_run_advances_every_profile_that_contains_the_exercise", "the_active_profile_is_remembered_per_player_and_can_be_cleared"),
+     "PR #101; `docs/evidencias/c11/perfis/2d-tecnico.png`", "PASS", ""),
+    ("US-28", "Remapear os controles de mouse, trackpad e teclado.",
+     "C12: `chess-input` (`controls::ControlMap`, mapa único ação -> atalhos com detecção de conflito), `controls.rs` (consulta por câmera, jogo, Foco, HUD), tela Controles, gravado por perfil local",
+     t("chess-input/tests/controls.rs", "defaults_follow_dec_51", "a_trigger_already_used_by_another_action_is_a_conflict_and_changes_nothing",
+       "stealing_moves_the_trigger_to_the_new_action", "input_kind_must_suit_the_action", "selection_never_loses_its_last_trigger",
+       "the_map_serializes_and_loads_back", "a_stored_map_with_conflicts_is_refused_as_a_whole")
+     + t(STU + "controls.rs", "remapped_keys_replace_the_old_ones", "modifiers_choose_between_mouse_actions", "capturing_silences_every_query")
+     + t(STU + "persistence.rs", "control_map_round_trips_through_sqlite", "unreadable_control_map_falls_back_to_the_default"),
+     "PR #111; `docs/evidencias/c12/controles-tela.png`; `docs/decisoes/2026-11-06-controles-perfis-ultra.md`", "PASS",
+     "A lógica é provada em teste. Capturar atalho com teclado, mouse e trackpad físicos (e o trackpad só em Mac) ficou como roteiro manual no PR #111."),
+    ("US-29", "Vários perfis locais.",
+     "C12: `chess-store` (`profiles`, migração V8 só acrescenta `last_used_at_ms`), `local_profiles.rs` (seletor \"Quem vai jogar?\", janela Perfis locais)",
+     t(STO + "local_profiles.rs", "preferences_games_and_unfinished_games_are_isolated_per_profile", "deleting_a_profile_removes_only_its_data",
+       "the_last_profile_cannot_be_deleted", "switching_changes_the_active_profile_and_it_survives_reopening",
+       "previous_version_database_keeps_its_profile_and_data", "profiles_are_created_with_trimmed_unique_names")
+     + t(STU + "local_profiles.rs", "the_picker_opens_only_with_more_than_one_profile")
+     + t(STU + "persistence.rs", "switching_local_profile_swaps_prefs_controls_and_game"),
+     "PR #111; `docs/evidencias/c12/seletor-de-perfis.png`; `docs/evidencias/c12/gerenciar-perfis.png`", "PASS",
+     "A troca de perfil por clique na janela real ficou como roteiro manual no PR #111 (lógica e persistência em teste)."),
+    ("US-30", "Perfis de qualidade GPU avançados e Ultra opcional sem comprometer a compatibilidade.",
+     "C12: `presentation.rs` (Ultra: MSAA 8x, sombras 4096, bloom opcional; `GpuSupport` lê o adaptador e recua sozinho)",
+     t(STU + "presentation.rs", "quality_falls_back_to_what_the_gpu_supports", "bloom_only_in_ultra_when_enabled_and_hdr_is_supported_at_the_effective_msaa",
+       "all_window_cameras_share_one_msaa_setting"),
+     "PR #111; `docs/evidencias/c12/qualidade-ultra.png`; `docs/evidencias/c12/qualidade-equilibrado.png`; `docs/evidencias/c12/desempenho.txt`", "PASS",
+     "Só a RTX 4080 SUPER (8x e HDR disponíveis) foi vista; o recuo em GPU sem 8x/HDR está provado só na lógica. SSAO descartado (exige Msaa::Off no Bevy 0.20). Desempenho do Ultra com o dock não foi medido em 5 min."),
+]
+
+MODELO = """# Matriz de rastreabilidade da V1 (C13, issue #55)
+
+Gerada por `scripts/gerar_matriz_v1.py`, que **falha** se algum teste ou evidência citado não existir. Para atualizar: edite os dados no script, rode `python3 scripts/gerar_matriz_v1.py` e confira o diff.
+
+- **Base:** `main` em `{{COMMIT}}` (PRs #95 a #113). O C12 (PR #111) já está incluído; o B22 (cena pronta, PR #113) também está incluído.
+- **Escopo:** UI-01 a UI-12 (§14.5), UCI-05 e UCI-06 (§14.6) e as histórias US-14 a US-30 do épico #2. As histórias US-1 a US-13 são cobertas pelos IDs UI (US-1/2 = UI-01, US-3/4 = UI-02, US-5 = UI-09, US-6 = UI-03, US-7/8 = UI-04, US-9/10 = UI-06 e UI-05, US-11 = UI-08, US-12 = UI-10, US-13 = UI-07); a US-31 é o UI-12.
+- **Ambiente:** Linux físico (Ubuntu 26.04, Ryzen 7 3700X, RTX 4080 SUPER, driver 595.99.02), Rust 1.98.1.
+- **Suíte:** ver `docs/relatorios/v1.md` (TESTES_EXECUTADOS).
+- **Resumo:** {{RESUMO}}
+
+Legenda: **PASS** = teste automatizado verde ou evidência verificável; **UNVERIFIED** = depende de verificação manual, de hardware/VM ou de entrega fora da `main` (UNVERIFIED não é PASS); **FAIL** = defeito ou lacuna conhecida; **N/A** = não se aplica, com justificativa (nenhum neste marco). Caminhos de teste são relativos a `crates/`. Números `#NN` são PRs mergeados.
+
+{{TABELA}}
+
+## O que falta para a V1 ser GO
+
+Itens que só o usuário (ou hardware dele) resolve, mais as pendências de engenharia que bloqueiam o GO.
+
+**Entrega de engenharia**
+1. **UI-12:** dar ao modo benchmark um argumento de HUD (hoje ele não lê o banco e o HUD fica desligado), para a medição incluir o HUD de verdade.
+
+**Medição (UI-12)**
+2. Repetir o benchmark de 5 min com o dock e o HUD, em máquina **ociosa** e sessão desbloqueada (`scripts/rodar_benchmark_ui12.sh`), no 1080p Equilibrado, no 720p Econômico e na GPU integrada, e então fechar o UI-12 ou renegociar formalmente as metas (a medição desta rodada foi feita com a máquina ocupada).
+
+**Roteiro manual em janela real (Linux, sessão desbloqueada)**
+3. **UI-03:** F11 e "Tela cheia (F11)" em janela de verdade; fechar e reabrir com a tela cheia ligada.
+4. **UI-02, UI-06, UI-10:** arrastar a borda do dock e reabrir; orbitar/inverter/dar zoom com o HUD ligado e ver as setas presas às casas; redimensionar a janela com o mouse até ~600 px.
+5. **US-20, US-21:** abrir o painel Engines; instalar/atualizar/remover o Stockfish pela interface (rede ligada) e conferir a licença visível.
+6. **US-24:** com o Lc0 em GPU, observar o aviso quando o FPS cai.
+7. **US-28, US-29, US-30:** remapear um atalho com teclado, mouse e trackpad físicos; criar e trocar de perfil local pela interface; alternar Equilibrado e Ultra (bloom ligado e desligado) e jogar com o clique/arrasto.
+
+**Plataformas**
+8. Windows e macOS: build, testes e execução da V1 (`docs/build/`), em especial F11 no macOS, os backends DirectML/Metal, o Ultra em GPU sem MSAA 8x e os instaláveis.
+
+**Homologação**
+9. Aprovar a V1 (issue #55) depois dos itens acima e fechá-la.
+"""
+
+
+def valida():
+    erros = []
+    ids = [l[0] for l in LINHAS]
+    for obrigatorio in IDS_OBRIGATORIOS:
+        if obrigatorio not in ids:
+            erros.append(f"ID obrigatório ausente: {obrigatorio}")
+    if len(ids) != len(set(ids)):
+        erros.append("IDs duplicados")
+    for (idn, _r, _i, testes, evid, st, nota) in LINHAS:
+        if st not in STATUS_VALIDOS:
+            erros.append(f"{idn}: status inválido {st}")
+        if st == "PASS" and not testes and "`docs/evidencias/" not in evid:
+            erros.append(f"{idn}: PASS sem teste nem evidência")
+        if st == "UNVERIFIED" and not nota:
+            erros.append(f"{idn}: UNVERIFIED sem nota")
+        if "@@" in evid or "@@" in nota:
+            erros.append(f"{idn}: marcador @@ não preenchido")
+        if len(set(testes)) != len(testes):
+            erros.append(f"{idn}: teste citado duas vezes")
+        for (arq, nome) in testes:
+            p = RAIZ / "crates" / arq
+            if not p.is_file():
+                erros.append(f"{idn}: arquivo inexistente crates/{arq}")
+                continue
+            if not re.search(rf"\bfn {re.escape(nome)}\b", p.read_text()):
+                erros.append(f"{idn}: teste `{nome}` não existe em crates/{arq}")
+        for caminho in re.findall(r"`((?:docs|scripts)/[^`\s]+)`", evid + " " + nota):
+            if "*" in caminho:
+                if not list((RAIZ / Path(caminho).parent).glob(Path(caminho).name)):
+                    erros.append(f"{idn}: evidência sem correspondência {caminho}")
+            elif not (RAIZ / caminho).exists():
+                erros.append(f"{idn}: evidência inexistente {caminho}")
+    return erros
+
+
+def fmt_testes(testes):
+    if not testes:
+        return "—"
+    return "<br>".join(f"`{a}::{n}`" for a, n in testes)
+
+
+def gera():
+    cont = {s: 0 for s in STATUS_VALIDOS}
+    for linha in LINHAS:
+        cont[linha[5]] += 1
+    cab = "| ID | Requisito | Implementação | Teste(s) automatizado(s) | Evidência | Status | Nota |\n|---|---|---|---|---|---|---|\n"
+    corpo = ""
+    for (idn, req, impl, testes, evid, st, nota) in LINHAS:
+        corpo += f"| **{idn}** | {req} | {impl} | {fmt_testes(testes)} | {evid} | **{st}** | {nota or '—'} |\n"
+    resumo = " · ".join(f"{k}: {v}" for k, v in cont.items())
+    return cont, resumo, cab + corpo
+
+
+def commit_base():
+    """Hash curto de origin/main (informativo; vazio se o git não estiver disponível)."""
+    try:
+        return subprocess.run(["git", "rev-parse", "--short=12", "origin/main"], cwd=RAIZ, capture_output=True,
+                              text=True, check=True).stdout.strip()
+    except Exception:
+        return "(desconhecido)"
+
+
+def main():
+    erros = valida()
+    if erros:
+        print("\n".join(erros), file=sys.stderr)
+        sys.exit(1)
+    cont, resumo, tabela = gera()
+    print(f"{len(LINHAS)} IDs válidos. {resumo}")
+    if "--check" in sys.argv:
+        return
+    SAIDA.parent.mkdir(parents=True, exist_ok=True)
+    texto = (MODELO.replace("{{RESUMO}}", resumo).replace("{{TABELA}}", tabela)
+             .replace("{{COMMIT}}", commit_base()))
+    SAIDA.write_text(texto)
+    print(f"escrito {SAIDA.relative_to(RAIZ)}")
+
+
+if __name__ == "__main__":
+    main()
