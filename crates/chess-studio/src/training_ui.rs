@@ -212,7 +212,7 @@ fn kind_key(kind: ExerciseKind) -> String {
 }
 
 /// Banco do Treino: o do app, ou um em memória quando não há persistência.
-fn with_store<R>(
+pub(crate) fn with_store<R>(
     local: &mut Option<Mutex<Store>>,
     handle: Option<&PersistenceHandle>,
     f: impl FnOnce(&mut Store, ProfileId) -> R,

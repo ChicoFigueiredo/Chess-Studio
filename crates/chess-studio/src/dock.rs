@@ -52,6 +52,7 @@ pub mod ids {
     pub const REVIEW: &str = "Review";
     pub const ARBITRATION: &str = "Arbitration";
     pub const TRAINING: &str = "Training";
+    pub const LIBRARY: &str = "Library";
 }
 
 /// Quando o painel pode ser aberto.
@@ -554,6 +555,8 @@ fn dock_ui(world: &mut World) {
             if world.contains_resource::<CaptureMode>()
                 && let Some(list) = crate::capture::option_value("--tabs")
             {
+                // Painéis novos só entram no layout salvo na reconciliação; faça-a antes.
+                dock.layout.reconcile(world.resource::<PanelRegistry>());
                 for id in list.split(',') {
                     let wanted = world
                         .resource::<PanelRegistry>()

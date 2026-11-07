@@ -1935,6 +1935,7 @@ dependencies = [
  "chess-core",
  "chess-game",
  "chess-input",
+ "chess-pgn",
  "chess-store",
  "chess-training",
  "chess-uci",
