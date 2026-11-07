@@ -7,6 +7,7 @@
 
 mod aids;
 mod aids_panel;
+mod analysis;
 mod asset_dir;
 mod benchmark;
 mod board;
@@ -158,6 +159,7 @@ fn main() {
         captured::CapturedPlugin,
         study::StudyPlugin,
         fide_panel::ArbitrationPlugin,
+        analysis::AnalysisPlugin,
     ));
     app.add_plugins(training_ui::TrainingPlugin);
     if let Some(dir) = capture {

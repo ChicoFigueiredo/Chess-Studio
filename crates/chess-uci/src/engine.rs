@@ -12,8 +12,8 @@ use std::time::{Duration, Instant};
 use chess_core::{CanonicalPosition, Move};
 
 use crate::{
-    BestMove, EngineConfig, EngineError, EngineInfo, EngineOption, GoParams, LogEntry, LogSource,
-    PositionSpec, Stage, Timeouts,
+    BestMove, EngineConfig, EngineError, EngineInfo, EngineOption, GoParams, InfoLine, LogEntry,
+    LogSource, PositionSpec, Stage, Timeouts,
 };
 
 /// Resultado de [`Engine::search_legal_move`].
@@ -235,12 +235,28 @@ impl Engine {
     /// Espera o `bestmove` por até `timeout`. Se o prazo estourar a busca continua
     /// (erro recuperável): chame [`Engine::stop`] e espere de novo.
     pub fn wait_bestmove(&mut self, timeout: Duration) -> Result<BestMove, EngineError> {
+        self.wait_bestmove_with(timeout, |_| {})
+    }
+
+    /// Como [`Engine::wait_bestmove`], entregando a `on_info` cada linha `info` lida
+    /// (análise contínua). As demais linhas seguem ignoradas.
+    pub fn wait_bestmove_with(
+        &mut self,
+        timeout: Duration,
+        mut on_info: impl FnMut(&InfoLine),
+    ) -> Result<BestMove, EngineError> {
         match self.state {
             State::Dead => return Err(EngineError::Terminated),
             State::Idle => return Err(EngineError::NotSearching),
             State::Searching { .. } => {}
         }
-        let best = self.wait_line(Stage::Search, timeout, BestMove::parse)?;
+        let best = self.wait_line(Stage::Search, timeout, |line| {
+            if let Some(info) = InfoLine::parse(line) {
+                on_info(&info);
+                return None;
+            }
+            BestMove::parse(line)
+        })?;
         self.state = State::Idle;
         Ok(best)
     }

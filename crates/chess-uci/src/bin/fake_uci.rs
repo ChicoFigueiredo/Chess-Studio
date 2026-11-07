@@ -16,6 +16,11 @@
 //! - `garbage`: intercala linhas de lixo e vazias com respostas válidas.
 //! - `ignore-quit`: ignora `quit` e continua vivo.
 //!
+//! Análise: com `--info`, a Engine anuncia `MultiPV` e, em `go infinite` (modo `normal`),
+//! emite `info` sintéticas determinísticas (`--info-depths <n>`, padrão 5, iterações de
+//! profundidade) com `multipv` linhas cada; `--mate` troca o placar por `score mate 2`.
+//! A linha `i` joga o `i`-ésimo Lance legal em ordem alfabética, seguido de respostas.
+//!
 //! Opções extras: `--elo` anuncia `UCI_Elo` (min 1320, max 3190); `--trace <arquivo>`
 //! acrescenta ao arquivo cada linha recebida (para os testes inspecionarem `position`,
 //! `go` e `setoption`).
@@ -36,6 +41,10 @@ fn main() {
     let mut delay_ms: u64 = 0;
     let mut elo = false;
     let mut extra_options = false;
+    let mut info = false;
+    let mut mate = false;
+    let mut info_depths: u32 = 5;
+    let mut multipv: usize = 1;
     let mut trace: Option<std::fs::File> = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -43,6 +52,9 @@ fn main() {
             "--mode" => mode = args.next().unwrap_or_default(),
             "--elo" => elo = true,
             "--options" => extra_options = true,
+            "--info" => info = true,
+            "--mate" => mate = true,
+            "--info-depths" => info_depths = args.next().and_then(|v| v.parse().ok()).unwrap_or(5),
             "--trace" => {
                 trace = args.next().and_then(|p| {
                     std::fs::OpenOptions::new()
@@ -84,6 +96,9 @@ fn main() {
                     say("option name Debug Log File type string default <empty>");
                     say("option name WeightsFile type string default <autodiscover>");
                 }
+                if info {
+                    say("option name MultiPV type spin default 1 min 1 max 256");
+                }
                 if elo {
                     say("option name UCI_Elo type spin default 1320 min 1320 max 3190");
                 }
@@ -92,6 +107,11 @@ fn main() {
                 }
             }
             Some("isready") if mode != "no-ready" => say("readyok"),
+            Some("setoption") => {
+                if let Some(rest) = line.strip_prefix("setoption name MultiPV value ") {
+                    multipv = rest.trim().parse().unwrap_or(1).max(1);
+                }
+            }
             Some("position") => {
                 if let Some(p) = parse_position(&line) {
                     position = p;
@@ -114,6 +134,9 @@ fn main() {
                     std::thread::sleep(Duration::from_millis(delay_ms));
                 }
                 if line.contains("infinite") && mode == "normal" {
+                    if info {
+                        emit_info(&position, multipv, info_depths, mate);
+                    }
                     pending_stop = true;
                     continue;
                 }
@@ -133,6 +156,49 @@ fn main() {
     if mode == "ignore-quit" {
         loop {
             std::thread::sleep(Duration::from_secs(1));
+        }
+    }
+}
+
+/// `info` sintéticas: `depths` iterações, cada uma com `multipv` linhas. O placar é do
+/// ponto de vista de quem joga (como manda o UCI).
+fn emit_info(position: &CanonicalPosition, multipv: usize, depths: u32, mate: bool) {
+    let mut moves: Vec<Move> = position.legal_moves().to_vec();
+    moves.sort_by_key(Move::to_string);
+    if moves.is_empty() {
+        return;
+    }
+    for depth in 1..=depths {
+        for (i, first) in moves.iter().enumerate().take(multipv) {
+            let mut line = position.clone();
+            let mut pv = Vec::new();
+            let mut next = Some(*first);
+            while let Some(mv) = next {
+                if pv.len() >= 3 {
+                    break;
+                }
+                let Ok(after) = line.play(mv) else { break };
+                pv.push(mv.to_string());
+                let mut replies: Vec<Move> = after.legal_moves().to_vec();
+                replies.sort_by_key(Move::to_string);
+                next = replies.first().copied();
+                line = after;
+            }
+            let score = if mate {
+                String::from("mate 2")
+            } else {
+                let cp =
+                    30 + i32::try_from(depth).unwrap_or(0) - 10 * i32::try_from(i).unwrap_or(0);
+                format!("cp {cp}")
+            };
+            say(&format!(
+                "info depth {depth} seldepth {} multipv {} score {score} nodes {} nps 1000000 time {} pv {}",
+                depth + 2,
+                i + 1,
+                u64::from(depth) * 1000,
+                depth * 10,
+                pv.join(" ")
+            ));
         }
     }
 }
