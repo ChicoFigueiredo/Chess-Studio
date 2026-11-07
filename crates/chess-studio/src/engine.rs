@@ -87,8 +87,6 @@ pub struct EngineUi {
     not_found: bool,
     /// Pedido de abertura do assistente de Engine (B10), atendido por `engine_wizard`.
     wizard_requested: bool,
-    /// Pedido de abertura do gerenciador de Engines (C9), atendido por `engine_manager`.
-    manager_requested: bool,
     /// Opções UCI configuradas no gerenciador para a Engine escolhida (já validadas).
     options: Vec<(String, String)>,
 }
@@ -103,7 +101,6 @@ impl Default for EngineUi {
                 .unwrap_or_default(),
             not_found: false,
             wizard_requested: false,
-            manager_requested: false,
             options: Vec::new(),
         }
     }
@@ -129,11 +126,6 @@ impl EngineUi {
     pub fn set_path(&mut self, path: &Path) {
         self.path_text = path.display().to_string();
         self.not_found = false;
-    }
-
-    /// Consome o pedido de abrir o gerenciador de Engines.
-    pub fn take_manager_request(&mut self) -> bool {
-        std::mem::take(&mut self.manager_requested)
     }
 
     /// Opções UCI (threads, hash, nível…) a enviar à Engine ao iniciar.
@@ -235,9 +227,6 @@ pub fn engine_section(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session, sta
     }
     if ui.small_button(i18n.t("wizard-open")).clicked() {
         state.wizard_requested = true;
-    }
-    if ui.small_button(i18n.t("manager-open")).clicked() {
-        state.manager_requested = true;
     }
     if state.not_found {
         ui.colored_label(egui::Color32::YELLOW, i18n.t("engine-not-found"));

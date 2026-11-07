@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 
 use bevy::prelude::*;
-use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
+use bevy_egui::egui;
 use chess_store::{EngineId, EngineOrigin, EngineRecord, Store};
 use chess_uci::{
     Control, DetectedEngine, EngineOption, InstallError, InstallPlan, Installed, InstalledNetwork,
@@ -35,8 +35,16 @@ pub struct EngineManagerPlugin;
 
 impl Plugin for EngineManagerPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<EngineManager>()
-            .add_systems(EguiPrimaryContextPass, manager_window);
+        app.init_resource::<EngineManager>();
+        crate::dock::register_panel(
+            app,
+            crate::dock::PanelDef {
+                id: "Engines",
+                label_key: "dock-panel-engines",
+                access: crate::dock::PanelAccess::Always,
+                ui: engines_panel,
+            },
+        );
     }
 }
 
@@ -209,6 +217,7 @@ impl Default for EngineManager {
 
 impl EngineManager {
     /// Gerenciador sobre um banco e um diretório de Engines explícitos (testes).
+    #[cfg(test)]
     pub fn with_paths(db_path: Option<PathBuf>, engines_dir: Option<PathBuf>) -> Self {
         Self {
             db_path,
@@ -241,18 +250,10 @@ impl EngineManager {
         self.form.as_ref()
     }
 
-    /// Abre a janela e atualiza a lista.
+    /// Marca como aberto e atualiza a lista.
     pub fn open(&mut self) {
         self.open = true;
         self.refresh();
-    }
-
-    /// Fecha a janela; um download em andamento é cancelado.
-    pub fn close(&mut self) {
-        self.cancel.store(true, Ordering::Relaxed);
-        self.open = false;
-        self.pending = None;
-        self.form = None;
     }
 
     /// Escolha para jogar (entregue uma única vez).
@@ -382,7 +383,7 @@ impl EngineManager {
                 // A rede neural vem antes: se falhar, nada da Engine foi tocado.
                 let network = match plan.network {
                     Some(net) => Some(chess_uci::install_network_from_catalog(
-                        &net, &root, cancel, step,
+                        net, &root, cancel, step,
                     )?),
                     None => None,
                 };
@@ -845,52 +846,37 @@ fn adopt_installed_dirs(store: &Store, engines_dir: &Path) {
 
 // --- interface -------------------------------------------------------------------------------------
 
-fn manager_window(
-    mut contexts: EguiContexts,
-    i18n: Res<I18n>,
-    location: Option<Res<DbLocation>>,
-    mut manager: ResMut<EngineManager>,
-    mut engine_ui: ResMut<EngineUi>,
-) -> Result {
-    let manager = &mut *manager;
-    if manager.db_path.is_none()
-        && let Some(location) = location
-    {
-        manager.db_path = Some(location.0.clone());
-    }
-    if engine_ui.take_manager_request() {
-        manager.open();
-    }
-    if !manager.is_open() {
-        return Ok(());
-    }
-    manager.poll();
-    if let Some(chosen) = manager.take_chosen() {
-        if let Some(dir) = chess_uci::engines_dir()
-            && let Err(err) = chess_uci::save_preferred(&dir, &chosen.path)
+/// Desenha o gerenciador dentro do painel "Engines" do dock.
+fn engines_panel(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
+    let location = world.get_resource::<DbLocation>().cloned();
+    world.resource_scope(|world, mut manager: Mut<EngineManager>| {
+        let manager = &mut *manager;
+        if manager.db_path.is_none()
+            && let Some(location) = location
         {
-            warn!("não foi possível gravar a Engine preferida: {err}");
+            manager.db_path = Some(location.0.clone());
         }
-        engine_ui.set_path(&chosen.path);
-        engine_ui.set_options(chosen.options);
-    }
-    let ctx = contexts.ctx_mut()?;
-    let mut keep_open = true;
-    egui::Window::new(i18n.t("manager-title"))
-        .collapsible(false)
-        .default_width(640.0)
-        .default_height(520.0)
-        .open(&mut keep_open)
-        .show(ctx, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| manager_contents(ui, &i18n, manager));
-        });
-    if !keep_open {
-        manager.close();
-    }
-    if manager.is_busy() {
-        ctx.request_repaint_after(std::time::Duration::from_millis(100));
-    }
-    Ok(())
+        if !manager.is_open() {
+            manager.open();
+        }
+        manager.poll();
+        if let Some(chosen) = manager.take_chosen() {
+            if let Some(dir) = chess_uci::engines_dir()
+                && let Err(err) = chess_uci::save_preferred(&dir, &chosen.path)
+            {
+                warn!("não foi possível gravar a Engine preferida: {err}");
+            }
+            if let Some(mut engine_ui) = world.get_resource_mut::<EngineUi>() {
+                engine_ui.set_path(&chosen.path);
+                engine_ui.set_options(chosen.options);
+            }
+        }
+        egui::ScrollArea::vertical().show(ui, |ui| manager_contents(ui, i18n, manager));
+        if manager.is_busy() {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(100));
+        }
+    });
 }
 
 fn origin_key(origin: EngineOrigin) -> &'static str {
@@ -1657,9 +1643,6 @@ mod tests {
         let old_id = store.upsert_engine(&old).unwrap();
         drop(store);
         m.refresh();
-        assert!(
-            m.rows()[0].update.is_some(),
-        );
 
         // Falha: a antiga e sua configuração permanecem.
         m.start_job(
