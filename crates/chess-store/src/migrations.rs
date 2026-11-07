@@ -247,6 +247,52 @@ UPDATE games SET outcome_json = (
 UPDATE games SET finished = (outcome_json IS NOT NULL);
 ";
 
+// Súmula manual (V2-SUM-01, #58): registro separado, por perfil local e por Partida. Só
+// acrescenta tabelas; não toca `games` nem `game_events` (a Súmula nunca altera a Partida,
+// o log nem o PGN) e some junto com a Partida ou o perfil (cascata).
+const V10_MANUAL_SCORESHEET: &str = "
+CREATE TABLE manual_scoresheets (
+    id              INTEGER PRIMARY KEY,
+    profile_id      INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    game_id         INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+    created_at_ms   INTEGER NOT NULL,
+    updated_at_ms   INTEGER NOT NULL,
+    -- NULL: em anotação; preenchido: entregue (imutável, pronta para a conferência).
+    delivered_at_ms INTEGER,
+    UNIQUE (profile_id, game_id)
+);
+CREATE TABLE manual_scoresheet_entries (
+    scoresheet_id INTEGER NOT NULL REFERENCES manual_scoresheets(id) ON DELETE CASCADE,
+    ply           INTEGER NOT NULL CHECK (ply >= 1),
+    text          TEXT NOT NULL,
+    PRIMARY KEY (scoresheet_id, ply)
+) WITHOUT ROWID;
+";
+
+// Conferência da Súmula (V2-SUM-02, #59): o resultado da conferência da Súmula entregue, um
+// registro à parte (nunca toca `games`, `game_events` nem a própria Súmula). Guarda por
+// meio-lance o texto escrito, o SAN real e a classe, pronto para o histórico (E3). Some junto
+// com a Súmula (cascata).
+const V11_SCORESHEET_CHECK: &str = "
+CREATE TABLE manual_scoresheet_checks (
+    scoresheet_id INTEGER PRIMARY KEY REFERENCES manual_scoresheets(id) ON DELETE CASCADE,
+    checked_at_ms INTEGER NOT NULL,
+    -- Histórico conferido: nº de meios-lances e identificador (FNV-1a, u64 guardado como i64);
+    -- a conferência é refeita quando o histórico da Partida muda.
+    history_plies INTEGER NOT NULL CHECK (history_plies >= 0),
+    history_id    INTEGER NOT NULL
+);
+CREATE TABLE manual_scoresheet_check_entries (
+    scoresheet_id INTEGER NOT NULL REFERENCES manual_scoresheet_checks(scoresheet_id) ON DELETE CASCADE,
+    ply           INTEGER NOT NULL CHECK (ply >= 1),
+    written       TEXT,
+    expected      TEXT,
+    verdict       TEXT NOT NULL CHECK (verdict IN
+        ('correct', 'accepted', 'wrong_notation', 'swapped', 'missing', 'extra')),
+    PRIMARY KEY (scoresheet_id, ply)
+) WITHOUT ROWID;
+";
+
 /// Migrações em ordem; o índice + 1 é a versão resultante.
 const MIGRATIONS: &[&str] = &[
     V1_CORE,
@@ -258,6 +304,8 @@ const MIGRATIONS: &[&str] = &[
     V7_LIBRARY,
     V8_LOCAL_PROFILES,
     V9_REOPEN_AFTER_UNDO,
+    V10_MANUAL_SCORESHEET,
+    V11_SCORESHEET_CHECK,
 ];
 
 /// Versão de esquema desta build.

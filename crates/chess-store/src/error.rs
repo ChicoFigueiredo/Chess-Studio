@@ -63,6 +63,10 @@ pub enum StoreError {
     WrongProfile {
         profile: ProfileId,
     },
+    /// A Súmula manual gravada não é válida (banco editado ou de outra versão).
+    InvalidScoresheet(chess_training::ScoresheetError),
+    /// Só uma Súmula entregue tem conferência gravada.
+    ScoresheetNotDelivered(GameId),
 }
 
 impl fmt::Display for StoreError {
@@ -115,6 +119,10 @@ impl fmt::Display for StoreError {
             Self::FavoriteNotFound(id) => write!(f, "posição favorita {} não existe", id.0),
             Self::WrongProfile { profile } => {
                 write!(f, "o registro não pertence ao perfil {}", profile.0)
+            }
+            Self::InvalidScoresheet(e) => write!(f, "Súmula manual inválida: {e}"),
+            Self::ScoresheetNotDelivered(id) => {
+                write!(f, "a Súmula da Partida {} não foi entregue", id.0)
             }
         }
     }

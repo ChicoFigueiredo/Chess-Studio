@@ -94,8 +94,11 @@ impl Plugin for NotationPlugin {
                 label_key: "dock-panel-notation",
                 access: PanelAccess::Always,
                 ui: |ui, i18n, world| {
+                    let hidden = world
+                        .get_resource::<crate::scoresheet::ScoresheetUi>()
+                        .is_some_and(crate::scoresheet::ScoresheetUi::hides_notation);
                     if let Some(mut session) = world.get_resource_mut::<Session>() {
-                        self::ui(ui, i18n, &mut session);
+                        self::ui(ui, i18n, &mut session, hidden);
                     }
                 },
             },
@@ -104,7 +107,11 @@ impl Plugin for NotationPlugin {
 }
 
 /// Conteúdo do painel Notação.
-pub fn ui(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session) {
+pub fn ui(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session, hidden: bool) {
+    if hidden {
+        crate::scoresheet::hidden_notice(ui, i18n);
+        return;
+    }
     let snapshot = session.snapshot().clone();
     if snapshot.history.is_empty() {
         ui.weak(i18n.t("notation-empty"));

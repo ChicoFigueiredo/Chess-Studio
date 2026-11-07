@@ -32,6 +32,10 @@ mod position_memory;
 mod profiles;
 mod review;
 mod run;
+mod scoresheet;
+mod scoresheet_check;
+mod scoresheet_history;
+mod scoresheet_pdf;
 
 pub use aids::{Aid, AidsRecord, Feedback};
 pub use catalog::{Catalog, CatalogError};
@@ -51,3 +55,13 @@ pub use position_memory::{
 pub use profiles::{Difficulty, ProfileError, ProfileSet, ProfileStep, TrainingProfile};
 pub use review::{MemoryReview, NotCheckmate, PlyReview, Review};
 pub use run::{ErrorCause, ExerciseRun, Followup, RunError, RunResult, RunStatus, RunSummary};
+pub use scoresheet::{MAX_ENTRY_CHARS, MAX_PLY, ManualScoresheet, ScoresheetError};
+pub use scoresheet_check::{
+    CheckError, Counts, EntryCheck, HistoryFingerprint, ScoresheetCheck, Verdict,
+    check_against_game, check_scoresheet,
+};
+pub use scoresheet_history::{HistoryPeriod, HistoryPoint, ScoresheetHistory};
+pub use scoresheet_pdf::{
+    A4_HEIGHT_PT, A4_WIDTH_PT, MAX_BLANK_PAGES, PdfError, ROWS_PER_PAGE, SheetContent, SheetHeader,
+    SheetLabels, SheetSpec, page_count, render_scoresheet_pdf, rows_for,
+};

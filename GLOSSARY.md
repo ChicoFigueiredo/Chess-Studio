@@ -157,6 +157,10 @@ _Evitar_: trilha, plano
 Programa externo de xadrez, falando UCI, que propõe Lances ou análises e nunca decide legalidade.
 _Evitar_: motor, IA, bot
 
-**Súmula manual** (_en_: `ManualScoresheet`, ainda sem código):
-Registro escrito pelo próprio jogador como exercício de competição; diferente da notação automática.
+**Súmula manual** (_en_: `ManualScoresheet`):
+Registro escrito pelo próprio jogador como exercício de competição; diferente da notação automática. É um registro à parte, por perfil local e por Partida, que nunca altera a Partida nem o PGN; enquanto está em anotação a notação automática fica oculta.
 _Evitar_: planilha, scoresheet
+
+**Entrega da Súmula** (_en_: `deliver`):
+Ato de encerrar a anotação da Súmula manual, como entregá-la ao árbitro: o texto fica imutável e a notação automática volta a ser exibida.
+_Evitar_: salvar, finalizar

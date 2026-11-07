@@ -38,6 +38,7 @@ mod favorites;
 mod imported;
 mod library;
 pub mod migrations;
+mod scoresheet;
 mod store;
 mod training;
 mod training_profiles;

@@ -100,7 +100,11 @@ pub fn notes_from_json(value: Option<serde_json::Value>) -> BTreeMap<usize, Stri
         .collect()
 }
 
-fn ply_title(i18n: &I18n, session: &Session, ply: usize) -> String {
+fn ply_title(i18n: &I18n, session: &Session, ply: usize, hide_notation: bool) -> String {
+    if hide_notation && ply > 0 {
+        // Súmula manual aberta: só o número do Lance, sem a SAN (V2-SUM-01).
+        return i18n.t_with("study-ply-hidden", &[("ply", &ply.to_string())]);
+    }
     match ply
         .checked_sub(1)
         .and_then(|i| session.snapshot().history.get(i))
@@ -121,10 +125,13 @@ fn study_panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
         ui.weak(i18n.t("study-unavailable-training"));
         return;
     }
+    let hide = world
+        .get_resource::<crate::scoresheet::ScoresheetUi>()
+        .is_some_and(crate::scoresheet::ScoresheetUi::hides_notation);
     world.resource_scope(|world, mut session: Mut<Session>| {
         world.resource_scope(|_, mut notes: Mut<StudyNotes>| {
             let ply = notation::current_ply(&session);
-            ui.strong(ply_title(i18n, &session, ply));
+            ui.strong(ply_title(i18n, &session, ply, hide));
             let mut text = notes.get(ply).unwrap_or_default().to_owned();
             let edited = ui
                 .add(
@@ -147,7 +154,7 @@ fn study_panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
             let mut go_to = None;
             for (p, note) in notes.export(notes.epoch) {
                 let first_line = note.lines().next().unwrap_or_default();
-                let label = format!("{} — {first_line}", ply_title(i18n, &session, p));
+                let label = format!("{} — {first_line}", ply_title(i18n, &session, p, hide));
                 if ui.selectable_label(p == ply, label).clicked() {
                     go_to = Some(p);
                 }
