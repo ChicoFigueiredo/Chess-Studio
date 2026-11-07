@@ -4,7 +4,7 @@ Formato da §19 do prompt mestre. Escopo: issue #57 (D2) e a seção "Gate D" do
 
 ```text
 CHESS_STUDIO_GATE: D (homologação e liberação; issue #57)
-STATUS: PENDENTE (Linux sem bloqueadores conhecidos; Windows/macOS, release em andamento, benchmark limpo e homologação visual não verificados)
+STATUS: PENDENTE (Linux sem bloqueadores conhecidos; release em draft completo; instalação em Windows/macOS, benchmark limpo e homologação visual não verificados)
 REPO / BRANCH / COMMIT: ChicoFigueiredo/Chess-Studio / main / 9caed02e6b31 (#126, C14); este relatório só acrescenta documentação e scripts
 ```
 
@@ -33,7 +33,7 @@ Critérios da issue #57 e do Gate D do prompt mestre. `PASS` exige teste ou evid
 | Auditoria de licenças de assets | PASS | Todos os binários registrados em `crates/chess-studio/assets/LICENSES.md` (CC0 Poly Haven, OFL das fontes Noto). [`licencas.md`](licencas.md) §2 |
 | Auditoria de Engines (ADR-0003) | PASS | Nenhum binário de Engine no repositório nem nos pacotes; download só com consentimento; `tests/no_network_without_consent.rs` (4 testes). [`licencas.md`](licencas.md) §3 |
 | Instaladores para os três sistemas: scripts | PASS | `scripts/package-linux.sh`, `package-macos.sh`, `package-windows.ps1`, `.github/workflows/release.yml` (PR #112, D1) |
-| Instaladores para os três sistemas: artefatos gerados | UNVERIFIED | Run de release `42339946088` (workflow_dispatch, após #125) ainda em andamento na redação (ver CI). O run anterior `42336357264`: Windows e macOS `success`, Linux `failure` (cargo-about sem `cli`, corrigido em #125), `draft-release` pulado. Falta confirmar o draft com os três pacotes e `SHA256SUMS` |
+| Instaladores para os três sistemas: artefatos gerados | PASS | Run de release [42362640315](https://github.com/ChicoFigueiredo/Chess-Studio/actions/runs/42362640315) (`v0.0.0-rc3`, `main` em `5d4e00e`): linux, windows, macos e draft-release `success`. Draft com `chess-studio-0.1.0-linux-x86_64.tar.gz`, `chess-studio_0.1.0_amd64.deb`, `chess-studio-0.1.0-windows-x86_64.zip`, `chess-studio-0.1.0-macos-arm64.dmg`, `chess-studio-0.1.0-macos-arm64.tar.gz`, `SHA256SUMS` e `THIRD-PARTY-LICENSES`. Tentativas anteriores: `42336357264` (cargo-about sem `cli`, #125) e `42339946088` (`.deb` em `dist/` no draft, #128) |
 | Instalação dos pacotes em Windows/macOS | UNVERIFIED | PENDENTE (usuário): instalar e abrir o pacote em cada sistema. macOS sem assinatura/notarização (ver `docs/instalacao.md`) |
 | Documentação de instalação | PASS | [`docs/instalacao.md`](../instalacao.md), guias de build [`linux`](../build/linux.md), [`windows`](../build/windows.md), [`macos`](../build/macos.md) |
 | Atualização e recuperação documentadas | PASS | [`docs/atualizacao-e-recuperacao.md`](../atualizacao-e-recuperacao.md): pasta de dados por SO, atualização, backup/restauração, banco e Engines corrompidos (PR #124) |
@@ -53,8 +53,8 @@ Critérios da issue #57 e do Gate D do prompt mestre. `PASS` exige teste ou evid
 | Workflow | Run | Resultado |
 |---|---|---|
 | `ci.yml`, último com sucesso | [42338149192](https://github.com/ChicoFigueiredo/Chess-Studio/actions/runs/42338149192) (PR #126, `bf3fade`) | success |
-| `ci.yml`, `main` após os merges #121 a #126 | runs 42338929949, 42338957478, 42339939655, 42339943616 | `cancelled` pela regra de `concurrency` (merges em sequência); o último, [42340402672](https://github.com/ChicoFigueiredo/Chess-Studio/actions/runs/42340402672) (`9caed02`), estava em andamento na redação |
-| `release.yml` | [42339946088](https://github.com/ChicoFigueiredo/Chess-Studio/actions/runs/42339946088) (manual, `main` após #125) | em andamento na redação (linux, windows e macos) |
+| `ci.yml`, `main` após os merges #121 a #126 | runs 42338929949, 42338957478, 42339939655, 42339943616 | `cancelled` pela regra de `concurrency` (merges em sequência); o último em `main`, [42362636990](https://github.com/ChicoFigueiredo/Chess-Studio/actions/runs/42362636990) (`5d4e00e`, após #127/#128), `success` |
+| `release.yml` | [42362640315](https://github.com/ChicoFigueiredo/Chess-Studio/actions/runs/42362640315) (manual, `v0.0.0-rc3`) | `success` nos 4 jobs; draft completo |
 | `release.yml`, anterior | [42336357264](https://github.com/ChicoFigueiredo/Chess-Studio/actions/runs/42336357264) | failure: Linux sem `cargo about` (corrigido em #125); Windows e macOS success |
 
 Estado atual: `gh run list --workflow ci.yml --branch main` e `gh run list --workflow release.yml`. O release cria sempre um **draft**; nunca publica sozinho ([`docs/ci.md`](../ci.md)). Quem fechar este relatório deve substituir as linhas "em andamento" pelo resultado final e marcar a linha "artefatos gerados" como PASS ou FAIL.
@@ -73,7 +73,7 @@ Estado atual: `gh run list --workflow ci.yml --branch main` e `gh run list --wor
 | Risco | Severidade | Mitigação | Dono |
 |---|---|---|---|
 | Windows e macOS só compilam no CI, sem janela nem GPU | Alta até homologar | Instalar o draft nas VMs/máquinas físicas e rodar o smoke | Usuário |
-| Release ainda não confirmado como draft completo | Média | Acompanhar o run `42339946088`; reexecutar se falhar | Engenharia |
+| Pacotes do draft nunca instalados fora do CI | Média | Instalar o draft `v0.0.0-rc3` nas VMs/máquinas e rodar o smoke | Usuário |
 | Pacotes sem assinatura (aviso do SO) | Baixa | Documentado em `docs/instalacao.md` | Usuário |
 | Benchmark UI-12 contaminado por máquina ocupada; sem GPU integrada | Média | `scripts/benchmark_matriz.sh` com máquina ociosa | Usuário |
 | F11 real, restauração de janela e atalho interceptado (UI-03) | Média | Roteiro manual em janela real | Usuário |
