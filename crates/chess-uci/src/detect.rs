@@ -353,7 +353,7 @@ mod tests {
     fn linux_dirs_cover_common_locations_without_duplicates() {
         let env = SearchEnv {
             os: "linux".into(),
-            path_var: Some(OsString::from("/usr/bin:/opt/x")),
+            path_var: Some(std::env::join_paths(["/usr/bin", "/opt/x"]).unwrap()),
             home: Some(PathBuf::from("/home/u")),
             ..SearchEnv::default()
         };
