@@ -19,6 +19,7 @@ mod clock;
 mod controls;
 mod dock;
 mod engine;
+mod engine_consent;
 mod engine_manager;
 mod engine_wizard;
 mod fen_pgn;
