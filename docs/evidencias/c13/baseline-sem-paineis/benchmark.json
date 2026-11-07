@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "run": {
+    "app_version": "0.1.0",
+    "git_commit": "desconhecido",
+    "started_utc": "2026-11-07T03:49:08Z",
+    "requested_minutes": 5.0,
+    "measured_seconds": 297.00375922346115,
+    "warmup_seconds": 3.0,
+    "preset": "equilibrado",
+    "engine": "ociosa",
+    "engine_integrated": false,
+    "present_mode": "vsync",
+    "window_width": 1920,
+    "window_height": 1020,
+    "route": "órbita de 20 s por volta; Vista a cada 15 s (Padrão, Oblíqua, Superior, Invertida)"
+  },
+  "system": {
+    "os": "Linux (Ubuntu 26.04)",
+    "kernel": "7.0.0-38-generic",
+    "cpu_brand": "AMD Ryzen 7 3700X 8-Core Processor",
+    "cpu_logical_cores": 16,
+    "ram_total_mib": 128688.85546875
+  },
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 4080 SUPER",
+    "vendor_id": 4318,
+    "device_id": 9986,
+    "device_type": "DiscreteGpu",
+    "driver": "NVIDIA",
+    "driver_info": "595.99.02",
+    "backend": "Vulkan",
+    "vram_source": "nvidia-smi",
+    "vram_total_mib": 16376.0
+  },
+  "frame_time": {
+    "frames": 12861,
+    "total_seconds": 297.00375922346115,
+    "fps_avg": 43.302482209740575,
+    "frame_ms_avg": 23.09336437473456,
+    "frame_ms_min": 5.9954118728637695,
+    "frame_ms_max": 183.8440399169922,
+    "frame_ms_p1": 10.270644187927246,
+    "frame_ms_p5": 11.463515281677246,
+    "frame_ms_p50": 19.19460678100586,
+    "frame_ms_p95": 46.71981430053711,
+    "frame_ms_p99": 76.65189361572266,
+    "fps_1pct_low": 10.25348221757704
+  },
+  "process_ram_mib": {
+    "samples": 292,
+    "min": 836.5546875,
+    "avg": 862.7116598886986,
+    "max": 870.87890625
+  },
+  "process_cpu_percent": {
+    "samples": 292,
+    "min": 0.0,
+    "avg": 50.81336637392436,
+    "max": 72.81795501708984
+  },
+  "gpu_vram_used_mib": {
+    "samples": 292,
+    "min": 10782.0,
+    "avg": 10782.102739726028,
+    "max": 10783.0
+  },
+  "gpu_utilization_percent": {
+    "samples": 292,
+    "min": 3.0,
+    "avg": 28.243150684931507,
+    "max": 59.0
+  },
+  "notes": []
+}

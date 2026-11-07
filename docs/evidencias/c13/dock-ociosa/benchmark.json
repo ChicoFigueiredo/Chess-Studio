@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "run": {
+    "app_version": "0.1.0",
+    "git_commit": "8d78122e5410",
+    "started_utc": "2026-11-07T03:44:03Z",
+    "requested_minutes": 5.0,
+    "measured_seconds": 296.9981372213364,
+    "warmup_seconds": 3.0,
+    "scene_load_seconds": 1.00089601,
+    "preset": "equilibrado",
+    "engine": "ociosa",
+    "engine_integrated": false,
+    "present_mode": "vsync",
+    "window_width": 1920,
+    "window_height": 1020,
+    "route": "órbita de 20 s por volta; Vista a cada 15 s (Padrão, Oblíqua, Superior, Invertida)"
+  },
+  "system": {
+    "os": "Linux (Ubuntu 26.04)",
+    "kernel": "7.0.0-38-generic",
+    "cpu_brand": "AMD Ryzen 7 3700X 8-Core Processor",
+    "cpu_logical_cores": 16,
+    "ram_total_mib": 128688.85546875
+  },
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 4080 SUPER",
+    "vendor_id": 4318,
+    "device_id": 9986,
+    "device_type": "DiscreteGpu",
+    "driver": "NVIDIA",
+    "driver_info": "595.99.02",
+    "backend": "Vulkan",
+    "vram_source": "nvidia-smi",
+    "vram_total_mib": 16376.0
+  },
+  "frame_time": {
+    "frames": 11954,
+    "total_seconds": 296.9981372213364,
+    "fps_avg": 40.24941069273893,
+    "frame_ms_avg": 24.84508425810075,
+    "frame_ms_min": 6.960845947265625,
+    "frame_ms_max": 188.70033264160156,
+    "frame_ms_p1": 10.89437484741211,
+    "frame_ms_p5": 11.875808715820312,
+    "frame_ms_p50": 19.581884384155273,
+    "frame_ms_p95": 56.44095230102539,
+    "frame_ms_p99": 92.70787811279297,
+    "fps_1pct_low": 8.55985403857127
+  },
+  "process_ram_mib": {
+    "samples": 291,
+    "min": 844.8828125,
+    "avg": 859.0742590206186,
+    "max": 873.42578125
+  },
+  "process_cpu_percent": {
+    "samples": 291,
+    "min": 0.0,
+    "avg": 51.186466482496755,
+    "max": 79.70111846923828
+  },
+  "gpu_vram_used_mib": {
+    "samples": 291,
+    "min": 10774.0,
+    "avg": 10775.738831615121,
+    "max": 10780.0
+  },
+  "gpu_utilization_percent": {
+    "samples": 291,
+    "min": 0.0,
+    "avg": 24.59450171821306,
+    "max": 51.0
+  },
+  "analysis": null,
+  "notes": []
+}
