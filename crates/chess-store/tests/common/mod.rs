@@ -12,12 +12,18 @@ pub struct TempDb {
 
 impl TempDb {
     pub fn new(tag: &str) -> Self {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let dir =
-            std::env::temp_dir().join(format!("chess-store-{tag}-{}-{nanos}", std::process::id()));
+        // Contador atômico: relógios de baixa resolução (macOS/Windows) repetem o instante
+        // e dois testes paralelos receberiam o mesmo diretório.
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "chess-store-{tag}-{}-{n}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         Self { dir }
     }
