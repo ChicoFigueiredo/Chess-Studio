@@ -13,7 +13,7 @@ Data de download de tudo: **2026-11-06**.
 | `textures/walnut_{diff,nor_gl,arm}_1k.jpg` | [Poly Haven — Black Walnut Veneer 01](https://polyhaven.com/a/black_walnut_veneer_01) (1k, JPG) | Jenelle van Heerden | CC0 1.0 | Casas escuras e moldura. Sem alteração. |
 | `textures/oak_{diff,nor_gl,arm}_1k.jpg` | [Poly Haven — Oak Veneer 01](https://polyhaven.com/a/oak_veneer_01) (1k, JPG) | Jenelle van Heerden | CC0 1.0 | Mesa da Mesa imersiva (B19), dessaturada por tinta em tempo de execução. Sem alteração do arquivo. Substitui `table_*` (Wood Table 001, veio avermelhado), removido. |
 | `fonts/NotoSansSymbols2-chess.ttf` | [Noto Sans Symbols 2](https://github.com/notofonts/symbols) (`NotoSansSymbols2-Regular.ttf`) | The Noto Project Authors | SIL OFL 1.1 (`fonts/OFL.txt`) | Subconjunto com os glifos de xadrez U+2654–U+265F (`pyftsubset`), usado no 2D técnico. |
-| `fonts/NotoSans-Regular.ttf` | Noto Sans (pacote `fonts-noto-core`, 2020-12) | The Noto Project Authors | SIL OFL 1.1 (`fonts/OFL.txt`) | Fonte da interface egui (texto pt-BR com acentos), sem alteração. As fontes embutidas do egui usam a Ubuntu Font Licence e por isso não são ativadas. |
+| `fonts/NotoSans-Regular.ttf` | Noto Sans (pacote `fonts-noto-core`, 2020-12) | The Noto Project Authors | SIL OFL 1.1 (`fonts/OFL.txt`) | Fonte da interface egui (texto pt-BR com acentos), sem alteração; também embutida (subconjunto) nos PDFs da Súmula (V2-SUM-03). As fontes embutidas do egui usam a Ubuntu Font Licence e por isso não são ativadas. |
 
 As peças em madeira (B19) não têm arquivos novos: buxo = bordo (`maple_*`) com tinta amarelada; ébano = nogueira negra (`walnut_*`) com tinta quase preta, ambos com materiais PBR próprios no lugar dos materiais do glTF (`board.rs::piece_wood`).
 

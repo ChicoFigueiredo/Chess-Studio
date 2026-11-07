@@ -39,8 +39,14 @@ use bevy::prelude::*;
 use bevy_egui::egui;
 use chess_core::Color as Side;
 use chess_training::{
-    HistoryFingerprint, MAX_ENTRY_CHARS, ManualScoresheet, ScoresheetCheck, Verdict,
+    HistoryFingerprint, HistoryPeriod, MAX_ENTRY_CHARS, ManualScoresheet, ScoresheetCheck,
+    ScoresheetHistory, SheetContent, SheetHeader, SheetLabels, SheetSpec, Verdict,
+    render_scoresheet_pdf,
 };
+use std::path::{Path, PathBuf};
+
+/// Noto Sans (OFL, já registrada em `assets/LICENSES.md`): a mesma fonte da interface.
+const PDF_FONT: &[u8] = include_bytes!("../assets/fonts/NotoSans-Regular.ttf");
 
 /// O que gravar no banco na próxima passada do `PersistencePlugin`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,6 +76,22 @@ pub struct ScoresheetUi {
     save_error: bool,
     /// Quadros até a próxima tentativa de leitura/gravação depois de uma falha.
     retry_wait: u32,
+    /// Histórico de erros do perfil (V2-SUM-03): período escolhido e o último resultado.
+    history_period: HistoryPeriod,
+    history: Option<ScoresheetHistory>,
+    /// O `history` reflete o banco? (some ao trocar de período, de Partida ou conferir.)
+    history_fresh: bool,
+    /// Exportação em PDF: pasta digitada (vazia = Documentos), pedido e último resultado.
+    pdf_dir: String,
+    pdf_request: Option<PdfKind>,
+    pdf_result: Option<Result<PathBuf, String>>,
+}
+
+/// Qual PDF o usuário pediu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PdfKind {
+    Annotated,
+    Blank,
 }
 
 /// Quadros de espera entre tentativas depois de uma falha do banco (~2 s a 60 fps).
@@ -160,10 +182,56 @@ impl ScoresheetUi {
         self.pending = None;
         self.check = None;
         self.pending_check = None;
+        self.history_fresh = false;
         self.loading = persistent;
         self.load_error = false;
         self.save_error = false;
         self.retry_wait = 0;
+    }
+
+    /// O histórico precisa ser (re)lido do banco?
+    pub fn needs_history(&self) -> bool {
+        !self.suspended && !self.history_fresh
+    }
+
+    /// O histórico lido do banco para o período atual.
+    pub fn loaded_history(&mut self, history: Option<ScoresheetHistory>) {
+        self.history = history;
+        self.history_fresh = true;
+    }
+
+    pub fn history(&self) -> Option<&ScoresheetHistory> {
+        self.history.as_ref()
+    }
+
+    pub fn history_period(&self) -> HistoryPeriod {
+        self.history_period
+    }
+
+    /// Troca o período do histórico (relê do banco).
+    pub fn set_history_period(&mut self, period: HistoryPeriod) {
+        if self.history_period != period {
+            self.history_period = period;
+            self.history_fresh = false;
+        }
+    }
+
+    /// Uma conferência nova foi gravada: o histórico mudou.
+    pub fn invalidate_history(&mut self) {
+        self.history_fresh = false;
+    }
+
+    /// Pede a exportação em PDF (atendida pelo painel, que conhece a Partida).
+    pub fn request_pdf(&mut self, kind: PdfKind) {
+        self.pdf_request = Some(kind);
+    }
+
+    pub fn take_pdf_request(&mut self) -> Option<PdfKind> {
+        self.pdf_request.take()
+    }
+
+    pub fn pdf_result(&self) -> Option<&Result<PathBuf, String>> {
+        self.pdf_result.as_ref()
     }
 
     /// A Súmula lida do banco para a Partida atual.
@@ -324,7 +392,7 @@ pub fn sheet_rows(first_number: u16, first_side: Side, played: usize) -> Vec<She
     rows
 }
 
-fn wall_ms() -> i64 {
+pub(crate) fn wall_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .ok()
@@ -368,7 +436,269 @@ fn panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
                 (v.position.fullmove_number(), v.position.side_to_move())
             });
         draw(ui, i18n, &mut state, played, first_number, first_side);
+        let result_token = session
+            .snapshot()
+            .outcome
+            .map(|o| o.result.pgn_token().to_owned());
+        draw_pdf(ui, i18n, &mut state);
+        if let Some(kind) = state.take_pdf_request()
+            && (kind == PdfKind::Blank || !state.is_loading())
+        {
+            let sheet = state.sheet().cloned();
+            let wall = wall_ms();
+            state.pdf_result = Some(export_pdf(
+                i18n,
+                kind,
+                sheet.as_ref(),
+                &PdfGame {
+                    played,
+                    first_number,
+                    first_side,
+                    result: result_token.unwrap_or_default(),
+                },
+                &pdf_folder(&state.pdf_dir),
+                wall,
+            ));
+        }
+        draw_history(ui, i18n, &mut state);
     });
+}
+
+/// O que o PDF precisa saber da Partida.
+struct PdfGame {
+    played: usize,
+    first_number: u16,
+    first_side: Side,
+    /// Token PGN do resultado (`1-0`...) ou vazio se a Partida não terminou.
+    result: String,
+}
+
+/// Pasta de destino: a digitada, ou Documentos.
+fn pdf_folder(typed: &str) -> PathBuf {
+    let typed = typed.trim();
+    if typed.is_empty() {
+        crate::paths::documents_dir(
+            crate::paths::Platform::current(),
+            &crate::paths::process_env,
+        )
+    } else {
+        PathBuf::from(typed)
+    }
+}
+
+/// `07/11/2026` a partir de milissegundos Unix (UTC).
+fn br_date(ms: i64) -> String {
+    let d = chess_game::pgn_date_from_unix_ms(ms);
+    let mut parts = d.split('.');
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some(y), Some(m), Some(day)) => format!("{day}/{m}/{y}"),
+        _ => d,
+    }
+}
+
+fn pdf_labels(i18n: &I18n) -> SheetLabels {
+    SheetLabels {
+        title: i18n.t("scoresheet-pdf-title"),
+        event: i18n.t("scoresheet-pdf-event"),
+        date: i18n.t("scoresheet-pdf-date"),
+        white: i18n.t("scoresheet-pdf-white"),
+        black: i18n.t("scoresheet-pdf-black"),
+        result: i18n.t("scoresheet-pdf-result"),
+        move_number: i18n.t("scoresheet-pdf-number"),
+        signature_white: i18n.t("scoresheet-pdf-sign-white"),
+        signature_black: i18n.t("scoresheet-pdf-sign-black"),
+        signature_arbiter: i18n.t("scoresheet-pdf-sign-arbiter"),
+        page: i18n.t("scoresheet-pdf-page"),
+    }
+}
+
+/// Gera o PDF (anotado ou em branco) e grava na pasta, sem sobrescrever nada. Sem rede e
+/// sem tocar a impressora; a Súmula e a Partida só são lidas.
+fn export_pdf(
+    i18n: &I18n,
+    kind: PdfKind,
+    sheet: Option<&ManualScoresheet>,
+    game: &PdfGame,
+    dir: &Path,
+    wall_ms: i64,
+) -> Result<PathBuf, String> {
+    let blank = kind == PdfKind::Blank || sheet.is_none();
+    let header = if blank {
+        SheetHeader::default()
+    } else {
+        SheetHeader {
+            date: br_date(wall_ms),
+            result: game.result.clone(),
+            ..SheetHeader::default()
+        }
+    };
+    let labels = pdf_labels(i18n);
+    let content = match sheet {
+        Some(sheet) if !blank => SheetContent::Annotated {
+            sheet,
+            played_plies: game.played,
+        },
+        _ => SheetContent::Blank { pages: 1 },
+    };
+    let spec = SheetSpec {
+        header: &header,
+        labels: &labels,
+        first_move_number: if blank { 1 } else { game.first_number },
+        first_side: if blank { Side::White } else { game.first_side },
+        content,
+    };
+    let bytes = render_scoresheet_pdf(PDF_FONT, &spec).map_err(|e| e.to_string())?;
+    save_pdf(&bytes, dir, wall_ms, blank).map_err(|e| format!("{}: {e}", dir.display()))
+}
+
+/// `sumula-AAAA-MM-DD-HHMMSS.pdf` (ou `sumula-em-branco-...`), em UTC; nunca sobrescreve.
+fn save_pdf(bytes: &[u8], dir: &Path, wall_ms: i64, blank: bool) -> std::io::Result<PathBuf> {
+    use std::io::{Error, ErrorKind, Write};
+    std::fs::create_dir_all(dir)?;
+    let date = chess_game::pgn_date_from_unix_ms(wall_ms).replace('.', "-");
+    let secs = wall_ms.div_euclid(1000).rem_euclid(86_400);
+    let stem = format!(
+        "{}-{date}-{:02}{:02}{:02}",
+        if blank { "sumula-em-branco" } else { "sumula" },
+        secs / 3600,
+        (secs / 60) % 60,
+        secs % 60
+    );
+    for n in 0..1000 {
+        let name = if n == 0 {
+            format!("{stem}.pdf")
+        } else {
+            format!("{stem}-{n}.pdf")
+        };
+        let path = dir.join(name);
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(mut f) => {
+                f.write_all(bytes)?;
+                return Ok(path);
+            }
+            Err(err) if err.kind() == ErrorKind::AlreadyExists => {}
+            Err(err) => return Err(err),
+        }
+    }
+    Err(Error::new(
+        ErrorKind::AlreadyExists,
+        "muitos arquivos com o mesmo nome",
+    ))
+}
+
+fn draw_pdf(ui: &mut egui::Ui, i18n: &I18n, state: &mut ScoresheetUi) {
+    ui.separator();
+    ui.strong(i18n.t("scoresheet-pdf-heading"));
+    ui.small(i18n.t("scoresheet-pdf-hint"));
+    ui.horizontal(|ui| {
+        ui.label(i18n.t("scoresheet-pdf-folder"));
+        ui.add(
+            egui::TextEdit::singleline(&mut state.pdf_dir)
+                .hint_text(pdf_folder("").display().to_string())
+                .desired_width(f32::INFINITY),
+        );
+    });
+    // Carregando ou com erro de leitura a Súmula não é confiável: anotado fica desabilitado.
+    let has_sheet = state.sheet().is_some() && !state.is_loading();
+    ui.horizontal(|ui| {
+        if ui
+            .add_enabled(
+                has_sheet,
+                egui::Button::new(i18n.t("scoresheet-pdf-annotated")),
+            )
+            .on_hover_text(i18n.t("scoresheet-pdf-annotated-hint"))
+            .clicked()
+        {
+            state.request_pdf(PdfKind::Annotated);
+        }
+        if ui
+            .button(i18n.t("scoresheet-pdf-blank"))
+            .on_hover_text(i18n.t("scoresheet-pdf-blank-hint"))
+            .clicked()
+        {
+            state.request_pdf(PdfKind::Blank);
+        }
+    });
+    match state.pdf_result() {
+        Some(Ok(path)) => {
+            ui.colored_label(
+                egui::Color32::LIGHT_GREEN,
+                i18n.t_with(
+                    "scoresheet-pdf-saved",
+                    &[("path", &path.display().to_string())],
+                ),
+            );
+        }
+        Some(Err(detail)) => {
+            ui.colored_label(
+                egui::Color32::LIGHT_RED,
+                i18n.t_with("scoresheet-pdf-error", &[("detail", detail)]),
+            );
+        }
+        None => {}
+    }
+}
+
+/// Chave Fluent do rótulo do período.
+fn period_key(p: HistoryPeriod) -> &'static str {
+    match p {
+        HistoryPeriod::Week => "scoresheet-history-period-week",
+        HistoryPeriod::Month => "scoresheet-history-period-month",
+        HistoryPeriod::All => "scoresheet-history-period-all",
+    }
+}
+
+fn draw_history(ui: &mut egui::Ui, i18n: &I18n, state: &mut ScoresheetUi) {
+    ui.separator();
+    ui.strong(i18n.t("scoresheet-history-heading"));
+    ui.horizontal(|ui| {
+        for p in HistoryPeriod::ALL {
+            if ui
+                .selectable_label(state.history_period() == p, i18n.t(period_key(p)))
+                .clicked()
+            {
+                state.set_history_period(p);
+            }
+        }
+    });
+    let Some(history) = state.history() else {
+        return;
+    };
+    if history.sheets == 0 {
+        ui.weak(i18n.t("scoresheet-history-empty"));
+        return;
+    }
+    ui.label(i18n.t_with(
+        "scoresheet-history-sheets",
+        &[("count", &history.sheets.to_string())],
+    ));
+    for verdict in Verdict::ALL {
+        let n = history.totals.of(verdict);
+        if n > 0 {
+            ui.colored_label(
+                verdict_color(verdict),
+                format!("{}: {n}", i18n.t(verdict_key(verdict))),
+            );
+        }
+    }
+    ui.small(i18n.t("scoresheet-history-evolution"));
+    for point in &history.points {
+        let total = point.counts.total();
+        let right = point.counts.correct + point.counts.accepted;
+        ui.monospace(i18n.t_with(
+            "scoresheet-history-point",
+            &[
+                ("date", &br_date(point.bucket_start_ms)),
+                ("right", &right.to_string()),
+                ("total", &total.to_string()),
+                ("sheets", &point.sheets.to_string()),
+            ],
+        ));
+    }
 }
 
 fn draw(
@@ -878,5 +1208,76 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn history_is_refreshed_on_period_change_new_game_and_new_check() {
+        let mut s = ScoresheetUi::default();
+        s.follow(1, false, true);
+        assert!(s.needs_history());
+        s.loaded_history(None);
+        assert!(!s.needs_history());
+        s.set_history_period(HistoryPeriod::Week);
+        assert!(!s.needs_history(), "mesmo período: nada a reler");
+        s.set_history_period(HistoryPeriod::Month);
+        assert!(s.needs_history());
+        s.loaded_history(None);
+        s.invalidate_history();
+        assert!(s.needs_history());
+        s.loaded_history(None);
+        s.follow(2, false, true);
+        assert!(s.needs_history(), "outra Partida/perfil: relê");
+    }
+
+    #[test]
+    fn pdf_is_saved_in_the_folder_and_never_overwrites() {
+        let dir = std::env::temp_dir().join(format!("chess-studio-pdf-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let first = save_pdf(b"%PDF-1", &dir, 1_700_000_000_000, false).unwrap();
+        let second = save_pdf(b"%PDF-2", &dir, 1_700_000_000_000, false).unwrap();
+        let blank = save_pdf(b"%PDF-3", &dir, 1_700_000_000_000, true).unwrap();
+        assert_ne!(first, second);
+        assert_eq!(std::fs::read(&first).unwrap(), b"%PDF-1");
+        assert!(
+            first
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .ends_with(".pdf")
+        );
+        assert!(
+            blank
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .contains("em-branco")
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn export_writes_a_real_pdf_for_annotated_and_blank() {
+        let dir = std::env::temp_dir().join(format!("chess-studio-pdf2-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let i18n = I18n::pt_br();
+        let mut sheet = ManualScoresheet::new();
+        sheet.write(1, "e4").unwrap();
+        let game = PdfGame {
+            played: 1,
+            first_number: 1,
+            first_side: Side::White,
+            result: String::new(),
+        };
+        let a = export_pdf(&i18n, PdfKind::Annotated, Some(&sheet), &game, &dir, 5).unwrap();
+        let b = export_pdf(&i18n, PdfKind::Blank, None, &game, &dir, 5).unwrap();
+        for path in [a, b] {
+            assert!(std::fs::read(path).unwrap().starts_with(b"%PDF-"));
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn br_date_is_day_month_year() {
+        assert_eq!(br_date(0), "01/01/1970");
     }
 }
