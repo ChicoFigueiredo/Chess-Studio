@@ -27,3 +27,35 @@ scoresheet-verdict-swapped = Lance trocado
 scoresheet-verdict-missing = Omitidos
 scoresheet-verdict-extra = Anotações a mais
 scoresheet-check-line = Lance { $ply }: escrito { $written }, real { $expected } ({ $verdict })
+
+## Impressão A4 em PDF (V2-SUM-03)
+scoresheet-pdf-heading = Imprimir a Súmula (PDF A4)
+scoresheet-pdf-hint = O PDF é gerado neste computador e salvo na pasta abaixo. Nada é enviado nem impresso automaticamente.
+scoresheet-pdf-folder = Pasta
+scoresheet-pdf-annotated = Exportar PDF (anotada)
+scoresheet-pdf-blank = Exportar PDF (em branco)
+scoresheet-pdf-annotated-hint = Com o que você escreveu, no formato de súmula de torneio.
+scoresheet-pdf-blank-hint = Folha vazia para imprimir e anotar no tabuleiro físico.
+scoresheet-pdf-saved = PDF salvo em { $path }
+scoresheet-pdf-error = Não foi possível gerar o PDF: { $detail }
+scoresheet-pdf-title = Súmula
+scoresheet-pdf-event = Evento
+scoresheet-pdf-date = Data
+scoresheet-pdf-white = Brancas
+scoresheet-pdf-black = Pretas
+scoresheet-pdf-result = Resultado
+scoresheet-pdf-number = Nº
+scoresheet-pdf-sign-white = Assinatura das Brancas
+scoresheet-pdf-sign-black = Assinatura das Pretas
+scoresheet-pdf-sign-arbiter = Árbitro
+scoresheet-pdf-page = Página
+
+## Histórico de erros de Súmula (V2-SUM-03)
+scoresheet-history-heading = Histórico de erros de Súmula
+scoresheet-history-period-week = Semana
+scoresheet-history-period-month = Mês
+scoresheet-history-period-all = Tudo
+scoresheet-history-empty = Nenhuma Súmula conferida neste período.
+scoresheet-history-sheets = Súmulas conferidas: { $count }
+scoresheet-history-evolution = Evolução (acertos de cada dia ou mês)
+scoresheet-history-point = { $date }: { $right } de { $total } corretos ({ $sheets } Súmula(s))

@@ -558,6 +558,21 @@ impl Persistence {
         }
     }
 
+    /// Histórico de erros de Súmula do perfil no período (V2-SUM-03); só leitura.
+    pub fn scoresheet_history(
+        &self,
+        period: chess_training::HistoryPeriod,
+        now_ms: i64,
+    ) -> Option<chess_training::ScoresheetHistory> {
+        match self.store.scoresheet_history(self.profile, period, now_ms) {
+            Ok(history) => Some(history),
+            Err(err) => {
+                warn!("Histórico da Súmula ilegível: {err}");
+                None
+            }
+        }
+    }
+
     /// Grava a conferência da Súmula entregue (registro à parte; não toca a Partida).
     pub fn apply_scoresheet_check(&mut self, check: &chess_training::ScoresheetCheck) {
         let Some(game) = self.current else { return };
@@ -822,7 +837,7 @@ fn persist_scoresheet(
     if training.session_swapped() {
         return;
     }
-    if !state.is_loading() && !state.has_pending() {
+    if !state.is_loading() && !state.has_pending() && !state.needs_history() {
         return;
     }
     let Ok(mut p) = handle.0.lock() else { return };
@@ -837,6 +852,12 @@ fn persist_scoresheet(
     }
     if let Some(check) = state.take_pending_check() {
         p.apply_scoresheet_check(&check);
+        state.invalidate_history();
+    }
+    if state.needs_history() {
+        let now = crate::scoresheet::wall_ms();
+        let history = p.scoresheet_history(state.history_period(), now);
+        state.loaded_history(history);
     }
 }
 

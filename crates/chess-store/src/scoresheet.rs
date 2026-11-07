@@ -4,7 +4,10 @@
 
 use crate::error::{Result, StoreError};
 use crate::store::{GameId, ProfileId, Store, ensure_profile, now_ms};
-use chess_training::{EntryCheck, ManualScoresheet, ScoresheetCheck, Verdict};
+use chess_training::{
+    Counts, EntryCheck, HistoryPeriod, ManualScoresheet, ScoresheetCheck, ScoresheetHistory,
+    Verdict,
+};
 use rusqlite::{OptionalExtension, params};
 
 impl Store {
@@ -176,6 +179,62 @@ impl Store {
             });
         }
         Ok(Some(ScoresheetCheck::from_parts(checked_at_ms, entries)))
+    }
+
+    /// Histórico de erros de Súmula do `profile` no `period`, a partir das conferências
+    /// gravadas (V2-SUM-02): totais por classe e evolução. Só lê. O recorte usa o instante
+    /// da conferência e o `now_ms` injetado (`[now - período, now]`; `All` = até `now`).
+    pub fn scoresheet_history(
+        &self,
+        profile: ProfileId,
+        period: HistoryPeriod,
+        now_ms: i64,
+    ) -> Result<ScoresheetHistory> {
+        ensure_profile(&self.conn, profile)?;
+        let since = period.since_ms(now_ms).unwrap_or(i64::MIN);
+        let mut stmt = self.conn.prepare(
+            "SELECT c.checked_at_ms, c.scoresheet_id, e.verdict, COUNT(*)
+             FROM manual_scoresheet_checks c
+             JOIN manual_scoresheets s ON s.id = c.scoresheet_id
+             JOIN manual_scoresheet_check_entries e ON e.scoresheet_id = c.scoresheet_id
+             WHERE s.profile_id = ?1 AND c.checked_at_ms BETWEEN ?2 AND ?3
+             GROUP BY c.scoresheet_id, e.verdict
+             ORDER BY c.checked_at_ms, c.scoresheet_id",
+        )?;
+        let rows = stmt.query_map(params![profile.0, since, now_ms], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, u32>(3)?,
+            ))
+        })?;
+        // Uma conferência = uma Súmula; junta as classes dela numa só contagem.
+        let mut checks: Vec<(i64, i64, Counts)> = Vec::new();
+        for row in rows {
+            let (at, sheet, verdict, n) = row?;
+            let n = n as usize;
+            if checks.last().is_none_or(|(_, s, _)| *s != sheet) {
+                checks.push((at, sheet, Counts::default()));
+            }
+            let Some((_, _, counts)) = checks.last_mut() else {
+                continue;
+            };
+            match Verdict::from_key(&verdict) {
+                Some(Verdict::Correct) => counts.correct += n,
+                Some(Verdict::AcceptedWithCaveat) => counts.accepted += n,
+                Some(Verdict::WrongNotation) => counts.wrong_notation += n,
+                Some(Verdict::Swapped) => counts.swapped += n,
+                Some(Verdict::Missing) => counts.missing += n,
+                Some(Verdict::Extra) => counts.extra += n,
+                None => {}
+            }
+        }
+        Ok(ScoresheetHistory::from_counts(
+            period,
+            now_ms,
+            checks.into_iter().map(|(at, _, c)| (at, c)),
+        ))
     }
 
     /// Apaga a Súmula (não mexe na Partida). Sem Súmula, não faz nada.
