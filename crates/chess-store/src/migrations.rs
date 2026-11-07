@@ -138,12 +138,25 @@ CREATE TABLE imported_games (
 CREATE INDEX imported_games_recent ON imported_games (profile_id, imported_at_ms DESC, id DESC);
 ";
 
+// Gerenciador de Engines (C9): origem, catálogo, pasta instalada e configuração. Registros
+// antigos viram `manual` (nunca apagáveis pelo app) e ficam com configuração vazia.
+const V5_ENGINE_MANAGER: &str = "
+ALTER TABLE engine_installations ADD COLUMN origin TEXT NOT NULL DEFAULT 'manual'
+    CHECK (origin IN ('catalog', 'detected', 'manual'));
+ALTER TABLE engine_installations ADD COLUMN catalog_id TEXT;
+ALTER TABLE engine_installations ADD COLUMN variant TEXT;
+ALTER TABLE engine_installations ADD COLUMN install_dir TEXT;
+ALTER TABLE engine_installations ADD COLUMN settings_json TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE engine_installations ADD COLUMN installed_at_ms INTEGER NOT NULL DEFAULT 0;
+";
+
 /// Migrações em ordem; o índice + 1 é a versão resultante.
 const MIGRATIONS: &[&str] = &[
     V1_CORE,
     V2_TRAINING_AND_ENGINES,
     V3_EXERCISE_API,
     V4_IMPORTED_GAMES,
+    V5_ENGINE_MANAGER,
 ];
 
 /// Versão de esquema desta build.
