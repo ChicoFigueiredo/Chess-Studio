@@ -32,12 +32,17 @@
 //! congela no último Evento gravado, DEC-42) e este metadado passa a ser só um
 //! atalho de listagem.
 
+mod engines;
 mod error;
+mod imported;
 pub mod migrations;
 mod store;
 mod training;
+mod training_profiles;
 
+pub use engines::{EngineId, EngineOrigin, EngineRecord};
 pub use error::{Result, StoreError};
+pub use imported::{ImportReport, ImportedId, ImportedQuery, ImportedSummary};
 pub use migrations::LATEST_VERSION as LATEST_SCHEMA_VERSION;
 pub use store::{
     GameId, GameMetadata, GameQuery, GameSummary, OpenedGame, Pragmas, ProfileId, Store,

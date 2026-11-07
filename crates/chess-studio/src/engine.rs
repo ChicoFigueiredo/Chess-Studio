@@ -31,6 +31,7 @@ impl Plugin for EnginePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<EngineUi>()
             .add_plugins(crate::engine_wizard::EngineWizardPlugin)
+            .add_plugins(crate::engine_manager::EngineManagerPlugin)
             .add_systems(Update, tick_engine.in_set(PlaySet));
     }
 }
@@ -86,6 +87,8 @@ pub struct EngineUi {
     not_found: bool,
     /// Pedido de abertura do assistente de Engine (B10), atendido por `engine_wizard`.
     wizard_requested: bool,
+    /// Opções UCI configuradas no gerenciador para a Engine escolhida (já validadas).
+    options: Vec<(String, String)>,
 }
 
 impl Default for EngineUi {
@@ -98,6 +101,7 @@ impl Default for EngineUi {
                 .unwrap_or_default(),
             not_found: false,
             wizard_requested: false,
+            options: Vec::new(),
         }
     }
 }
@@ -122,6 +126,11 @@ impl EngineUi {
     pub fn set_path(&mut self, path: &Path) {
         self.path_text = path.display().to_string();
         self.not_found = false;
+    }
+
+    /// Opções UCI (threads, hash, nível…) a enviar à Engine ao iniciar.
+    pub fn set_options(&mut self, options: Vec<(String, String)>) {
+        self.options = options;
     }
 
     /// Consome o pedido de abrir o assistente.
@@ -152,7 +161,13 @@ impl EngineUi {
 
     fn config(&self) -> Option<EngineConfig> {
         let text = self.path_text.trim();
-        (!text.is_empty()).then(|| EngineConfig::new(text))
+        (!text.is_empty()).then(|| {
+            self.options
+                .iter()
+                .fold(EngineConfig::new(text), |config, (name, value)| {
+                    config.option(name, value)
+                })
+        })
     }
 }
 

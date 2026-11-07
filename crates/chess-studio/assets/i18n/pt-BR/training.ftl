@@ -55,3 +55,96 @@ training-metrics-line = { $name }: { $runs } resoluções, { $correct } acertos,
 training-metrics-session-current = Sessão atual
 training-metrics-session-previous = Sessão anterior { $n }
 training-metrics-empty = Nenhuma Resolução ainda.
+
+training-memory-present-start = Memorize a sequência: posição inicial.
+training-memory-present = Memorize: Lance { $n } de { $total }
+training-memory-present-hint = O tabuleiro mostra a sequência sozinho; depois ele volta ao início e você a reproduz.
+training-memory-recall = Reprodução: Lance { $n } de { $total }
+training-memory-turn-white = Vez das Brancas.
+training-memory-turn-black = Vez das Pretas.
+training-memory-errors = Lances errados: { $count }
+training-memory-show-again = Mostrar de novo
+training-memory-review-heading = Memória de sequência
+training-memory-review-hits = Acertos por Lance (na primeira tentativa): { $hits } de { $total }
+training-memory-review-first-error = Primeiro erro: Lance { $n }.
+training-memory-review-no-error = Nenhum erro na reprodução.
+training-memory-review-replays = Você pediu para ver a sequência de novo { $count } vez(es).
+training-memory-ply-line = { $n }. { $san }: { $result }
+training-memory-ply-hit = acertou
+training-memory-ply-miss = errou
+training-memory-ply-pending = não jogado
+training-metrics-memory = Memória: { $hits } de { $plies } Lances certos na primeira tentativa
+## Memória de posição (C11): estudo, bandeja de peças e conferência.
+
+training-kind-memory_position = Memória de posição
+position-study-countdown = Memorize a posição: { $s } s
+position-study-hint = Observe onde cada peça está. Quando o tempo acabar, o tabuleiro fica vazio.
+position-memorized = Já memorizei
+position-recall-count = Peças colocadas: { $n }
+position-recall-hint = Arraste uma peça da bandeja para a casa, ou clique na peça e depois na casa. Arraste as peças do tabuleiro para movê-las; solte fora para remover (ou use o botão direito).
+position-check = Conferir
+position-clear = Limpar tabuleiro
+position-tray-title = Bandeja de peças
+position-tray-hint = Brancas em cima, pretas embaixo.
+position-side-white = branca
+position-side-black = preta
+position-piece-king = rei
+position-piece-queen = dama
+position-piece-rook = torre
+position-piece-bishop = bispo
+position-piece-knight = cavalo
+position-piece-pawn = peão
+position-piece-name = { $piece } { $side }
+position-result-perfect = Posição reconstruída sem erros!
+position-result-imperfect = Há diferenças em relação à posição original.
+position-score = Acerto: { $percent }% ({ $correct } de { $total } peças certas)
+position-score-detail = Peça errada: { $wrong } | faltando: { $missing } | sobrando: { $extra }
+position-verdict-wrong = { $square }: você pôs { $placed }, mas era { $expected }.
+position-verdict-missing = { $square }: faltou { $expected }.
+position-verdict-extra = { $square }: não havia peça aqui ({ $placed } a mais).
+position-times = Tempo: { $study } s de estudo, { $recall } s para reconstruir.
+position-show-answer = Ver a posição original
+position-show-mine = Ver a minha montagem
+
+## Perfis de treino (C11).
+
+profiles-open = Perfis de treino
+profiles-heading = Perfis de treino
+profiles-active = (seguindo)
+profiles-progress = { $done } de { $total } ({ $pct }%)
+profiles-start = Começar
+profiles-resume = Continuar
+profiles-complete = Perfil concluído!
+profiles-unfollow = Deixar de seguir
+profiles-continue = Continuar: { $name }
+profiles-difficulty-easy = fácil
+profiles-difficulty-medium = médio
+profiles-difficulty-hard = difícil
+
+## Evolução (C11).
+
+evolution-open = Evolução
+evolution-heading = Evolução
+evolution-empty = Resolva alguns Exercícios para acompanhar a sua evolução.
+evolution-none = sem dados
+evolution-solved = resolvidos
+evolution-ind-runs = Resoluções
+evolution-ind-no-aids = Concluídos sem Auxílios
+evolution-ind-memory-seq = Acerto médio na memória de sequência
+evolution-ind-memory-pos = Acerto médio na memória de posição
+evolution-ind-endgames = Desempenho em finais
+evolution-endgames-value = { $pct }% de acerto em { $runs } Exercícios (erros de afogamento: { $stalemate })
+evolution-period = Período:
+evolution-by-day = Por dia
+evolution-by-week = Por semana
+evolution-legend-correct = resolvidos
+evolution-legend-missed = não resolvidos
+evolution-col-day = Dia
+evolution-col-week = Semana desde
+evolution-col-runs = Resoluções
+evolution-col-correct = Acertos
+evolution-col-errors = Erros
+evolution-col-no-aids = Sem Auxílios
+evolution-by-profile = Por Perfil de treino
+evolution-profile-line = { $name }: { $runs } resoluções, { $correct } acertos, { $noaids } sem Auxílios
+evolution-utc-note = Datas em UTC.

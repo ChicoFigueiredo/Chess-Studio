@@ -16,12 +16,19 @@ pub struct Tally {
     pub correct_without_aids: u32,
     /// Acertos sem nenhum erro.
     pub first_try_correct: u32,
+    /// Memória de sequência: Lances julgados e acertados na primeira tentativa.
+    pub memory_plies: u32,
+    pub memory_hits: u32,
 }
 
 impl Tally {
     pub fn add(&mut self, run: &RunSummary) {
         self.runs += 1;
         self.errors += u32::try_from(run.errors.len()).unwrap_or(u32::MAX);
+        if let Some(memory) = &run.memory {
+            self.memory_plies += u32::try_from(memory.plies.len()).unwrap_or(u32::MAX);
+            self.memory_hits += u32::try_from(memory.hits()).unwrap_or(u32::MAX);
+        }
         match run.result {
             RunResult::Correct => {
                 self.correct += 1;

@@ -116,8 +116,65 @@ ALTER TABLE exercise_runs ADD COLUMN session INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE exercise_runs ADD COLUMN summary_json TEXT NOT NULL DEFAULT '{}';
 ";
 
+// Partidas importadas de PGN (#48): a árvore de variações (JSON) mais colunas de
+// listagem. Só acrescenta uma tabela; nada do que existe é alterado (DB-06).
+const V4_IMPORTED_GAMES: &str = "
+CREATE TABLE imported_games (
+    id              INTEGER PRIMARY KEY,
+    profile_id      INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    source          TEXT,
+    event           TEXT,
+    white           TEXT,
+    black           TEXT,
+    date            TEXT,
+    result          TEXT NOT NULL,
+    start_fen       TEXT NOT NULL,
+    ply_count       INTEGER NOT NULL,
+    variation_count INTEGER NOT NULL,
+    tree_version    INTEGER NOT NULL DEFAULT 1,
+    tree_json       TEXT NOT NULL,
+    imported_at_ms  INTEGER NOT NULL
+);
+CREATE INDEX imported_games_recent ON imported_games (profile_id, imported_at_ms DESC, id DESC);
+";
+
+// Gerenciador de Engines (C9): origem, catálogo, pasta instalada e configuração. Registros
+// antigos viram `manual` (nunca apagáveis pelo app) e ficam com configuração vazia.
+const V5_ENGINE_MANAGER: &str = "
+ALTER TABLE engine_installations ADD COLUMN origin TEXT NOT NULL DEFAULT 'manual'
+    CHECK (origin IN ('catalog', 'detected', 'manual'));
+ALTER TABLE engine_installations ADD COLUMN catalog_id TEXT;
+ALTER TABLE engine_installations ADD COLUMN variant TEXT;
+ALTER TABLE engine_installations ADD COLUMN install_dir TEXT;
+ALTER TABLE engine_installations ADD COLUMN settings_json TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE engine_installations ADD COLUMN installed_at_ms INTEGER NOT NULL DEFAULT 0;
+";
+
+// Perfis de treino (#53): avanço por passo cumprido e Perfil ativo de cada jogador.
+// Só acrescenta tabelas; nada do que existe é alterado (DB-06).
+const V6_TRAINING_PROFILES: &str = "
+CREATE TABLE training_profile_progress (
+    profile_id       INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    training_profile TEXT NOT NULL,
+    exercise         TEXT NOT NULL,
+    completed_at_ms  INTEGER NOT NULL,
+    PRIMARY KEY (profile_id, training_profile, exercise)
+);
+CREATE TABLE training_profile_active (
+    profile_id       INTEGER PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE,
+    training_profile TEXT NOT NULL
+);
+";
+
 /// Migrações em ordem; o índice + 1 é a versão resultante.
-const MIGRATIONS: &[&str] = &[V1_CORE, V2_TRAINING_AND_ENGINES, V3_EXERCISE_API];
+const MIGRATIONS: &[&str] = &[
+    V1_CORE,
+    V2_TRAINING_AND_ENGINES,
+    V3_EXERCISE_API,
+    V4_IMPORTED_GAMES,
+    V5_ENGINE_MANAGER,
+    V6_TRAINING_PROFILES,
+];
 
 /// Versão de esquema desta build.
 pub const LATEST_VERSION: u32 = MIGRATIONS.len() as u32;

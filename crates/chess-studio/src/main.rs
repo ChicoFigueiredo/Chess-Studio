@@ -13,15 +13,21 @@ mod board;
 mod board2d;
 mod camera;
 mod capture;
+mod captured;
 mod clock;
+mod dock;
 mod engine;
+mod engine_manager;
 mod engine_wizard;
 mod fen_pgn;
 mod fide_panel;
+mod focus;
+mod framing;
 mod highlight;
 mod i18n;
 mod layout;
 mod new_game;
+mod notation;
 mod paths;
 mod persistence;
 mod picking;
@@ -29,6 +35,7 @@ mod pieces;
 mod play;
 mod presentation;
 mod session;
+mod study;
 mod training_ui;
 mod ui;
 
@@ -138,6 +145,8 @@ fn main() {
         camera::CameraPlugin,
         picking::PickingPlugin,
         ui::UiPlugin,
+        dock::DockPlugin,
+        focus::FocusPlugin,
     ))
     .add_plugins((
         aids_panel::AidsPanelPlugin,
@@ -145,6 +154,10 @@ fn main() {
         new_game::NewGamePlugin,
         capture::CapturePlugin,
         engine::EnginePlugin,
+        notation::NotationPlugin,
+        captured::CapturedPlugin,
+        study::StudyPlugin,
+        fide_panel::ArbitrationPlugin,
     ));
     app.add_plugins(training_ui::TrainingPlugin);
     if let Some(dir) = capture {
@@ -152,6 +165,13 @@ fn main() {
             eprintln!("não foi possível criar {}: {err}", dir.display());
         }
         app.insert_resource(capture::CaptureMode::new(dir, capture_script()));
+        // `--focus`: a evidência do modo Foco (sem banco, o estado não vem das preferências).
+        if std::env::args().any(|a| a == "--focus") {
+            app.insert_resource(focus::ViewState {
+                focus: true,
+                fullscreen: false,
+            });
+        }
     }
     if let Some(config) = bench {
         app.add_plugins(benchmark::BenchmarkPlugin {

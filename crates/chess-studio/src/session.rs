@@ -225,8 +225,9 @@ impl Session {
         out
     }
 
-    /// PGN da Partida (só Lances legais; comentários opcionais, DEC-44).
-    pub fn export_pgn(&self, include_comments: bool) -> String {
+    /// PGN da Partida (só Lances legais; comentários opcionais, DEC-44). `notes` são as
+    /// anotações de estudo `(meio-lance, texto)`, exportadas como comentários.
+    pub fn export_pgn(&self, include_comments: bool, notes: &[(usize, String)]) -> String {
         let wall = self.now().wall_ms;
         self.game.to_pgn(&PgnOptions {
             event: "Partida casual".into(),
@@ -235,6 +236,7 @@ impl Session {
             white: "Brancas".into(),
             black: "Pretas".into(),
             include_comments,
+            study_notes: notes.to_vec(),
             ..PgnOptions::default()
         })
     }
@@ -919,7 +921,10 @@ mod tests {
         assert_eq!(incidents.len(), 1);
         assert_eq!(incidents[0].after_ply, 1);
         assert_eq!(s.snapshot().history.len(), 1);
-        assert!(!s.export_pgn(true).contains("e2"), "ilegal fora do PGN");
+        assert!(
+            !s.export_pgn(true, &[]).contains("e2"),
+            "ilegal fora do PGN"
+        );
     }
 
     fn competitive(policy: PolicyKind) -> Session {

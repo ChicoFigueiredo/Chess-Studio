@@ -1,0 +1,70 @@
+{
+  "format": 1,
+  "exercises": [
+    {
+      "id": "memoria-posicao-001",
+      "kind": "memory_position",
+      "title": "Mate do corredor (esqueleto)",
+      "fen": "6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1",
+      "objective": "Memorize a posição e recoloque as nove peças.",
+      "solution": {
+        "type": "memorize_position",
+        "seconds": 10
+      },
+      "explanation": "Rei e três peões de cada lado nas colunas f, g e h, e uma torre branca na primeira fileira. Agrupe por bloco: o castelo do rei preto (g8, f7, g7, h7), o espelho branco (g1, f2, g2, h2) e a torre em a1. Cada peça ocupa uma casa do tabuleiro (art. 2).",
+      "version": 1
+    },
+    {
+      "id": "memoria-posicao-002",
+      "kind": "memory_position",
+      "title": "Final de torres",
+      "fen": "3r4/5pk1/6p1/7p/P6P/5PP1/6K1/3R4 w - - 0 1",
+      "objective": "Memorize o final de torres e recoloque as onze peças.",
+      "solution": {
+        "type": "memorize_position",
+        "seconds": 12
+      },
+      "explanation": "Torres na coluna d, os reis na ala do rei e a estrutura de peões: pretos em f7, g6 e h5, brancos em a4, h4, f3 e g3. Contar peões por ala ajuda a lembrar a posição. As peças ocupam casas distintas do tabuleiro (art. 2).",
+      "version": 1
+    },
+    {
+      "id": "memoria-posicao-003",
+      "kind": "memory_position",
+      "title": "Meio-jogo com damas",
+      "fen": "3q2k1/5pp1/4p2p/3pP3/3P4/6P1/3Q1P1P/6K1 w - - 0 1",
+      "objective": "Memorize a posição de meio-jogo e recoloque as quatorze peças.",
+      "solution": {
+        "type": "memorize_position",
+        "seconds": 15
+      },
+      "explanation": "As damas ficam na coluna d, atrás das cadeias de peões d4-e5 e d5-e6, que se travam. O rei branco está em g1 e o preto em g8. Repare na cadeia de peões: ela guia a memória. Cada peça ocupa uma casa do tabuleiro (art. 2).",
+      "version": 1
+    },
+    {
+      "id": "memoria-posicao-004",
+      "kind": "memory_position",
+      "title": "Final de bispos opostos",
+      "fen": "8/5kp1/4b1p1/8/3P1P2/2B3P1/6K1/8 w - - 0 1",
+      "objective": "Memorize o final de bispos de cores opostas e recoloque as nove peças.",
+      "solution": {
+        "type": "memorize_position",
+        "seconds": 10
+      },
+      "explanation": "Os bispos correm em cores de casa opostas: o branco em c3 (casa escura) e o preto em e6 (casa clara). Três peões brancos em d4, f4 e g3; dois pretos em g7 e g6. Cada peça ocupa uma casa do tabuleiro (art. 2).",
+      "version": 1
+    },
+    {
+      "id": "memoria-posicao-005",
+      "kind": "memory_position",
+      "title": "Estrutura com cavalo e torre",
+      "fen": "r5k1/5ppp/p3p3/4P3/3N4/8/PP3PPP/2R3K1 w - - 0 1",
+      "objective": "Memorize a posição e recoloque as dezesseis peças.",
+      "solution": {
+        "type": "memorize_position",
+        "seconds": 20
+      },
+      "explanation": "Cavalo branco em d4 apoiado pelo peão de e5; torre branca em c1 e torre preta em a8. Peões brancos em a2, b2, f2, g2 e h2; pretos em a6, e6, f7, g7 e h7. Divida em duas alas: a ala da dama e a ala do rei. Cada peça ocupa uma casa do tabuleiro (art. 2).",
+      "version": 1
+    }
+  ]
+}

@@ -26,6 +26,9 @@ pub struct PgnOptions {
     pub engine_elo: Option<u32>,
     /// Exporta Infrações, penalidades e Reclamações como comentários (DEC-44).
     pub include_comments: bool,
+    /// Anotações de estudo do usuário: `(meio-lance, texto)`; o texto sai como comentário
+    /// `{...}` logo depois do Lance (`0`: antes do primeiro). Só com `include_comments`.
+    pub study_notes: Vec<(usize, String)>,
 }
 
 impl Default for PgnOptions {
@@ -39,6 +42,7 @@ impl Default for PgnOptions {
             black: "?".into(),
             engine_elo: None,
             include_comments: true,
+            study_notes: Vec::new(),
         }
     }
 }
@@ -274,15 +278,21 @@ fn export(game: &Game, options: &PgnOptions) -> String {
     let mut side = start.side_to_move();
     let mut number = u32::from(start.fullmove_number());
     let mut after_comment = false;
-    let push_comments = |tokens: &mut Vec<String>, slot: &[String], after: &mut bool| {
-        if options.include_comments {
-            for text in slot {
-                tokens.extend(comment_text(text).split(' ').map(str::to_owned));
-                *after = true;
+    let push_comments =
+        |tokens: &mut Vec<String>, slot: &[String], ply: usize, after: &mut bool| {
+            if options.include_comments {
+                let notes = options
+                    .study_notes
+                    .iter()
+                    .filter(|(p, text)| *p == ply && !text.trim().is_empty())
+                    .map(|(_, text)| text);
+                for text in slot.iter().chain(notes) {
+                    tokens.extend(comment_text(text).split(' ').map(str::to_owned));
+                    *after = true;
+                }
             }
-        }
-    };
-    push_comments(&mut tokens, &line.comments[0], &mut after_comment);
+        };
+    push_comments(&mut tokens, &line.comments[0], 0, &mut after_comment);
     for (i, san) in line.sans.iter().enumerate() {
         if side == Color::White {
             tokens.push(format!("{number}."));
@@ -291,7 +301,12 @@ fn export(game: &Game, options: &PgnOptions) -> String {
         }
         after_comment = false;
         tokens.push(san.clone());
-        push_comments(&mut tokens, &line.comments[i + 1], &mut after_comment);
+        push_comments(
+            &mut tokens,
+            &line.comments[i + 1],
+            i + 1,
+            &mut after_comment,
+        );
         if side == Color::Black {
             number += 1;
         }

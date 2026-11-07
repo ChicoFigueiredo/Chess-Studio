@@ -150,12 +150,100 @@ fn counter_constants_match_the_rules() {
     assert_eq!(chess_core::SEVENTY_FIVE_MOVE_HALFMOVES, 150);
 }
 
+/// Muro total: peões brancos em a4,c4,e4,g4,b5,d5,f5,h5 contra pretos em a5,c5,e5,g5,b6,d6,f6,h6.
+/// Cada peão está travado de frente por um peão adversário e nenhum tem peão adversário na
+/// diagonal. Os reis só alcançam casas que não tocam peão adversário.
+const WALL: &str = "4k3/8/1p1p1p1p/pPpPpPpP/P1P1P1P1/8/8/4K3 w - - 0 1";
+
+fn dead(fen: &str) -> bool {
+    pos(fen).is_dead_position()
+}
+
 #[test]
-#[ignore = "limitação documentada: posição morta por bloqueio de peões (art. 5.2.2) não é detectada"]
-fn dead_position_by_pawn_blockade_is_not_detected() {
-    // Exemplo ilustrativo (cadeias de peões bloqueados; não é prova de posição morta, só
-    // marca a classe de caso). A posição morta de verdade seria travamento total;
-    // o núcleo só reconhece posição morta por material.
-    let p = pos("8/8/8/p1p1p1p1/P1P1P1P1/8/8/k6K w - - 0 1");
-    assert!(p.is_insufficient_material());
+fn dead_position_by_pawn_blockade_is_detected() {
+    assert!(dead(WALL), "muro total, reis separados");
+    assert!(
+        dead(&WALL.replace(" w ", " b ")),
+        "mesma posição, vez das pretas"
+    );
+    // Reis em cantos, cada um do seu lado do muro.
+    assert!(dead("8/7k/1p1p1p1p/pPpPpPpP/P1P1P1P1/8/8/K7 w - - 0 1"));
+    assert!(dead("7k/8/1p1p1p1p/pPpPpPpP/P1P1P1P1/8/8/K7 b - - 0 1"));
+    // Material insuficiente continua sendo posição morta.
+    assert!(dead("4k3/8/8/8/8/8/8/4K3 w - - 0 1"));
+    assert!(dead("5b1k/8/8/8/8/8/8/2B1K3 w - - 0 1"));
+}
+
+#[test]
+fn dead_position_makes_checkmate_impossible_for_both_sides() {
+    let p = pos(WALL);
+    assert!(!p.can_checkmate(Color::White));
+    assert!(!p.can_checkmate(Color::Black));
+}
+
+#[test]
+fn blockade_with_possible_capture_is_not_dead() {
+    // a4 captura b5 (peão preto na diagonal), mesmo com a4 travado por a5.
+    assert!(!dead("4k3/8/8/pp6/P7/8/8/4K3 w - - 0 1"));
+    // Ruptura: remover o peão preto de a5 libera o avanço de a4.
+    assert!(!dead("4k3/8/1p1p1p1p/1PpPpPpP/P1P1P1P1/8/8/4K3 w - - 0 1"));
+    // Peão livre (coluna aberta): avança, promove.
+    assert!(!dead("4k3/8/8/8/8/8/P7/4K3 w - - 0 1"));
+}
+
+#[test]
+fn king_that_reaches_an_enemy_pawn_is_not_dead() {
+    // Peões travados em a4/a5, mas os reis chegam ao flanco e capturam.
+    assert!(!dead("4k3/8/8/p7/P7/8/8/4K3 w - - 0 1"));
+    // Muro total, mas o rei preto está do lado branco: chega a g4 pela casa g3.
+    assert!(!dead("8/8/1p1p1p1p/pPpPpPpP/P1P1P1P1/7k/8/K7 w - - 0 1"));
+}
+
+#[test]
+fn pieces_other_than_kings_and_pawns_are_never_declared_dead_by_blockade() {
+    // Conservador: com bispo, cavalo, torre ou dama o detector não afirma nada.
+    assert!(!dead("4k3/8/1p1p1p1p/pPpPpPpP/P1P1P1P1/8/8/3BK3 w - - 0 1"));
+    assert!(!dead("4k3/8/1p1p1p1p/pPpPpPpP/P1P1P1P1/8/8/3RK3 w - - 0 1"));
+    assert!(!dead("4k3/8/1p1p1p1p/pPpPpPpP/P1P1P1P1/8/8/3NK3 w - - 0 1"));
+}
+
+#[test]
+fn king_in_check_by_pawn_or_en_passant_is_not_dead() {
+    // Rei preto em e8 atacado por peão branco em d7... (xeque de peão)
+    assert!(!dead("4k3/3P4/8/8/8/8/8/4K3 b - - 0 1"));
+    // Captura en passant disponível: conservador.
+    assert!(!dead("4k3/8/8/pP6/8/8/8/4K3 w - a6 0 1"));
+}
+
+#[test]
+fn wall_is_independently_verified_by_exhaustive_search() {
+    // Verificação por força bruta, independente do detector: explora todo o espaço de
+    // estados (só os reis se movem) e confirma que nunca há captura, xeque nem mate.
+    use std::collections::HashSet;
+    let start = pos(WALL);
+    let pieces = |p: &CanonicalPosition| {
+        let board = p.to_fen();
+        board
+            .split(' ')
+            .next()
+            .unwrap()
+            .chars()
+            .filter(|c| c.is_alphabetic())
+            .count()
+    };
+    let key = |p: &CanonicalPosition| p.to_fen().split(' ').take(2).collect::<Vec<_>>().join(" ");
+    let total = pieces(&start);
+    let mut seen = HashSet::from([key(&start)]);
+    let mut stack = vec![start];
+    while let Some(p) = stack.pop() {
+        assert!(!p.is_check(), "xeque alcançável: {}", p.to_fen());
+        assert_eq!(pieces(&p), total, "captura alcançável: {}", p.to_fen());
+        for mv in p.legal_moves() {
+            let next = p.play(mv).unwrap();
+            if seen.insert(key(&next)) {
+                stack.push(next);
+            }
+        }
+    }
+    assert!(seen.len() > 500, "exploração rasa demais: {}", seen.len());
 }

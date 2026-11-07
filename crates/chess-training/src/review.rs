@@ -3,6 +3,7 @@
 
 use crate::aids::AidsRecord;
 use crate::exercise::{Exercise, ExerciseKind, Solution};
+use crate::memory::PlyResult;
 use crate::run::{RunError, RunResult, RunSummary};
 use chess_core::{CanonicalPosition, GameStatus};
 use chess_game::{EndReason, Outcome};
@@ -13,6 +14,21 @@ use chess_game::{EndReason, Outcome};
 pub struct NotCheckmate {
     pub king_in_check: bool,
     pub legal_moves: usize,
+}
+
+/// Um Lance da sequência de memória na revisão.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlyReview {
+    pub san: String,
+    pub result: PlyResult,
+}
+
+/// Revisão de memória: acerto por Lance e posição do primeiro erro.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemoryReview {
+    pub plies: Vec<PlyReview>,
+    pub first_error: Option<usize>,
+    pub replays: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,14 +47,18 @@ pub struct Review {
     pub outcome: Option<Outcome>,
     pub aids: AidsRecord,
     pub duration_ms: u64,
+    /// Só em Exercícios de memória.
+    pub memory: Option<MemoryReview>,
 }
 
 impl Review {
     pub fn new(exercise: &Exercise, summary: &RunSummary) -> Self {
         // Resolvido por critério: mostra o Lance que a pessoa fez; senão, uma resposta possível.
         let line = if summary.result == RunResult::Correct
-            && !matches!(exercise.solution, Solution::Moves { .. })
-        {
+            && !matches!(
+                exercise.solution,
+                Solution::Moves { .. } | Solution::Memorize { .. }
+            ) {
             summary
                 .moves
                 .iter()
@@ -75,6 +95,18 @@ impl Review {
                 king_in_check: p.is_check(),
                 legal_moves: p.legal_moves().len(),
             });
+        let memory = summary.memory.as_ref().map(|m| MemoryReview {
+            plies: solution_san
+                .iter()
+                .enumerate()
+                .map(|(i, san)| PlyReview {
+                    san: san.clone(),
+                    result: m.plies.get(i).copied().unwrap_or(PlyResult::Pending),
+                })
+                .collect(),
+            first_error: m.first_error,
+            replays: m.replays,
+        });
         Self {
             exercise_id: exercise.id.clone(),
             title: exercise.title.clone(),
@@ -87,6 +119,7 @@ impl Review {
             outcome: summary.outcome,
             aids: summary.aids.clone(),
             duration_ms: summary.duration_ms,
+            memory,
         }
     }
 }

@@ -1,6 +1,6 @@
 //! Erros tipados do repositório.
 
-use crate::{GameId, ProfileId, RunId};
+use crate::{EngineId, GameId, ImportedId, ProfileId, RunId};
 use chess_game::ReplayError;
 use std::fmt;
 
@@ -37,6 +37,8 @@ pub enum StoreError {
     /// Exercício que não está no catálogo gravado.
     ExerciseNotFound(String),
     RunNotFound(RunId),
+    /// Engine que não está registrada.
+    EngineNotFound(EngineId),
     /// A Resolução já foi encerrada: o registro é imutável.
     RunAlreadyFinished(RunId),
     /// O registro encerrado não é do Exercício da Resolução iniciada.
@@ -45,6 +47,8 @@ pub enum StoreError {
         expected: String,
         got: String,
     },
+    /// Partida importada de PGN que não existe (ou foi excluída).
+    ImportedGameNotFound(ImportedId),
 }
 
 impl fmt::Display for StoreError {
@@ -72,6 +76,7 @@ impl fmt::Display for StoreError {
             }
             Self::ExerciseNotFound(id) => write!(f, "Exercício `{id}` não está no catálogo"),
             Self::RunNotFound(id) => write!(f, "Resolução {} não existe", id.0),
+            Self::EngineNotFound(id) => write!(f, "Engine {} não está registrada", id.0),
             Self::RunAlreadyFinished(id) => {
                 write!(
                     f,
@@ -84,6 +89,7 @@ impl fmt::Display for StoreError {
                 "Resolução {} é do Exercício `{expected}`, não de `{got}`",
                 run.0
             ),
+            Self::ImportedGameNotFound(id) => write!(f, "partida importada {} não existe", id.0),
         }
     }
 }

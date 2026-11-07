@@ -8,7 +8,9 @@
 //! abrir, o app segue jogando sem persistência (aviso no log).
 
 use crate::aids::AidSettings;
+use crate::dock::{Dock, DockLayout};
 use crate::engine::{EngineUi, MAX_ELO, MIN_ELO};
+use crate::focus::ViewState;
 use crate::play::PlaySet;
 use crate::presentation::{GraphicsQuality, Presentation};
 use crate::session::Session;
@@ -20,6 +22,7 @@ use chess_game::{Game, GameSetup, PolicyKind};
 use chess_input::MoveMethod;
 use chess_store::{GameId, GameMetadata, ProfileId, Store, StoreError};
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -29,6 +32,13 @@ const KEY_PRESENTATION: &str = "presentation";
 const KEY_QUALITY: &str = "quality";
 const KEY_ENGINE_ELO: &str = "engine_elo";
 const KEY_ENGINE_USER_SIDE: &str = "engine_user_side";
+/// Tela cheia e modo Foco (C3, UI-03/04): preferências de interface.
+const KEY_FULLSCREEN: &str = "fullscreen";
+const KEY_FOCUS: &str = "focus_mode";
+/// Layout do dock de painéis (C1, UI-02): árvore, tamanhos, visibilidade e largura.
+const KEY_DOCK_LAYOUT: &str = "dock_layout";
+/// Prefixo da chave das Anotações de estudo (C2): uma preferência por Partida.
+const KEY_STUDY_NOTES: &str = "study_notes";
 
 /// Preferências do usuário que sobrevivem ao fechamento do app.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,6 +51,8 @@ pub struct SavedPrefs {
     pub engine_elo: u32,
     /// Lado do usuário contra a Engine (B9).
     pub engine_user_side: Color,
+    /// Tela cheia (F11) e modo Foco (F10), independentes.
+    pub view: ViewState,
 }
 
 impl Default for SavedPrefs {
@@ -52,6 +64,7 @@ impl Default for SavedPrefs {
             quality: GraphicsQuality::default(),
             engine_elo: 1500,
             engine_user_side: Color::White,
+            view: ViewState::default(),
         }
     }
 }
@@ -75,6 +88,8 @@ pub struct Persistence {
     epoch: u64,
     was_paused: bool,
     saved: Option<SavedPrefs>,
+    /// Último layout do dock gravado (ou carregado), para só gravar o que mudou.
+    saved_layout: Option<Value>,
     failing: bool,
 }
 
@@ -108,6 +123,7 @@ impl Persistence {
             epoch: 0,
             was_paused: false,
             saved: None,
+            saved_layout: None,
             failing: false,
         }
     }
@@ -263,6 +279,61 @@ impl Persistence {
                 get(KEY_ENGINE_USER_SIDE),
             )
             .unwrap_or(defaults.engine_user_side),
+            view: ViewState {
+                fullscreen: get(KEY_FULLSCREEN)
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(defaults.view.fullscreen),
+                focus: get(KEY_FOCUS)
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(defaults.view.focus),
+            },
+        }
+    }
+
+    /// Layout do dock gravado; ausente ou ilegível volta ao padrão.
+    pub fn load_layout(&mut self) -> DockLayout {
+        let stored = self
+            .store
+            .get_pref(self.profile, KEY_DOCK_LAYOUT)
+            .ok()
+            .flatten();
+        let layout = DockLayout::from_json(stored);
+        self.saved_layout = Some(layout.to_json());
+        layout
+    }
+
+    /// Grava o layout do dock se mudou desde a última chamada (no ato, sem "Salvar").
+    pub fn sync_layout(&mut self, layout: &DockLayout) {
+        let json = layout.to_json();
+        if self.saved_layout.as_ref() == Some(&json) {
+            return;
+        }
+        match self.store.set_pref(self.profile, KEY_DOCK_LAYOUT, &json) {
+            Ok(()) => self.saved_layout = Some(json),
+            Err(err) => self.report(&err),
+        }
+    }
+
+    fn notes_key(&self) -> Option<String> {
+        self.current.map(|id| format!("{KEY_STUDY_NOTES}.{}", id.0))
+    }
+
+    /// Anotações de estudo da Partida atual (vazio se não há ou estão ilegíveis).
+    pub fn load_notes(&self) -> BTreeMap<usize, String> {
+        let stored = self
+            .notes_key()
+            .and_then(|key| self.store.get_pref(self.profile, &key).ok().flatten());
+        crate::study::notes_from_json(stored)
+    }
+
+    /// Grava as anotações de estudo da Partida atual (no ato, sem "Salvar").
+    pub fn save_notes(&mut self, notes: &BTreeMap<usize, String>) {
+        let Some(key) = self.notes_key() else { return };
+        if let Err(err) =
+            self.store
+                .set_pref(self.profile, &key, &crate::study::notes_to_json(notes))
+        {
+            self.report(&err);
         }
     }
 
@@ -293,6 +364,12 @@ impl Persistence {
         }
         if before.engine_user_side != now.engine_user_side {
             writes.push((KEY_ENGINE_USER_SIDE, debug_id(&now.engine_user_side)));
+        }
+        if before.view.fullscreen != now.view.fullscreen {
+            writes.push((KEY_FULLSCREEN, json!(now.view.fullscreen)));
+        }
+        if before.view.focus != now.view.focus {
+            writes.push((KEY_FOCUS, json!(now.view.focus)));
         }
         for (key, value) in writes {
             if let Err(err) = self.store.set_pref(self.profile, key, &value) {
@@ -350,16 +427,27 @@ impl Plugin for PersistencePlugin {
             );
         }
         persistence.saved = Some(prefs);
+        let layout = persistence.load_layout();
+        let notes =
+            crate::study::StudyNotes::loaded(restored.session.epoch(), persistence.load_notes());
         // Os plugins seguintes usam `init_resource`, que preserva estes valores.
         app.insert_resource(restored.session)
             .insert_resource(prefs.aids)
             .insert_resource(prefs.presentation)
             .insert_resource(prefs.quality)
+            .insert_resource(prefs.view)
+            .insert_resource(Dock::with_layout(layout))
+            .insert_resource(notes)
             .insert_resource(
                 EngineUi::default().with_saved(prefs.engine_user_side, prefs.engine_elo),
             )
+            .insert_resource(crate::engine_manager::DbLocation(path.clone()))
             .insert_resource(PersistenceHandle(Mutex::new(persistence)))
-            .add_systems(Update, (persist_session, persist_prefs).after(PlaySet))
+            .add_systems(
+                Update,
+                (persist_session, persist_prefs, persist_layout).after(PlaySet),
+            )
+            .add_systems(Update, persist_notes.after(persist_session).after(PlaySet))
             .add_systems(Last, close_on_exit);
     }
 }
@@ -384,6 +472,7 @@ fn persist_prefs(
     presentation: Res<Presentation>,
     quality: Res<GraphicsQuality>,
     engine_ui: Res<EngineUi>,
+    view: Res<ViewState>,
     handle: Res<PersistenceHandle>,
 ) {
     if let Ok(mut p) = handle.0.lock() {
@@ -394,7 +483,41 @@ fn persist_prefs(
             quality: *quality,
             engine_elo: engine_ui.elo(),
             engine_user_side: engine_ui.user_side(),
+            view: *view,
         });
+    }
+}
+
+/// Grava as Anotações de estudo quando mudam. Depois de `persist_session` (que cria a
+/// Partida no banco); durante o Treino a `Session` não é a Partida do usuário.
+fn persist_notes(
+    session: Res<Session>,
+    training: Res<TrainingUi>,
+    mut notes: ResMut<crate::study::StudyNotes>,
+    handle: Res<PersistenceHandle>,
+) {
+    if training.session_swapped() || !notes.is_dirty() {
+        return;
+    }
+    if let Some(dirty) = notes.take_dirty(session.epoch()).cloned()
+        && let Ok(mut p) = handle.0.lock()
+    {
+        p.save_notes(&dirty);
+    }
+}
+
+/// Grava o layout do dock. Enquanto o botão do mouse está apertado (arrastando um divisor
+/// ou uma aba) espera: grava ao soltar, não a cada quadro.
+fn persist_layout(
+    dock: Res<Dock>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    handle: Res<PersistenceHandle>,
+) {
+    if buttons.pressed(MouseButton::Left) {
+        return;
+    }
+    if let Ok(mut p) = handle.0.lock() {
+        p.sync_layout(&dock.layout);
     }
 }
 
@@ -405,12 +528,14 @@ fn close_on_exit(
     session: Res<Session>,
     handle: Res<PersistenceHandle>,
     training: Res<TrainingUi>,
+    dock: Res<Dock>,
 ) {
     let closing = close_requested.read().count() > 0 || exits.read().count() > 0;
     if closing && let Ok(mut p) = handle.0.lock() {
         if !training.session_swapped() {
             p.sync(&session);
         }
+        p.sync_layout(&dock.layout);
         p.close();
     }
 }
@@ -595,10 +720,76 @@ mod tests {
             quality: GraphicsQuality::Economic,
             engine_elo: 2100,
             engine_user_side: Color::Black,
+            view: ViewState {
+                focus: true,
+                fullscreen: true,
+            },
         };
         p.sync_prefs(custom);
         let p2 = Persistence::new(p.into_store());
         assert_eq!(p2.load_prefs(), custom);
+    }
+
+    /// UI-02: layout, tamanhos e visibilidade persistem no SQLite e voltam ao reabrir.
+    #[test]
+    fn dock_layout_round_trips_through_sqlite() {
+        use crate::dock::ids;
+        let mut p = new_persistence();
+        assert_eq!(p.load_layout(), DockLayout::default(), "banco novo: padrão");
+        let mut layout = DockLayout {
+            width: 360.0,
+            ..DockLayout::default()
+        };
+        layout.set_visible(ids::NOTATION, false);
+        layout.set_visible(ids::CLOCK, false);
+        layout.set_visible(ids::STUDY, false);
+        p.sync_layout(&layout);
+        let mut p2 = Persistence::new(p.into_store());
+        let back = p2.load_layout();
+        assert_eq!(back, layout);
+        assert_eq!(back.width, 360.0);
+        assert!(!back.is_visible(ids::NOTATION));
+        assert!(!back.is_visible(ids::CLOCK));
+        assert!(!back.is_visible(ids::STUDY));
+        assert!(back.is_visible(ids::CAPTURED));
+        // Restaurar o padrão também é gravado.
+        p2.sync_layout(&DockLayout::default());
+        let mut p3 = Persistence::new(p2.into_store());
+        assert_eq!(p3.load_layout(), DockLayout::default());
+    }
+
+    /// C2: as Anotações de estudo ficam gravadas por Partida e voltam ao retomar.
+    #[test]
+    fn study_notes_round_trip_per_game() {
+        let mut p = new_persistence();
+        let mut session = p.restore().session;
+        assert!(p.load_notes().is_empty());
+        play(&mut session, "e2", "e4");
+        p.sync(&session);
+        let notes = BTreeMap::from([(0, "Início".to_owned()), (1, "Peão do rei".to_owned())]);
+        p.save_notes(&notes);
+        assert_eq!(p.load_notes(), notes);
+        p.close();
+
+        let mut p2 = Persistence::new(p.into_store());
+        let restored = p2.restore();
+        assert!(restored.resumed);
+        assert_eq!(p2.load_notes(), notes, "mesma Partida, mesmas anotações");
+
+        // Outra Partida começa sem anotações e não herda as da anterior.
+        let mut next = restored.session;
+        next.new_game();
+        p2.sync(&next);
+        assert!(p2.load_notes().is_empty());
+    }
+
+    #[test]
+    fn unreadable_dock_layout_falls_back_to_the_default() {
+        let mut p = new_persistence();
+        p.store
+            .set_pref(p.profile, KEY_DOCK_LAYOUT, &json!({"width": "x"}))
+            .unwrap();
+        assert_eq!(p.load_layout(), DockLayout::default());
     }
 
     #[test]

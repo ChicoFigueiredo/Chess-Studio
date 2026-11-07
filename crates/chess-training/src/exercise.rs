@@ -16,10 +16,13 @@ pub enum ExerciseKind {
     Promotion,
     /// Memória de sequência (B15).
     Memory,
+    /// Memória de posição (C11): mostra a Posição, esvazia o tabuleiro e o usuário
+    /// recoloca as peças.
+    MemoryPosition,
 }
 
 impl ExerciseKind {
-    pub const ALL: [ExerciseKind; 7] = [
+    pub const ALL: [ExerciseKind; 8] = [
         ExerciseKind::Stalemate,
         ExerciseKind::Mate,
         ExerciseKind::Check,
@@ -27,6 +30,7 @@ impl ExerciseKind {
         ExerciseKind::Castling,
         ExerciseKind::Promotion,
         ExerciseKind::Memory,
+        ExerciseKind::MemoryPosition,
     ];
 
     /// Identificador estável (coluna `kind` do banco).
@@ -39,6 +43,7 @@ impl ExerciseKind {
             Self::Castling => "castling",
             Self::Promotion => "promotion",
             Self::Memory => "memory",
+            Self::MemoryPosition => "memory_position",
         }
     }
 }
@@ -58,7 +63,27 @@ pub enum Solution {
     GiveCheck,
     /// Tentar o Lance ilegal `uci` e vê-lo recusado cumpre o objetivo.
     RefuseIllegal { uci: String },
+    /// Memória de sequência (TRN-04, DEC-45): o app anima `line` (3 a 8 Lances, dos dois
+    /// lados) a partir do FEN e o usuário a reproduz. `speed_ms` é o tempo de cada Lance.
+    Memorize {
+        line: Vec<String>,
+        #[serde(default = "default_speed_ms")]
+        speed_ms: u32,
+    },
+    /// Memória de posição (C11): o app mostra o FEN do Exercício por `seconds` e o
+    /// usuário recoloca as peças num tabuleiro vazio.
+    MemorizePosition { seconds: u32 },
 }
+
+/// Menor e maior sequência de um Exercício de memória (DEC-45).
+pub const MEMORY_LINE_RANGE: std::ops::RangeInclusive<usize> = 3..=8;
+
+fn default_speed_ms() -> u32 {
+    1200
+}
+
+/// Tempo de estudo aceito num Exercício de memória de posição, em segundos.
+pub const POSITION_STUDY_SECONDS: std::ops::RangeInclusive<u32> = 3..=120;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Exercise {
@@ -81,10 +106,19 @@ pub enum ExerciseError {
     BadVersion,
     InvalidFen(FenError),
     BadMove(String),
-    IllegalLine { index: usize, uci: String },
+    IllegalLine {
+        index: usize,
+        uci: String,
+    },
     LineLength(usize),
     NoSolutionFound(&'static str),
     MoveIsLegal(String),
+    MemoryLength(usize),
+    KindMismatch,
+    /// Tempo de estudo fora de [`POSITION_STUDY_SECONDS`].
+    StudyTime(u32),
+    /// `memorize_position` só vale para o tipo `memory_position` (e vice-versa).
+    PositionKindMismatch,
 }
 
 impl fmt::Display for ExerciseError {
@@ -100,6 +134,19 @@ impl fmt::Display for ExerciseError {
             Self::LineLength(n) => write!(f, "a sequência precisa ter tamanho ímpar (tem {n})"),
             Self::NoSolutionFound(what) => write!(f, "nenhum Lance legal cumpre: {what}"),
             Self::MoveIsLegal(m) => write!(f, "o Lance {m} é legal, mas devia ser ilegal"),
+            Self::MemoryLength(n) => {
+                write!(
+                    f,
+                    "a sequência de memória precisa ter de 3 a 8 Lances (tem {n})"
+                )
+            }
+            Self::KindMismatch => {
+                f.write_str("`memorize` só vale para o tipo `memory` (e vice-versa)")
+            }
+            Self::StudyTime(n) => write!(f, "o tempo de estudo ({n} s) deve ficar entre 3 e 120 s"),
+            Self::PositionKindMismatch => f.write_str(
+                "`memorize_position` só vale para o tipo `memory_position` (e vice-versa)",
+            ),
         }
     }
 }
@@ -141,10 +188,40 @@ impl Exercise {
             return Err(ExerciseError::BadVersion);
         }
         let start = self.position().map_err(ExerciseError::InvalidFen)?;
+        if (self.kind == ExerciseKind::Memory) != matches!(self.solution, Solution::Memorize { .. })
+        {
+            return Err(ExerciseError::KindMismatch);
+        }
+        if (self.kind == ExerciseKind::MemoryPosition)
+            != matches!(self.solution, Solution::MemorizePosition { .. })
+        {
+            return Err(ExerciseError::PositionKindMismatch);
+        }
         match &self.solution {
+            Solution::MemorizePosition { seconds } => {
+                if !POSITION_STUDY_SECONDS.contains(seconds) {
+                    return Err(ExerciseError::StudyTime(*seconds));
+                }
+            }
             Solution::Moves { line } => {
                 if line.len() % 2 == 0 {
                     return Err(ExerciseError::LineLength(line.len()));
+                }
+                let mut position = start;
+                for (index, uci) in line.iter().enumerate() {
+                    let mv = parse_move(uci)?;
+                    position = position.play(mv).map_err(|_| ExerciseError::IllegalLine {
+                        index,
+                        uci: uci.clone(),
+                    })?;
+                }
+            }
+            Solution::Memorize { line, speed_ms } => {
+                if !MEMORY_LINE_RANGE.contains(&line.len()) {
+                    return Err(ExerciseError::MemoryLength(line.len()));
+                }
+                if *speed_ms == 0 {
+                    return Err(ExerciseError::EmptyField("speed_ms"));
                 }
                 let mut position = start;
                 for (index, uci) in line.iter().enumerate() {
@@ -184,8 +261,10 @@ impl Exercise {
             return Vec::new();
         };
         match &self.solution {
-            Solution::Moves { line } => line.iter().filter_map(|m| m.parse().ok()).collect(),
-            Solution::RefuseIllegal { .. } => Vec::new(),
+            Solution::Moves { line } | Solution::Memorize { line, .. } => {
+                line.iter().filter_map(|m| m.parse().ok()).collect()
+            }
+            Solution::RefuseIllegal { .. } | Solution::MemorizePosition { .. } => Vec::new(),
             other => first_solution(&start, other).into_iter().collect(),
         }
     }
@@ -201,7 +280,10 @@ pub(crate) fn satisfied(solution: &Solution, after: &CanonicalPosition) -> bool 
         Solution::MateInOne => matches!(after.status(), GameStatus::Checkmate { .. }),
         Solution::ForceStalemate => matches!(after.status(), GameStatus::Stalemate),
         Solution::GiveCheck => after.is_check(),
-        Solution::Moves { .. } | Solution::RefuseIllegal { .. } => false,
+        Solution::Moves { .. }
+        | Solution::RefuseIllegal { .. }
+        | Solution::Memorize { .. }
+        | Solution::MemorizePosition { .. } => false,
     }
 }
 

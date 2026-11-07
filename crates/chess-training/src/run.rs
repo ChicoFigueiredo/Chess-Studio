@@ -2,6 +2,7 @@
 
 use crate::aids::AidsRecord;
 use crate::exercise::{Exercise, ExerciseKind, Solution, satisfied};
+use crate::memory::MemorySummary;
 use chess_core::{Color, Move};
 use chess_game::{Command, EventKind, Game, IllegalReason, Outcome, PolicyKind, Timestamp};
 use serde::{Deserialize, Serialize};
@@ -88,6 +89,12 @@ pub struct RunSummary {
     pub started_at_ms: u64,
     /// Sessão do app em que a Resolução aconteceu (agrupa as métricas).
     pub session: u64,
+    /// Resultado por Lance de uma Resolução de memória (TRN-04); `None` nos demais tipos.
+    #[serde(default)]
+    pub memory: Option<MemorySummary>,
+    /// Só em Exercícios de memória de posição (C11).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position_memory: Option<crate::position_memory::PositionMemorySummary>,
 }
 
 impl RunSummary {
@@ -299,6 +306,8 @@ impl ExerciseRun {
             final_fen: snapshot.position.to_fen(),
             started_at_ms: self.started_at_ms,
             session: 0,
+            memory: None,
+            position_memory: None,
         }
     }
 }

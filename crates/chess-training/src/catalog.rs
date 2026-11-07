@@ -11,7 +11,7 @@
 //! ```
 //!
 //! `solution.type`: `moves` (+ `line`), `mate_in_one`, `force_stalemate`, `give_check`,
-//! `refuse_illegal` (+ `uci`). Cada Exercício é validado pelo chess-core ao carregar.
+//! `refuse_illegal` (+ `uci`), `memorize` (+ `line` de 3 a 8 Lances e `speed_ms`, só no tipo `memory`). Cada Exercício é validado pelo chess-core ao carregar.
 
 use crate::exercise::{Exercise, ExerciseError};
 use serde::Deserialize;
@@ -22,7 +22,31 @@ use std::path::Path;
 /// Versão do formato de arquivo que esta build lê.
 pub const FORMAT_VERSION: u32 = 1;
 
-const BUNDLED: &[(&str, &str)] = &[("basicos.json", include_str!("../exercises/basicos.json"))];
+const BUNDLED: &[(&str, &str)] = &[
+    (
+        "finais-afogamento.json",
+        include_str!("../exercises/finais-afogamento.json"),
+    ),
+    (
+        "mates-basicos.json",
+        include_str!("../exercises/mates-basicos.json"),
+    ),
+    ("xeques.json", include_str!("../exercises/xeques.json")),
+    (
+        "memoria-posicao.json",
+        include_str!("../exercises/memoria-posicao.json"),
+    ),
+    (
+        "regras-peao.json",
+        include_str!("../exercises/regras-peao.json"),
+    ),
+    ("roque.json", include_str!("../exercises/roque.json")),
+    (
+        "promocoes.json",
+        include_str!("../exercises/promocoes.json"),
+    ),
+    ("memoria.json", include_str!("../exercises/memoria.json")),
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]

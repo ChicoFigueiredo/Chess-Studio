@@ -43,12 +43,17 @@ fn install_fonts(mut contexts: EguiContexts, mut done: Local<bool>) -> Result {
             "../assets/fonts/NotoSans-Regular.ttf"
         ))),
     );
+    // Glifos de xadrez (U+265A..265F) para a bandeja do editor de posição (C11).
+    fonts.font_data.insert(
+        "noto-chess".to_owned(),
+        std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
+            "../assets/fonts/NotoSansSymbols2-chess.ttf"
+        ))),
+    );
     for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
-        fonts
-            .families
-            .entry(family)
-            .or_default()
-            .push("noto-sans".to_owned());
+        let list = fonts.families.entry(family).or_default();
+        list.push("noto-sans".to_owned());
+        list.push("noto-chess".to_owned());
     }
     contexts.ctx_mut()?.set_fonts(fonts);
     *done = true;
@@ -106,6 +111,7 @@ fn reason_key(reason: EndReason) -> &'static str {
         EndReason::Checkmate => "game-reason-checkmate",
         EndReason::Stalemate => "game-reason-stalemate",
         EndReason::InsufficientMaterial => "game-reason-insufficient-material",
+        EndReason::DeadPosition => "game-reason-dead-position",
         EndReason::ThreefoldRepetition => "game-reason-threefold",
         EndReason::FivefoldRepetition => "game-reason-fivefold",
         EndReason::FiftyMoveRule => "game-reason-fifty-move",
@@ -143,14 +149,19 @@ fn info_panel(
     capture: Option<Res<CaptureMode>>,
     mut engine_ui: ResMut<EngineUi>,
     aids: Res<crate::aids::AidSettings>,
+    mut dock: ResMut<crate::dock::Dock>,
+    registry: Res<crate::dock::PanelRegistry>,
+    mut view_state: ResMut<crate::focus::ViewState>,
 ) -> Result {
-    if capture.as_ref().is_some_and(|c| !c.show_panel) {
+    // No modo Foco a janela principal some (as janelas da Partida, como a promoção, ficam).
+    if view_state.focus || capture.as_ref().is_some_and(|c| !c.show_panel) {
         return Ok(());
     }
     // Edita cópias: tomar `&mut` dos recursos todo quadro marcaria `is_changed` e faria os
     // sistemas de Apresentação e qualidade reaplicarem tudo a cada quadro.
     let mut chosen_presentation = *presentation;
     let mut chosen_quality = *quality;
+    let mut chosen_view = *view_state;
     egui::Window::new(i18n.t("app-title")).show(contexts.ctx_mut()?, |ui| {
         ui.horizontal(|ui| {
             for p in Presentation::ALL {
@@ -168,6 +179,10 @@ fn info_panel(
         game_section(ui, &i18n, &mut session, &mut dialog, &aids);
         engine_section(ui, &i18n, &mut session, &mut engine_ui);
         ui.separator();
+        crate::dock::panels_section(ui, &i18n, &mut dock, &registry, &session);
+        ui.separator();
+        crate::focus::view_section(ui, &i18n, &mut chosen_view);
+        ui.separator();
         ui.label(i18n.t_with(
             "square-hover",
             &[("square", &square_name(&i18n, hovered.0))],
@@ -181,9 +196,13 @@ fn info_panel(
         ui.small(i18n.t("help-zoom"));
         ui.small(i18n.t("help-presentation"));
         ui.small(i18n.t("help-game"));
+        ui.small(i18n.t("help-view"));
     });
     if chosen_presentation != *presentation {
         *presentation = chosen_presentation;
+    }
+    if chosen_view != *view_state {
+        *view_state = chosen_view;
     }
     if chosen_quality != *quality {
         *quality = chosen_quality;
@@ -217,8 +236,8 @@ fn game_section(
         Some(last) => ui.label(i18n.t_with("game-last-move", &[("san", &last.san)])),
         None => ui.label(i18n.t("game-no-moves")),
     };
-    // O aviso de Lance ilegal segue a política de explicação (`aids_panel`).
-    crate::fide_panel::arbitration_section(ui, i18n, session);
+    // O aviso de Lance ilegal segue a política de explicação (`aids_panel`); relógio e
+    // arbitragem vivem nos painéis do dock.
     ui.horizontal(|ui| {
         if ui
             .add_enabled(snapshot.can_undo, egui::Button::new(i18n.t("button-undo")))

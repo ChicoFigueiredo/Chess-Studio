@@ -193,6 +193,22 @@ fn bandeira_sem_material_de_mate_do_adversario_e_empate() {
 }
 
 #[test]
+fn bandeira_em_posicao_morta_por_bloqueio_de_pecoes_e_empate() {
+    // Art. 6.9: as pretas têm peões, mas nenhuma série de lances legais dá mate.
+    let game = timed(
+        GameSetup::from_fen(
+            PolicyKind::Assisted,
+            "4k3/8/1p1p1p1p/pPpPpPpP/P1P1P1P1/8/8/4K3 w - - 0 1",
+        )
+        .unwrap(),
+        10_000,
+        0,
+    );
+    let flag = game.clock_at(at(10_000)).unwrap().flag.unwrap();
+    assert_eq!(flag.result, GameResult::Draw);
+}
+
+#[test]
 fn bandeira_com_material_de_mate_e_derrota_mesmo_com_pouco_material() {
     // Pretas têm rei e torre: podem dar mate; a bandeira branca é derrota.
     let game = timed(

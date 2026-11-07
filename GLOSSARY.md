@@ -117,6 +117,14 @@ _Evitar_: preset de ajuda, nível de dificuldade
 Sobreposição virtual de treino ou análise presa às casas e peças; não envolve câmera física.
 _Evitar_: realidade aumentada
 
+**Tela cheia** (_en_: `Fullscreen`):
+Janela sem bordas ocupando o monitor inteiro (F11 ou item de menu); estado de interface, independente do modo Foco.
+_Evitar_: maximizar
+
+**Modo Foco** (_en_: `FocusMode`):
+Estado de interface que esconde o dock e a janela principal, deixando só tabuleiro, mesa, relógio e controles mínimos; nunca altera turno, relógio ou posição, e é independente da Tela cheia.
+_Evitar_: modo zen, tela limpa
+
 ## Treinamento
 
 **Exercício** (_en_: `Exercise`):
@@ -126,6 +134,10 @@ _Evitar_: puzzle, problema, desafio
 **Resolução** (_en_: `ExerciseRun`):
 Uma tentativa do usuário de resolver um Exercício, com resultado, Auxílios usados e duração.
 _Evitar_: tentativa, attempt
+
+**Perfil de treino** (_en_: `TrainingProfile`):
+Sequência nomeada de Exercícios, cada passo com uma dificuldade (ex.: "Regras básicas"); o avanço é gravado por jogador. Não confundir com Perfil de auxílios.
+_Evitar_: trilha, plano
 
 ## Engine
 

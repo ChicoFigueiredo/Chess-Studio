@@ -341,3 +341,26 @@ fn python_chess_reabre_o_pgn_exportado() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn anotacoes_de_estudo_viram_comentarios_depois_do_lance() {
+    let mut game = assisted();
+    let mut clock = FakeClock::new();
+    play_all(&mut game, &mut clock, "e4 e5 Nf3");
+    let with_notes = |include_comments| PgnOptions {
+        study_notes: vec![
+            (1, "Abertura   central } forte".into()),
+            (3, "Ataca e5".into()),
+            (2, "   ".into()),
+        ],
+        include_comments,
+        ..opts()
+    };
+    let pgn = game.to_pgn(&with_notes(true));
+    assert!(
+        pgn.contains("1. e4 {Abertura central ) forte} 1... e5 2. Nf3 {Ataca e5} *"),
+        "{pgn}"
+    );
+    let plain = game.to_pgn(&with_notes(false));
+    assert!(!plain.contains('{'), "{plain}");
+}

@@ -9,6 +9,8 @@ use unic_langid::LanguageIdentifier;
 
 const PT_BR: &[(&str, &str)] = &[
     ("app.ftl", include_str!("../assets/i18n/pt-BR/app.ftl")),
+    ("dock.ftl", include_str!("../assets/i18n/pt-BR/dock.ftl")),
+    ("focus.ftl", include_str!("../assets/i18n/pt-BR/focus.ftl")),
     ("game.ftl", include_str!("../assets/i18n/pt-BR/game.ftl")),
     (
         "engine.ftl",
@@ -18,6 +20,10 @@ const PT_BR: &[(&str, &str)] = &[
     (
         "wizard.ftl",
         include_str!("../assets/i18n/pt-BR/wizard.ftl"),
+    ),
+    (
+        "manager.ftl",
+        include_str!("../assets/i18n/pt-BR/manager.ftl"),
     ),
     ("fide.ftl", include_str!("../assets/i18n/pt-BR/fide.ftl")),
     (
@@ -153,7 +159,7 @@ mod tests {
     /// Todo literal do código que parece um identificador de mensagem existe no .ftl.
     #[test]
     fn every_message_id_used_in_the_source_exists() {
-        const PREFIXES: [&str; 20] = [
+        const PREFIXES: [&str; 22] = [
             "app-",
             "presentation-",
             "quality-",
@@ -174,6 +180,8 @@ mod tests {
             "clock-",
             "fide-",
             "newgame-",
+            "dock-",
+            "notation-",
         ];
         let i18n = I18n::pt_br();
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");

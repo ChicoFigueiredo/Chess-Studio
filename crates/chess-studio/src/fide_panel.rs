@@ -6,11 +6,12 @@
 //! é o mesmo para o Lance legal feito e para a casa ilegal; quem retrata um Lance legal
 //! recebe a recusa do art. 4.7, como a arbitragem na mesa.
 
-use crate::clock::clock_text;
+use crate::dock::{PanelAccess, PanelDef, ids};
 use crate::i18n::I18n;
 use crate::session::{Notice, Session};
+use bevy::prelude::*;
 use bevy_egui::egui;
-use chess_core::{Color as Side, Move, Square};
+use chess_core::{Move, Square};
 use chess_game::Snapshot;
 
 fn squares_text(squares: impl IntoIterator<Item = Square>) -> String {
@@ -71,33 +72,38 @@ fn notice_text(i18n: &I18n, notice: &Notice) -> String {
     }
 }
 
-/// Seção do painel: relógio em qualquer Política com controle de tempo; o restante só nas
-/// competitivas.
+/// Painel Arbitragem do dock (só faz sentido nas Políticas competitivas). Os tempos vivem
+/// no painel Relógio; aqui ficam o estado da vez, as Infrações, Pausar, Retratar e Reclamar.
+fn arbitration_panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
+    let Some(mut session) = world.get_resource_mut::<Session>() else {
+        return;
+    };
+    if !session.is_competitive() {
+        ui.weak(i18n.t("arbitration-not-competitive"));
+        return;
+    }
+    arbitration_section(ui, i18n, &mut session);
+}
+
+pub struct ArbitrationPlugin;
+
+impl Plugin for ArbitrationPlugin {
+    fn build(&self, app: &mut App) {
+        crate::dock::register_panel(
+            app,
+            PanelDef {
+                id: ids::ARBITRATION,
+                label_key: "dock-panel-arbitration",
+                access: PanelAccess::Always,
+                ui: arbitration_panel_ui,
+            },
+        );
+    }
+}
+
+/// Estado da vez, Infrações e ações da arbitragem (Políticas competitivas).
 pub fn arbitration_section(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session) {
     let snapshot = session.snapshot().clone();
-    if let Some(reading) = session.clock_reading() {
-        ui.horizontal(|ui| {
-            for side in [Side::White, Side::Black] {
-                let running = reading.running == Some(side) && !reading.paused;
-                let text = format!(
-                    "{} {}",
-                    i18n.t(match side {
-                        Side::White => "clock-white",
-                        Side::Black => "clock-black",
-                    }),
-                    clock_text(reading.remaining(side))
-                );
-                ui.label(if running {
-                    egui::RichText::new(text).strong()
-                } else {
-                    egui::RichText::new(text)
-                });
-            }
-        });
-        if snapshot.paused {
-            ui.colored_label(egui::Color32::LIGHT_YELLOW, i18n.t("clock-paused"));
-        }
-    }
     if !session.is_competitive() {
         return;
     }

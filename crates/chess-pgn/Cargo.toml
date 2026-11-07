@@ -1,0 +1,20 @@
+[package]
+name = "chess-pgn"
+description = "Importação e exportação PGN com variações, comentários e NAGs (parser próprio, ADR-0004)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+chess-core.workspace = true
+chess-game.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

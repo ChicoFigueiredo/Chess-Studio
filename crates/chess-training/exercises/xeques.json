@@ -1,0 +1,41 @@
+{
+  "format": 1,
+  "exercises": [
+    {
+      "id": "xeque-001",
+      "kind": "check",
+      "title": "Xeque de torre",
+      "fen": "4k3/8/8/8/8/8/8/R3K3 w - - 0 1",
+      "objective": "Dê xeque ao rei preto.",
+      "solution": {
+        "type": "give_check"
+      },
+      "explanation": "Ra8+ ataca o rei pela oitava fileira. Quem leva xeque precisa sair dele no mesmo Lance (art. 3.9). Aqui o rei pode ir para d7, e7 ou f7, então não é mate.",
+      "version": 1
+    },
+    {
+      "id": "xeque-002",
+      "kind": "check",
+      "title": "Xeque de cavalo com garfo",
+      "fen": "r3k3/8/8/3N4/8/8/8/4K3 w - - 0 1",
+      "objective": "Dê xeque ao rei preto com o cavalo.",
+      "solution": {
+        "type": "give_check"
+      },
+      "explanation": "O cavalo salta em L e dá xeque de uma casa que o rei não ataca. Nc7+ ainda ataca a torre de a8 (um garfo): o rei precisa responder ao xeque e a torre cai. Nf6+ também dá xeque, mas sem garfo (art. 3.9).",
+      "version": 1
+    },
+    {
+      "id": "xeque-003",
+      "kind": "check",
+      "title": "Xeque descoberto",
+      "fen": "4k3/8/8/4B3/8/8/8/4R1K1 w - - 0 1",
+      "objective": "Dê xeque ao rei preto movendo o bispo.",
+      "solution": {
+        "type": "give_check"
+      },
+      "explanation": "O bispo em e5 está entre a torre de e1 e o rei de e8. Ao tirá-lo da coluna e, a torre passa a atacar o rei: é o xeque descoberto. Qualquer Lance do bispo funciona; os que também ameaçam algo, ou dão xeque por conta própria, são ainda mais fortes (art. 3.9).",
+      "version": 1
+    }
+  ]
+}

@@ -10,6 +10,7 @@ publish.workspace = true
 
 [dependencies]
 chess-game.workspace = true
+chess-pgn.workspace = true
 chess-training.workspace = true
 rusqlite.workspace = true
 serde.workspace = true
