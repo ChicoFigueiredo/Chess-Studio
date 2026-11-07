@@ -182,21 +182,53 @@ pub fn advertised_backends(options: &[EngineOption]) -> Vec<String> {
 /// Ordem de preferência da escolha automática, do melhor para o pior, só com backends que
 /// existem no sistema e que a máquina tem chance de rodar.
 pub fn auto_order(os: &str, hardware: Hardware) -> Vec<&'static str> {
-    let _ = (os, hardware);
-    unimplemented!()
+    const NVIDIA_ORDER: &[&str] = &[
+        "cuda-auto",
+        "cuda-fp16",
+        "cudnn-auto",
+        "cudnn-fp16",
+        "cuda",
+        "cudnn",
+        "onnx-cuda",
+        "onnx-trt",
+    ];
+    const CPU_ORDER: &[&str] = &["blas", "eigen", "onnx-cpu"];
+    let mut order: Vec<&'static str> = Vec::new();
+    match (os, hardware.gpu) {
+        (_, Some(GpuVendor::Nvidia)) if os != "macos" => {
+            order.extend(NVIDIA_ORDER);
+            if os == "windows" {
+                // Placa NVIDIA sem o pacote CUDA: o DirectML ainda usa a GPU.
+                order.push("onnx-dml");
+            }
+        }
+        ("windows", Some(_)) => order.push("onnx-dml"),
+        ("macos", Some(GpuVendor::Apple)) => order.push("metal"),
+        // Linux com AMD/Intel e Mac sem Apple Silicon: nenhum backend de GPU que valha o
+        // risco como padrão (OpenCL só por escolha manual).
+        _ => {}
+    }
+    order.extend(CPU_ORDER);
+    order.retain(|id| supported_on(id, os));
+    order
 }
 
 /// Backend recomendado: o primeiro da [`auto_order`] que a Engine anuncia. `None` se a
 /// Engine não anuncia nenhum conhecido (deixe a escolha com ela).
 pub fn recommended_backend(os: &str, hardware: Hardware, advertised: &[String]) -> Option<String> {
-    let _ = (os, hardware, advertised);
-    unimplemented!()
+    auto_order(os, hardware)
+        .into_iter()
+        .find(|id| advertised.iter().any(|a| a.eq_ignore_ascii_case(id)))
+        .map(str::to_owned)
 }
 
 /// Backend de CPU para recuar quando `failed` não subiu: o primeiro de CPU anunciado.
 pub fn fallback_backend(os: &str, advertised: &[String], failed: &str) -> Option<String> {
-    let _ = (os, advertised, failed);
-    unimplemented!()
+    auto_order(os, Hardware { gpu: None })
+        .into_iter()
+        .filter(|id| !id.eq_ignore_ascii_case(failed))
+        .find(|id| advertised.iter().any(|a| a.eq_ignore_ascii_case(id)))
+        .map(str::to_owned)
 }
 
 /// Por que um backend não subiu.
@@ -214,25 +246,104 @@ pub enum BackendProblem {
 
 /// Classifica a saída de erro (stderr/log) da Engine que não subiu.
 pub fn classify_failure(text: &str) -> BackendProblem {
-    let _ = text;
-    unimplemented!()
+    let t = text.to_lowercase();
+    let has = |needles: &[&str]| needles.iter().any(|n| t.contains(n));
+    if has(&["out of memory", "outofmemory", "bad_alloc", "e_outofmemory"]) {
+        BackendProblem::OutOfMemory
+    } else if has(&[
+        "shared librar",
+        "cannot open shared object",
+        "dll was not found",
+        "dll not found",
+        "could not load library",
+        "failed to load library",
+        "libcudart",
+        "libcublas",
+        "libcudnn",
+        "onnxruntime.dll",
+        "directml.dll",
+    ]) {
+        BackendProblem::MissingLibrary
+    } else if has(&[
+        "no cuda-capable",
+        "driver version is insufficient",
+        "cudagetdevicecount",
+        "no cuda device",
+        "no gpu",
+        "d3d12",
+        "no suitable device",
+        "cuda driver",
+    ]) {
+        BackendProblem::NoDevice
+    } else if has(&["unknown backend", "unsupported", "not supported", "not compiled"]) {
+        BackendProblem::Unsupported
+    } else {
+        BackendProblem::Unknown
+    }
 }
 
 /// Frase em pt-BR para o usuário: o backend, o motivo provável e o que acontece a seguir.
 pub fn describe_failure(backend: &str, problem: BackendProblem, fallback: Option<&str>) -> String {
-    let _ = (backend, problem, fallback);
-    unimplemented!()
+    let cause = match problem {
+        BackendProblem::NoDevice => {
+            "a máquina não tem GPU compatível ou o driver está ausente ou desatualizado"
+        }
+        BackendProblem::MissingLibrary => "falta uma biblioteca exigida (driver, CUDA ou DirectML)",
+        BackendProblem::OutOfMemory => "a memória da GPU não foi suficiente para a rede",
+        BackendProblem::Unsupported => "esta build do Lc0 não suporta o backend ou a rede",
+        BackendProblem::Unknown => "a Engine encerrou ao carregar a rede",
+    };
+    match fallback {
+        Some(cpu) => format!("O backend {backend} não subiu: {cause}. Usando {cpu} (CPU)."),
+        None => format!(
+            "O backend {backend} não subiu: {cause}. Escolha outro backend no gerenciador de Engines."
+        ),
+    }
 }
 
 /// Procura GPU na máquina (barato: no máximo uma chamada curta a `nvidia-smi`).
 pub fn detect_hardware() -> Hardware {
-    unimplemented!()
+    if cfg!(target_os = "macos") {
+        let apple = cfg!(target_arch = "aarch64");
+        return Hardware {
+            gpu: apple.then_some(GpuVendor::Apple),
+        };
+    }
+    let nvidia = std::process::Command::new("nvidia-smi")
+        .arg("-L")
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .is_ok_and(|o| o.status.success() && !o.stdout.is_empty());
+    if nvidia {
+        return Hardware {
+            gpu: Some(GpuVendor::Nvidia),
+        };
+    }
+    // Windows: toda máquina com DirectX 12 serve ao DirectML; sem uma API do sistema não há
+    // como saber o fabricante, então assume-se que há GPU (a falha recua para a CPU).
+    Hardware {
+        gpu: cfg!(windows).then_some(GpuVendor::Other),
+    }
 }
 
 /// Como obter o Lc0 em cada sistema (o projeto só publica binários para Windows).
 pub fn lc0_install_help(os: &str) -> &'static str {
-    let _ = os;
-    unimplemented!()
+    match os {
+        "windows" => {
+            "Windows: instale o Lc0 pelo Gerenciador de Engines (build oficial da release \
+             v0.32.1: CPU, DirectML ou CUDA 12)."
+        }
+        "macos" => {
+            "macOS: o projeto não publica binário. Instale com Homebrew (`brew install lc0`) ou \
+             compile o código-fonte com o backend Metal; o app detecta lc0 em /opt/homebrew/bin."
+        }
+        _ => {
+            "Linux: o projeto não publica binário. Instale o pacote da distribuição (lc0, quando \
+             houver) ou compile o código-fonte (meson; -Dplain_cuda para NVIDIA, -Dblas para CPU) \
+             e deixe o executável lc0 no PATH, em ~/.local/bin ou em /usr/local/bin."
+        }
+    }
 }
 
 #[cfg(test)]
