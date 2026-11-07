@@ -56,7 +56,10 @@ fn real_stockfish_analyses_with_multipv_and_switches_position() {
     assert!(update.lines.iter().all(|l| !l.san.is_empty()));
     assert!(matches!(update.lines[0].score, Score::Cp(_)));
     // Mate em 1 para as brancas (Ra8#): o placar é de brancas.
-    let id = ctrl.analyze(PositionSpec::from_fen("6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1"), 1);
+    let id = ctrl.analyze(
+        PositionSpec::from_fen("6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1"),
+        1,
+    );
     let update = reached(&mut ctrl, id, 5, 1);
     assert_eq!(update.lines[0].score, Score::Mate(1));
     assert_eq!(update.lines[0].san[0], "Ra8#");

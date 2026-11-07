@@ -169,10 +169,10 @@ fn emit_info(position: &CanonicalPosition, multipv: usize, depths: u32, mate: bo
         return;
     }
     for depth in 1..=depths {
-        for i in 0..multipv.min(moves.len()) {
+        for (i, first) in moves.iter().enumerate().take(multipv) {
             let mut line = position.clone();
             let mut pv = Vec::new();
-            let mut next = Some(moves[i]);
+            let mut next = Some(*first);
             while let Some(mv) = next {
                 if pv.len() >= 3 {
                     break;
@@ -187,7 +187,8 @@ fn emit_info(position: &CanonicalPosition, multipv: usize, depths: u32, mate: bo
             let score = if mate {
                 String::from("mate 2")
             } else {
-                let cp = 30 + i32::try_from(depth).unwrap_or(0) - 10 * i32::try_from(i).unwrap_or(0);
+                let cp =
+                    30 + i32::try_from(depth).unwrap_or(0) - 10 * i32::try_from(i).unwrap_or(0);
                 format!("cp {cp}")
             };
             say(&format!(

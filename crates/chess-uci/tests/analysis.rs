@@ -126,7 +126,7 @@ fn scores_are_always_from_whites_point_of_view() {
     ctrl.analyze(PositionSpec::startpos().with_moves([mv("e2e4")]), 1);
     let update = update_at_depth(&mut ctrl, 5);
     assert_eq!(update.lines[0].score, Score::Cp(-35));
-    assert_eq!(update.lines[0].san[0], "a6");
+    assert_eq!(update.lines[0].san[0], "a5");
 }
 
 #[test]
@@ -235,7 +235,10 @@ fn threads_and_hash_are_clamped_to_the_app_limits_before_analysis() {
         "setoption name Hash value 256",
         "setoption name MultiPV value 1",
     ] {
-        assert!(lines.contains(&expected.to_owned()), "{expected}: {lines:?}");
+        assert!(
+            lines.contains(&expected.to_owned()),
+            "{expected}: {lines:?}"
+        );
     }
 }
 

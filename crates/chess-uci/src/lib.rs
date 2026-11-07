@@ -13,6 +13,7 @@
 //! cargo run -p chess-uci --bin uci-probe -- --engine "$CHESS_STUDIO_STOCKFISH" --movetime 50 --max-plies 40
 //! ```
 
+mod analysis;
 mod catalog;
 mod config;
 mod controller;
@@ -25,6 +26,9 @@ mod options;
 mod player;
 mod protocol;
 
+pub use analysis::{
+    AnalysisConfig, AnalysisController, AnalysisEvent, AnalysisLine, AnalysisUpdate, Score,
+};
 pub use catalog::{
     ASSETS, ArchiveKind, Asset, Backend, CATALOG, CatalogEntry, LC0_ASSETS, LC0_NETWORKS,
     LC0_VERSION, Network, OFFICIAL_HOSTS, RELEASE_BASE_URL, STOCKFISH_LICENSE_NAME,
@@ -58,5 +62,6 @@ pub use options::{
 };
 pub use player::{DEFAULT_MOVETIME, EnginePlayer, PlayerStatus};
 pub use protocol::{
-    BestMove, Clock, EngineInfo, EngineOption, GoParams, LogEntry, LogSource, PositionSpec,
+    BestMove, Bound, Clock, EngineInfo, EngineOption, GoParams, InfoLine, LogEntry, LogSource,
+    PositionSpec, UciScore,
 };
