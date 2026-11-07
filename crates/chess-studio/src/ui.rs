@@ -152,6 +152,7 @@ fn info_panel(
     mut dock: ResMut<crate::dock::Dock>,
     registry: Res<crate::dock::PanelRegistry>,
     mut view_state: ResMut<crate::focus::ViewState>,
+    mut profiles: ResMut<crate::profiles::InterfaceProfiles>,
 ) -> Result {
     // No modo Foco a janela principal some (as janelas da Partida, como a promoção, ficam).
     if view_state.focus || capture.as_ref().is_some_and(|c| !c.show_panel) {
@@ -162,42 +163,68 @@ fn info_panel(
     let mut chosen_presentation = *presentation;
     let mut chosen_quality = *quality;
     let mut chosen_view = *view_state;
-    egui::Window::new(i18n.t("app-title")).show(contexts.ctx_mut()?, |ui| {
-        ui.horizontal(|ui| {
-            for p in Presentation::ALL {
-                ui.selectable_value(&mut chosen_presentation, p, i18n.t(p.label_key()));
+    let ctx = contexts.ctx_mut()?;
+    let screen = ctx.viewport_rect();
+    let responsive = crate::responsive::responsive_layout(
+        Vec2::new(screen.width(), screen.height()),
+        dock.layout.width,
+    );
+    let compact = responsive.compact;
+    // Janela pequena: a janela principal começa recolhida, rola por dentro e nunca passa da
+    // tela; Nova Partida e o relógio vivem na barra de essenciais (`responsive`).
+    egui::Window::new(i18n.t("app-title"))
+        .default_open(!compact)
+        .max_height(responsive.main_window_max_height)
+        .show(ctx, |ui| {
+            let mut body = |ui: &mut egui::Ui| {
+                ui.horizontal_wrapped(|ui| {
+                    for p in Presentation::ALL {
+                        ui.selectable_value(&mut chosen_presentation, p, i18n.t(p.label_key()));
+                    }
+                });
+                egui::ComboBox::from_label(i18n.t("quality-label"))
+                    .selected_text(i18n.t(chosen_quality.label_key()))
+                    .show_ui(ui, |ui| {
+                        for q in GraphicsQuality::ALL {
+                            ui.selectable_value(&mut chosen_quality, q, i18n.t(q.label_key()));
+                        }
+                    });
+                ui.separator();
+                game_section(ui, &i18n, &mut session, &mut dialog, &aids);
+                engine_section(ui, &i18n, &mut session, &mut engine_ui);
+                ui.separator();
+                crate::dock::panels_section(ui, &i18n, &mut dock, &registry, &session);
+                ui.separator();
+                crate::focus::view_section(ui, &i18n, &mut chosen_view);
+                ui.separator();
+                crate::profiles::profiles_section(ui, &i18n, &mut profiles);
+                if compact {
+                    return;
+                }
+                ui.separator();
+                ui.label(i18n.t_with(
+                    "square-hover",
+                    &[("square", &square_name(&i18n, hovered.0))],
+                ));
+                let view = rig
+                    .view
+                    .map_or_else(|| i18n.t("view-free"), |v| i18n.t(view_key(v)));
+                ui.label(i18n.t_with("view-label", &[("name", &view)]));
+                ui.separator();
+                ui.small(i18n.t("help-camera"));
+                ui.small(i18n.t("help-zoom"));
+                ui.small(i18n.t("help-presentation"));
+                ui.small(i18n.t("help-game"));
+                ui.small(i18n.t("help-view"));
+            };
+            if compact {
+                egui::ScrollArea::vertical()
+                    .max_height(responsive.main_window_max_height - 32.0)
+                    .show(ui, |ui| body(ui));
+            } else {
+                body(ui);
             }
         });
-        egui::ComboBox::from_label(i18n.t("quality-label"))
-            .selected_text(i18n.t(chosen_quality.label_key()))
-            .show_ui(ui, |ui| {
-                for q in GraphicsQuality::ALL {
-                    ui.selectable_value(&mut chosen_quality, q, i18n.t(q.label_key()));
-                }
-            });
-        ui.separator();
-        game_section(ui, &i18n, &mut session, &mut dialog, &aids);
-        engine_section(ui, &i18n, &mut session, &mut engine_ui);
-        ui.separator();
-        crate::dock::panels_section(ui, &i18n, &mut dock, &registry, &session);
-        ui.separator();
-        crate::focus::view_section(ui, &i18n, &mut chosen_view);
-        ui.separator();
-        ui.label(i18n.t_with(
-            "square-hover",
-            &[("square", &square_name(&i18n, hovered.0))],
-        ));
-        let view = rig
-            .view
-            .map_or_else(|| i18n.t("view-free"), |v| i18n.t(view_key(v)));
-        ui.label(i18n.t_with("view-label", &[("name", &view)]));
-        ui.separator();
-        ui.small(i18n.t("help-camera"));
-        ui.small(i18n.t("help-zoom"));
-        ui.small(i18n.t("help-presentation"));
-        ui.small(i18n.t("help-game"));
-        ui.small(i18n.t("help-view"));
-    });
     if chosen_presentation != *presentation {
         *presentation = chosen_presentation;
     }

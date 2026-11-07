@@ -13,6 +13,7 @@ use crate::engine::{EngineUi, MAX_ELO, MIN_ELO};
 use crate::focus::ViewState;
 use crate::play::PlaySet;
 use crate::presentation::{GraphicsQuality, Presentation};
+use crate::profiles::{InterfaceProfiles, ProfilesState};
 use crate::session::Session;
 use crate::training_ui::TrainingUi;
 use bevy::prelude::*;
@@ -37,6 +38,8 @@ const KEY_FULLSCREEN: &str = "fullscreen";
 const KEY_FOCUS: &str = "focus_mode";
 /// Layout do dock de painéis (C1, UI-02): árvore, tamanhos, visibilidade e largura.
 const KEY_DOCK_LAYOUT: &str = "dock_layout";
+/// Perfis de interface (C4, UI-09): o ativo e os salvos pelo usuário.
+const KEY_INTERFACE_PROFILES: &str = "interface_profiles";
 /// Prefixo da chave das Anotações de estudo (C2): uma preferência por Partida.
 const KEY_STUDY_NOTES: &str = "study_notes";
 
@@ -90,6 +93,8 @@ pub struct Persistence {
     saved: Option<SavedPrefs>,
     /// Último layout do dock gravado (ou carregado), para só gravar o que mudou.
     saved_layout: Option<Value>,
+    /// Últimos Perfis de interface gravados (ou carregados).
+    saved_profiles: Option<Value>,
     failing: bool,
 }
 
@@ -124,6 +129,7 @@ impl Persistence {
             was_paused: false,
             saved: None,
             saved_layout: None,
+            saved_profiles: None,
             failing: false,
         }
     }
@@ -314,6 +320,33 @@ impl Persistence {
         }
     }
 
+    /// Perfis de interface gravados; ausente ou ilegível volta ao padrão.
+    pub fn load_profiles(&mut self) -> ProfilesState {
+        let stored = self
+            .store
+            .get_pref(self.profile, KEY_INTERFACE_PROFILES)
+            .ok()
+            .flatten();
+        let profiles = ProfilesState::from_json(stored);
+        self.saved_profiles = Some(profiles.to_json());
+        profiles
+    }
+
+    /// Grava os Perfis de interface se mudaram desde a última chamada.
+    pub fn sync_profiles(&mut self, profiles: &ProfilesState) {
+        let json = profiles.to_json();
+        if self.saved_profiles.as_ref() == Some(&json) {
+            return;
+        }
+        match self
+            .store
+            .set_pref(self.profile, KEY_INTERFACE_PROFILES, &json)
+        {
+            Ok(()) => self.saved_profiles = Some(json),
+            Err(err) => self.report(&err),
+        }
+    }
+
     fn notes_key(&self) -> Option<String> {
         self.current.map(|id| format!("{KEY_STUDY_NOTES}.{}", id.0))
     }
@@ -428,6 +461,7 @@ impl Plugin for PersistencePlugin {
         }
         persistence.saved = Some(prefs);
         let layout = persistence.load_layout();
+        let profiles = persistence.load_profiles();
         let notes =
             crate::study::StudyNotes::loaded(restored.session.epoch(), persistence.load_notes());
         // Os plugins seguintes usam `init_resource`, que preserva estes valores.
@@ -437,6 +471,7 @@ impl Plugin for PersistencePlugin {
             .insert_resource(prefs.quality)
             .insert_resource(prefs.view)
             .insert_resource(Dock::with_layout(layout))
+            .insert_resource(InterfaceProfiles::with_state(profiles))
             .insert_resource(notes)
             .insert_resource(
                 EngineUi::default().with_saved(prefs.engine_user_side, prefs.engine_elo),
@@ -445,7 +480,13 @@ impl Plugin for PersistencePlugin {
             .insert_resource(PersistenceHandle(Mutex::new(persistence)))
             .add_systems(
                 Update,
-                (persist_session, persist_prefs, persist_layout).after(PlaySet),
+                (
+                    persist_session,
+                    persist_prefs,
+                    persist_layout,
+                    persist_profiles,
+                )
+                    .after(PlaySet),
             )
             .add_systems(Update, persist_notes.after(persist_session).after(PlaySet))
             .add_systems(Last, close_on_exit);
@@ -521,6 +562,13 @@ fn persist_layout(
     }
 }
 
+/// Grava os Perfis de interface quando mudam.
+fn persist_profiles(profiles: Res<InterfaceProfiles>, handle: Res<PersistenceHandle>) {
+    if let Ok(mut p) = handle.0.lock() {
+        p.sync_profiles(&profiles.state);
+    }
+}
+
 /// Janela fechada ou saída do app: encerra a sessão da Partida e grava o que faltar.
 fn close_on_exit(
     mut close_requested: MessageReader<WindowCloseRequested>,
@@ -529,6 +577,7 @@ fn close_on_exit(
     handle: Res<PersistenceHandle>,
     training: Res<TrainingUi>,
     dock: Res<Dock>,
+    profiles: Res<InterfaceProfiles>,
 ) {
     let closing = close_requested.read().count() > 0 || exits.read().count() > 0;
     if closing && let Ok(mut p) = handle.0.lock() {
@@ -536,6 +585,7 @@ fn close_on_exit(
             p.sync(&session);
         }
         p.sync_layout(&dock.layout);
+        p.sync_profiles(&profiles.state);
         p.close();
     }
 }
@@ -756,6 +806,35 @@ mod tests {
         p2.sync_layout(&DockLayout::default());
         let mut p3 = Persistence::new(p2.into_store());
         assert_eq!(p3.load_layout(), DockLayout::default());
+    }
+
+    /// UI-09: o perfil ativo e os perfis do usuário persistem e voltam ao reabrir.
+    #[test]
+    fn interface_profiles_round_trip_through_sqlite() {
+        use crate::profiles::{
+            FactoryProfile, InterfaceProfile, InterfaceState, ProfileKey, ProfilesState,
+        };
+        let mut p = new_persistence();
+        assert_eq!(p.load_profiles(), ProfilesState::default(), "banco novo");
+        let mut profiles = ProfilesState {
+            active: ProfileKey::Factory(FactoryProfile::StudyAnalysis),
+            ..ProfilesState::default()
+        };
+        let state = InterfaceState {
+            presentation: Presentation::Technical2d,
+            dock: DockLayout {
+                width: 280.0,
+                ..DockLayout::default()
+            },
+            aids: AidSettings::physical(),
+            focus: true,
+        };
+        profiles
+            .save_user("Aula", InterfaceProfile::capture(&state, Some("Top")))
+            .unwrap();
+        p.sync_profiles(&profiles);
+        let mut p2 = Persistence::new(p.into_store());
+        assert_eq!(p2.load_profiles(), profiles);
     }
 
     /// C2: as Anotações de estudo ficam gravadas por Partida e voltam ao retomar.

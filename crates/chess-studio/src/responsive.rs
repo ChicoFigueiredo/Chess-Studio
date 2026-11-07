@@ -12,7 +12,18 @@
 //!   com o botão de acioná-lo) fica à vista; promoção e "Sair do Foco" já são janelas/áreas
 //!   ancoradas e restritas à tela.
 
+use crate::aids::AidSettings;
+use crate::capture::CaptureMode;
+use crate::clock::{clock_text, side_of_slot};
+use crate::dock::{Dock, MAX_WIDTH, MIN_WIDTH};
+use crate::focus::ViewState;
+use crate::i18n::I18n;
+use crate::new_game::NewGameDialog;
+use crate::presentation::Presentation;
+use crate::session::Session;
 use bevy::prelude::*;
+use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
+use chess_core::Color as Side;
 
 /// Abaixo desta largura o dock é sobreposição recolhível.
 pub const OVERLAY_BELOW: f32 = 720.0;
@@ -45,6 +56,7 @@ pub struct ResponsiveLayout {
 
 impl ResponsiveLayout {
     /// Largura que o dock tira do tabuleiro (zero na sobreposição).
+    #[cfg(test)]
     pub fn board_inset(&self) -> f32 {
         match self.dock {
             DockPlacement::Side { width } => width,
@@ -56,14 +68,125 @@ impl ResponsiveLayout {
 /// Layout para uma janela de `window` pontos; `wanted_dock_width` é a largura que o usuário
 /// escolheu arrastando a borda do dock.
 pub fn responsive_layout(window: Vec2, wanted_dock_width: f32) -> ResponsiveLayout {
-    let _ = (window, wanted_dock_width);
-    todo!()
+    let compact = window.x < SIDE_FROM || window.y < COMPACT_HEIGHT;
+    let dock = if window.x < OVERLAY_BELOW {
+        DockPlacement::Overlay {
+            width: (window.x * 0.85).clamp(MIN_WIDTH, MAX_WIDTH).min(window.x),
+        }
+    } else {
+        let share = if window.x < SIDE_FROM { 0.32 } else { 0.6 };
+        let cap = (window.x * share)
+            .min(window.x - MIN_BOARD_WIDTH)
+            .clamp(MIN_WIDTH, MAX_WIDTH);
+        DockPlacement::Side {
+            width: wanted_dock_width.clamp(MIN_WIDTH, cap),
+        }
+    };
+    ResponsiveLayout {
+        dock,
+        compact,
+        essentials_bar: compact,
+        main_window_max_height: (window.y - 16.0).max(window.y * 0.5),
+    }
+}
+
+pub struct ResponsivePlugin;
+
+impl Plugin for ResponsivePlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(EguiPrimaryContextPass, essentials_bar);
+    }
+}
+
+/// Barra de essenciais das janelas pequenas, sempre sobre o dock e a janela principal:
+/// Nova Partida, "Painéis" (abre/fecha a sobreposição) e, no 2D técnico (sem relógio na
+/// mesa), o relógio com o botão de acioná-lo. No modo Foco quem cuida disso é `focus`.
+#[allow(clippy::too_many_arguments)]
+fn essentials_bar(
+    mut contexts: EguiContexts,
+    i18n: Res<I18n>,
+    view_state: Res<ViewState>,
+    presentation: Res<Presentation>,
+    capture: Option<Res<CaptureMode>>,
+    aids: Res<AidSettings>,
+    mut session: ResMut<Session>,
+    mut dialog: ResMut<NewGameDialog>,
+    mut dock: ResMut<Dock>,
+) -> Result {
+    if view_state.focus || capture.as_ref().is_some_and(|c| !c.show_panel) {
+        return Ok(());
+    }
+    let ctx = contexts.ctx_mut()?;
+    let screen = ctx.viewport_rect();
+    let layout = responsive_layout(
+        Vec2::new(screen.width(), screen.height()),
+        dock.layout.width,
+    );
+    if !layout.essentials_bar {
+        return Ok(());
+    }
+    let overlay = matches!(layout.dock, DockPlacement::Overlay { .. });
+    let mut open_overlay = dock.overlay_open;
+    egui::Area::new(egui::Id::new("essentials-bar"))
+        .order(egui::Order::Foreground)
+        .anchor(egui::Align2::LEFT_BOTTOM, [8.0, -8.0])
+        .show(ctx, |ui| {
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    if ui.button(i18n.t("button-new-game")).clicked() {
+                        dialog.open_from(session.config(), &aids);
+                    }
+                    if overlay {
+                        ui.toggle_value(&mut open_overlay, i18n.t("dock-heading"));
+                    }
+                    if !presentation.is_3d() {
+                        clock_row(ui, &i18n, &mut session);
+                    }
+                });
+            });
+        });
+    if open_overlay != dock.overlay_open {
+        dock.overlay_open = open_overlay;
+    }
+    Ok(())
+}
+
+/// Relógio em uma linha: os dois mostradores e o botão de acioná-lo.
+fn clock_row(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session) {
+    let Some(reading) = session.clock_reading() else {
+        return;
+    };
+    let user = session.user_side();
+    for slot in 0..2 {
+        let side = side_of_slot(user, slot);
+        let running = reading.running == Some(side) && !reading.paused;
+        let text = format!(
+            "{} {}",
+            i18n.t(match side {
+                Side::White => "clock-white",
+                Side::Black => "clock-black",
+            }),
+            clock_text(reading.remaining(side))
+        );
+        let text = egui::RichText::new(text).monospace();
+        ui.label(if running { text.strong() } else { text });
+    }
+    let side_to_move = session.snapshot().side_to_move;
+    if ui
+        .add_enabled(
+            session.can_press_clock(side_to_move),
+            egui::Button::new(i18n.t("clock-press")),
+        )
+        .clicked()
+    {
+        session.press_clock();
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dock::{MAX_WIDTH, MIN_WIDTH};
 
     fn layout(w: f32, h: f32) -> ResponsiveLayout {
         responsive_layout(Vec2::new(w, h), 340.0)
@@ -90,7 +213,7 @@ mod tests {
         let DockPlacement::Side { width } = l.dock else {
             panic!("dock ao lado em 1024x768");
         };
-        assert!(width < 340.0 && width >= MIN_WIDTH, "{width}");
+        assert!(width < 340.0 && (MIN_WIDTH..).contains(&width), "{width}");
         assert!(l.compact && l.essentials_bar);
         assert!(1024.0 - width >= MIN_BOARD_WIDTH);
     }

@@ -10,7 +10,9 @@ use bevy::prelude::*;
 use bevy::render::view::Msaa;
 use bevy_egui::input::EguiWantsInput;
 
-#[derive(Resource, Clone, Copy, Debug, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Resource, Clone, Copy, Debug, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
+)]
 pub enum Presentation {
     #[default]
     Professional3d,
