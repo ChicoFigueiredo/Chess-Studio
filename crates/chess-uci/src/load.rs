@@ -229,6 +229,10 @@ const SETTLE_S: f64 = 2.0;
 /// Recaída dentro deste prazo depois de soltar o nível conta como oscilação.
 const RELAPSE_S: f64 = 30.0;
 const MAX_RECOVER_SCALE: f64 = 6.0;
+/// Segundos de FPS ruim com a análise **pausada** até concluir que a culpa não é dela.
+const FUTILE_AFTER_S: f64 = 8.0;
+/// Quanto tempo a análise fica sem escalar depois dessa conclusão.
+const FUTILE_HOLD_S: f64 = 60.0;
 
 /// Sensibilidade de cada modo.
 struct Tuning {
@@ -275,6 +279,8 @@ pub struct Governor {
     lowered_at_s: Option<f64>,
     recover_scale: f64,
     below: bool,
+    /// Até quando uma pausa que não adiantou segura a análise no nível `Reduced`.
+    futile_until_s: Option<f64>,
 }
 
 /// Nível mais baixo que o modo aceita.
@@ -299,6 +305,7 @@ impl Governor {
             lowered_at_s: None,
             recover_scale: 1.0,
             below: false,
+            futile_until_s: None,
         }
     }
 
@@ -355,6 +362,7 @@ impl Governor {
         self.lowered_at_s = None;
         self.recover_scale = 1.0;
         self.below = false;
+        self.futile_until_s = None;
     }
 
     /// Passa `dt_s` segundos com os quadros `stats`; devolve o novo plano quando muda.
@@ -381,7 +389,19 @@ impl Governor {
         if over {
             self.calm_s = 0.0;
             self.over_s += dt_s;
-            if self.over_s >= tuning.react_s && self.level < Level::Paused {
+            if self.level == Level::Paused && self.over_s >= FUTILE_AFTER_S {
+                // Pausada e o FPS continua ruim: a causa é outra (máquina ocupada). Devolve
+                // a análise, reduzida, e não escala de novo por um tempo.
+                self.level = Level::Reduced;
+                self.futile_until_s = Some(self.clock_s + FUTILE_HOLD_S);
+                return Some(self.changed());
+            }
+            let cap = if self.futile_until_s.is_some_and(|t| self.clock_s < t) {
+                Level::Reduced
+            } else {
+                Level::Paused
+            };
+            if self.over_s >= tuning.react_s && self.level < cap {
                 if self
                     .lowered_at_s
                     .is_some_and(|t| self.clock_s - t < RELAPSE_S)
@@ -521,7 +541,7 @@ mod tests {
     #[test]
     fn it_escalates_one_level_at_a_time_up_to_pause_and_no_further() {
         let mut g = gov(LoadMode::Balanced);
-        let plans = run(&mut g, 60.0, BAD);
+        let plans = run(&mut g, 18.0, BAD);
         let levels: Vec<Level> = plans.iter().map(|p| p.level).collect();
         assert_eq!(
             levels,
@@ -548,6 +568,49 @@ mod tests {
         for pair in at.windows(2) {
             assert!(pair[1] - pair[0] >= 2.0, "passos muito próximos: {at:?}");
         }
+    }
+
+    #[test]
+    fn a_pause_that_does_not_help_is_not_kept_forever() {
+        // O FPS fica ruim por outro motivo (máquina ocupada): pausar a análise não resolve.
+        let mut g = gov(LoadMode::Balanced);
+        let plans = run(&mut g, 120.0, BAD);
+        let levels: Vec<Level> = plans.iter().map(|p| p.level).collect();
+        let paused_at = levels.iter().position(|l| *l == Level::Paused).unwrap();
+        assert_eq!(
+            levels[paused_at + 1],
+            Level::Reduced,
+            "sem melhora, a análise volta ao nível reduzido: {levels:?}"
+        );
+        // Durante a espera não escala de novo; passada a espera, tenta de novo.
+        let held: Vec<Level> = levels[paused_at + 1..].iter().copied().collect();
+        assert!(held.iter().take(1).all(|l| *l == Level::Reduced));
+        assert!(
+            levels[paused_at + 2..]
+                .iter()
+                .any(|l| *l > Level::Reduced),
+            "depois da espera volta a escalar: {levels:?}"
+        );
+    }
+
+    #[test]
+    fn the_hold_after_a_futile_pause_keeps_the_level_at_reduced() {
+        let mut g = gov(LoadMode::Balanced);
+        // Até pausar, mais o tempo de perceber que não adiantou.
+        let mut elapsed = 0.0;
+        while g.level() != Level::Paused {
+            g.observe(0.25, BAD);
+            elapsed += 0.25;
+            assert!(elapsed < 60.0);
+        }
+        while g.level() == Level::Paused {
+            g.observe(0.25, BAD);
+        }
+        assert_eq!(g.level(), Level::Reduced);
+        // Os próximos 50 s de FPS ruim não escalam.
+        let plans = run(&mut g, 50.0, BAD);
+        assert!(plans.is_empty(), "{plans:?}");
+        assert_eq!(g.level(), Level::Reduced);
     }
 
     #[test]
@@ -606,7 +669,7 @@ mod tests {
         let mut balanced = gov(LoadMode::Balanced);
         assert!(run(&mut balanced, 20.0, mild).is_empty());
         let mut light = gov(LoadMode::Light);
-        run(&mut light, 20.0, mild);
+        run(&mut light, 8.0, mild);
         assert!(light.level() > Level::Reduced);
     }
 
