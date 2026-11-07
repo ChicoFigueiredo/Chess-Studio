@@ -160,7 +160,7 @@ fn deleting_a_profile_removes_only_its_data() {
 
 #[test]
 fn the_last_profile_cannot_be_deleted() {
-    let store = Store::open_in_memory().unwrap();
+    let mut store = Store::open_in_memory().unwrap();
     let only = store.default_profile().unwrap();
     assert!(matches!(
         store.delete_profile(only),

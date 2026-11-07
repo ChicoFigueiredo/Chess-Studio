@@ -51,7 +51,8 @@ pub use library::{
 };
 pub use migrations::LATEST_VERSION as LATEST_SCHEMA_VERSION;
 pub use store::{
-    GameId, GameMetadata, GameQuery, GameSummary, OpenedGame, Pragmas, ProfileId, Store,
+    GameId, GameMetadata, GameQuery, GameSummary, MAX_PROFILE_NAME_LEN, OpenedGame, Pragmas,
+    ProfileId, ProfileInfo, Store,
 };
 pub use training::{RunId, RunQuery, StoredRun, UpsertReport};
 
