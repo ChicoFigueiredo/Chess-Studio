@@ -15,6 +15,10 @@ const PT_BR: &[(&str, &str)] = &[
         include_str!("../assets/i18n/pt-BR/profiles.ftl"),
     ),
     ("focus.ftl", include_str!("../assets/i18n/pt-BR/focus.ftl")),
+    (
+        "library.ftl",
+        include_str!("../assets/i18n/pt-BR/library.ftl"),
+    ),
     ("game.ftl", include_str!("../assets/i18n/pt-BR/game.ftl")),
     (
         "engine.ftl",

@@ -166,6 +166,69 @@ CREATE TABLE training_profile_active (
 );
 ";
 
+// Biblioteca pesquisável e posições favoritas (#49). O índice é derivado (reconstruível a
+// partir de `games`/`game_events`/`imported_games`) e preenchido sob demanda, então um banco
+// antigo é indexado no primeiro uso. Só acrescenta tabelas; nada do que existe é alterado (DB-06).
+const V7_LIBRARY: &str = "
+CREATE TABLE library_entries (
+    id         INTEGER PRIMARY KEY,
+    profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    source     TEXT NOT NULL CHECK (source IN ('played', 'imported')),
+    ref_id     INTEGER NOT NULL,
+    -- Muda quando a Partida ganha Eventos ou termina; força a reindexação.
+    signature  INTEGER NOT NULL,
+    white      TEXT,
+    black      TEXT,
+    event      TEXT,
+    date       TEXT,
+    date_lo    TEXT,
+    date_hi    TEXT,
+    players    TEXT NOT NULL DEFAULT '',
+    result     TEXT NOT NULL,
+    reason     TEXT,
+    policy     TEXT,
+    opponent   TEXT,
+    ply_count  INTEGER NOT NULL,
+    opening    TEXT,
+    finished   INTEGER NOT NULL DEFAULT 0 CHECK (finished IN (0, 1)),
+    sort_ms    INTEGER NOT NULL,
+    UNIQUE (source, ref_id)
+);
+CREATE INDEX library_entries_recent ON library_entries (profile_id, sort_ms DESC, id DESC);
+CREATE INDEX library_entries_result ON library_entries (result);
+CREATE INDEX library_entries_policy ON library_entries (policy);
+CREATE INDEX library_entries_dates ON library_entries (date_lo, date_hi);
+
+-- Texto livre: `rowid` = `library_entries.id`.
+CREATE VIRTUAL TABLE library_fts USING fts5(body, tokenize = 'unicode61 remove_diacritics 2');
+
+-- Posições (chave normalizada) de cada Partida: linha principal e variações.
+CREATE TABLE library_positions (
+    entry_id INTEGER NOT NULL REFERENCES library_entries(id) ON DELETE CASCADE,
+    key      TEXT NOT NULL,
+    ply      INTEGER NOT NULL,
+    main     INTEGER NOT NULL CHECK (main IN (0, 1)),
+    PRIMARY KEY (entry_id, key, ply)
+) WITHOUT ROWID;
+CREATE INDEX library_positions_key ON library_positions (key);
+
+CREATE TABLE favorite_positions (
+    id            INTEGER PRIMARY KEY,
+    profile_id    INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    fen           TEXT NOT NULL,
+    position_key  TEXT NOT NULL,
+    name          TEXT NOT NULL,
+    note          TEXT NOT NULL DEFAULT '',
+    origin_source TEXT CHECK (origin_source IN ('played', 'imported')),
+    origin_ref    INTEGER,
+    origin_ply    INTEGER,
+    created_at_ms INTEGER NOT NULL,
+    updated_at_ms INTEGER NOT NULL,
+    UNIQUE (profile_id, position_key)
+);
+CREATE INDEX favorite_positions_recent ON favorite_positions (profile_id, updated_at_ms DESC, id DESC);
+";
+
 /// Migrações em ordem; o índice + 1 é a versão resultante.
 const MIGRATIONS: &[&str] = &[
     V1_CORE,
@@ -174,6 +237,7 @@ const MIGRATIONS: &[&str] = &[
     V4_IMPORTED_GAMES,
     V5_ENGINE_MANAGER,
     V6_TRAINING_PROFILES,
+    V7_LIBRARY,
 ];
 
 /// Versão de esquema desta build.

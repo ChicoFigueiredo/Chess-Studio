@@ -269,6 +269,20 @@ impl Session {
         Ok(())
     }
 
+    /// Abre uma Partida **Assistida de estudo** a partir de um FEN (Biblioteca, #49), qualquer
+    /// que seja a Política da Partida atual. FEN inválido devolve o erro e não altera nada.
+    pub fn study_from_fen(&mut self, fen: &str) -> Result<(), FenError> {
+        let setup = GameSetup::from_fen(PolicyKind::Assisted, fen.trim())?;
+        self.replace_game(Game::new(setup));
+        Ok(())
+    }
+
+    /// Substitui a Partida por outra já pronta (reaberta do banco ou convertida de PGN): época
+    /// nova, para a persistência e as Anotações acompanharem.
+    pub fn open_game(&mut self, game: Game) {
+        self.replace_game(game);
+    }
+
     /// Troca a Partida preservando as preferências de entrada.
     fn replace_game(&mut self, game: Game) {
         self.replace_with(Self::from_game(game));
