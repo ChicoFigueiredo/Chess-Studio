@@ -221,6 +221,10 @@ fn main() {
         }
     }
     if let Some(config) = bench {
+        // `--quality` do benchmark: o recurso que `apply_quality` aplica a todas as câmeras.
+        if let Some(quality) = config.quality {
+            app.insert_resource(quality);
+        }
         app.add_plugins(benchmark::BenchmarkPlugin {
             config,
             vsync: !no_vsync,

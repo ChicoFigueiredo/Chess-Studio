@@ -11,6 +11,8 @@ pub struct Report {
     pub schema_version: u32,
     pub run: RunInfo,
     pub system: SystemInfo,
+    /// Carga da máquina no início e no fim e o marcador `maquina_ocupada`.
+    pub machine: super::machine::MachineLoad,
     pub gpu: Option<GpuInfo>,
     pub frame_time: Option<FrameStats>,
     pub process_ram_mib: Option<SeriesStats>,
@@ -58,6 +60,10 @@ pub struct RunInfo {
     /// Tempo (s) do início do app até a cena pronta; não entra nas estatísticas.
     pub scene_load_seconds: Option<f64>,
     pub preset: String,
+    /// Qualidade gráfica (`economico`, `equilibrado`, `ultra`).
+    pub quality: String,
+    /// HUD virtual ligado (`--hud`).
+    pub hud: bool,
     /// `ativa` ou `ociosa`. Hoje só registra o campo (a Engine real chega no B9).
     pub engine: String,
     pub engine_integrated: bool,
@@ -148,10 +154,12 @@ pub fn summary_text(r: &Report) -> String {
     );
     let _ = writeln!(
         s,
-        "{}x{} | preset {} | engine {} | present {} | {:.0} s medidos",
+        "{}x{} | preset {} | qualidade {} | HUD {} | engine {} | present {} | {:.0} s medidos",
         r.run.window_width,
         r.run.window_height,
         r.run.preset,
+        r.run.quality,
+        if r.run.hud { "ligado" } else { "desligado" },
         r.run.engine,
         r.run.present_mode,
         r.run.measured_seconds
@@ -162,6 +170,7 @@ pub fn summary_text(r: &Report) -> String {
         "CPU: {} ({} threads), RAM total {:.0} MiB",
         r.system.cpu_brand, r.system.cpu_logical_cores, r.system.ram_total_mib
     );
+    let _ = writeln!(s, "{}", r.machine.summary());
     match &r.gpu {
         Some(g) => {
             let _ = writeln!(

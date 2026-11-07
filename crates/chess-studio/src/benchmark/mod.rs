@@ -15,6 +15,7 @@
 //! - CPU do processo: 100% = um núcleo lógico inteiro (pode passar de 100%).
 
 mod config;
+mod machine;
 mod phases;
 mod report;
 mod route;
@@ -71,6 +72,9 @@ struct Bench {
     phase_now: Option<usize>,
     phase_backend: Vec<Option<String>>,
     load_avg_start: Option<f64>,
+    /// Carga do sistema na primeira amostra e na última.
+    load_start: Option<machine::LoadSample>,
+    load_end: Option<machine::LoadSample>,
     vram_before_mib: Option<f64>,
     /// Tempo até a cena ficar pronta (B22), fora da medição.
     scene_load_s: Option<f64>,
@@ -230,10 +234,13 @@ impl Plugin for BenchmarkPlugin {
             phase_now: None,
             phase_backend,
             load_avg_start: System::load_average().one.into(),
+            load_start: None,
+            load_end: None,
             vram_before_mib,
             scene_load_s: None,
         })
         .add_systems(PostStartup, apply_preset)
+        .add_systems(Startup, apply_hud)
         .add_systems(Update, drive_camera.before(CameraSet))
         .add_systems(Update, drive_phases)
         .add_systems(Last, collect);
@@ -277,6 +284,13 @@ fn parse_nvidia(text: &str) -> Option<NvidiaSample> {
         total_mib: fields.next()?.ok()?,
         util_percent: fields.next()?.ok()?,
     })
+}
+
+/// `--hud`: liga o HUD virtual com todos os elementos padrão (perfil Análise).
+fn apply_hud(bench: Res<Bench>, mut hud: ResMut<crate::hud::HudSettings>) {
+    if bench.cfg.hud {
+        *hud = crate::hud::HudSettings::analysis();
+    }
 }
 
 /// Preset `economico`: sem MSAA e sem sombras. `equilibrado` mantém os padrões da cena.
@@ -378,7 +392,21 @@ fn collect(
     }
 }
 
+/// Carga do sistema agora. CPU do sistema = janela desde a última chamada (~1 s).
+fn read_load(sys: &mut System) -> machine::LoadSample {
+    sys.refresh_cpu_all();
+    // Windows não tem load average: o `sysinfo` devolve zeros, que seriam enganosos.
+    let load = (!cfg!(windows)).then(|| System::load_average().one);
+    machine::LoadSample {
+        load_average_1m: load,
+        system_cpu_percent: Some(f64::from(sys.global_cpu_usage())),
+    }
+}
+
 fn take_sample(bench: &mut Bench, t: f64, analysis: &Analysis) {
+    let load = read_load(&mut bench.sys);
+    bench.load_start.get_or_insert(load);
+    bench.load_end = Some(load);
     let pid = bench.pid;
     bench.sys.refresh_processes_specifics(
         ProcessesToUpdate::Some(&[pid]),
@@ -444,8 +472,21 @@ fn finish(bench: &mut Bench, width: u32, height: u32) -> std::io::Result<PathBuf
     let mut sys = System::new();
     sys.refresh_memory();
     sys.refresh_cpu_all();
+    let end_load = read_load(&mut bench.sys);
+    let machine = machine::MachineLoad::new(
+        bench.load_start.unwrap_or(end_load),
+        bench.load_end.unwrap_or(end_load),
+        sys.cpus().len(),
+    );
+    if machine.maquina_ocupada {
+        notes.push(
+            "Máquina ocupada durante a medição (machine.maquina_ocupada): FPS e frame time podem estar subestimados."
+                .into(),
+        );
+    }
     let report = Report {
-        schema_version: 1,
+        schema_version: 2,
+        machine,
         run: RunInfo {
             app_version: env!("CARGO_PKG_VERSION").into(),
             git_commit: env!("CHESS_STUDIO_GIT_COMMIT").into(),
@@ -455,6 +496,8 @@ fn finish(bench: &mut Bench, width: u32, height: u32) -> std::io::Result<PathBuf
             warmup_seconds: WARMUP_S,
             scene_load_seconds: bench.scene_load_s,
             preset: bench.cfg.preset.label().into(),
+            quality: config::quality_label(bench.cfg.quality.unwrap_or_default()).into(),
+            hud: bench.cfg.hud,
             engine: bench.cfg.engine.label().into(),
             engine_integrated: bench.cfg.engine == config::EngineMode::Active,
             present_mode: if bench.vsync { "vsync" } else { "sem-vsync" }.into(),
