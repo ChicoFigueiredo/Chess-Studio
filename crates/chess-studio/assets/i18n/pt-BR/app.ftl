@@ -27,3 +27,5 @@ quality-effects-hint = Realce suave nas partes mais claras da cena. Só no Ultra
 hover-highlight = Realce ao passar o mouse
 hover-highlight-hint = Realça a peça que você pode mover quando o ponteiro passa sobre ela. Não mostra destinos nem legalidade e não é Auxílio: o Perfil Jogo físico não o desliga.
 quality-effects-unavailable = Esta GPU não suporta os efeitos extras com o MSAA do Ultra; a qualidade segue sem eles.
+board-coordinates = Coordenadas no tabuleiro
+board-coordinates-hint = Mostra as letras a–h e os números 1–8 nas bordas do tabuleiro, nas três Apresentações. Não é Auxílio e não interfere nos toques nem na câmera.

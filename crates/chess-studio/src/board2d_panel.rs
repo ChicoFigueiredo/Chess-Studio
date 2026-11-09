@@ -57,10 +57,11 @@ pub fn orientation_for(yaw: f32, three_d: bool) -> Orientation {
     }
 }
 
-/// Ponto único para ligar as coordenadas à preferência de coordenadas (#144) quando ela
-/// existir. Hoje o tabuleiro principal as mostra sempre, e o painel segue.
-pub fn show_coordinates() -> bool {
-    true
+/// Coordenadas nas bordas do painel: seguem a opção "Coordenadas no tabuleiro" (#144).
+pub fn show_coordinates(world: &World) -> bool {
+    world
+        .get_resource::<crate::coordinates::BoardCoordinates>()
+        .is_none_or(|c| c.0)
 }
 
 /// Retângulo da casa dentro do tabuleiro `board` (quadrado).
@@ -418,7 +419,7 @@ fn panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
         &pieces,
         &marks,
         dragged,
-        show_coordinates(),
+        show_coordinates(world),
     );
 
     let frame = world.get_resource::<FrameCount>().map_or(0, |f| f.0);

@@ -163,6 +163,7 @@ struct Applied<'w> {
     presentation: ResMut<'w, Presentation>,
     quality: ResMut<'w, GraphicsQuality>,
     effects: ResMut<'w, UltraEffects>,
+    coordinates: ResMut<'w, crate::coordinates::BoardCoordinates>,
     hover: ResMut<'w, crate::hover::HoverHighlight>,
     view: ResMut<'w, ViewState>,
     dock: ResMut<'w, Dock>,
@@ -190,6 +191,7 @@ impl Applied<'_> {
         *self.presentation = prefs.presentation;
         *self.quality = prefs.quality;
         *self.effects = prefs.ultra_effects;
+        *self.coordinates = prefs.coordinates;
         *self.hover = prefs.hover_highlight;
         *self.view = prefs.view;
         self.dock.set_layout(layout);

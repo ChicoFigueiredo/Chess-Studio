@@ -18,6 +18,7 @@ mod capture;
 mod captured;
 mod clock;
 mod controls;
+mod coordinates;
 mod dock;
 mod end_game;
 mod engine;
@@ -198,6 +199,7 @@ fn main() {
     ));
     app.add_plugins((hud::HudPlugin, hud_draw::HudDrawPlugin));
     app.add_plugins(board2d_panel::Board2dPanelPlugin);
+    app.add_plugins(coordinates::CoordinatesPlugin);
     app.add_plugins(end_game::EndGamePlugin);
     app.add_plugins(training_ui::TrainingPlugin);
     app.add_plugins(library_ui::LibraryPlugin);
@@ -216,6 +218,9 @@ fn main() {
         let manager = std::env::args().any(|a| a == "--profile-manager");
         if picker || manager {
             app.insert_resource(local_profiles::LocalProfiles::sample(picker, manager));
+        }
+        if std::env::args().any(|a| a == "--no-coords") {
+            app.insert_resource(coordinates::BoardCoordinates(false));
         }
         match option_value("--quality").as_deref() {
             Some("economic") => app.insert_resource(presentation::GraphicsQuality::Economic),

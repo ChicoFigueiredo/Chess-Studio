@@ -207,8 +207,10 @@ fn observe_scene(
     clock: Query<(), With<ClockRoot>>,
 ) {
     let texture_ok = |tex: &Option<Handle<Image>>| {
+        // Texturas geradas em código (atlas das coordenadas) não passam pelo AssetServer:
+        // já nascem prontas e nunca ficariam "carregadas" para ele.
         tex.as_ref()
-            .is_none_or(|h| assets.is_loaded_with_dependencies(h.id()))
+            .is_none_or(|h| h.path().is_none() || assets.is_loaded_with_dependencies(h.id()))
     };
     let textures_loaded = materials.iter().all(|(_, m)| {
         texture_ok(&m.base_color_texture)

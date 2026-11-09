@@ -8,6 +8,7 @@
 //! abrir, o app segue jogando sem persistência (aviso no log).
 
 use crate::aids::AidSettings;
+use crate::coordinates::BoardCoordinates;
 use crate::dock::{Dock, DockLayout};
 use crate::engine::{EngineUi, MAX_ELO, MIN_ELO};
 use crate::focus::ViewState;
@@ -49,6 +50,8 @@ const KEY_INTERFACE_PROFILES: &str = "interface_profiles";
 const KEY_CONTROLS: &str = "controls";
 /// Efeitos opcionais da qualidade Ultra (US-30): ligados ou desligados.
 const KEY_ULTRA_EFFECTS: &str = "ultra_effects";
+/// Coordenadas a–h / 1–8 nas bordas do tabuleiro (C16): ligadas ou desligadas.
+const KEY_COORDINATES: &str = "board_coordinates";
 /// Realce ao passar o mouse (C15): afordância de interface, fora dos Auxílios.
 const KEY_HOVER_HIGHLIGHT: &str = "hover_highlight";
 /// Prefixo da chave das Anotações de estudo (C2): uma preferência por Partida.
@@ -70,6 +73,8 @@ pub struct SavedPrefs {
     pub view: ViewState,
     /// Efeitos opcionais do Ultra (bloom suave).
     pub ultra_effects: UltraEffects,
+    /// Coordenadas nas bordas do tabuleiro (C16).
+    pub coordinates: BoardCoordinates,
     /// Realce da peça sob o cursor (ligado por padrão; não é Auxílio).
     pub hover_highlight: HoverHighlight,
 }
@@ -86,6 +91,7 @@ impl Default for SavedPrefs {
             engine_user_side: Color::White,
             view: ViewState::default(),
             ultra_effects: UltraEffects::default(),
+            coordinates: BoardCoordinates::default(),
             hover_highlight: HoverHighlight::default(),
         }
     }
@@ -490,6 +496,11 @@ impl Persistence {
                     .and_then(|v| v.as_bool())
                     .unwrap_or(defaults.ultra_effects.0),
             ),
+            coordinates: BoardCoordinates(
+                get(KEY_COORDINATES)
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(defaults.coordinates.0),
+            ),
             hover_highlight: HoverHighlight(
                 get(KEY_HOVER_HIGHLIGHT)
                     .and_then(|v| v.as_bool())
@@ -710,6 +721,9 @@ impl Persistence {
         if before.ultra_effects != now.ultra_effects {
             writes.push((KEY_ULTRA_EFFECTS, json!(now.ultra_effects.0)));
         }
+        if before.coordinates != now.coordinates {
+            writes.push((KEY_COORDINATES, json!(now.coordinates.0)));
+        }
         if before.hover_highlight != now.hover_highlight {
             writes.push((KEY_HOVER_HIGHLIGHT, json!(now.hover_highlight.0)));
         }
@@ -810,6 +824,7 @@ impl Plugin for PersistencePlugin {
             .insert_resource(prefs.presentation)
             .insert_resource(prefs.quality)
             .insert_resource(prefs.ultra_effects)
+            .insert_resource(prefs.coordinates)
             .insert_resource(prefs.hover_highlight)
             .insert_resource(crate::controls::Controls::with_map(controls))
             .insert_resource(local_profiles)
@@ -868,6 +883,7 @@ fn persist_prefs(
     presentation: Res<Presentation>,
     quality: Res<GraphicsQuality>,
     ultra_effects: Res<UltraEffects>,
+    coordinates: Res<BoardCoordinates>,
     hover_highlight: Res<HoverHighlight>,
     engine_ui: Res<EngineUi>,
     view: Res<ViewState>,
@@ -884,6 +900,7 @@ fn persist_prefs(
             engine_user_side: engine_ui.user_side(),
             view: *view,
             ultra_effects: *ultra_effects,
+            coordinates: *coordinates,
             hover_highlight: *hover_highlight,
         });
     }
@@ -1287,11 +1304,29 @@ mod tests {
                 fullscreen: true,
             },
             ultra_effects: UltraEffects(false),
+            coordinates: BoardCoordinates(false),
             hover_highlight: HoverHighlight(false),
         };
         p.sync_prefs(custom);
         let p2 = Persistence::new(p.into_store());
         assert_eq!(p2.load_prefs(), custom);
+    }
+
+    /// C16: as coordenadas vêm ligadas, e desligar sobrevive ao reabrir; valor ilegível volta ao padrão.
+    #[test]
+    fn board_coordinates_default_on_and_persist_when_turned_off() {
+        let mut p = new_persistence();
+        assert!(p.load_prefs().coordinates.0);
+        p.sync_prefs(SavedPrefs {
+            coordinates: BoardCoordinates(false),
+            ..SavedPrefs::default()
+        });
+        let p2 = Persistence::new(p.into_store());
+        assert!(!p2.load_prefs().coordinates.0);
+        p2.store
+            .set_pref(p2.profile, KEY_COORDINATES, &json!("lixo"))
+            .unwrap();
+        assert!(p2.load_prefs().coordinates.0);
     }
 
     /// UI-02: layout, tamanhos e visibilidade persistem no SQLite e voltam ao reabrir.

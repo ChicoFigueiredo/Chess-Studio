@@ -46,10 +46,12 @@ pub enum Action {
     ToggleFocus,
     /// Liga e desliga o HUD inteiro.
     ToggleHud,
+    /// Mostra e oculta as coordenadas a–h / 1–8 nas bordas do tabuleiro.
+    ToggleCoordinates,
 }
 
 impl Action {
-    pub const ALL: [Action; 16] = [
+    pub const ALL: [Action; 17] = [
         Action::Select,
         Action::Adjust,
         Action::Orbit,
@@ -66,6 +68,7 @@ impl Action {
         Action::ToggleFullscreen,
         Action::ToggleFocus,
         Action::ToggleHud,
+        Action::ToggleCoordinates,
     ];
 
     /// Identificador estável (gravado no banco; nunca muda).
@@ -87,6 +90,7 @@ impl Action {
             Action::ToggleFullscreen => "toggle-fullscreen",
             Action::ToggleFocus => "toggle-focus",
             Action::ToggleHud => "toggle-hud",
+            Action::ToggleCoordinates => "toggle-coordinates",
         }
     }
 
@@ -385,6 +389,7 @@ fn defaults_for(action: Action) -> Vec<Trigger> {
         Action::ToggleFullscreen => vec![key("F11")],
         Action::ToggleFocus => vec![key("F10")],
         Action::ToggleHud => vec![key("KeyH")],
+        Action::ToggleCoordinates => vec![key("KeyC")],
     }
 }
 

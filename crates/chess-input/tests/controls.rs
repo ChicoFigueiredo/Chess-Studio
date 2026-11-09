@@ -70,6 +70,7 @@ fn defaults_follow_dec_51() {
         ("F11", Action::ToggleFullscreen),
         ("F10", Action::ToggleFocus),
         ("KeyH", Action::ToggleHud),
+        ("KeyC", Action::ToggleCoordinates),
     ] {
         assert_eq!(resolve(&map, key(name), none), Some(action), "{name}");
     }
