@@ -110,12 +110,20 @@ struct Spawned {
 
 /// Casa canônica onde a peça repousa.
 #[derive(Component, Debug, Clone, Copy)]
-struct PieceAt(Square);
+pub(crate) struct PieceAt(pub(crate) Square);
 
 #[derive(Component)]
-struct Piece3d;
+pub(crate) struct Piece3d;
 #[derive(Component)]
-struct Piece2d;
+pub(crate) struct Piece2d;
+
+/// Marca os reis (3D e 2D), para o tombamento de fim de Partida (`end_game`).
+#[derive(Component, Debug, Clone, Copy)]
+pub(crate) struct KingPiece(pub(crate) Side);
+
+/// Conjunto dos sistemas que posicionam as peças; o tombamento do rei roda depois dele.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct PiecePlacementSet;
 
 /// Encaixe em andamento: a peça vai de `from` ao centro de `target`.
 #[derive(Component, Debug, Clone, Copy)]
@@ -136,6 +144,7 @@ impl Plugin for PiecesPlugin {
                 Update,
                 (sync_pieces, place_resting, animate_settle)
                     .chain()
+                    .in_set(PiecePlacementSet)
                     .after(PlaySet),
             );
     }
@@ -282,8 +291,12 @@ fn spawn_piece_3d(
         .get(&(side, piece))
         .cloned()
         .unwrap_or_default();
-    commands
-        .spawn((
+    let mut entity = commands.spawn_empty();
+    if piece == Piece::King {
+        entity.insert(KingPiece(side));
+    }
+    entity
+        .insert((
             Name::new(format!("piece3d_{square}")),
             Piece3d,
             PieceAt(square),
@@ -332,8 +345,12 @@ fn spawn_piece_2d(
             Transform::from_xyz(x, y, z),
         )
     };
-    commands
-        .spawn((
+    let mut entity = commands.spawn_empty();
+    if piece == Piece::King {
+        entity.insert(KingPiece(side));
+    }
+    entity
+        .insert((
             Name::new(format!("piece2d_{square}")),
             Piece2d,
             PieceAt(square),

@@ -18,6 +18,7 @@ mod captured;
 mod clock;
 mod controls;
 mod dock;
+mod end_game;
 mod engine;
 mod engine_consent;
 mod engine_manager;
@@ -191,6 +192,7 @@ fn main() {
         local_profiles::LocalProfilesPlugin,
     ));
     app.add_plugins((hud::HudPlugin, hud_draw::HudDrawPlugin));
+    app.add_plugins(end_game::EndGamePlugin);
     app.add_plugins(training_ui::TrainingPlugin);
     app.add_plugins(library_ui::LibraryPlugin);
     app.add_plugins(scoresheet::ScoresheetPlugin);
@@ -214,6 +216,13 @@ fn main() {
             Some("ultra") => app.insert_resource(presentation::GraphicsQuality::Ultra),
             _ => &mut app,
         };
+        // `--no-end-dialog`: capturas do rei tombado sem o diálogo por cima.
+        if std::env::args().any(|a| a == "--no-end-dialog") {
+            app.insert_resource(end_game::EndDialog {
+                suppressed: true,
+                ..default()
+            });
+        }
         // `--focus`: a evidência do modo Foco (sem banco, o estado não vem das preferências).
         if std::env::args().any(|a| a == "--focus") {
             app.insert_resource(focus::ViewState {

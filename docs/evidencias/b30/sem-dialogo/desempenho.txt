@@ -1,0 +1,8 @@
+3d-profissional-padrao: 14.80 ms/quadro (68 quadros/s)
+3d-profissional-obliqua: 14.09 ms/quadro (71 quadros/s)
+3d-profissional-superior: 16.60 ms/quadro (60 quadros/s)
+mesa-imersiva-padrao: 13.76 ms/quadro (73 quadros/s)
+mesa-imersiva-obliqua: 13.00 ms/quadro (77 quadros/s)
+mesa-imersiva-superior: 18.22 ms/quadro (55 quadros/s)
+2d-tecnico: 23.42 ms/quadro (43 quadros/s)
+carregamento da cena: 1.33 s
