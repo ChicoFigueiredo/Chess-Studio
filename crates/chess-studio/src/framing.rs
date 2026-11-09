@@ -1,16 +1,17 @@
-//! Enquadramento das Vistas: o tabuleiro (com as peças) e o relógio 3D da mesa precisam caber
-//! inteiros na área útil, que muda com o dock aberto, sem dock e no modo Foco. A matemática é
-//! `chess_input::frame_points` (pura e testada); aqui se montam os pontos da cena e se
-//! reaplica o enquadramento quando a Vista, o lado do usuário ou a largura do viewport mudam.
+//! Enquadramento das Vistas: o tabuleiro (com moldura e peças) cabe inteiro na área útil, que
+//! muda com o dock aberto, sem dock e no modo Foco, e o alvo da câmera é sempre o centro do
+//! tabuleiro (#135). O relógio 3D fica ao lado e não entra na conta: ele só ajusta a distância
+//! se estivesse no enquadramento, e deslocaria o centro. A matemática é
+//! `chess_input::fit_distance` (pura e testada); aqui se montam os pontos da cena e se
+//! reaplica o enquadramento quando a Vista ou a largura do viewport mudam.
 
 use crate::camera::CameraRig;
-use crate::clock::clock_footprint;
 use crate::dock::Dock;
 use crate::session::Session;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use chess_core::Color as Side;
-use chess_input::{BOARD_SIZE, CameraPose, CameraView, frame_points};
+use chess_input::{BOARD_SIZE, CameraPose, CameraView, fit_distance};
 
 /// Meia-largura da moldura do tabuleiro (tabuleiro 8 + borda), igual à de `board`.
 const FRAME_HALF: f32 = BOARD_SIZE / 2.0 + 0.6;
@@ -21,8 +22,8 @@ const TABLE_LEVEL: f32 = -0.42;
 /// Fração do campo de visão que a cena pode ocupar; o resto é respiro.
 const FILL: f32 = 0.94;
 
-/// Pontos que a câmera precisa enxergar: caixa do tabuleiro com peças e a do relógio.
-pub fn scene_points(user_side: Side) -> Vec<Vec3> {
+/// Pontos que a câmera precisa enxergar: a caixa do tabuleiro com moldura e peças.
+pub fn scene_points() -> Vec<Vec3> {
     let mut points = Vec::with_capacity(16);
     for (x, z) in [
         (-FRAME_HALF, -FRAME_HALF),
@@ -33,15 +34,14 @@ pub fn scene_points(user_side: Side) -> Vec<Vec3> {
         points.push(Vec3::new(x, TABLE_LEVEL, z));
         points.push(Vec3::new(x, PIECES_TOP, z));
     }
-    points.extend(clock_footprint(user_side));
     points
 }
 
 /// Pose da Vista enquadrada para a área útil de proporção `aspect`.
-pub fn framed_pose(view: CameraView, user_side: Side, aspect: f32) -> CameraPose {
-    frame_points(
+pub fn framed_pose(view: CameraView, _user_side: Side, aspect: f32) -> CameraPose {
+    fit_distance(
         view.pose(),
-        &scene_points(user_side),
+        &scene_points(),
         aspect,
         PerspectiveProjection::default().fov,
         FILL,
@@ -87,36 +87,43 @@ mod tests {
     }
 
     #[test]
-    fn board_and_clock_fit_in_every_view_with_and_without_dock() {
+    fn board_fits_in_every_view_with_and_without_dock() {
         // Sem dock (1280), com dock de 340 pt (940), dock largo (640) e tela cheia (1920).
         for width in [1280.0_f32, 940.0, 640.0, 1920.0] {
             let aspect = width / 720.0;
-            for side in [Side::White, Side::Black] {
-                for view in CameraView::ALL {
-                    let pose = framed_pose(view, side, aspect);
-                    for p in scene_points(side) {
-                        let (x, y) = project(&pose, p, aspect).unwrap();
-                        assert!(
-                            x.abs() <= 1.0 && y.abs() <= 1.0,
-                            "{view:?} {side:?} {width}: ({x}, {y})"
-                        );
-                    }
+            for view in CameraView::ALL {
+                let pose = framed_pose(view, Side::White, aspect);
+                for p in scene_points() {
+                    let (x, y) = project(&pose, p, aspect).unwrap();
+                    assert!(
+                        x.abs() <= 1.0 && y.abs() <= 1.0,
+                        "{view:?} {width}: ({x}, {y})"
+                    );
                 }
             }
         }
     }
 
     #[test]
-    fn the_clock_is_inside_the_scene_points() {
-        let white = scene_points(Side::White);
+    fn every_view_targets_the_board_center_and_the_center_is_on_screen_center() {
+        for width in [1280.0_f32, 940.0, 640.0, 1920.0] {
+            let aspect = width / 720.0;
+            for side in [Side::White, Side::Black] {
+                for view in CameraView::ALL {
+                    let pose = framed_pose(view, side, aspect);
+                    assert_eq!(pose.target, Vec3::ZERO, "{view:?} {side:?} {width}");
+                    let (x, y) = project(&pose, Vec3::ZERO, aspect).unwrap();
+                    assert!(x.abs() < 1e-4 && y.abs() < 1e-4, "({x}, {y})");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_clock_does_not_enter_the_framing() {
         assert!(
-            white.iter().any(|p| p.x > 7.0),
-            "relógio das brancas à direita"
-        );
-        let black = scene_points(Side::Black);
-        assert!(
-            black.iter().any(|p| p.x < -7.0),
-            "relógio das pretas à esquerda"
+            scene_points().iter().all(|p| p.x.abs() <= FRAME_HALF),
+            "só o tabuleiro (com a moldura) define o enquadramento"
         );
     }
 
