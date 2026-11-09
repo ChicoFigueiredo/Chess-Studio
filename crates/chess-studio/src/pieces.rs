@@ -229,7 +229,10 @@ pub(crate) fn pieces_synced(board: &BoardPieces, session: &Session, over: &Board
 
 /// Peças a desenhar: Posição visual provisória (promoção pendente, peça solta em casa
 /// ilegal, DEC-32), Lance feito à espera do relógio (art. 4.7) ou a canônica.
-fn visible_pieces(session: &Session, over: &BoardOverride) -> HashMap<Square, (Side, Piece)> {
+pub(crate) fn visible_pieces(
+    session: &Session,
+    over: &BoardOverride,
+) -> HashMap<Square, (Side, Piece)> {
     if let Some(pieces) = &over.pieces {
         return pieces.clone();
     }

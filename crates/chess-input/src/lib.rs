@@ -13,8 +13,8 @@ pub mod view;
 
 pub use arrow::{ARROW_TRIANGLES, arrow_outline};
 pub use board::{
-    BOARD_SIZE, SQUARE_SIZE, all_squares, point_to_square, ray_to_board_plane, ray_to_square,
-    square_center,
+    BOARD_SIZE, PIECE_PICK_RADIUS, SQUARE_SIZE, all_squares, piece_pick_height, point_to_square,
+    ray_to_board_plane, ray_to_square, ray_to_square_with_pieces, square_center,
 };
 pub use gesture::{
     GestureEvent, GestureInterpreter, GestureState, GestureVisual, Modifiers, MoveMethod,

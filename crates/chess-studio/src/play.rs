@@ -171,3 +171,66 @@ fn mirror_selection(
         selected.0 = origin;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pieces::BoardOverride;
+    use chess_core::Square;
+    use chess_input::MoveMethod;
+
+    fn sq(name: &str) -> Square {
+        name.parse().unwrap()
+    }
+
+    fn app(method: MoveMethod) -> App {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .init_resource::<ButtonInput<MouseButton>>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<Controls>()
+            .init_resource::<HoveredSquare>()
+            .init_resource::<CursorWorld>()
+            .init_resource::<EguiWantsInput>()
+            .init_resource::<Presentation>()
+            .init_resource::<BoardOverride>()
+            .init_resource::<Session>()
+            .add_message::<WindowFocused>()
+            .add_systems(Update, gesture_input);
+        app.world_mut()
+            .resource_mut::<Session>()
+            .set_move_method(method);
+        app
+    }
+
+    /// Um clique de verdade: o botão desce num quadro e sobe em outro, com o cursor parado.
+    fn click(app: &mut App, at: &str) {
+        app.world_mut().resource_mut::<HoveredSquare>().0 = Some(sq(at));
+        let mut buttons = app.world_mut().resource_mut::<ButtonInput<MouseButton>>();
+        buttons.press(MouseButton::Left);
+        app.update();
+        let mut buttons = app.world_mut().resource_mut::<ButtonInput<MouseButton>>();
+        buttons.clear();
+        buttons.release(MouseButton::Left);
+        app.update();
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .clear();
+        app.update();
+    }
+
+    fn played(app: &App) -> usize {
+        app.world().resource::<Session>().snapshot().history.len()
+    }
+
+    #[test]
+    fn two_taps_play_the_move_in_every_method_that_admits_them() {
+        for method in [MoveMethod::Both, MoveMethod::TwoTaps] {
+            let mut app = app(method);
+            click(&mut app, "e2");
+            assert_eq!(played(&app), 0);
+            click(&mut app, "e4");
+            assert_eq!(played(&app), 1, "{method:?}");
+        }
+    }
+}
