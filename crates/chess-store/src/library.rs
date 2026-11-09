@@ -225,6 +225,8 @@ struct Draft {
     body: String,
     /// `(chave, meio-lance, linha principal)`.
     positions: Vec<(String, u32, bool)>,
+    /// `(chave da Posição, lance em SAN)` da linha principal, para o explorador de aberturas.
+    moves: Vec<(String, String)>,
 }
 
 impl Draft {
@@ -249,6 +251,7 @@ impl Draft {
             sort_ms: 0,
             body: String::new(),
             positions: Vec::new(),
+            moves: Vec::new(),
         }
     }
 }
@@ -267,6 +270,23 @@ fn join_body(parts: &[Option<&str>]) -> String {
         .copied()
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// `(chave da Posição, lance em SAN)` da linha principal, até [`crate::openings::OPENING_PLIES`].
+fn mainline_moves(start: &CanonicalPosition, line: &[MoveNode]) -> Vec<(String, String)> {
+    let mut position = start.clone();
+    let mut out = Vec::new();
+    for node in line.iter().take(crate::openings::OPENING_PLIES) {
+        let Ok(mv) = position.parse_san(&node.san) else {
+            break;
+        };
+        let Ok(next) = position.play(mv) else { break };
+        // SAN canônico (sem depender de como o PGN escreveu `+`, `#` ou desambiguações).
+        let san = position.san(mv).unwrap_or_else(|_| node.san.clone());
+        out.push((position_key(&position), san));
+        position = next;
+    }
+    out
 }
 
 fn collect_line(
@@ -294,8 +314,52 @@ fn collect_line(
 impl Store {
     // ---- Índice -----------------------------------------------------------------
 
+    /// Verificação barata (agregados, sem carregar linhas) de que o índice reflete as fontes:
+    /// mesmos totais, somas de ids e de assinaturas (Partidas jogadas) ou de instantes de
+    /// importação (importadas). Um falso "em dia" exigiria uma troca que preserve as três somas;
+    /// nesse caso a próxima mudança real, ou `rebuild_opening_index`, corrige.
+    fn library_in_sync(&self) -> Result<bool> {
+        let sources: (i64, i64, i64, i64, i64, i64) = self.conn.query_row(
+            "SELECT
+                (SELECT COUNT(*) FROM games),
+                (SELECT COALESCE(SUM(id), 0) FROM games),
+                (SELECT COALESCE(SUM((COALESCE((SELECT MAX(seq) FROM game_events e WHERE e.game_id = g.id), -1) + 1) * 2
+                                      + g.finished), 0) FROM games g),
+                (SELECT COUNT(*) FROM imported_games),
+                (SELECT COALESCE(SUM(id), 0) FROM imported_games),
+                (SELECT COALESCE(SUM(imported_at_ms), 0) FROM imported_games)",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+        )?;
+        let indexed: (i64, i64, i64, i64, i64, i64) = self.conn.query_row(
+            "SELECT
+                COALESCE(SUM(source = 'played'), 0),
+                COALESCE(SUM(CASE WHEN source = 'played' THEN ref_id END), 0),
+                COALESCE(SUM(CASE WHEN source = 'played' THEN signature END), 0),
+                COALESCE(SUM(source = 'imported'), 0),
+                COALESCE(SUM(CASE WHEN source = 'imported' THEN ref_id END), 0),
+                COALESCE(SUM(CASE WHEN source = 'imported' THEN sort_ms END), 0)
+             FROM library_entries",
+            [],
+            |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                ))
+            },
+        )?;
+        Ok(sources == indexed)
+    }
+
     /// Atualiza o índice com o que mudou desde a última busca. Barato quando nada mudou.
-    fn sync_library(&self) -> Result<()> {
+    pub(crate) fn sync_library(&self) -> Result<()> {
+        if self.library_in_sync()? {
+            return Ok(());
+        }
         // Estado atual das fontes: (fonte, id) -> (perfil, assinatura).
         let mut current: HashMap<(LibrarySource, i64), (i64, i64)> = HashMap::new();
         {
@@ -428,6 +492,21 @@ impl Store {
             for (key, ply, main) in &draft.positions {
                 insert.execute(params![entry, key, ply, main])?;
             }
+            let code = crate::openings::result_code(&draft.result);
+            let mut insert = tx.prepare_cached(
+                "INSERT OR IGNORE INTO opening_moves (profile_id, pos_hash, san, entry_id, result, used_ms)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            )?;
+            for (key, san) in &draft.moves {
+                insert.execute(params![
+                    draft.profile,
+                    crate::openings::position_hash(key),
+                    san,
+                    entry,
+                    code,
+                    draft.sort_ms
+                ])?;
+            }
         }
         tx.commit()?;
         Ok(())
@@ -461,7 +540,12 @@ impl Store {
                 |r| r.get(0),
             )
             .unwrap_or(0);
-        imported_draft(&game, id, profile, signature, imported_at).unwrap_or_else(hidden)
+        imported_draft(&game, id, profile, signature, imported_at).unwrap_or_else(|| {
+            // Sem Lances: não listada, mas guarda o instante para a verificação de "em dia".
+            let mut draft = hidden();
+            draft.sort_ms = imported_at;
+            draft
+        })
     }
 
     // ---- Busca ------------------------------------------------------------------
@@ -662,9 +746,15 @@ fn played_draft(
     let policy = enum_id(&setup.policy());
     let sans: Vec<&str> = snapshot.history.iter().map(|h| h.san.as_str()).collect();
     let opening = opening_text(setup.start(), &sans);
-    let positions = (0..=plies)
+    let positions: Vec<(String, u32, bool)> = (0..=plies)
         .filter_map(|ply| game.review_at_ply(ply))
         .map(|view| (position_key(&view.position), view.ply as u32, true))
+        .collect();
+    let moves = positions
+        .iter()
+        .zip(&snapshot.history)
+        .take(crate::openings::OPENING_PLIES)
+        .map(|((key, _, _), entry)| (key.clone(), entry.san.clone()))
         .collect();
     let body = join_body(&[
         Some(&white),
@@ -694,6 +784,7 @@ fn played_draft(
         sort_ms: updated_ms,
         body,
         positions,
+        moves,
     }
 }
 
@@ -712,6 +803,7 @@ fn imported_draft(
     let mut positions = vec![(position_key(&start), 0, true)];
     collect_line(&start, &game.moves, 0, true, &mut positions);
     let sans = game.mainline_sans();
+    let moves = mainline_moves(&start, &game.moves);
     let opening = opening_text(&start, &sans);
     let tags: Vec<&str> = game
         .tags
@@ -747,6 +839,7 @@ fn imported_draft(
         sort_ms: imported_at,
         body,
         positions,
+        moves,
     })
 }
 
