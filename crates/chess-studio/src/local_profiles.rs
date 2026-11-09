@@ -192,7 +192,7 @@ impl Applied<'_> {
         *self.effects = prefs.ultra_effects;
         *self.hover = prefs.hover_highlight;
         *self.view = prefs.view;
-        self.dock.layout = layout;
+        self.dock.set_layout(layout);
         *self.interface = InterfaceProfiles::with_state(interface);
         self.engine
             .apply_saved(prefs.engine_user_side, prefs.engine_elo);
