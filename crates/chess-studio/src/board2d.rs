@@ -25,8 +25,8 @@ pub fn square_pos(sq: Square) -> Vec2 {
 }
 
 // Tons de madeira neutros, coerentes com o tabuleiro 3D (bordo claro e nogueira escura).
-const LIGHT: Color = Color::srgb(0.87, 0.77, 0.62);
-const DARK: Color = Color::srgb(0.55, 0.40, 0.29);
+pub(crate) const LIGHT: Color = Color::srgb(0.87, 0.77, 0.62);
+pub(crate) const DARK: Color = Color::srgb(0.55, 0.40, 0.29);
 const LABEL: Color = Color::srgb(0.84, 0.80, 0.74);
 
 #[derive(Component)]

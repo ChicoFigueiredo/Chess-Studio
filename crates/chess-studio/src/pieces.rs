@@ -319,6 +319,16 @@ fn spawn_piece_3d(
         .id()
 }
 
+/// Cores (preenchimento, contorno) do glifo de cada lado; o painel "Tabuleiro 2D" usa as
+/// mesmas para ficar idêntico ao 2D técnico.
+pub(crate) fn glyph_colors(side: Side) -> (Color, Color) {
+    if side == Side::White {
+        (Color::srgb(0.98, 0.97, 0.92), Color::srgb(0.08, 0.08, 0.09))
+    } else {
+        (Color::srgb(0.06, 0.06, 0.07), Color::srgb(0.95, 0.95, 0.90))
+    }
+}
+
 /// Peça do 2D técnico: glifo preenchido com contorno de cor oposta (legível em casas
 /// claras e escuras).
 fn spawn_piece_2d(
@@ -328,11 +338,7 @@ fn spawn_piece_2d(
     side: Side,
     piece: Piece,
 ) -> Entity {
-    let (fill, outline) = if side == Side::White {
-        (Color::srgb(0.98, 0.97, 0.92), Color::srgb(0.08, 0.08, 0.09))
-    } else {
-        (Color::srgb(0.06, 0.06, 0.07), Color::srgb(0.95, 0.95, 0.90))
-    };
+    let (fill, outline) = glyph_colors(side);
     let glyph = |color: Color, x: f32, y: f32, z: f32| {
         (
             Text2d::new(glyph(piece).to_string()),

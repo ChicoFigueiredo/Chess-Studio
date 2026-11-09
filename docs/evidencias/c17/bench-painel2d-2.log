@@ -1,0 +1,21 @@
+[2m2026-11-09T22:45:14.834465Z[0m [32m INFO[0m [2mbevy_render::renderer[0m[2m:[0m AdapterInfo { name: "NVIDIA GeForce RTX 4080 SUPER", vendor: 4318, device: 9986, device_type: DiscreteGpu, device_pci_bus_id: "0000:08:00.0", driver: "NVIDIA", driver_info: "620.70.06", backend: Vulkan, subgroup_min_size: 32, subgroup_max_size: 32, transient_saves_memory: Some(false), limit_bucket: None }
+[2m2026-11-09T22:45:15.039079Z[0m [32m INFO[0m [2mbevy_pbr::cluster[0m[2m:[0m GPU clustering is supported on this device.
+[2m2026-11-09T22:45:15.039148Z[0m [32m INFO[0m [2mbevy_render::batching::gpu_preprocessing[0m[2m:[0m GPU preprocessing is fully supported on this device.
+[2m2026-11-09T22:45:15.039856Z[0m [32m INFO[0m [2mbevy_egui::render[0m[2m:[0m Using bindless_mode_array_size 16 (Device maximum 1048576)
+[2m2026-11-09T22:45:15.040113Z[0m [32m INFO[0m [2mbevy_winit::system[0m[2m:[0m Creating new window Chess Studio (63v0)
+[2m2026-11-09T22:45:15.057312Z[0m [32m INFO[0m [2mchess_studio::presentation[0m[2m:[0m GPU: MSAA suportado GpuSupport { ldr: 15, hdr: 15 }
+=== Benchmark Chess Studio ===
+Versão 0.1.0 (a84b7c7da1ee-dirty), 2026-11-09T22:45:15Z UTC
+1920x1020 | preset equilibrado | qualidade equilibrado | HUD desligado | engine ociosa | present vsync | 57 s medidos
+SO: Linux (Ubuntu 26.04) (7.0.0-43-generic)
+CPU: AMD Ryzen 7 3700X 8-Core Processor (16 threads), RAM total 128689 MiB
+Carga da máquina: load 1m 10.32 -> 6.60 | CPU do sistema 22.02% -> 30.73% | 16 núcleos | máquina livre
+GPU: NVIDIA GeForce RTX 4080 SUPER [DiscreteGpu] driver NVIDIA 620.70.06 (Vulkan)
+FPS médio 60.0 | 1% low 47.6 | frames 3418
+Frame time (ms): p1 14.44 | p5 15.53 | p50 16.67 | p95 17.78 | p99 18.77 | máx 29.77
+RAM do processo: média 807.6 MiB | máx 809.4 MiB
+CPU do processo: média 92.7% | máx 106.2%
+VRAM usada (GPU inteira): média 3051.2 MiB | máx 3060.0 MiB
+Utilização da GPU: média 28.3% | máx 44.0%
+
+Arquivos gravados em docs/evidencias/c17/bench-painel2d-2

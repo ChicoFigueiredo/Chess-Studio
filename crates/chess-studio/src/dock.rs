@@ -55,6 +55,7 @@ pub mod ids {
     pub const ANALYSIS: &str = "Analysis";
     pub const LIBRARY: &str = "Library";
     pub const SCORESHEET: &str = "Scoresheet";
+    pub const BOARD2D: &str = "Board2d";
 }
 
 /// Quando o painel pode ser aberto.
@@ -131,7 +132,7 @@ pub(crate) const MAX_WIDTH: f32 = 640.0;
 
 /// Grupos de abas do layout padrão, de cima para baixo.
 const DEFAULT_GROUPS: [&[&str]; 3] = [
-    &[ids::CLOCK, ids::CAPTURED],
+    &[ids::CLOCK, ids::CAPTURED, ids::BOARD2D],
     &[ids::NOTATION, ids::STUDY],
     &[
         ids::AIDS,
@@ -141,6 +142,9 @@ const DEFAULT_GROUPS: [&[&str]; 3] = [
         ids::TRAINING,
     ],
 ];
+
+/// Fatia relativa do grupo do alto no layout padrão (os outros têm 1.0).
+const TOP_GROUP_SHARE: f32 = 2.2;
 
 fn default_rank(id: &str) -> usize {
     DEFAULT_GROUPS
@@ -182,7 +186,15 @@ impl Default for DockLayout {
                 tiles.insert_tab_tile(panes)
             })
             .collect();
+        let first = groups.first().copied();
         let root = tiles.insert_vertical_tile(groups);
+        // O grupo do alto leva a aba "Tabuleiro 2D", que precisa de altura (o tabuleiro é
+        // quadrado): ele ganha o dobro da fatia dos demais.
+        if let (Some(first), Some(Tile::Container(Container::Linear(linear)))) =
+            (first, tiles.get_mut(root))
+        {
+            linear.shares.set_share(first, TOP_GROUP_SHARE);
+        }
         Self {
             width: DEFAULT_WIDTH,
             tree: Tree::new("chess-studio-dock", root, tiles),
@@ -561,7 +573,8 @@ fn dock_ui(world: &mut World) {
         if !dock.tabs_applied {
             dock.tabs_applied = true;
             // Evidência (`--screenshot ... --tabs captured,study`): traz essas abas à frente.
-            if world.contains_resource::<CaptureMode>()
+            if (world.contains_resource::<CaptureMode>()
+                || world.contains_resource::<crate::benchmark::Bench>())
                 && let Some(list) = crate::capture::option_value("--tabs")
             {
                 // Painéis novos só entram no layout salvo na reconciliação; faça-a antes.
@@ -916,6 +929,7 @@ mod tests {
         app.add_plugins((
             crate::notation::NotationPlugin,
             crate::captured::CapturedPlugin,
+            crate::board2d_panel::Board2dPanelPlugin,
             crate::study::StudyPlugin,
             crate::fide_panel::ArbitrationPlugin,
             crate::aids_panel::AidsPanelPlugin,

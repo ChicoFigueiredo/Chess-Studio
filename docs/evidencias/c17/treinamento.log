@@ -1,0 +1,20 @@
+[2m2026-11-09T22:42:19.720029Z[0m [32m INFO[0m [2mbevy_render::renderer[0m[2m:[0m AdapterInfo { name: "NVIDIA GeForce RTX 4080 SUPER", vendor: 4318, device: 9986, device_type: DiscreteGpu, device_pci_bus_id: "0000:08:00.0", driver: "NVIDIA", driver_info: "620.70.06", backend: Vulkan, subgroup_min_size: 32, subgroup_max_size: 32, transient_saves_memory: Some(false), limit_bucket: None }
+[2m2026-11-09T22:42:19.973083Z[0m [32m INFO[0m [2mbevy_pbr::cluster[0m[2m:[0m GPU clustering is supported on this device.
+[2m2026-11-09T22:42:19.973143Z[0m [32m INFO[0m [2mbevy_render::batching::gpu_preprocessing[0m[2m:[0m GPU preprocessing is fully supported on this device.
+[2m2026-11-09T22:42:19.973983Z[0m [32m INFO[0m [2mbevy_egui::render[0m[2m:[0m Using bindless_mode_array_size 16 (Device maximum 1048576)
+[2m2026-11-09T22:42:19.974359Z[0m [32m INFO[0m [2mbevy_winit::system[0m[2m:[0m Creating new window Chess Studio (63v0)
+[2m2026-11-09T22:42:19.988632Z[0m [32m INFO[0m [2mchess_studio::presentation[0m[2m:[0m GPU: MSAA suportado GpuSupport { ldr: 15, hdr: 15 }
+[2m2026-11-09T22:42:21.377278Z[0m [32m INFO[0m [2mchess_studio::capture[0m[2m:[0m 3d-profissional-padrao: 5.86 ms/quadro (171 quadros/s)
+[2m2026-11-09T22:42:21.458232Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/evidencias/c17/treinamento/3d-profissional-padrao.png
+[2m2026-11-09T22:42:24.296756Z[0m [32m INFO[0m [2mchess_studio::capture[0m[2m:[0m 3d-profissional-obliqua: 16.55 ms/quadro (60 quadros/s)
+[2m2026-11-09T22:42:24.368372Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/evidencias/c17/treinamento/3d-profissional-obliqua.png
+[2m2026-11-09T22:42:27.471965Z[0m [32m INFO[0m [2mchess_studio::capture[0m[2m:[0m 3d-profissional-superior: 16.68 ms/quadro (60 quadros/s)
+[2m2026-11-09T22:42:27.563659Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/evidencias/c17/treinamento/3d-profissional-superior.png
+[2m2026-11-09T22:42:30.667562Z[0m [32m INFO[0m [2mchess_studio::capture[0m[2m:[0m mesa-imersiva-padrao: 16.67 ms/quadro (60 quadros/s)
+[2m2026-11-09T22:42:30.761348Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/evidencias/c17/treinamento/mesa-imersiva-padrao.png
+[2m2026-11-09T22:42:33.866787Z[0m [32m INFO[0m [2mchess_studio::capture[0m[2m:[0m mesa-imersiva-obliqua: 16.68 ms/quadro (60 quadros/s)
+[2m2026-11-09T22:42:33.947798Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/evidencias/c17/treinamento/mesa-imersiva-obliqua.png
+[2m2026-11-09T22:42:37.053760Z[0m [32m INFO[0m [2mchess_studio::capture[0m[2m:[0m mesa-imersiva-superior: 16.67 ms/quadro (60 quadros/s)
+[2m2026-11-09T22:42:37.139966Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/evidencias/c17/treinamento/mesa-imersiva-superior.png
+[2m2026-11-09T22:42:40.245348Z[0m [32m INFO[0m [2mchess_studio::capture[0m[2m:[0m 2d-tecnico: 16.66 ms/quadro (60 quadros/s)
+[2m2026-11-09T22:42:40.329684Z[0m [32m INFO[0m [2mbevy_render::view::window::screenshot[0m[2m:[0m Screenshot saved to docs/evidencias/c17/treinamento/2d-tecnico.png

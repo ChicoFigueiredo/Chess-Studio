@@ -12,6 +12,7 @@ mod asset_dir;
 mod benchmark;
 mod board;
 mod board2d;
+mod board2d_panel;
 mod camera;
 mod capture;
 mod captured;
@@ -192,6 +193,7 @@ fn main() {
         local_profiles::LocalProfilesPlugin,
     ));
     app.add_plugins((hud::HudPlugin, hud_draw::HudDrawPlugin));
+    app.add_plugins(board2d_panel::Board2dPanelPlugin);
     app.add_plugins(end_game::EndGamePlugin);
     app.add_plugins(training_ui::TrainingPlugin);
     app.add_plugins(library_ui::LibraryPlugin);
