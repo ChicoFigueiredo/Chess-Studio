@@ -1,8 +1,8 @@
-3d-profissional-padrao: 13.29 ms/quadro (75 quadros/s)
-3d-profissional-obliqua: 15.22 ms/quadro (66 quadros/s)
-3d-profissional-superior: 16.38 ms/quadro (61 quadros/s)
-mesa-imersiva-padrao: 16.35 ms/quadro (61 quadros/s)
-mesa-imersiva-obliqua: 14.98 ms/quadro (67 quadros/s)
-mesa-imersiva-superior: 15.25 ms/quadro (66 quadros/s)
-2d-tecnico: 12.82 ms/quadro (78 quadros/s)
-carregamento da cena: 1.40 s
+3d-profissional-padrao: 15.71 ms/quadro (64 quadros/s)
+3d-profissional-obliqua: 13.27 ms/quadro (75 quadros/s)
+3d-profissional-superior: 10.18 ms/quadro (98 quadros/s)
+mesa-imersiva-padrao: 5.76 ms/quadro (174 quadros/s)
+mesa-imersiva-obliqua: 9.36 ms/quadro (107 quadros/s)
+mesa-imersiva-superior: 15.18 ms/quadro (66 quadros/s)
+2d-tecnico: 9.72 ms/quadro (103 quadros/s)
+carregamento da cena: 0.53 s

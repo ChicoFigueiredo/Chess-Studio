@@ -199,28 +199,47 @@ fn spawn_rings(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    // Anel branco emissivo ao redor da base: não se confunde com o preenchimento do último
+    // Lance, da seleção nem com os pontos de destino.
+    let ring = Color::srgba(1.0, 1.0, 1.0, 0.85);
     commands.spawn((
         HoverRing3d,
-        Mesh3d(meshes.add(Cylinder::new(0.43, 0.012))),
+        Mesh3d(meshes.add(Annulus::new(0.37, 0.45))),
         MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::srgba(1.0, 0.92, 0.55, 0.55),
+            base_color: ring,
+            emissive: LinearRgba::rgb(2.0, 2.0, 2.0),
             unlit: true,
             alpha_mode: AlphaMode::Blend,
+            cull_mode: None,
             ..default()
         })),
-        Transform::default(),
+        Transform::from_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
         Visibility::Hidden,
     ));
-    commands.spawn((
-        HoverRing2d,
-        Sprite::from_color(
-            Color::srgba(1.0, 0.92, 0.55, 0.38),
-            Vec2::splat(crate::board2d::UNIT * 0.9),
-        ),
-        Transform::from_xyz(0.0, 0.0, 0.45),
-        Visibility::Hidden,
-        crate::presentation::VisibleIn::TECHNICAL,
-    ));
+    // 2D técnico: moldura branca interna da casa (só a borda, sem preencher).
+    let side = crate::board2d::UNIT * 0.9;
+    let thick = 7.0;
+    let half = side / 2.0;
+    commands
+        .spawn((
+            HoverRing2d,
+            Transform::from_xyz(0.0, 0.0, 0.45),
+            Visibility::Hidden,
+            crate::presentation::VisibleIn::TECHNICAL,
+        ))
+        .with_children(|p| {
+            for (x, y, w, h) in [
+                (0.0, half, side, thick),
+                (0.0, -half, side, thick),
+                (half, 0.0, thick, side),
+                (-half, 0.0, thick, side),
+            ] {
+                p.spawn((
+                    Sprite::from_color(ring, Vec2::new(w, h)),
+                    Transform::from_xyz(x, y, 0.0),
+                ));
+            }
+        });
 }
 
 #[allow(clippy::type_complexity)]
@@ -235,7 +254,7 @@ fn update_rings(
     match target.0 {
         Some(sq) => {
             let c = chess_input::square_center(sq);
-            t.translation = Vec3::new(c.x, 0.013, c.z);
+            t.translation = Vec3::new(c.x, 0.016, c.z);
             *v = Visibility::Visible;
         }
         None => *v = Visibility::Hidden,
