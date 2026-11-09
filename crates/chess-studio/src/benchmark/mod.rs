@@ -50,7 +50,7 @@ struct NvidiaSample {
 }
 
 #[derive(Resource)]
-struct Bench {
+pub(crate) struct Bench {
     cfg: BenchmarkConfig,
     vsync: bool,
     started_wall: SystemTime,

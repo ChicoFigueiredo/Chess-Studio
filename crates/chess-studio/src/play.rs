@@ -78,8 +78,13 @@ fn gesture_input(
     windows: Query<&Window, With<PrimaryWindow>>,
     mut press_at: Local<Option<Vec2>>,
     mut drag_started: Local<bool>,
-    editor: Res<crate::pieces::BoardOverride>,
+    (editor, panel, frames): (
+        Res<crate::pieces::BoardOverride>,
+        Option<Res<crate::board2d_panel::Board2dPanel>>,
+        Res<bevy::diagnostic::FrameCount>,
+    ),
 ) {
+    let panel_playing = panel.is_some_and(|p| p.pointer_over_playable(frames.0));
     // O editor de posição (C11) usa o tabuleiro: os gestos não chegam à Partida.
     if editor.is_active() {
         *held_button = None;
@@ -132,7 +137,11 @@ fn gesture_input(
             }
             Some(action @ (Action::Select | Action::Adjust)) => {
                 if over_ui {
-                    session.gesture(GestureEvent::PanelInteraction);
+                    // Sobre o painel "Tabuleiro 2D" jogável o gesto é dele: cancelar aqui
+                    // desfaria a seleção do primeiro clique.
+                    if !panel_playing {
+                        session.gesture(GestureEvent::PanelInteraction);
+                    }
                 } else {
                     *held_button = Some(button);
                     *press_at = windows.single().ok().and_then(Window::cursor_position);
