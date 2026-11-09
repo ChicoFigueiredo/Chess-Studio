@@ -26,3 +26,9 @@ reempacotado em um único `.glb` por script Python (sem alterar a geometria): re
 (tabuleiro de mármore, substituído pelo tabuleiro de madeira gerado por código), removidos
 dados não usados, texturas embutidas. Escala e posição das peças são ajustadas em tempo de execução
 (`crates/chess-studio/src/board.rs`), a partir do nome dos nós (`piece_<tipo>_<cor>[_NN]`).
+
+## Dados de aberturas (fora de `assets/`)
+
+| Arquivo | Origem | Autor | Licença | Observações |
+|---|---|---|---|---|
+| `crates/chess-openings/data/{a,b,c,d,e}.tsv` | [lichess-org/chess-openings](https://github.com/lichess-org/chess-openings) (commit `3ba6b20d31b2e6125cb0e6a2e792f400717d9d39`, 2026-11-05) | Colaboradores do Lichess | CC0 1.0 (README da origem: "released under the CC0 Public Domain Dedication"; API do repositório: `spdx_id: CC0-1.0`) | Cópia sem alteração, embutida no binário (`include_str!`) para o painel Aberturas (C19, #147). Baixado em 2026-11-09. Detalhes em `crates/chess-openings/data/README.md`. |

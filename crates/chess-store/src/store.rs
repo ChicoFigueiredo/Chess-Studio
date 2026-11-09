@@ -290,6 +290,11 @@ impl Store {
             [game.0],
         )?;
         tx.commit()?;
+        // Fim da Partida: alimenta o índice da Biblioteca e das aberturas (C19). Melhor esforço:
+        // o índice é derivado e a próxima consulta o completa se esta etapa falhar.
+        if rows.iter().any(|(_, kind, _)| kind == "game_ended") {
+            let _ = self.sync_library();
+        }
         Ok(())
     }
 

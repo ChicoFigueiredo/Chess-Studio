@@ -293,6 +293,28 @@ CREATE TABLE manual_scoresheet_check_entries (
 ) WITHOUT ROWID;
 ";
 
+// Explorador de aberturas (C19, #147): para cada lance da linha principal de cada Partida da
+// Biblioteca (até 40 meios-lances), a Posição de onde ele sai (hash FNV-1a de 64 bits da chave
+// normalizada, guardado como i64), o lance em SAN, o resultado e o instante de uso. É um índice
+// derivado, alimentado junto com `library_entries` (some em cascata com a entrada e o perfil).
+// As entradas da Biblioteca já indexadas são descartadas para serem reindexadas no primeiro uso
+// (o índice é reconstruível; nenhuma Partida é tocada, DB-06).
+const V12_OPENING_EXPLORER: &str = "
+DELETE FROM library_fts;
+DELETE FROM library_positions;
+DELETE FROM library_entries;
+CREATE TABLE opening_moves (
+    profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    pos_hash   INTEGER NOT NULL,
+    san        TEXT NOT NULL,
+    entry_id   INTEGER NOT NULL REFERENCES library_entries(id) ON DELETE CASCADE,
+    result     INTEGER NOT NULL CHECK (result IN (0, 1, 2, 3)),
+    used_ms    INTEGER NOT NULL,
+    PRIMARY KEY (profile_id, pos_hash, san, entry_id)
+) WITHOUT ROWID;
+CREATE INDEX opening_moves_entry ON opening_moves (entry_id);
+";
+
 /// Migrações em ordem; o índice + 1 é a versão resultante.
 const MIGRATIONS: &[&str] = &[
     V1_CORE,
@@ -306,6 +328,7 @@ const MIGRATIONS: &[&str] = &[
     V9_REOPEN_AFTER_UNDO,
     V10_MANUAL_SCORESHEET,
     V11_SCORESHEET_CHECK,
+    V12_OPENING_EXPLORER,
 ];
 
 /// Versão de esquema desta build.

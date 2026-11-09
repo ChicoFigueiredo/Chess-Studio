@@ -37,6 +37,7 @@ mod load_control;
 mod local_profiles;
 mod new_game;
 mod notation;
+mod openings;
 mod paths;
 mod persistence;
 mod picking;
@@ -193,6 +194,7 @@ fn main() {
     app.add_plugins((hud::HudPlugin, hud_draw::HudDrawPlugin));
     app.add_plugins(training_ui::TrainingPlugin);
     app.add_plugins(library_ui::LibraryPlugin);
+    app.add_plugins(openings::OpeningsPlugin);
     app.add_plugins(scoresheet::ScoresheetPlugin);
     if let Some(dir) = capture {
         if let Err(err) = std::fs::create_dir_all(&dir) {
