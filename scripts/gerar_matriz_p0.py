@@ -136,42 +136,49 @@ LINHAS = [
      "chess-studio (camera); chess-input (view, gesture)",
      t(INP + "tests/gestures.rs", "middle_and_secondary_buttons_never_move_pieces")
      + t(INP + "src/view.rs", "orbit_wraps_yaw_and_clamps_pitch"),
-     "PR #62 (A4)", "UNVERIFIED",
-     "O intérprete ignora o botão do meio (testado) e a matemática da órbita é testada, mas o mapeamento real do mouse para a órbita só foi exercitado manualmente. Roteiro manual."),
+     "PR #62 (A4); homologação do usuário 09/11", "PASS",
+     "Homologação do usuário em 09/11 (checklist do artefato, janela real): órbita com o botão do meio confirmada, sem mover peças. O intérprete ignora o botão do meio (testado) e a matemática da órbita é testada."),
     ("CAM-02", "Pan, zoom, reset e Vistas superior/oblíqua/invertida funcionam conforme o mapeamento de controles.",
      "chess-studio (camera); chess-input (view)",
-     t(INP + "src/view.rs", "zoom_is_limited", "pan_moves_with_screen_axes_and_never_loses_the_board", "standard_view_looks_from_white_side_and_inverted_from_black_side")
-     + t(STU + "pieces.rs", "each_presentation_remembers_its_own_camera"),
-     "PRs #62, #78", "UNVERIFIED",
-     "Limites e matemática testados; botões, teclas e gestos (DEC-51) só manual. Pinça e dois dedos só em macOS físico."),
+     t(INP + "src/view.rs", "zoom_is_limited", "pan_moves_with_screen_axes_and_never_loses_the_board", "standard_view_looks_from_white_side_and_inverted_from_black_side",
+       "fit_distance_keeps_the_target_and_fits_the_points")
+     + t(STU + "pieces.rs", "each_presentation_remembers_its_own_camera")
+     + t(STU + "framing.rs", "board_fits_in_every_view_with_and_without_dock", "every_view_targets_the_board_center_and_the_center_is_on_screen_center",
+         "the_clock_does_not_enter_the_framing"),
+     "PRs #62, #78, #137; homologação do usuário 09/11 (FAIL, corrigido)", "UNVERIFIED",
+     "Homologação do usuário em 09/11: FAIL, o relógio entrava no enquadramento e descentralizava as Vistas e o reset. Corrigido no PR #137 (issue #135): as Vistas e o reset centralizam no tabuleiro e o relógio fica fora do enquadramento. Aguarda reteste do usuário. Pinça e dois dedos só em macOS físico."),
     ("CAM-03", "Rotação/inversão não modifica a interpretação lógica de a1...h8.",
      "chess-input (view, board)",
      t(INP + "src/view.rs", "inverting_the_view_does_not_change_logical_interpretation", "every_square_is_pickable_after_any_rotation")
      + t(INP + "src/board.rs", "a1_and_h8_are_opposite_corners"),
-     "PR #62", "PASS", ""),
+     "PR #62; homologação do usuário 09/11", "PASS", "Homologação do usuário em 09/11: as 64 casas respondem em qualquer Vista."),
     ("CAM-04", "As 64 casas são selecionáveis nas Vistas superior, oblíqua, padrão e invertida.",
      "chess-input (board, view)",
      t(INP + "src/view.rs", "every_square_is_pickable_in_every_view", "every_square_is_pickable_after_any_rotation")
      + t(INP + "src/board.rs", "vertical_ray_over_each_center_returns_that_square", "all_squares_cover_a1_to_h8"),
-     "PR #62; clique real em janela no roteiro manual", "PASS",
-     "Prova por raio em geometria pura (4 pontos por casa); o clique real é reconferido no roteiro manual."),
+     "PR #62; homologação do usuário 09/11", "PASS",
+     "Prova por raio em geometria pura (4 pontos por casa); homologação do usuário em 09/11: clique real nas 64 casas em qualquer Vista."),
     ("INT-01", "Dois toques e drag-and-drop chegam à mesma jogada canônica quando válida.",
      "chess-input (gesture); chess-studio (session, play)",
      t(INP + "tests/gestures.rs", "two_taps_and_drag_emit_the_same_release_and_reach_the_same_position", "capture_by_two_taps_and_by_drag_agree")
-     + t(STU + "session.rs", "scholars_mate_is_playable_by_gestures"),
-     "PR #76; `docs/evidencias/b3/`", "PASS", ""),
+     + t(STU + "session.rs", "scholars_mate_is_playable_by_gestures")
+     + t(INP + "src/board.rs", "clicking_the_upper_body_of_a_tall_piece_picks_its_square_not_the_floor_behind",
+         "the_nearest_piece_wins_when_two_overlap_on_the_ray")
+     + t(STU + "play.rs", "a_3px_wobble_across_a_square_edge_is_still_a_tap_that_selects", "a_20px_move_is_a_normal_drag"),
+     "PR #76; `docs/evidencias/b3/`; PRs #138 (correção); homologação do usuário 09/11 (FAIL, corrigido)", "UNVERIFIED",
+     "Homologação do usuário em 09/11: FAIL em janela real, clicar na parte alta de uma peça não selecionava a casa dela e um tremor do mouse virava arrasto. Corrigido no PR #138 (issue #136): picking considera o corpo das peças e o arrasto só começa após 6 px. Aguarda reteste do usuário; antes era PASS só por teste do intérprete."),
     ("INT-02", "Destino ilegal não vira jogada válida nem é convertido silenciosamente em outra.",
      "chess-input (gesture); chess-game (rejeição)",
      t(INP + "tests/gestures.rs", "illegal_destination_is_forwarded_verbatim_never_converted")
      + t(STU + "session.rs", "illegal_drop_returns_to_origin_and_leaves_the_game_unchanged")
      + t(GAME + "assisted_illegal.rs", "e2_e5_e_recusado_sem_virar_e4"),
-     "PR #76", "PASS", ""),
+     "PR #76; homologação do usuário 09/11", "PASS", "Homologação do usuário em 09/11: e2→e5 recusado em janela real, a peça volta à origem."),
     ("INT-03", "Esc, perda de foco, painel ou mudança para órbita não geram lances fantasmas.",
      "chess-input (gesture); chess-studio (play: tradução de eventos do Bevy)",
      t(INP + "tests/gestures.rs", "cancel_events_abort_drag_without_any_command", "cancel_events_abort_selection_and_a_late_click_does_not_move",
        "cancel_while_held_and_after_drag_start_leaves_nothing_behind", "escape_or_focus_loss_while_dragging_keeps_the_touch_obligation"),
-     "PR #76", "UNVERIFIED",
-     "Camada do intérprete: PASS automatizado. A tradução dos eventos reais do Bevy/egui (`WindowFocused`, painel, órbita) não tem teste e nunca foi exercitada com mouse e janela reais. Roteiro manual (Esc, Alt+Tab, painel, órbita)."),
+     "PR #76; homologação do usuário 09/11", "PASS",
+     "Homologação do usuário em 09/11 (checklist do artefato, janela real): cancelar o arrasto não move peça. Camada do intérprete com PASS automatizado; a tradução dos eventos reais do Bevy/egui (`WindowFocused`, painel, órbita) segue sem teste automatizado, coberta pela verificação manual."),
     ("INT-04", "Preview de peça durante o arrasto não altera o estado canônico.",
      "chess-input (gesture); chess-studio (session)",
      t(INP + "tests/gestures.rs", "dragging_emits_nothing_until_release_and_exposes_visual_state")
@@ -274,8 +281,11 @@ LINHAS = [
      "`docs/evidencias/b4/jogo-fisico-3d-profissional.png`, `jogo-fisico-2d-tecnico.png`; PR #84", "PASS", ""),
     ("UX-02", "Dois toques e arrastar/soltar produzem a mesma jogada válida.",
      "chess-input (gesture)",
-     t(INP + "tests/gestures.rs", "two_taps_and_drag_emit_the_same_release_and_reach_the_same_position", "capture_by_two_taps_and_by_drag_agree"),
-     "PR #76", "PASS", ""),
+     t(INP + "tests/gestures.rs", "two_taps_and_drag_emit_the_same_release_and_reach_the_same_position", "capture_by_two_taps_and_by_drag_agree")
+     + t(INP + "src/board.rs", "clicking_the_upper_body_of_a_tall_piece_picks_its_square_not_the_floor_behind")
+     + t(STU + "play.rs", "a_3px_wobble_across_a_square_edge_is_still_a_tap_that_selects", "a_20px_move_is_a_normal_drag"),
+     "PR #76; PR #138 (correção); homologação do usuário 09/11 (FAIL, corrigido)", "UNVERIFIED",
+     "Igual a INT-01: FAIL na homologação de 09/11, corrigido no PR #138 (picking pelo corpo das peças e limiar de arrasto de 6 px); aguarda reteste do usuário."),
     ("UX-03", "Configurações visuais não alteram legalidade nem penalidades.",
      "chess-studio (aids, presentation); chess-input",
      t(STU + "aids.rs", "aids_never_change_the_events_of_a_command_sequence", "competitive_policies_never_show_destinations_or_ghosts")
@@ -285,7 +295,7 @@ LINHAS = [
      "chess-game (assisted); chess-studio (session)",
      t(GAME + "assisted_illegal.rs", "e2_e5_e_recusado_sem_virar_e4", "o_evento_de_lance_ilegal_fica_no_log_e_distingue_do_legal")
      + t(STU + "aids.rs", "bdd_01_physical_game_shows_no_destinations_and_e2_e5_is_illegal"),
-     "PRs #69, #84", "PASS", ""),
+     "PRs #69, #84; homologação do usuário 09/11", "PASS", "Homologação do usuário em 09/11: e2→e5 recusado em janela real."),
     ("UX-05", "FIDE distingue seleção, toque intencional, soltura e relógio.",
      "chess-game (touch, fide); chess-studio (fide_panel)",
      t(GAME + "fide_touch.rs", "rule_02_selecao_nao_e_toque_so_touch_cria_obrigacao", "ac_04_mover_soltar_e_concluir_sao_etapas_separadas")
@@ -294,7 +304,7 @@ LINHAS = [
     ("UX-06", "Picking correto das 64 casas após qualquer rotação da câmera.",
      "chess-input (view, board)",
      t(INP + "src/view.rs", "every_square_is_pickable_after_any_rotation", "every_square_is_pickable_in_every_view"),
-     "PR #62 (72 yaws x 4 pitches)", "PASS", "Mesma ressalva de CAM-04 sobre o clique real."),
+     "PR #62 (72 yaws x 4 pitches); homologação do usuário 09/11", "PASS", "Homologação do usuário em 09/11: 64 casas em qualquer Vista (ver CAM-04)."),
     ("UX-07", "Trocar 2D/3D conserva posição, histórico e preferências aplicáveis.",
      "chess-studio (pieces, presentation, persistence)",
      t(STU + "pieces.rs", "switching_presentation_keeps_the_game_and_the_scene_position")
@@ -308,7 +318,7 @@ LINHAS = [
     ("UX-09", "Cancelamento/perda de foco não move peça acidentalmente.",
      "chess-input (gesture); chess-studio (play)",
      t(INP + "tests/gestures.rs", "cancel_events_abort_drag_without_any_command", "escape_or_focus_loss_while_dragging_keeps_the_touch_obligation"),
-     "PR #76", "UNVERIFIED", "Igual a INT-03: intérprete testado; eventos reais de foco do Bevy não exercitados. Roteiro manual."),
+     "PR #76; homologação do usuário 09/11", "PASS", "Homologação do usuário em 09/11: cancelar o arrasto não move peça (ver INT-03)."),
     ("UX-10", "Animações suaves preservam precisão e as metas documentadas de performance.",
      "chess-studio (pieces); chess-input (settle)",
      t(INP + "src/settle.rs", "ends_exactly_on_the_canonical_square_from_any_start"),
@@ -438,7 +448,7 @@ MODELO = """# Matriz de rastreabilidade do P0 (B18, issue #42)
 
 Gerada por `scripts/gerar_matriz_p0.py`, que **falha** se algum teste ou evidência citado não existir. Para atualizar: edite os dados no script, rode `python3 scripts/gerar_matriz_p0.py` e confira o diff.
 
-- **Base:** `main` em `6a65770bd9bb` (inclui os PRs #61 a #89; os PRs #90 (B15, memória) e #91 (B17, instaláveis) estão abertos e **fora** desta matriz).
+- **Base:** `main` em `6a65770bd9bb` (inclui os PRs #61 a #89; os PRs #90 (B15, memória) e #91 (B17, instaláveis) estão abertos e **fora** desta matriz). **Atualização de 09/11:** os status de CAM, INT, UX-02/04/06/09 incorporam a homologação do usuário (janela real) e os PRs #137 e #138.
 - **Ambiente:** Linux físico (Ubuntu 26.04, Ryzen 7 3700X, RTX 4080 SUPER, driver 595.99.02), Rust 1.98.1.
 - **Suíte:** `cargo test --workspace` = **524 testes aprovados, 0 falhas, 5 `#[ignore]`** (inclui 3 doctests). Os 5 ignorados: perft profundo, Stockfish real (2: handshake e jogador), download real do Stockfish, PGN com python-chess. Quatro foram executados à parte em 2026-11-06 e passaram (perft profundo, os 2 de Stockfish 19 real, PGN com python-chess); o download real do Stockfish não foi reexecutado (passou no PR #85);
 - **Escopo:** os {{TOTAL}} IDs de marco P0 da §14 do prompt mestre (CORE, VIS, CAM, INT, AC, RULE, UX, DB, UCI, TRN, PLAT, PERF). UI-01 a UI-12 e UCI-05/06 são V1 e V2-SUM são V2: fora do P0. RULE-05 é "P0/V1" e entra aqui. `VIS-04` não existe na matriz.
@@ -460,10 +470,10 @@ Itens que só o usuário (ou hardware dele) resolve, mais as pendências de enge
 3. Itens de decisão do checklist: notação pt/en, formato dos Exercícios de afogamento, visual do relógio 3D (ver `docs/relatorios/p0.md`, DECISOES_PENDENTES).
 
 **Roteiro manual em janela real (Linux, sessão desbloqueada)**
-4. **CAM-01, CAM-02:** órbita com o botão do meio, pan, zoom, reset e Vistas conforme DEC-51 (trackpad só no Mac).
-5. **INT-03, UX-09:** Esc, perda de foco (Alt+Tab), clicar no painel e iniciar órbita no meio de um arrasto: nenhuma peça se move.
+4. **CAM-02, INT-01, UX-02:** reteste das correções da homologação de 09/11 (PR #137: relógio fora do enquadramento, Vistas e reset centralizados; PR #138: picking pelo corpo das peças e limiar de arrasto de 6 px). CAM-01 (órbita), CAM-03/04, UX-06, INT-02/UX-04 (e2→e5) e INT-03/UX-09 (cancelar arrasto) já passaram na homologação do usuário em 09/11. Trackpad só no Mac.
+5. **INT-03, UX-09:** concluídos em 09/11 (ver item 4); Alt+Tab e clicar no painel no meio de um arrasto seguem cobertos só pelo intérprete.
 6. **UX-10:** suavidade da animação de encaixe e do arrasto.
-7. Confirmar o clique real nas 64 casas nas 4 Vistas (CAM-04, UX-06) e a partida completa contra o Stockfish na janela (UCI-01), incluindo a tela do assistente de Engine (UCI-04).
+7. Confirmar a partida completa contra o Stockfish na janela (UCI-01), incluindo a tela do assistente de Engine (UCI-04).
 8. **PLAT-02:** jogar 2P, Exercícios e Engine local com a rede desligada.
 
 **Hardware e plataformas (B16 #40, B17 #41, A7 #24)**
