@@ -98,7 +98,7 @@ fn move_method_key(method: MoveMethod) -> &'static str {
     }
 }
 
-fn result_key(result: GameResult) -> &'static str {
+pub(crate) fn result_key(result: GameResult) -> &'static str {
     match result {
         GameResult::WhiteWins => "game-result-white",
         GameResult::BlackWins => "game-result-black",
@@ -106,7 +106,7 @@ fn result_key(result: GameResult) -> &'static str {
     }
 }
 
-fn reason_key(reason: EndReason) -> &'static str {
+pub(crate) fn reason_key(reason: EndReason) -> &'static str {
     match reason {
         EndReason::Checkmate => "game-reason-checkmate",
         EndReason::Stalemate => "game-reason-stalemate",
