@@ -143,6 +143,7 @@ struct Extras<'w> {
     controls: Res<'w, crate::controls::Controls>,
     local: ResMut<'w, crate::local_profiles::LocalProfiles>,
     effects: ResMut<'w, UltraEffects>,
+    hover: ResMut<'w, crate::hover::HoverHighlight>,
     support: Res<'w, GpuSupport>,
     training: Res<'w, crate::training_ui::TrainingUi>,
     scoresheet: Option<Res<'w, crate::scoresheet::ScoresheetUi>>,
@@ -177,6 +178,7 @@ fn info_panel(
     let mut chosen_quality = *quality;
     let mut chosen_view = *view_state;
     let mut chosen_effects = extras.effects.0;
+    let mut chosen_hover = extras.hover.0;
     let ctx = contexts.ctx_mut()?;
     let screen = ctx.viewport_rect();
     let responsive = crate::responsive::responsive_layout(
@@ -214,6 +216,8 @@ fn info_panel(
                         ui.small(i18n.t("quality-effects-unavailable"));
                     }
                 }
+                ui.checkbox(&mut chosen_hover, i18n.t("hover-highlight"))
+                    .on_hover_text(i18n.t("hover-highlight-hint"));
                 ui.separator();
                 let hide_notation = extras
                     .scoresheet
@@ -269,6 +273,9 @@ fn info_panel(
     }
     if chosen_quality != *quality {
         *quality = chosen_quality;
+    }
+    if chosen_hover != extras.hover.0 {
+        extras.hover.0 = chosen_hover;
     }
     if chosen_effects != extras.effects.0 {
         extras.effects.0 = chosen_effects;

@@ -28,6 +28,7 @@ mod fide_panel;
 mod focus;
 mod framing;
 mod highlight;
+mod hover;
 mod hud;
 mod hud_draw;
 mod hud_policy;
@@ -81,6 +82,7 @@ fn capture_script() -> capture::CaptureScript {
             .map(|m| m.split(',').map(str::to_owned).collect())
             .unwrap_or_default(),
         select: option_value("--select").and_then(|s| s.parse().ok()),
+        hover: option_value("--hover").and_then(|s| s.parse().ok()),
         show_panel: std::env::args().any(|a| a == "--panel") || option_value("--profile").is_some(),
         profile: option_value("--profile"),
         // Vazamento único na partida do processo de captura: o nome vive até o fim.
@@ -167,6 +169,7 @@ fn main() {
         pieces::PiecesPlugin,
         play::PlayPlugin,
         highlight::HighlightPlugin,
+        hover::HoverPlugin,
         board2d::Board2dPlugin,
         camera::CameraPlugin,
         picking::PickingPlugin,

@@ -490,6 +490,7 @@ fn nearest_source(
 /// Peças em repouso ficam no centro da casa; a selecionada/arrastada acompanha o gesto.
 fn place_resting(
     session: Res<Session>,
+    hover: Res<crate::hover::HoverTarget>,
     mut pieces: Query<
         (&PieceAt, &mut Transform, Has<Piece3d>),
         (Or<(With<Piece3d>, With<Piece2d>)>, Without<Settle>),
@@ -503,6 +504,9 @@ fn place_resting(
                 Some(world) => pos = Vec3::new(world.x, DRAG_HEIGHT, world.z),
                 None => pos.y = SELECT_HEIGHT,
             }
+        } else if hover.0 == Some(at.0) {
+            // Realce ao passar o mouse (C15): leve elevação, sem tocar a Partida.
+            pos.y = crate::hover::HOVER_LIFT;
         }
         if is_3d {
             transform.translation = pos;
