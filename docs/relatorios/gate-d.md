@@ -45,10 +45,13 @@ Critérios da issue #57 e do Gate D do prompt mestre. `PASS` exige teste ou evid
 | Benchmarks reproduzíveis de 5 min, todos os perfis | UNVERIFIED | Instrumento pronto (`--hud`, `--quality`, `--resolution`, `maquina_ocupada`; `scripts/benchmark_matriz.sh`, [`docs/benchmark.md`](../benchmark.md)). A medição UI-12 existente foi feita com a máquina ocupada ([`v1.md`](v1.md)). Falta rodar a matriz com a máquina ociosa e em GPU integrada |
 | Auditoria final da matriz de rastreabilidade | PASS (parcial) | P0: 54 PASS, 14 UNVERIFIED, 0 FAIL em 68 IDs (CORE-07 resolvido pelo #93) ([`p0.md`](p0.md), [`matriz-p0.md`](../homologacao/matriz-p0.md)). V1: 29 PASS, 2 UNVERIFIED em 31 IDs ([`v1.md`](v1.md), [`matriz-v1.md`](../homologacao/matriz-v1.md)). As matrizes são geradas e validadas por script; os UNVERIFIED restantes estão em "O que depende do usuário". |
 | Relatório de riscos | PASS | seção RISCO_RESIDUAL abaixo |
+| V2 entregue (Súmula manual) | PASS (parcial) | V2 está na `main` desde o PR #129 (issues #58 a #60); 3 PASS e 4 UNVERIFIED (visual e decisões do usuário) em [`v2.md`](v2.md) e [`matriz-v2.md`](../homologacao/matriz-v2.md). O draft `v0.0.0-rc3` **não contém** a V2 (nem o B28 e o B29, que vieram depois); um novo release exige nova tag |
 | GO da V1 (homologação) | UNVERIFIED | `v1.md` termina em `PENDENTE`; aguarda o usuário |
 | Proposta de release com versão, notas e evidência | UNVERIFIED | Depende do release em draft e das homologações; nenhuma tag `v*` foi criada |
 
 ## CI
+
+> **CI/CD desligado (07/11):** por decisão do usuário, a cota do GitHub Actions estourou e os workflows foram desligados; a validação é local (`cargo test --workspace`, `cargo clippy`, `cargo fmt`, `cargo deny`) e nada deve reativar ou disparar workflows sem pedido do usuário. A tabela abaixo é o histórico até então.
 
 | Workflow | Run | Resultado |
 |---|---|---|

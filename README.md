@@ -4,7 +4,7 @@
 
 Mesa pessoal de treinamento de xadrez: desktop nativo, offline e multiplataforma (Windows, Linux, macOS), para aprender a jogar no tabuleiro físico **sem depender de auxílios digitais**. Tabuleiro 3D sobre uma mesa discreta, 2D técnico, três Políticas de arbitragem (Assistido, Simulação FIDE, Eliminação Imediata), adversário por Engine UCI externa, Exercícios de regras, finais e memória, tudo gravado localmente em SQLite.
 
-> **Estado:** P0 e V1 implementados (Partida nas três Políticas, relógio, Engine UCI, SQLite, PGN/FEN, Exercícios, painéis, F11 e Foco, HUD, gerenciador de Engines). O CI (`ci.yml`) roda em cada PR; o release (`release.yml`) gera pacotes para os três sistemas num **draft**, sem publicar sozinho. A homologação ainda está **PENDENTE**: Windows/macOS, avaliação visual, benchmark limpo e o GO do usuário. Nada aqui é evidência de software pronto até a matriz de aceite marcar `PASS`. Situação do release: [docs/relatorios/gate-d.md](docs/relatorios/gate-d.md).
+> **Estado:** P0, V1 e V2 (Súmula manual, conferência e impressão A4) estão na `main`: Partida nas três Políticas, relógio, Engine UCI, SQLite, PGN/FEN, Exercícios, painéis, F11 e Foco, HUD, gerenciador de Engines e Súmula. O **CI/CD está desligado** por decisão do usuário em 07/11 (a cota do GitHub Actions estourou): a validação é local (`cargo test --workspace`, clippy, fmt, `cargo deny`) e os workflows não rodam sozinhos; o release (`release.yml`) só roda manualmente e gera um **draft**. A **homologação está em andamento**: o usuário já passou parte do checklist em janela real em 09/11 (ver [P0](docs/relatorios/p0.md)); faltam reteste das correções, Windows/macOS, avaliação visual, benchmark limpo e o GO do usuário. Nada aqui é evidência de software pronto até a matriz de aceite marcar `PASS`. Situação do release: [docs/relatorios/gate-d.md](docs/relatorios/gate-d.md); V2: [docs/relatorios/v2.md](docs/relatorios/v2.md).
 
 ## Rodar e testar
 
@@ -34,7 +34,7 @@ scripts/smoke-offline.sh                                    # smoke test offline
 
 Jogar contra o Stockfish (opcional): instale-o pelo gerenciador do sistema ou baixe do [site oficial](https://stockfishchess.org/download/) e registre-o no assistente/gerenciador de Engines do app (que faz o handshake UCI), ou informe o caminho do executável no painel. O Chess Studio nunca executa uma Engine sem a sua ação: `CHESS_STUDIO_ENGINE`, o `PATH` e o caminho digitado são apenas candidatos; antes de executar, o app mostra um aviso, você confirma e ele verifica que o arquivo fala UCI (Engines já registradas no gerenciador dispensam o aviso). Ao reabrir uma Partida contra a Engine, nada é executado até você clicar em "Conectar Engine e retomar". O Chess Studio nunca distribui Engines ([ADR-0003](docs/adr/0003-engines-externas-download-fixado.md)).
 
-**O que testar:** a lista de critérios de aceite manuais fica no artefato de progresso do projeto, na seção **Homologação** (cada item tem passos e campos PASS/FAIL/N/A com observação, e um botão para baixar o JSON). Os resultados de cada Gate ficam em [docs/relatorios/](docs/relatorios/) (P0, V1, licenças e [Gate D](docs/relatorios/gate-d.md)). Atualizar e recuperar dados: [docs/atualizacao-e-recuperacao.md](docs/atualizacao-e-recuperacao.md).
+**O que testar:** a lista de critérios de aceite manuais fica no artefato de progresso do projeto, na seção **Homologação** (cada item tem passos e campos PASS/FAIL/N/A com observação, e um botão para baixar o JSON). Os resultados de cada Gate ficam em [docs/relatorios/](docs/relatorios/) (P0, V1, [V2](docs/relatorios/v2.md), licenças e [Gate D](docs/relatorios/gate-d.md)). Atualizar e recuperar dados: [docs/atualizacao-e-recuperacao.md](docs/atualizacao-e-recuperacao.md).
 
 ## Documentos
 
@@ -50,7 +50,7 @@ Jogar contra o Stockfish (opcional): instale-o pelo gerenciador do sistema ou ba
 
 - **P0** — protótipo jogável, offline e homologável: regras completas, 3 Apresentações, 3 Políticas de arbitragem, relógio, Engine UCI, SQLite, PGN/FEN, treino mínimo.
 - **V1** — estação de estudo: painéis, F11 e modo Foco, HUD, biblioteca, gerenciador de Engines.
-- **V2** — súmula manual e conferência.
+- **V2** — súmula manual, conferência e impressão A4 (na `main`, homologação pendente).
 
 ## Licença
 
