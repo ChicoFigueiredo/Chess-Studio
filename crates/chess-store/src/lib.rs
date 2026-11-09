@@ -38,6 +38,7 @@ mod favorites;
 mod imported;
 mod library;
 pub mod migrations;
+mod openings;
 mod scoresheet;
 mod store;
 mod training;
@@ -51,6 +52,7 @@ pub use library::{
     LibraryEntry, LibraryEntryId, LibraryPage, LibraryQuery, LibrarySource, position_key,
 };
 pub use migrations::LATEST_VERSION as LATEST_SCHEMA_VERSION;
+pub use openings::{OPENING_PLIES, OpeningMoveStats};
 pub use store::{
     GameId, GameMetadata, GameQuery, GameSummary, MAX_PROFILE_NAME_LEN, OpenedGame, Pragmas,
     ProfileId, ProfileInfo, Store,

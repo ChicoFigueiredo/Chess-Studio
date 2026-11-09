@@ -50,3 +50,5 @@ board2d-play-here = Jogar por aqui
 board2d-play-here-hint = Desligado, o painel só mostra a posição. Ligado, cliques e arrastos viram as mesmas intenções do tabuleiro principal.
 board2d-flip = Girar
 board2d-flip-hint = Inverte o lado de baixo só neste painel.
+dock-detach = Destacar em janela
+dock-dock-back = Devolver ao dock

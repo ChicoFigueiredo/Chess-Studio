@@ -100,6 +100,9 @@ impl Store {
             }
         }
         tx.commit()?;
+        // Indexa já na importação (Biblioteca e explorador de aberturas, C19). Melhor esforço:
+        // o índice é derivado e a próxima consulta o completa se esta etapa falhar.
+        let _ = self.sync_library();
         Ok(ImportReport {
             imported,
             errors: parsed.errors,

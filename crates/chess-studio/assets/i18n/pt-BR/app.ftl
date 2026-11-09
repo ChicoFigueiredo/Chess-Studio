@@ -24,4 +24,6 @@ square-none = —
 
 quality-effects = Efeitos extras (bloom suave)
 quality-effects-hint = Realce suave nas partes mais claras da cena. Só no Ultra e só em GPUs que o suportam; não muda o tabuleiro nem os cliques.
+hover-highlight = Realce ao passar o mouse
+hover-highlight-hint = Realça a peça que você pode mover quando o ponteiro passa sobre ela. Não mostra destinos nem legalidade e não é Auxílio: o Perfil Jogo físico não o desliga.
 quality-effects-unavailable = Esta GPU não suporta os efeitos extras com o MSAA do Ultra; a qualidade segue sem eles.

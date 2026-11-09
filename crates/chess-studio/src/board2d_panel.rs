@@ -716,6 +716,16 @@ mod tests {
     }
 
     #[test]
+    fn the_panel_can_be_detached_to_a_floating_window_and_docked_back() {
+        let mut layout = crate::dock::DockLayout::default();
+        assert!(layout.detach(ids::BOARD2D, [100.0, 100.0], [320.0, 360.0]));
+        assert!(layout.is_floating(ids::BOARD2D));
+        assert!(layout.dock_back(ids::BOARD2D));
+        assert!(!layout.is_floating(ids::BOARD2D));
+        assert!(layout.is_visible(ids::BOARD2D));
+    }
+
+    #[test]
     fn drawing_the_read_only_panel_never_mutates_the_game() {
         use crate::aids::AidSettings;
         let mut app = App::new();

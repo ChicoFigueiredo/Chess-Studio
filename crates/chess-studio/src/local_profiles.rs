@@ -163,6 +163,7 @@ struct Applied<'w> {
     presentation: ResMut<'w, Presentation>,
     quality: ResMut<'w, GraphicsQuality>,
     effects: ResMut<'w, UltraEffects>,
+    hover: ResMut<'w, crate::hover::HoverHighlight>,
     view: ResMut<'w, ViewState>,
     dock: ResMut<'w, Dock>,
     interface: ResMut<'w, InterfaceProfiles>,
@@ -189,8 +190,9 @@ impl Applied<'_> {
         *self.presentation = prefs.presentation;
         *self.quality = prefs.quality;
         *self.effects = prefs.ultra_effects;
+        *self.hover = prefs.hover_highlight;
         *self.view = prefs.view;
-        self.dock.layout = layout;
+        self.dock.set_layout(layout);
         *self.interface = InterfaceProfiles::with_state(interface);
         self.engine
             .apply_saved(prefs.engine_user_side, prefs.engine_elo);

@@ -1923,6 +1923,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "chess-openings"
+version = "0.1.0"
+dependencies = [
+ "chess-core",
+]
+
+[[package]]
 name = "chess-pgn"
 version = "0.1.0"
 dependencies = [
@@ -1954,6 +1961,7 @@ dependencies = [
  "chess-core",
  "chess-game",
  "chess-input",
+ "chess-openings",
  "chess-pgn",
  "chess-store",
  "chess-training",
