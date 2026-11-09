@@ -128,6 +128,37 @@ impl CameraPose {
     }
 }
 
+/// Enquadramento centrado: mantém o alvo da `pose` (o centro do tabuleiro, no caso das Vistas)
+/// e ajusta só a distância para que todos os `points` caibam na área útil. Diferente de
+/// `frame_points`, nunca desloca o alvo: o ponto visado fica exatamente no centro da tela.
+pub fn fit_distance(
+    pose: CameraPose,
+    points: &[Vec3],
+    aspect: f32,
+    vertical_fov: f32,
+    fill: f32,
+) -> CameraPose {
+    if points.is_empty() || !aspect.is_finite() || aspect <= 0.0 || fill <= 0.0 {
+        return pose;
+    }
+    let (sy, cy) = pose.yaw.sin_cos();
+    let (sp, cp) = pose.pitch.sin_cos();
+    let toward = Vec3::new(sy * cp, sp, cy * cp);
+    let right = pose.right();
+    let up = right.cross(-toward);
+    let tan_y = (vertical_fov / 2.0).tan() * fill;
+    let tan_x = tan_y * aspect;
+    let distance = points
+        .iter()
+        .map(|p| {
+            let rel = *p - pose.target;
+            let sideways = (rel.dot(right).abs() / tan_x).max(rel.dot(up).abs() / tan_y);
+            rel.dot(toward) + sideways
+        })
+        .fold(f32::MIN, f32::max);
+    CameraPose { distance, ..pose }.clamped_distance()
+}
+
 /// Enquadramento puro: ajusta alvo e distância da `pose` (mantendo guinada e inclinação) para
 /// que todos os `points` caibam na área útil, dado o `aspect` (largura/altura do viewport) e
 /// o campo de visão vertical (radianos). `fill` (0..1) é a fração do campo que os pontos podem
@@ -360,5 +391,24 @@ mod tests {
         assert_eq!(frame_points(pose, &[], 1.7, fov, 0.9), pose);
         assert_eq!(frame_points(pose, &[Vec3::X], 0.0, fov, 0.9), pose);
         assert!(frame_points(pose, &[Vec3::X], f32::NAN, fov, 0.9) == pose);
+    }
+
+    #[test]
+    fn fit_distance_keeps_the_target_and_fits_the_points() {
+        let fov = 45f32.to_radians();
+        let points = [Vec3::new(-5.2, 0.0, -5.2), Vec3::new(5.2, 2.0, 5.2)];
+        for view in CameraView::ALL {
+            for aspect in [0.8, 1.78] {
+                let fitted = fit_distance(view.pose(), &points, aspect, fov, 0.94);
+                assert_eq!(fitted.target, Vec3::ZERO);
+                assert_eq!(
+                    (fitted.yaw, fitted.pitch),
+                    (view.pose().yaw, view.pose().pitch)
+                );
+            }
+        }
+        let wide = fit_distance(CameraView::Standard.pose(), &points, 2.0, fov, 0.94);
+        let narrow = fit_distance(CameraView::Standard.pose(), &points, 1.0, fov, 0.94);
+        assert!(narrow.distance > wide.distance);
     }
 }

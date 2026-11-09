@@ -21,4 +21,4 @@ pub use gesture::{
     PointerButton,
 };
 pub use settle::{DRAG_HEIGHT, SETTLE_SECS, settle_position};
-pub use view::{CameraPose, CameraView, frame_points};
+pub use view::{CameraPose, CameraView, fit_distance, frame_points};
