@@ -27,9 +27,19 @@ impl Default for BoardCoordinates {
     }
 }
 
-/// Rótulo 3D (a malha única das coordenadas na moldura).
+/// Rótulos 3D de um lado da moldura: `turned = false` é o conjunto legível do lado das
+/// brancas; `turned = true`, o girado 180° legível do lado das pretas. Só o conjunto do
+/// lado da câmera aparece (o do lado oposto ficaria de cabeça para baixo e atrás das peças).
 #[derive(Component)]
-pub struct Labels3d;
+pub struct Labels3d {
+    pub turned: bool,
+}
+
+/// Qual conjunto de rótulos 3D a câmera lê de pé: `right_x` é o eixo "direita" da câmera
+/// no eixo x do mundo (+1 nas Vistas das brancas e na superior; -1 na Vista invertida).
+pub fn reads_turned(right_x: f32) -> bool {
+    right_x < -1e-3
+}
 
 /// Rótulo 2D técnico (texto nas margens).
 #[derive(Component)]
@@ -147,21 +157,21 @@ fn ellipse(c: (f32, f32), r: (f32, f32)) -> Poly {
 fn strokes(glyph: char) -> Vec<Poly> {
     match glyph {
         'a' => vec![
-            ellipse((0.4, 0.5), (0.3, 0.5)),
-            vec![(0.7, 0.0), (0.7, 1.0)],
+            ellipse((0.4, 0.3), (0.3, 0.3)),
+            vec![(0.7, 0.0), (0.7, 0.6)],
         ],
         'b' => vec![
             vec![(0.3, 0.0), (0.3, 1.0)],
-            ellipse((0.6, 0.5), (0.3, 0.5)),
+            ellipse((0.6, 0.3), (0.3, 0.3)),
         ],
-        'c' => vec![arc((0.55, 0.5), (0.4, 0.5), 40.0, 320.0)],
+        'c' => vec![arc((0.55, 0.3), (0.4, 0.3), 40.0, 320.0)],
         'd' => vec![
             vec![(0.7, 0.0), (0.7, 1.0)],
-            ellipse((0.4, 0.5), (0.3, 0.5)),
+            ellipse((0.4, 0.3), (0.3, 0.3)),
         ],
         'e' => vec![
-            arc((0.5, 0.5), (0.38, 0.5), 0.0, 325.0),
-            vec![(0.12, 0.5), (0.88, 0.5)],
+            arc((0.5, 0.3), (0.38, 0.3), 0.0, 325.0),
+            vec![(0.12, 0.3), (0.88, 0.3)],
         ],
         'f' => vec![
             arc((0.75, 0.75), (0.25, 0.25), 0.0, 180.0)
@@ -171,13 +181,13 @@ fn strokes(glyph: char) -> Vec<Poly> {
             vec![(0.25, 0.6), (0.8, 0.6)],
         ],
         'g' => vec![
-            ellipse((0.4, 0.62), (0.3, 0.38)),
+            ellipse((0.4, 0.33), (0.3, 0.3)),
             vec![
-                (0.7, 1.0),
-                (0.7, 0.2),
-                (0.62, 0.07),
-                (0.4, 0.0),
-                (0.2, 0.07),
+                (0.7, 0.63),
+                (0.7, -0.02),
+                (0.6, -0.12),
+                (0.4, -0.15),
+                (0.22, -0.08),
             ],
         ],
         'h' => vec![
@@ -382,14 +392,21 @@ fn spawn_labels_3d(
         depth_bias: 1.0,
         ..default()
     });
-    commands.spawn((
-        Name::new("board_coordinates"),
-        Mesh3d(meshes.add(labels_mesh(&label_slots()))),
-        MeshMaterial3d(material),
-        Transform::default(),
-        NotShadowCaster,
-        Labels3d,
-    ));
+    for turned in [false, true] {
+        let slots: Vec<LabelSlot> = label_slots()
+            .into_iter()
+            .filter(|s| s.turned == turned)
+            .collect();
+        commands.spawn((
+            Name::new("board_coordinates"),
+            Mesh3d(meshes.add(labels_mesh(&slots))),
+            MeshMaterial3d(material.clone()),
+            Transform::default(),
+            Visibility::Hidden,
+            NotShadowCaster,
+            Labels3d { turned },
+        ));
+    }
 }
 
 /// C (remapeável, `controls`) alterna as coordenadas. Não age se o egui quer o teclado.
@@ -406,26 +423,27 @@ fn coordinates_shortcut(
     }
 }
 
-/// Mostra os rótulos da Apresentação atual quando a opção está ligada. Roda quando a opção
-/// ou a Apresentação mudam (e quando nascem rótulos novos).
+/// Mostra os rótulos da Apresentação atual quando a opção está ligada; no 3D, só o conjunto
+/// do lado da câmera. Roda todo quadro (poucas entidades), escrevendo só quando muda.
 #[allow(clippy::type_complexity)]
 fn sync_visibility(
     coordinates: Res<BoardCoordinates>,
     presentation: Res<Presentation>,
-    mut q3d: Query<&mut Visibility, (With<Labels3d>, Without<Labels2d>)>,
+    camera: Option<Single<&Transform, With<crate::camera::MainCamera>>>,
+    mut q3d: Query<(&Labels3d, &mut Visibility), Without<Labels2d>>,
     mut q2d: Query<&mut Visibility, (With<Labels2d>, Without<Labels3d>)>,
-    added: Query<(), Or<(Added<Labels3d>, Added<Labels2d>)>>,
 ) {
-    if !(coordinates.is_changed() || presentation.is_changed() || !added.is_empty()) {
-        return;
-    }
-    let want_3d = visibility_for(coordinates.0, presentation.is_3d());
-    let want_2d = visibility_for(coordinates.0, !presentation.is_3d());
-    for mut vis in &mut q3d {
-        if *vis != want_3d {
-            *vis = want_3d;
+    let turned = camera.is_some_and(|t| reads_turned(t.right().x));
+    for (labels, mut vis) in &mut q3d {
+        let want = visibility_for(
+            coordinates.0 && labels.turned == turned,
+            presentation.is_3d(),
+        );
+        if *vis != want {
+            *vis = want;
         }
     }
+    let want_2d = visibility_for(coordinates.0, !presentation.is_3d());
     for mut vis in &mut q2d {
         if *vis != want_2d {
             *vis = want_2d;
@@ -564,6 +582,14 @@ mod tests {
         assert_eq!(visibility_for(true, true), Visibility::Inherited);
         assert_eq!(visibility_for(false, true), Visibility::Hidden);
         assert_eq!(visibility_for(true, false), Visibility::Hidden);
+    }
+
+    #[test]
+    fn the_camera_side_picks_which_label_set_reads_upright() {
+        assert!(!reads_turned(1.0));
+        assert!(!reads_turned(0.2));
+        assert!(reads_turned(-1.0));
+        assert!(reads_turned(-0.5));
     }
 
     #[test]
