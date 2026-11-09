@@ -1,0 +1,94 @@
+{
+  "schema_version": 2,
+  "run": {
+    "app_version": "0.1.0",
+    "git_commit": "7fddcf388471",
+    "started_utc": "2026-11-09T13:15:58Z",
+    "requested_minutes": 5.0,
+    "measured_seconds": 297.01765881729125,
+    "warmup_seconds": 3.0,
+    "scene_load_seconds": 0.712144412,
+    "preset": "equilibrado",
+    "quality": "equilibrado",
+    "hud": true,
+    "engine": "ociosa",
+    "engine_integrated": false,
+    "present_mode": "vsync",
+    "window_width": 1920,
+    "window_height": 1020,
+    "route": "órbita de 20 s por volta; Vista a cada 15 s (Padrão, Oblíqua, Superior, Invertida)"
+  },
+  "system": {
+    "os": "Linux (Ubuntu 26.04)",
+    "kernel": "7.0.0-43-generic",
+    "cpu_brand": "AMD Ryzen 7 3700X 8-Core Processor",
+    "cpu_logical_cores": 16,
+    "ram_total_mib": 128688.8515625
+  },
+  "machine": {
+    "start": {
+      "load_average_1m": 3.01,
+      "system_cpu_percent": 15.249424934387207
+    },
+    "end": {
+      "load_average_1m": 2.1,
+      "system_cpu_percent": 10.954516410827637
+    },
+    "cpu_logical_cores": 16,
+    "load_per_core_limit": 0.7,
+    "system_cpu_limit_percent": 70.0,
+    "load_per_core_max": 0.188125,
+    "maquina_ocupada": false
+  },
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 4080 SUPER",
+    "vendor_id": 4318,
+    "device_id": 9986,
+    "device_type": "DiscreteGpu",
+    "driver": "NVIDIA",
+    "driver_info": "620.70.06",
+    "backend": "Vulkan",
+    "vram_source": "nvidia-smi",
+    "vram_total_mib": 16376.0
+  },
+  "frame_time": {
+    "frames": 17819,
+    "total_seconds": 297.01765881729125,
+    "fps_avg": 59.993065971075,
+    "frame_ms_avg": 16.668593008434325,
+    "frame_ms_min": 10.425847053527832,
+    "frame_ms_max": 28.547691345214844,
+    "frame_ms_p1": 15.064400672912598,
+    "frame_ms_p5": 15.740801811218262,
+    "frame_ms_p50": 16.660829544067383,
+    "frame_ms_p95": 17.615764617919922,
+    "frame_ms_p99": 18.07867431640625,
+    "fps_1pct_low": 53.44624886465119
+  },
+  "process_ram_mib": {
+    "samples": 294,
+    "min": 688.13671875,
+    "avg": 698.0410953443877,
+    "max": 700.73046875
+  },
+  "process_cpu_percent": {
+    "samples": 294,
+    "min": 0.0,
+    "avg": 78.28699822977286,
+    "max": 87.23541259765625
+  },
+  "gpu_vram_used_mib": {
+    "samples": 294,
+    "min": 2181.0,
+    "avg": 2182.7619047619046,
+    "max": 2216.0
+  },
+  "gpu_utilization_percent": {
+    "samples": 294,
+    "min": 6.0,
+    "avg": 37.54421768707483,
+    "max": 46.0
+  },
+  "analysis": null,
+  "notes": []
+}
