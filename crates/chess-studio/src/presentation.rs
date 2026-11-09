@@ -445,10 +445,20 @@ fn apply_quality(
         commands.entity(entity).insert(msaa);
     }
     commands.entity(*camera).insert(quality.shadow_filter());
-    // Efeitos opcionais do Ultra, só na câmera 3D (a do egui e a do 2D ficam como estão).
-    if quality.bloom_for(effects.0, *support) {
+    // Efeitos opcionais do Ultra. O bloom e o tonemapping ficam só na câmera 3D, mas o `Hdr`
+    // vale para TODAS as câmeras da janela: câmeras com HDR diferente usam texturas principais
+    // diferentes e a câmera do egui (sem limpeza de cor) compunha a interface sobre uma textura
+    // de quadros antigos ao trocar de Apresentação: janela e tooltip duplicados (issue #142).
+    let bloom = quality.bloom_for(effects.0, *support);
+    for entity in &cameras {
+        if bloom {
+            commands.entity(entity).insert(Hdr);
+        } else {
+            commands.entity(entity).remove::<Hdr>();
+        }
+    }
+    if bloom {
         commands.entity(*camera).insert((
-            Hdr,
             Tonemapping::TonyMcMapface,
             Bloom {
                 intensity: 0.06,
@@ -456,7 +466,7 @@ fn apply_quality(
             },
         ));
     } else {
-        commands.entity(*camera).remove::<(Hdr, Bloom)>();
+        commands.entity(*camera).remove::<Bloom>();
     }
     shadow_map.size = quality.shadow_map_size();
     for (role, mut light) in &mut lights {
@@ -558,6 +568,66 @@ mod tests {
                     .all(|m| *m == quality.msaa_for(GpuSupport::FULL)),
                 "{quality:?}: MSAA divergente entre câmeras: {found:?}"
             );
+        }
+    }
+
+    /// Issue #142: a interface é desenhada por exatamente uma câmera (a do contexto egui
+    /// primário) em qualquer Apresentação, e todas as câmeras da janela têm o mesmo MSAA e o
+    /// mesmo HDR depois de trocar de Apresentação várias vezes com o bloom ligado.
+    #[test]
+    fn one_ui_camera_and_uniform_camera_setup_after_cycling_presentations() {
+        use bevy_egui::PrimaryEguiContext;
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<crate::controls::Controls>()
+            .init_resource::<EguiWantsInput>()
+            .init_resource::<ClearColor>()
+            .init_resource::<GlobalAmbientLight>()
+            .init_resource::<DirectionalLightShadowMap>()
+            .init_resource::<EguiGlobalSettings>()
+            .insert_resource(GraphicsQuality::Ultra)
+            .add_plugins(PresentationPlugin)
+            .add_systems(
+                Startup,
+                (
+                    spawn_main_camera,
+                    crate::board2d::spawn_camera,
+                    crate::ui::spawn_ui_camera,
+                ),
+            );
+        for step in 0..9 {
+            if step == 4 {
+                app.insert_resource(UltraEffects(false));
+            }
+            if step == 6 {
+                app.insert_resource(UltraEffects(true));
+            }
+            let next = app.world().resource::<Presentation>().next();
+            app.insert_resource(next);
+            app.update();
+            app.update();
+            let world = app.world_mut();
+            let ui_cameras = world
+                .query_filtered::<&Camera, With<PrimaryEguiContext>>()
+                .iter(world)
+                .count();
+            assert_eq!(ui_cameras, 1, "passo {step}: uma única câmera de UI");
+            let ui_active = world
+                .query_filtered::<&Camera, With<PrimaryEguiContext>>()
+                .single(world)
+                .unwrap()
+                .is_active;
+            assert!(ui_active, "passo {step}: a câmera de UI fica sempre ativa");
+            let mut q = world.query::<(&Camera, &Msaa, Has<Hdr>)>();
+            let setups: Vec<(Msaa, bool)> = q.iter(world).map(|(_, m, h)| (*m, h)).collect();
+            assert_eq!(setups.len(), 3);
+            assert!(
+                setups.windows(2).all(|w| w[0] == w[1]),
+                "passo {step}: MSAA/HDR divergente entre câmeras: {setups:?}"
+            );
+            let scene_active = q.iter(world).filter(|(c, ..)| c.is_active).count();
+            assert_eq!(scene_active, 2, "UI + exatamente uma câmera de cena");
         }
     }
 }
