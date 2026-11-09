@@ -83,6 +83,8 @@ pub struct CaptureScript {
     pub moves: Vec<String>,
     /// Peça a selecionar por clique depois dos Lances (mostra elevação e destinos).
     pub select: Option<Square>,
+    /// `--hover <casa>`: força o realce de hover nesta casa (sem cursor real na captura).
+    pub hover: Option<Square>,
     /// Mantém o painel egui visível.
     pub show_panel: bool,
     /// Perfil de auxílios da captura: `physical`, `training` (padrão) ou `ghosts`
@@ -133,6 +135,11 @@ pub struct CaptureMode {
 }
 
 impl CaptureMode {
+    /// Casa de hover forçada pelo roteiro (`--hover`).
+    pub fn forced_hover(&self) -> Option<Square> {
+        self.script.hover
+    }
+
     pub fn new(dir: PathBuf, script: CaptureScript) -> Self {
         Self {
             dir,

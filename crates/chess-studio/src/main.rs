@@ -12,6 +12,7 @@ mod asset_dir;
 mod benchmark;
 mod board;
 mod board2d;
+mod board2d_panel;
 mod camera;
 mod capture;
 mod captured;
@@ -19,6 +20,7 @@ mod clock;
 mod controls;
 mod coordinates;
 mod dock;
+mod end_game;
 mod engine;
 mod engine_consent;
 mod engine_manager;
@@ -28,6 +30,7 @@ mod fide_panel;
 mod focus;
 mod framing;
 mod highlight;
+mod hover;
 mod hud;
 mod hud_draw;
 mod hud_policy;
@@ -38,6 +41,7 @@ mod load_control;
 mod local_profiles;
 mod new_game;
 mod notation;
+mod openings;
 mod paths;
 mod persistence;
 mod picking;
@@ -81,6 +85,7 @@ fn capture_script() -> capture::CaptureScript {
             .map(|m| m.split(',').map(str::to_owned).collect())
             .unwrap_or_default(),
         select: option_value("--select").and_then(|s| s.parse().ok()),
+        hover: option_value("--hover").and_then(|s| s.parse().ok()),
         show_panel: std::env::args().any(|a| a == "--panel") || option_value("--profile").is_some(),
         profile: option_value("--profile"),
         // Vazamento único na partida do processo de captura: o nome vive até o fim.
@@ -167,8 +172,8 @@ fn main() {
         pieces::PiecesPlugin,
         play::PlayPlugin,
         highlight::HighlightPlugin,
+        hover::HoverPlugin,
         board2d::Board2dPlugin,
-        coordinates::CoordinatesPlugin,
         camera::CameraPlugin,
         picking::PickingPlugin,
         ui::UiPlugin,
@@ -193,8 +198,12 @@ fn main() {
         local_profiles::LocalProfilesPlugin,
     ));
     app.add_plugins((hud::HudPlugin, hud_draw::HudDrawPlugin));
+    app.add_plugins(board2d_panel::Board2dPanelPlugin);
+    app.add_plugins(coordinates::CoordinatesPlugin);
+    app.add_plugins(end_game::EndGamePlugin);
     app.add_plugins(training_ui::TrainingPlugin);
     app.add_plugins(library_ui::LibraryPlugin);
+    app.add_plugins(openings::OpeningsPlugin);
     app.add_plugins(scoresheet::ScoresheetPlugin);
     if let Some(dir) = capture {
         if let Err(err) = std::fs::create_dir_all(&dir) {
@@ -219,6 +228,13 @@ fn main() {
             Some("ultra") => app.insert_resource(presentation::GraphicsQuality::Ultra),
             _ => &mut app,
         };
+        // `--no-end-dialog`: capturas do rei tombado sem o diálogo por cima.
+        if std::env::args().any(|a| a == "--no-end-dialog") {
+            app.insert_resource(end_game::EndDialog {
+                suppressed: true,
+                ..default()
+            });
+        }
         // `--focus`: a evidência do modo Foco (sem banco, o estado não vem das preferências).
         if std::env::args().any(|a| a == "--focus") {
             app.insert_resource(focus::ViewState {

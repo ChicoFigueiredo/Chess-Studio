@@ -13,6 +13,7 @@ dock-panel-training = Treino
 dock-panel-engines = Engines
 dock-panel-analysis = Análise
 dock-panel-scoresheet = Súmula
+dock-panel-board2d = Tabuleiro 2D
 dock-unavailable-competitive = Indisponível em Partida competitiva.
 
 notation-empty = Nenhum lance ainda.
@@ -44,3 +45,10 @@ study-hint = Escreva sua anotação para este Lance…
 study-note-no-effect = Anotações são só suas: não alteram a Partida e saem como comentários no PGN.
 study-list = Anotações ({ $count })
 study-unavailable-training = Indisponível durante um Exercício de Treino.
+
+board2d-play-here = Jogar por aqui
+board2d-play-here-hint = Desligado, o painel só mostra a posição. Ligado, cliques e arrastos viram as mesmas intenções do tabuleiro principal.
+board2d-flip = Girar
+board2d-flip-hint = Inverte o lado de baixo só neste painel.
+dock-detach = Destacar em janela
+dock-dock-back = Devolver ao dock

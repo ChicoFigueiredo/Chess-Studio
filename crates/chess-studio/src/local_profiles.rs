@@ -164,6 +164,7 @@ struct Applied<'w> {
     quality: ResMut<'w, GraphicsQuality>,
     effects: ResMut<'w, UltraEffects>,
     coordinates: ResMut<'w, crate::coordinates::BoardCoordinates>,
+    hover: ResMut<'w, crate::hover::HoverHighlight>,
     view: ResMut<'w, ViewState>,
     dock: ResMut<'w, Dock>,
     interface: ResMut<'w, InterfaceProfiles>,
@@ -191,8 +192,9 @@ impl Applied<'_> {
         *self.quality = prefs.quality;
         *self.effects = prefs.ultra_effects;
         *self.coordinates = prefs.coordinates;
+        *self.hover = prefs.hover_highlight;
         *self.view = prefs.view;
-        self.dock.layout = layout;
+        self.dock.set_layout(layout);
         *self.interface = InterfaceProfiles::with_state(interface);
         self.engine
             .apply_saved(prefs.engine_user_side, prefs.engine_elo);

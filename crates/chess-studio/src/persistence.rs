@@ -12,6 +12,7 @@ use crate::coordinates::BoardCoordinates;
 use crate::dock::{Dock, DockLayout};
 use crate::engine::{EngineUi, MAX_ELO, MIN_ELO};
 use crate::focus::ViewState;
+use crate::hover::HoverHighlight;
 use crate::hud::HudSettings;
 use crate::play::PlaySet;
 use crate::presentation::{GraphicsQuality, Presentation, UltraEffects};
@@ -51,6 +52,8 @@ const KEY_CONTROLS: &str = "controls";
 const KEY_ULTRA_EFFECTS: &str = "ultra_effects";
 /// Coordenadas a–h / 1–8 nas bordas do tabuleiro (C16): ligadas ou desligadas.
 const KEY_COORDINATES: &str = "board_coordinates";
+/// Realce ao passar o mouse (C15): afordância de interface, fora dos Auxílios.
+const KEY_HOVER_HIGHLIGHT: &str = "hover_highlight";
 /// Prefixo da chave das Anotações de estudo (C2): uma preferência por Partida.
 const KEY_STUDY_NOTES: &str = "study_notes";
 
@@ -72,6 +75,8 @@ pub struct SavedPrefs {
     pub ultra_effects: UltraEffects,
     /// Coordenadas nas bordas do tabuleiro (C16).
     pub coordinates: BoardCoordinates,
+    /// Realce da peça sob o cursor (ligado por padrão; não é Auxílio).
+    pub hover_highlight: HoverHighlight,
 }
 
 impl Default for SavedPrefs {
@@ -87,6 +92,7 @@ impl Default for SavedPrefs {
             view: ViewState::default(),
             ultra_effects: UltraEffects::default(),
             coordinates: BoardCoordinates::default(),
+            hover_highlight: HoverHighlight::default(),
         }
     }
 }
@@ -495,6 +501,11 @@ impl Persistence {
                     .and_then(|v| v.as_bool())
                     .unwrap_or(defaults.coordinates.0),
             ),
+            hover_highlight: HoverHighlight(
+                get(KEY_HOVER_HIGHLIGHT)
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(defaults.hover_highlight.0),
+            ),
         }
     }
 
@@ -713,6 +724,9 @@ impl Persistence {
         if before.coordinates != now.coordinates {
             writes.push((KEY_COORDINATES, json!(now.coordinates.0)));
         }
+        if before.hover_highlight != now.hover_highlight {
+            writes.push((KEY_HOVER_HIGHLIGHT, json!(now.hover_highlight.0)));
+        }
         for (key, value) in writes {
             if let Err(err) = self.store.set_pref(self.profile, key, &value) {
                 self.report(&err);
@@ -811,6 +825,7 @@ impl Plugin for PersistencePlugin {
             .insert_resource(prefs.quality)
             .insert_resource(prefs.ultra_effects)
             .insert_resource(prefs.coordinates)
+            .insert_resource(prefs.hover_highlight)
             .insert_resource(crate::controls::Controls::with_map(controls))
             .insert_resource(local_profiles)
             .insert_resource(prefs.view)
@@ -869,6 +884,7 @@ fn persist_prefs(
     quality: Res<GraphicsQuality>,
     ultra_effects: Res<UltraEffects>,
     coordinates: Res<BoardCoordinates>,
+    hover_highlight: Res<HoverHighlight>,
     engine_ui: Res<EngineUi>,
     view: Res<ViewState>,
     handle: Res<PersistenceHandle>,
@@ -885,6 +901,7 @@ fn persist_prefs(
             view: *view,
             ultra_effects: *ultra_effects,
             coordinates: *coordinates,
+            hover_highlight: *hover_highlight,
         });
     }
 }
@@ -1288,6 +1305,7 @@ mod tests {
             },
             ultra_effects: UltraEffects(false),
             coordinates: BoardCoordinates(false),
+            hover_highlight: HoverHighlight(false),
         };
         p.sync_prefs(custom);
         let p2 = Persistence::new(p.into_store());
@@ -1337,6 +1355,36 @@ mod tests {
         p2.sync_layout(&DockLayout::default());
         let mut p3 = Persistence::new(p2.into_store());
         assert_eq!(p3.load_layout(), DockLayout::default());
+    }
+
+    /// C18: janelas flutuantes (painel, posição, tamanho) persistem no layout e no Perfil de
+    /// interface, e voltam ao reabrir.
+    #[test]
+    fn floating_windows_round_trip_in_the_layout_and_in_a_profile() {
+        use crate::dock::ids;
+        use crate::profiles::{InterfaceProfile, InterfaceState, ProfilesState};
+        let mut layout = DockLayout::default();
+        layout.detach(ids::STUDY, [111.0, 77.0], [333.0, 222.0]);
+        let mut p = new_persistence();
+        p.sync_layout(&layout);
+        let mut profiles = ProfilesState::default();
+        let state = InterfaceState {
+            presentation: Presentation::Technical2d,
+            dock: layout.clone(),
+            aids: AidSettings::physical(),
+            focus: false,
+        };
+        profiles
+            .save_user("Flutuante", InterfaceProfile::capture(&state, None))
+            .unwrap();
+        p.sync_profiles(&profiles);
+        let mut p2 = Persistence::new(p.into_store());
+        let back = p2.load_layout();
+        assert_eq!(back, layout);
+        assert!(back.is_floating(ids::STUDY));
+        assert_eq!(back.floating[0].pos, [111.0, 77.0]);
+        assert_eq!(back.floating[0].size, [333.0, 222.0]);
+        assert_eq!(p2.load_profiles(), profiles);
     }
 
     /// UI-09: o perfil ativo e os perfis do usuário persistem e voltam ao reabrir.

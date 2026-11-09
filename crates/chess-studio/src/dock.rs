@@ -54,7 +54,9 @@ pub mod ids {
     pub const TRAINING: &str = "Training";
     pub const ANALYSIS: &str = "Analysis";
     pub const LIBRARY: &str = "Library";
+    pub const OPENINGS: &str = "Openings";
     pub const SCORESHEET: &str = "Scoresheet";
+    pub const BOARD2D: &str = "Board2d";
 }
 
 /// Quando o painel pode ser aberto.
@@ -131,7 +133,7 @@ pub(crate) const MAX_WIDTH: f32 = 640.0;
 
 /// Grupos de abas do layout padrão, de cima para baixo.
 const DEFAULT_GROUPS: [&[&str]; 3] = [
-    &[ids::CLOCK, ids::CAPTURED],
+    &[ids::CLOCK, ids::CAPTURED, ids::BOARD2D],
     &[ids::NOTATION, ids::STUDY],
     &[
         ids::AIDS,
@@ -142,6 +144,9 @@ const DEFAULT_GROUPS: [&[&str]; 3] = [
     ],
 ];
 
+/// Fatia relativa do grupo do alto no layout padrão (os outros têm 1.0).
+const TOP_GROUP_SHARE: f32 = 2.2;
+
 fn default_rank(id: &str) -> usize {
     DEFAULT_GROUPS
         .iter()
@@ -150,12 +155,63 @@ fn default_rank(id: &str) -> usize {
         .unwrap_or(usize::MAX)
 }
 
+/// Tamanho mínimo e padrão de uma janela flutuante, em pontos do egui.
+pub(crate) const MIN_FLOAT_SIZE: [f32; 2] = [180.0, 100.0];
+const DEFAULT_FLOAT_SIZE: [f32; 2] = [320.0, 240.0];
+
+/// Um painel destacado do dock numa janela flutuante dentro da janela do app (C18). Posição
+/// e tamanho são do layout (por Perfil de interface); `home` lembra um irmão de grupo para
+/// devolver o painel ao mesmo lugar.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FloatingPanel {
+    pub id: PanelId,
+    /// Canto superior esquerdo, em pontos do egui.
+    pub pos: [f32; 2],
+    /// Tamanho externo da janela, em pontos do egui.
+    pub size: [f32; 2],
+    /// Fechar a janela oculta o painel (como desmarcar na lista "Painéis").
+    pub visible: bool,
+    /// Outro painel do grupo de origem, se havia.
+    #[serde(default)]
+    pub home: Option<PanelId>,
+}
+
+impl FloatingPanel {
+    pub fn new(id: PanelId, pos: [f32; 2], size: [f32; 2]) -> Self {
+        let mut panel = Self {
+            id,
+            pos: [0.0; 2],
+            size: DEFAULT_FLOAT_SIZE,
+            visible: true,
+            home: None,
+        };
+        panel.set_rect(pos, size);
+        panel
+    }
+
+    /// Grava a geometria; valores não finitos viram o padrão e o tamanho respeita o mínimo.
+    fn set_rect(&mut self, pos: [f32; 2], size: [f32; 2]) {
+        for i in 0..2 {
+            self.pos[i] = if pos[i].is_finite() { pos[i] } else { 0.0 };
+            self.size[i] = if size[i].is_finite() {
+                size[i].max(MIN_FLOAT_SIZE[i])
+            } else {
+                DEFAULT_FLOAT_SIZE[i]
+            };
+        }
+    }
+}
+
 /// Layout do dock: a árvore de abas/divisões (com os tamanhos relativos e a visibilidade
-/// de cada painel) e a largura da região. É o que vai para o SQLite.
+/// de cada painel), a largura da região e as janelas flutuantes. É o que vai para o
+/// SQLite e, por Perfil de interface, para o perfil.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct DockLayout {
     pub width: f32,
     pub tree: Tree<PanelId>,
+    /// Painéis destacados. Ausente nos layouts anteriores ao C18 (vira lista vazia).
+    #[serde(default)]
+    pub floating: Vec<FloatingPanel>,
 }
 
 impl std::fmt::Debug for DockLayout {
@@ -163,6 +219,7 @@ impl std::fmt::Debug for DockLayout {
         f.debug_struct("DockLayout")
             .field("width", &self.width)
             .field("tree", &self.tree)
+            .field("floating", &self.floating)
             .finish()
     }
 }
@@ -182,33 +239,193 @@ impl Default for DockLayout {
                 tiles.insert_tab_tile(panes)
             })
             .collect();
+        let first = groups.first().copied();
         let root = tiles.insert_vertical_tile(groups);
+        // O grupo do alto leva a aba "Tabuleiro 2D", que precisa de altura (o tabuleiro é
+        // quadrado): ele ganha o dobro da fatia dos demais.
+        if let (Some(first), Some(Tile::Container(Container::Linear(linear)))) =
+            (first, tiles.get_mut(root))
+        {
+            linear.shares.set_share(first, TOP_GROUP_SHARE);
+        }
         Self {
             width: DEFAULT_WIDTH,
             tree: Tree::new("chess-studio-dock", root, tiles),
+            floating: Vec::new(),
         }
     }
 }
 
+fn simplification() -> SimplificationOptions {
+    // Mantém a barra de abas mesmo com um painel só: é a alça para arrastar.
+    SimplificationOptions {
+        prune_single_child_tabs: false,
+        ..SimplificationOptions::default()
+    }
+}
+
 impl DockLayout {
+    fn floating_index(&self, id: &str) -> Option<usize> {
+        self.floating.iter().position(|f| f.id.0 == id)
+    }
+
+    /// O painel está numa janela flutuante?
+    pub fn is_floating(&self, id: &str) -> bool {
+        self.floating_index(id).is_some()
+    }
+
+    /// Destaca o painel do dock para uma janela flutuante em `pos` com `size`. Falha (e não
+    /// muda nada) se o painel não está no dock.
+    pub fn detach(&mut self, id: &str, pos: [f32; 2], size: [f32; 2]) -> bool {
+        let Some(tile) = self.tile_of(id) else {
+            return false;
+        };
+        let visible = self.tree.is_visible(tile);
+        let parent = self.tree.tiles.parent_of(tile);
+        let home = parent.and_then(|p| match self.tree.tiles.get(p) {
+            Some(Tile::Container(c)) => {
+                c.children()
+                    .find_map(|child| match self.tree.tiles.get(*child) {
+                        Some(Tile::Pane(pane)) if *child != tile => Some(pane.clone()),
+                        _ => None,
+                    })
+            }
+            _ => None,
+        });
+        if let Some(parent) = parent
+            && let Some(Tile::Container(c)) = self.tree.tiles.get_mut(parent)
+        {
+            c.remove_child(tile);
+        }
+        self.tree.tiles.remove(tile);
+        self.tree.simplify(&simplification());
+        let mut panel = FloatingPanel::new(PanelId::new(id), pos, size);
+        panel.visible = visible;
+        panel.home = home;
+        self.floating.push(panel);
+        true
+    }
+
+    /// Devolve a janela ao dock: ao grupo de origem se ainda existe, senão ao primeiro grupo
+    /// de abas (recriando a raiz se o dock estava vazio). O painel volta visível e ativo.
+    pub fn dock_back(&mut self, id: &str) -> bool {
+        let Some(index) = self.floating_index(id) else {
+            return false;
+        };
+        let panel = self.floating.remove(index);
+        let home_group = panel
+            .home
+            .as_ref()
+            .and_then(|h| self.tile_of(&h.0))
+            .and_then(|t| self.tree.tiles.parent_of(t))
+            .filter(|p| {
+                matches!(
+                    self.tree.tiles.get(*p),
+                    Some(Tile::Container(Container::Tabs(_)))
+                )
+            });
+        let group = home_group.or_else(|| self.first_tab_group());
+        let pane = self.tree.tiles.insert_pane(panel.id);
+        match group {
+            Some(group) => {
+                if let Some(Tile::Container(Container::Tabs(tabs))) = self.tree.tiles.get_mut(group)
+                {
+                    tabs.add_child(pane);
+                    tabs.set_active(pane);
+                }
+            }
+            None => {
+                let tabs = self.tree.tiles.insert_tab_tile(vec![pane]);
+                match self.tree.root() {
+                    Some(root) => match self.tree.tiles.get_mut(root) {
+                        Some(Tile::Container(c)) => c.add_child(tabs),
+                        _ => {
+                            let both = self.tree.tiles.insert_vertical_tile(vec![root, tabs]);
+                            self.tree.root = Some(both);
+                        }
+                    },
+                    None => self.tree.root = Some(tabs),
+                }
+            }
+        }
+        true
+    }
+
+    /// Move a aba `id` para o grupo de abas onde está `sibling` (o resultado de arrastá-la
+    /// para lá). `false` se algum dos dois não está no dock ou o destino não é um grupo de abas.
+    pub fn move_into_group_of(&mut self, id: &str, sibling: &str) -> bool {
+        let (Some(tile), Some(group)) = (
+            self.tile_of(id),
+            self.tile_of(sibling)
+                .and_then(|t| self.tree.tiles.parent_of(t)),
+        ) else {
+            return false;
+        };
+        if !matches!(
+            self.tree.tiles.get(group),
+            Some(Tile::Container(Container::Tabs(_)))
+        ) {
+            return false;
+        }
+        let end = self
+            .tree
+            .tiles
+            .get_container(group)
+            .map_or(0, |c| c.num_children());
+        self.tree.move_tile_to_container(tile, group, end, false);
+        self.tree.simplify(&simplification());
+        self.activate(id);
+        true
+    }
+
+    /// Primeiro grupo de abas na ordem da árvore (de cima para baixo).
+    fn first_tab_group(&self) -> Option<TileId> {
+        let mut stack = vec![self.tree.root()?];
+        while let Some(tile) = stack.pop() {
+            if let Some(Tile::Container(c)) = self.tree.tiles.get(tile) {
+                if matches!(c, Container::Tabs(_)) {
+                    return Some(tile);
+                }
+                stack.extend(c.children_vec().into_iter().rev());
+            }
+        }
+        None
+    }
+
+    /// Atualiza posição e tamanho de uma janela flutuante (o usuário a moveu/redimensionou).
+    pub fn set_floating_rect(&mut self, id: &str, pos: [f32; 2], size: [f32; 2]) {
+        if let Some(i) = self.floating_index(id) {
+            self.floating[i].set_rect(pos, size);
+        }
+    }
+
     fn tile_of(&self, id: &str) -> Option<TileId> {
         self.tree.tiles.find_pane(&PanelId::new(id))
     }
 
     /// O painel está visível? (`false` também se ele não existir na árvore.)
     pub fn is_visible(&self, id: &str) -> bool {
+        if let Some(i) = self.floating_index(id) {
+            return self.floating[i].visible;
+        }
         self.tile_of(id).is_some_and(|t| self.tree.is_visible(t))
     }
 
     /// Mostra ou oculta um painel (UI-01). Nada além do layout muda.
     pub fn set_visible(&mut self, id: &str, visible: bool) {
-        if let Some(tile) = self.tile_of(id) {
+        if let Some(i) = self.floating_index(id) {
+            self.floating[i].visible = visible;
+        } else if let Some(tile) = self.tile_of(id) {
             self.tree.set_visible(tile, visible);
         }
     }
 
     /// Traz a aba do painel para a frente no grupo em que está.
     pub fn activate(&mut self, id: &str) {
+        if self.is_floating(id) {
+            self.set_visible(id, true);
+            return;
+        }
         let Some(tile) = self.tile_of(id) else { return };
         let Some(parent) = self.tree.tiles.parent_of(tile) else {
             return;
@@ -218,7 +435,8 @@ impl DockLayout {
         }
     }
 
-    /// Algum painel visível? Sem nenhum, a região de dock some e o tabuleiro ocupa tudo.
+    /// Algum painel **encaixado** visível? Sem nenhum, a região de dock some e o tabuleiro
+    /// ocupa tudo (as janelas flutuantes não contam).
     pub fn any_visible(&self) -> bool {
         self.tree
             .tiles
@@ -235,6 +453,7 @@ impl DockLayout {
                 Tile::Pane(p) => Some(p.0.clone()),
                 _ => None,
             })
+            .chain(self.floating.iter().map(|f| f.id.0.clone()))
             .collect()
     }
 
@@ -242,6 +461,8 @@ impl DockLayout {
     /// na raiz; painéis que ninguém mais registra saem. Devolve se algo mudou.
     pub fn reconcile(&mut self, registry: &PanelRegistry) -> bool {
         let present = self.pane_ids();
+        let floating_before = self.floating.len();
+        self.floating.retain(|f| registry.get(&f.id.0).is_some());
         let unknown: Vec<TileId> = present
             .iter()
             .filter(|id| registry.get(id).is_none())
@@ -252,8 +473,9 @@ impl DockLayout {
             .map(|d| d.id)
             .filter(|id| !present.iter().any(|p| p == id))
             .collect();
+        let floating_changed = self.floating.len() != floating_before;
         if unknown.is_empty() && missing.is_empty() {
-            return false;
+            return floating_changed;
         }
         for tile in unknown {
             for t in self.tree.tiles.tiles_mut() {
@@ -285,7 +507,34 @@ impl DockLayout {
     fn is_valid(&self) -> bool {
         self.width.is_finite()
             && (MIN_WIDTH..=MAX_WIDTH).contains(&self.width)
-            && self.tree.root().is_some()
+            // Um dock inteiro destacado em janelas (árvore vazia) é legítimo.
+            && (self.tree.root().is_some() || !self.floating.is_empty())
+    }
+
+    /// Descarta janelas duplicadas ou de painéis que continuam na árvore e saneia a geometria.
+    fn sanitize(mut self) -> Self {
+        let in_tree: Vec<String> = self
+            .tree
+            .tiles
+            .tiles()
+            .filter_map(|t| match t {
+                Tile::Pane(p) => Some(p.0.clone()),
+                _ => None,
+            })
+            .collect();
+        let mut seen: Vec<String> = Vec::new();
+        let mut keep = Vec::new();
+        for mut f in std::mem::take(&mut self.floating) {
+            if in_tree.contains(&f.id.0) || seen.contains(&f.id.0) {
+                continue;
+            }
+            seen.push(f.id.0.clone());
+            let (pos, size) = (f.pos, f.size);
+            f.set_rect(pos, size);
+            keep.push(f);
+        }
+        self.floating = keep;
+        self
     }
 
     /// Serialização para a preferência `dock_layout`.
@@ -297,6 +546,7 @@ impl DockLayout {
     pub fn from_json(value: Option<serde_json::Value>) -> Self {
         value
             .and_then(|v| serde_json::from_value::<DockLayout>(v).ok())
+            .map(DockLayout::sanitize)
             .filter(DockLayout::is_valid)
             .unwrap_or_default()
     }
@@ -320,6 +570,8 @@ pub struct Dock {
     pub overlay_open: bool,
     /// Região da sobreposição aberta, que não é tabuleiro para o ponteiro.
     blocked: Option<egui::Rect>,
+    /// Retângulos das janelas flutuantes no último quadro: também não são tabuleiro.
+    floating_rects: Vec<egui::Rect>,
 }
 
 impl Default for Dock {
@@ -339,12 +591,19 @@ impl Dock {
             tabs_applied: false,
             overlay_open: false,
             blocked: None,
+            floating_rects: Vec::new(),
         }
     }
 
-    /// "Restaurar layout padrão" (UI-02).
+    /// "Restaurar layout padrão" (UI-02): também fecha as janelas flutuantes.
     pub fn reset(&mut self) {
-        self.layout = DockLayout::default();
+        self.set_layout(DockLayout::default());
+    }
+
+    /// Troca o layout inteiro (perfil, restauração). O egui esquece larguras e posições de
+    /// janela arrastadas, para valer o que o layout novo guarda.
+    pub fn set_layout(&mut self, layout: DockLayout) {
+        self.layout = layout;
         self.generation = self.generation.wrapping_add(1);
     }
 
@@ -361,6 +620,7 @@ impl Dock {
         let at = egui::pos2(cursor.x, cursor.y);
         self.board_rect.is_none_or(|r| r.contains(at))
             && !self.blocked.is_some_and(|b| b.contains(at))
+            && !self.floating_rects.iter().any(|r| r.contains(at))
     }
 
     /// Tamanho da área do tabuleiro em pontos; sem layout conhecido, a janela toda.
@@ -401,16 +661,35 @@ pub fn board_viewport(
     (pos != UVec2::ZERO || size != target).then_some((pos, size))
 }
 
+/// Pedido feito durante o desenho (menu da aba, botão da janela) e aplicado depois: a
+/// árvore não pode mudar enquanto o `egui_tiles` a percorre.
+#[derive(Clone, Debug, PartialEq)]
+enum DockAction {
+    Detach(PanelId),
+    DockBack(PanelId),
+}
+
 struct DockBehavior<'a> {
     i18n: &'a I18n,
     registry: &'a PanelRegistry,
     world: &'a mut World,
+    actions: Vec<DockAction>,
 }
 
-impl Behavior<PanelId> for DockBehavior<'_> {
-    fn pane_ui(&mut self, ui: &mut egui::Ui, _tile: TileId, pane: &mut PanelId) -> UiResponse {
-        let Some(def) = self.registry.get(&pane.0) else {
-            return UiResponse::None;
+impl<'a> DockBehavior<'a> {
+    fn new(i18n: &'a I18n, registry: &'a PanelRegistry, world: &'a mut World) -> Self {
+        Self {
+            i18n,
+            registry,
+            world,
+            actions: Vec::new(),
+        }
+    }
+
+    /// Conteúdo de um painel (no dock ou numa janela flutuante).
+    fn panel_body(&mut self, ui: &mut egui::Ui, id: &PanelId) {
+        let Some(def) = self.registry.get(&id.0) else {
+            return;
         };
         let accessible = self
             .world
@@ -419,12 +698,44 @@ impl Behavior<PanelId> for DockBehavior<'_> {
         if accessible {
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
-                .id_salt(("dockpane", &pane.0))
+                .id_salt(("dockpane", &id.0))
                 .show(ui, |ui| (def.ui)(ui, self.i18n, self.world));
         } else {
             ui.weak(self.i18n.t("dock-unavailable-competitive"));
         }
+    }
+
+    fn title(&self, id: &PanelId) -> String {
+        self.registry
+            .get(&id.0)
+            .map_or_else(|| id.0.clone(), |d| self.i18n.t(d.label_key))
+    }
+}
+
+impl Behavior<PanelId> for DockBehavior<'_> {
+    fn pane_ui(&mut self, ui: &mut egui::Ui, _tile: TileId, pane: &mut PanelId) -> UiResponse {
+        self.panel_body(ui, pane);
         UiResponse::None
+    }
+
+    /// Menu de contexto da aba: destacar o painel numa janela flutuante.
+    fn on_tab_button(
+        &mut self,
+        tiles: &mut Tiles<PanelId>,
+        tile_id: TileId,
+        button_response: egui::Response,
+    ) -> egui::Response {
+        if let Some(Tile::Pane(pane)) = tiles.get(tile_id) {
+            let pane = pane.clone();
+            let label = self.i18n.t("dock-detach");
+            button_response.context_menu(|ui| {
+                if ui.button(label).clicked() {
+                    self.actions.push(DockAction::Detach(pane));
+                    ui.close();
+                }
+            });
+        }
+        button_response
     }
 
     fn tab_title_for_pane(&mut self, pane: &PanelId) -> egui::WidgetText {
@@ -435,11 +746,7 @@ impl Behavior<PanelId> for DockBehavior<'_> {
     }
 
     fn simplification_options(&self) -> SimplificationOptions {
-        // Mantém a barra de abas mesmo com um painel só: é a alça para arrastar.
-        SimplificationOptions {
-            prune_single_child_tabs: false,
-            ..SimplificationOptions::default()
-        }
+        simplification()
     }
 }
 
@@ -537,6 +844,57 @@ fn draw_dock(
     new_width
 }
 
+/// Desenha os painéis destacados como janelas do egui dentro da janela do app. Posição e
+/// tamanho vão para o layout (por Perfil de interface); "x" oculta o painel e o botão
+/// "Devolver ao dock" pede a volta ao grupo de origem. Devolve os retângulos ocupados.
+fn draw_floating(
+    ctx: &egui::Context,
+    generation: u32,
+    layout: &mut DockLayout,
+    behavior: &mut DockBehavior<'_>,
+) -> Vec<egui::Rect> {
+    let mut rects = Vec::new();
+    let mut moved: Vec<(String, [f32; 2], [f32; 2])> = Vec::new();
+    for panel in layout.floating.iter_mut().filter(|f| f.visible) {
+        let mut open = true;
+        let title = behavior.title(&panel.id);
+        let shown = egui::Window::new(title)
+            .id(egui::Id::new(("chess-studio-float", generation, &panel.id)))
+            .current_pos(egui::pos2(panel.pos[0], panel.pos[1]))
+            .default_size(egui::vec2(panel.size[0], panel.size[1]))
+            .min_size(egui::vec2(MIN_FLOAT_SIZE[0], MIN_FLOAT_SIZE[1]))
+            .collapsible(false)
+            .resizable(true)
+            .open(&mut open)
+            .show(ctx, |ui| {
+                if ui.button(behavior.i18n.t("dock-dock-back")).clicked() {
+                    behavior
+                        .actions
+                        .push(DockAction::DockBack(panel.id.clone()));
+                }
+                ui.separator();
+                behavior.panel_body(ui, &panel.id);
+            });
+        if let Some(shown) = shown {
+            let rect = shown.response.rect;
+            rects.push(rect);
+            let (pos, size) = ([rect.min.x, rect.min.y], [rect.width(), rect.height()]);
+            let differs =
+                |a: [f32; 2], b: [f32; 2]| (a[0] - b[0]).abs() > 0.5 || (a[1] - b[1]).abs() > 0.5;
+            if differs(pos, panel.pos) || differs(size, panel.size) {
+                moved.push((panel.id.0.clone(), pos, size));
+            }
+        }
+        if !open {
+            panel.visible = false;
+        }
+    }
+    for (id, pos, size) in moved {
+        layout.set_floating_rect(&id, pos, size);
+    }
+    rects
+}
+
 /// Sistema exclusivo: os painéis recebem o `World` (ver [`PanelUi`]).
 fn dock_ui(world: &mut World) {
     let Some(ctx) = world
@@ -560,8 +918,26 @@ fn dock_ui(world: &mut World) {
     world.resource_scope(|world, mut dock: Mut<Dock>| {
         if !dock.tabs_applied {
             dock.tabs_applied = true;
-            // Evidência (`--screenshot ... --tabs captured,study`): traz essas abas à frente.
+            // Evidência (`--dock-demo regroup|float`): reproduz o resultado de arrastar uma
+            // aba para outro grupo ou de destacá-la em janela (C18).
             if world.contains_resource::<CaptureMode>()
+                && let Some(demo) = crate::capture::option_value("--dock-demo")
+            {
+                dock.layout.reconcile(world.resource::<PanelRegistry>());
+                match demo.as_str() {
+                    "regroup" => {
+                        dock.layout.move_into_group_of(ids::CLOCK, ids::NOTATION);
+                    }
+                    "float" => {
+                        dock.layout
+                            .detach(ids::STUDY, [160.0, 90.0], DEFAULT_FLOAT_SIZE);
+                    }
+                    _ => {}
+                }
+            }
+            // Evidência (`--screenshot ... --tabs captured,study`): traz essas abas à frente.
+            if (world.contains_resource::<CaptureMode>()
+                || world.contains_resource::<crate::benchmark::Bench>())
                 && let Some(list) = crate::capture::option_value("--tabs")
             {
                 // Painéis novos só entram no layout salvo na reconciliação; faça-a antes.
@@ -592,24 +968,50 @@ fn dock_ui(world: &mut World) {
                     crate::responsive::DockPlacement::Overlay { width } => (width, true),
                 };
                 dock.blocked = None;
-                if hidden || !dock.layout.any_visible() || (overlay && !dock.overlay_open) {
+                dock.floating_rects.clear();
+                if hidden {
                     dock.inset = 0.0;
                     dock.board_rect = Some(screen);
                     return;
                 }
-                let mut behavior = DockBehavior {
-                    i18n: &i18n,
-                    registry: &registry,
-                    world,
-                };
-                let width = draw_dock(
-                    &ctx,
-                    dock.generation,
-                    &mut dock.layout,
-                    &mut behavior,
-                    placed_width,
-                    overlay,
-                );
+                let mut behavior = DockBehavior::new(&i18n, &registry, world);
+                let show_dock = dock.layout.any_visible() && (!overlay || dock.overlay_open);
+                let mut dock_left = screen.max.x;
+                let mut width = 0.0;
+                if show_dock {
+                    width = draw_dock(
+                        &ctx,
+                        dock.generation,
+                        &mut dock.layout,
+                        &mut behavior,
+                        placed_width,
+                        overlay,
+                    );
+                    dock_left = screen.max.x - width;
+                }
+                dock.floating_rects =
+                    draw_floating(&ctx, dock.generation, &mut dock.layout, &mut behavior);
+                for action in std::mem::take(&mut behavior.actions) {
+                    match action {
+                        DockAction::Detach(id) => {
+                            let n = dock.layout.floating.len() as f32;
+                            let size = DEFAULT_FLOAT_SIZE;
+                            let pos = [
+                                (dock_left - size[0] - 16.0 - 24.0 * n).max(0.0),
+                                (72.0 + 24.0 * n).min((screen.height() - size[1]).max(0.0)),
+                            ];
+                            dock.layout.detach(&id.0, pos, size);
+                        }
+                        DockAction::DockBack(id) => {
+                            dock.layout.dock_back(&id.0);
+                        }
+                    }
+                }
+                if !show_dock {
+                    dock.inset = 0.0;
+                    dock.board_rect = Some(screen);
+                    return;
+                }
                 if overlay {
                     // Sobre o tabuleiro: ele segue com a janela toda, mas a área coberta não é dele.
                     dock.inset = 0.0;
@@ -739,6 +1141,7 @@ mod tests {
         let old = DockLayout {
             width: 300.0,
             tree: Tree::new("chess-studio-dock", root, tiles),
+            floating: Vec::new(),
         };
         let mut loaded = DockLayout::from_json(Some(old.to_json()));
         assert_eq!(loaded.width, 300.0, "o layout antigo é aproveitado");
@@ -916,6 +1319,7 @@ mod tests {
         app.add_plugins((
             crate::notation::NotationPlugin,
             crate::captured::CapturedPlugin,
+            crate::board2d_panel::Board2dPanelPlugin,
             crate::study::StudyPlugin,
             crate::fide_panel::ArbitrationPlugin,
             crate::aids_panel::AidsPanelPlugin,
@@ -1015,11 +1419,7 @@ mod tests {
                 };
                 // Como o bevy_egui: os sistemas rodam dentro de `run_ui` e o `EguiWantsInput`
                 // é lido depois do quadro.
-                let mut behavior = DockBehavior {
-                    i18n: &i18n,
-                    registry: &registry,
-                    world: &mut world,
-                };
+                let mut behavior = DockBehavior::new(&i18n, &registry, &mut world);
                 let mut output = ctx.run_ui(input, |_| {
                     let width = layout.width;
                     draw_dock(&ctx, 0, &mut layout, &mut behavior, width, false);
@@ -1033,6 +1433,239 @@ mod tests {
         assert!(
             run(egui::pos2(1200.0, 300.0)),
             "o painel reivindica o ponteiro"
+        );
+    }
+
+    // ---- C18: layout flexível (arrastar, dividir, destacar em janela) ----
+
+    fn group_of(layout: &DockLayout, id: &str) -> Option<TileId> {
+        layout
+            .tile_of(id)
+            .and_then(|t| layout.tree.tiles.parent_of(t))
+    }
+
+    #[test]
+    fn dragging_a_tab_into_another_group_moves_it_there() {
+        let mut layout = DockLayout::default();
+        let tile = layout.tile_of(ids::CLOCK).unwrap();
+        let target = group_of(&layout, ids::NOTATION).unwrap();
+        layout.tree.move_tile_to_container(tile, target, 1, false);
+        assert_eq!(group_of(&layout, ids::CLOCK), Some(target));
+        assert_eq!(group_of(&layout, ids::NOTATION), Some(target));
+        let back = DockLayout::from_json(Some(layout.to_json()));
+        assert_eq!(back, layout, "o novo agrupamento é gravado");
+    }
+
+    #[test]
+    fn detaching_a_panel_floats_it_and_keeps_it_visible_and_saved() {
+        let mut layout = DockLayout::default();
+        assert!(layout.detach(ids::STUDY, [40.0, 60.0], [300.0, 220.0]));
+        assert!(layout.is_floating(ids::STUDY));
+        assert!(layout.is_visible(ids::STUDY));
+        assert!(layout.tile_of(ids::STUDY).is_none(), "saiu da árvore");
+        assert!(layout.pane_ids().contains(&ids::STUDY.to_owned()));
+        assert!(layout.any_visible(), "o dock segue com os outros painéis");
+        assert!(
+            !layout.detach(ids::STUDY, [0.0, 0.0], [1.0, 1.0]),
+            "só uma vez"
+        );
+        assert!(!layout.detach("Inexistente", [0.0, 0.0], [1.0, 1.0]));
+        // Posição e tamanho vão para o layout salvo.
+        layout.set_floating_rect(ids::STUDY, [100.0, 120.0], [410.0, 250.0]);
+        let back = DockLayout::from_json(Some(layout.to_json()));
+        assert_eq!(back, layout);
+        let f = &back.floating[0];
+        assert_eq!((f.pos, f.size), ([100.0, 120.0], [410.0, 250.0]));
+        // Fechar a janela oculta o painel sem devolvê-lo.
+        layout.set_visible(ids::STUDY, false);
+        assert!(!layout.is_visible(ids::STUDY));
+        assert!(layout.is_floating(ids::STUDY));
+    }
+
+    #[test]
+    fn docking_back_returns_the_panel_to_its_origin_group() {
+        let mut layout = DockLayout::default();
+        let origin = group_of(&layout, ids::NOTATION).unwrap();
+        layout.detach(ids::STUDY, [0.0, 0.0], [300.0, 200.0]);
+        assert!(layout.dock_back(ids::STUDY));
+        assert!(!layout.is_floating(ids::STUDY));
+        assert_eq!(group_of(&layout, ids::STUDY), Some(origin));
+        assert!(layout.is_visible(ids::STUDY));
+        assert!(!layout.dock_back(ids::STUDY), "já está no dock");
+    }
+
+    #[test]
+    fn docking_back_falls_back_to_the_first_group_when_the_origin_is_gone() {
+        let mut layout = DockLayout::default();
+        // Notação e Anotações viram janelas: o grupo do meio desaparece.
+        layout.detach(ids::NOTATION, [0.0, 0.0], [300.0, 200.0]);
+        layout.detach(ids::STUDY, [20.0, 20.0], [300.0, 200.0]);
+        assert!(layout.dock_back(ids::STUDY));
+        assert!(layout.tile_of(ids::STUDY).is_some());
+        assert!(layout.is_visible(ids::STUDY));
+        // Mesmo com o dock inteiro destacado, devolver recria a raiz.
+        let mut all = DockLayout::default();
+        for (i, id) in all.pane_ids().iter().enumerate() {
+            all.detach(id, [i as f32, 0.0], [200.0, 100.0]);
+        }
+        assert!(!all.any_visible(), "nada no dock, só janelas");
+        assert!(all.is_valid(), "só janelas é um layout legítimo");
+        let back = DockLayout::from_json(Some(all.to_json()));
+        assert_eq!(back, all);
+        assert!(all.dock_back(ids::CLOCK));
+        assert!(all.any_visible());
+        assert!(all.tile_of(ids::CLOCK).is_some());
+    }
+
+    #[test]
+    fn floating_panels_survive_reconcile_and_unregistered_ones_leave() {
+        let mut layout = DockLayout::default();
+        layout.detach(ids::STUDY, [0.0, 0.0], [300.0, 200.0]);
+        layout.detach(ids::CLOCK, [0.0, 0.0], [300.0, 200.0]);
+        let mut registry = builtin_registry();
+        assert!(!layout.reconcile(&registry), "janela não é painel faltando");
+        assert!(layout.tile_of(ids::STUDY).is_none());
+        let mut reduced = PanelRegistry::default();
+        for d in registry.iter().filter(|d| d.id != ids::STUDY) {
+            reduced.register(*d);
+        }
+        assert!(layout.reconcile(&reduced));
+        assert!(!layout.is_floating(ids::STUDY));
+        assert!(layout.is_floating(ids::CLOCK));
+        registry.register(def("Novo"));
+        assert!(layout.reconcile(&registry));
+        assert!(layout.tile_of("Novo").is_some());
+    }
+
+    #[test]
+    fn layouts_saved_before_floating_windows_still_open() {
+        // Até o C17 só havia `width` e `tree`, sem o campo `floating`.
+        let mut json = DockLayout::default().to_json();
+        json.as_object_mut().unwrap().remove("floating");
+        let loaded = DockLayout::from_json(Some(json));
+        assert_eq!(loaded, DockLayout::default());
+        assert!(loaded.floating.is_empty());
+    }
+
+    #[test]
+    fn a_layout_with_a_corrupt_floating_entry_falls_back_to_the_default() {
+        let mut json = DockLayout::default().to_json();
+        json["floating"] = serde_json::json!([{ "id": 7 }]);
+        assert_eq!(DockLayout::from_json(Some(json)), DockLayout::default());
+    }
+
+    #[test]
+    fn a_floating_window_of_a_pane_still_in_the_tree_is_dropped_on_load() {
+        let mut layout = DockLayout::default();
+        layout.floating.push(FloatingPanel::new(
+            PanelId::new(ids::CLOCK),
+            [0.0, 0.0],
+            [300.0, 200.0],
+        ));
+        let loaded = DockLayout::from_json(Some(layout.to_json()));
+        assert!(loaded.floating.is_empty(), "sem painel duplicado");
+        assert_eq!(
+            loaded.pane_ids().len(),
+            DockLayout::default().pane_ids().len()
+        );
+    }
+
+    #[test]
+    fn non_finite_floating_geometry_is_sanitized() {
+        let mut layout = DockLayout::default();
+        layout.detach(ids::STUDY, [0.0, 0.0], [300.0, 200.0]);
+        layout.set_floating_rect(ids::STUDY, [f32::NAN, 5.0], [f32::INFINITY, 2.0]);
+        let f = &layout.floating[0];
+        assert!(f.pos.iter().chain(f.size.iter()).all(|v| v.is_finite()));
+        assert!(f.size[0] >= MIN_FLOAT_SIZE[0] && f.size[1] >= MIN_FLOAT_SIZE[1]);
+    }
+
+    #[test]
+    fn reset_clears_floating_windows_and_applying_a_layout_forgets_window_memory() {
+        let mut dock = Dock::default();
+        dock.layout.detach(ids::STUDY, [0.0, 0.0], [300.0, 200.0]);
+        dock.reset();
+        assert!(dock.layout.floating.is_empty());
+        let generation = dock.generation;
+        dock.set_layout(DockLayout::default());
+        assert_ne!(dock.generation, generation);
+    }
+
+    #[test]
+    fn floating_windows_are_not_the_board() {
+        let dock = Dock {
+            board_rect: Some(rect(0.0, 0.0, 1000.0, 720.0)),
+            floating_rects: vec![rect(100.0, 100.0, 300.0, 300.0)],
+            ..Dock::default()
+        };
+        assert!(!dock.pointer_in_board(Vec2::new(150.0, 150.0)));
+        assert!(dock.pointer_in_board(Vec2::new(500.0, 500.0)));
+    }
+
+    /// Arrasta de verdade, com eventos do egui, a aba do Relógio para a borda esquerda do
+    /// grupo da Notação: o `egui_tiles` está ligado ao nosso `Behavior` e reagrupa.
+    #[test]
+    fn a_real_pointer_drag_of_a_tab_into_another_group_regroups_it() {
+        let ctx = egui::Context::default();
+        let mut layout = DockLayout::default();
+        let i18n = I18n::pt_br();
+        let registry = builtin_registry();
+        let mut world = World::new();
+        world.insert_resource(Session::new());
+        let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1280.0, 720.0));
+        let mut frame = |layout: &mut DockLayout, events: Vec<egui::Event>| {
+            for pass in 0..2 {
+                let mut behavior = DockBehavior::new(&i18n, &registry, &mut world);
+                let input = egui::RawInput {
+                    screen_rect: Some(screen),
+                    events: if pass == 0 { events.clone() } else { vec![] },
+                    ..Default::default()
+                };
+                let width = layout.width;
+                let mut out = ctx.run_ui(input, |_| {
+                    draw_dock(&ctx, 0, layout, &mut behavior, width, false);
+                });
+                out.textures_delta.clear();
+            }
+        };
+        frame(&mut layout, vec![]);
+        let clock_group = group_of(&layout, ids::CLOCK).unwrap();
+        let notation_group = group_of(&layout, ids::NOTATION).unwrap();
+        let from = layout.tree.tiles.rect(clock_group).unwrap();
+        let start = from.left_top() + egui::vec2(20.0, 8.0);
+        let target = layout.tree.tiles.rect(notation_group).unwrap();
+        let drop_at = egui::pos2(target.center().x, target.center().y);
+        let mouse = |pos: egui::Pos2, pressed: Option<bool>| {
+            let mut v = vec![egui::Event::PointerMoved(pos)];
+            if let Some(pressed) = pressed {
+                v.push(egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                });
+            }
+            v
+        };
+        frame(&mut layout, mouse(start, None));
+        frame(&mut layout, mouse(start, Some(true)));
+        frame(&mut layout, mouse(start + egui::vec2(0.0, 30.0), None));
+        frame(&mut layout, mouse(drop_at, None));
+        frame(&mut layout, mouse(drop_at, None));
+        // O egui_tiles reconhece o arrasto da aba (alguma das abas do grupo do Relógio).
+        let dragged = layout
+            .tree
+            .dragged_id(&ctx)
+            .expect("o arrasto da aba começou");
+        let moved = layout.tree.tiles.get_pane(&dragged).unwrap().0.clone();
+        let before = group_of(&layout, &moved);
+        frame(&mut layout, mouse(drop_at, Some(false)));
+        frame(&mut layout, vec![]);
+        assert_ne!(group_of(&layout, &moved), before, "a aba mudou de grupo");
+        assert!(layout.is_visible(&moved));
+        assert_eq!(
+            layout.pane_ids().len(),
+            DockLayout::default().pane_ids().len()
         );
     }
 }

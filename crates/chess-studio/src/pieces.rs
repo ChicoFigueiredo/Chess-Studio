@@ -110,12 +110,20 @@ struct Spawned {
 
 /// Casa canônica onde a peça repousa.
 #[derive(Component, Debug, Clone, Copy)]
-struct PieceAt(Square);
+pub(crate) struct PieceAt(pub(crate) Square);
 
 #[derive(Component)]
-struct Piece3d;
+pub(crate) struct Piece3d;
 #[derive(Component)]
-struct Piece2d;
+pub(crate) struct Piece2d;
+
+/// Marca os reis (3D e 2D), para o tombamento de fim de Partida (`end_game`).
+#[derive(Component, Debug, Clone, Copy)]
+pub(crate) struct KingPiece(pub(crate) Side);
+
+/// Conjunto dos sistemas que posicionam as peças; o tombamento do rei roda depois dele.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct PiecePlacementSet;
 
 /// Encaixe em andamento: a peça vai de `from` ao centro de `target`.
 #[derive(Component, Debug, Clone, Copy)]
@@ -136,6 +144,7 @@ impl Plugin for PiecesPlugin {
                 Update,
                 (sync_pieces, place_resting, animate_settle)
                     .chain()
+                    .in_set(PiecePlacementSet)
                     .after(PlaySet),
             );
     }
@@ -282,8 +291,12 @@ fn spawn_piece_3d(
         .get(&(side, piece))
         .cloned()
         .unwrap_or_default();
-    commands
-        .spawn((
+    let mut entity = commands.spawn_empty();
+    if piece == Piece::King {
+        entity.insert(KingPiece(side));
+    }
+    entity
+        .insert((
             Name::new(format!("piece3d_{square}")),
             Piece3d,
             PieceAt(square),
@@ -306,6 +319,16 @@ fn spawn_piece_3d(
         .id()
 }
 
+/// Cores (preenchimento, contorno) do glifo de cada lado; o painel "Tabuleiro 2D" usa as
+/// mesmas para ficar idêntico ao 2D técnico.
+pub(crate) fn glyph_colors(side: Side) -> (Color, Color) {
+    if side == Side::White {
+        (Color::srgb(0.98, 0.97, 0.92), Color::srgb(0.08, 0.08, 0.09))
+    } else {
+        (Color::srgb(0.06, 0.06, 0.07), Color::srgb(0.95, 0.95, 0.90))
+    }
+}
+
 /// Peça do 2D técnico: glifo preenchido com contorno de cor oposta (legível em casas
 /// claras e escuras).
 fn spawn_piece_2d(
@@ -315,11 +338,7 @@ fn spawn_piece_2d(
     side: Side,
     piece: Piece,
 ) -> Entity {
-    let (fill, outline) = if side == Side::White {
-        (Color::srgb(0.98, 0.97, 0.92), Color::srgb(0.08, 0.08, 0.09))
-    } else {
-        (Color::srgb(0.06, 0.06, 0.07), Color::srgb(0.95, 0.95, 0.90))
-    };
+    let (fill, outline) = glyph_colors(side);
     let glyph = |color: Color, x: f32, y: f32, z: f32| {
         (
             Text2d::new(glyph(piece).to_string()),
@@ -332,8 +351,12 @@ fn spawn_piece_2d(
             Transform::from_xyz(x, y, z),
         )
     };
-    commands
-        .spawn((
+    let mut entity = commands.spawn_empty();
+    if piece == Piece::King {
+        entity.insert(KingPiece(side));
+    }
+    entity
+        .insert((
             Name::new(format!("piece2d_{square}")),
             Piece2d,
             PieceAt(square),
@@ -473,6 +496,7 @@ fn nearest_source(
 /// Peças em repouso ficam no centro da casa; a selecionada/arrastada acompanha o gesto.
 fn place_resting(
     session: Res<Session>,
+    hover: Res<crate::hover::HoverTarget>,
     mut pieces: Query<
         (&PieceAt, &mut Transform, Has<Piece3d>),
         (Or<(With<Piece3d>, With<Piece2d>)>, Without<Settle>),
@@ -486,6 +510,9 @@ fn place_resting(
                 Some(world) => pos = Vec3::new(world.x, DRAG_HEIGHT, world.z),
                 None => pos.y = SELECT_HEIGHT,
             }
+        } else if hover.0 == Some(at.0) {
+            // Realce ao passar o mouse (C15): leve elevação, sem tocar a Partida.
+            pos.y = crate::hover::HOVER_LIFT;
         }
         if is_3d {
             transform.translation = pos;

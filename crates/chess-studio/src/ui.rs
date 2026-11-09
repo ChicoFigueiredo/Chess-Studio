@@ -98,7 +98,7 @@ fn move_method_key(method: MoveMethod) -> &'static str {
     }
 }
 
-fn result_key(result: GameResult) -> &'static str {
+pub(crate) fn result_key(result: GameResult) -> &'static str {
     match result {
         GameResult::WhiteWins => "game-result-white",
         GameResult::BlackWins => "game-result-black",
@@ -106,7 +106,7 @@ fn result_key(result: GameResult) -> &'static str {
     }
 }
 
-fn reason_key(reason: EndReason) -> &'static str {
+pub(crate) fn reason_key(reason: EndReason) -> &'static str {
     match reason {
         EndReason::Checkmate => "game-reason-checkmate",
         EndReason::Stalemate => "game-reason-stalemate",
@@ -143,6 +143,7 @@ struct Extras<'w> {
     controls: Res<'w, crate::controls::Controls>,
     local: ResMut<'w, crate::local_profiles::LocalProfiles>,
     effects: ResMut<'w, UltraEffects>,
+    hover: ResMut<'w, crate::hover::HoverHighlight>,
     support: Res<'w, GpuSupport>,
     training: Res<'w, crate::training_ui::TrainingUi>,
     scoresheet: Option<Res<'w, crate::scoresheet::ScoresheetUi>>,
@@ -179,6 +180,7 @@ fn info_panel(
     let mut chosen_view = *view_state;
     let mut chosen_effects = extras.effects.0;
     let mut chosen_coordinates = extras.coordinates.0;
+    let mut chosen_hover = extras.hover.0;
     let ctx = contexts.ctx_mut()?;
     let screen = ctx.viewport_rect();
     let responsive = crate::responsive::responsive_layout(
@@ -216,6 +218,8 @@ fn info_panel(
                         ui.small(i18n.t("quality-effects-unavailable"));
                     }
                 }
+                ui.checkbox(&mut chosen_hover, i18n.t("hover-highlight"))
+                    .on_hover_text(i18n.t("hover-highlight-hint"));
                 ui.separator();
                 let hide_notation = extras
                     .scoresheet
@@ -276,6 +280,9 @@ fn info_panel(
     }
     if chosen_coordinates != extras.coordinates.0 {
         extras.coordinates.0 = chosen_coordinates;
+    }
+    if chosen_hover != extras.hover.0 {
+        extras.hover.0 = chosen_hover;
     }
     if chosen_effects != extras.effects.0 {
         extras.effects.0 = chosen_effects;

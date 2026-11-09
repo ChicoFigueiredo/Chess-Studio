@@ -372,7 +372,7 @@ fn apply_requests(
         *presentation = state.presentation;
     }
     if state.dock != was.dock {
-        dock.layout = state.dock;
+        dock.set_layout(state.dock);
     }
     if state.aids != was.aids {
         *aids = state.aids;

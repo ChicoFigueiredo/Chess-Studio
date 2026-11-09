@@ -22,6 +22,7 @@ chess-store.workspace = true
 chess-uci.workspace = true
 chess-pgn.workspace = true
 chess-training.workspace = true
+chess-openings.workspace = true
 bevy = { workspace = true, features = [
     "std",
     "bevy_window",
