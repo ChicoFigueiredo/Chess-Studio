@@ -9,7 +9,7 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_egui::input::EguiWantsInput;
 use chess_core::Square;
-use chess_input::{point_to_square, ray_to_board_plane, square_center};
+use chess_input::{point_to_square, ray_to_board_plane, ray_to_square_with_pieces, square_center};
 
 /// Casa sob o cursor (se houver).
 #[derive(Resource, Default, Debug)]
@@ -91,12 +91,15 @@ fn spawn_markers(
     ));
 }
 
+#[allow(clippy::too_many_arguments)]
 fn pick(
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Camera, &Transform), With<MainCamera>>,
     presentation: Res<Presentation>,
     egui: Res<EguiWantsInput>,
     dock: Res<crate::dock::Dock>,
+    session: Res<crate::session::Session>,
+    editor: Res<crate::pieces::BoardOverride>,
     mut hovered: ResMut<HoveredSquare>,
     mut world: ResMut<CursorWorld>,
 ) {
@@ -107,13 +110,46 @@ fn pick(
     } else {
         board_point_under_cursor(&window, camera, transform, *presentation, &dock)
     };
-    let square = point.and_then(point_to_square);
+    let mut square = point.and_then(point_to_square);
+    // No 3D o corpo da peça cobre casas atrás dela: clicar no alto da peça escolhe a casa
+    // dela, não a do chão que aparece atrás (o plano sozinho errava a casa).
+    if !over_ui
+        && presentation.is_3d()
+        && let Some(ray) = cursor_ray(&window, camera, transform, &dock)
+    {
+        // A peça arrastada acompanha o cursor: sua casa de origem está vazia.
+        let dragged = session
+            .gesture_visual()
+            .drag_world
+            .and(session.gesture_visual().origin);
+        let pieces = crate::pieces::visible_pieces(&session, &editor)
+            .into_iter()
+            .filter(|(sq, _)| Some(*sq) != dragged)
+            .map(|(sq, (_, piece))| (sq, piece));
+        square = ray_to_square_with_pieces(ray.0, ray.1, pieces);
+    }
     if hovered.0 != square {
         hovered.0 = square;
     }
     if world.0 != point {
         world.0 = point;
     }
+}
+
+/// Raio (origem, direção) do cursor no mundo, se ele está sobre a área do tabuleiro.
+fn cursor_ray(
+    window: &Window,
+    camera: &Camera,
+    transform: &Transform,
+    dock: &crate::dock::Dock,
+) -> Option<(Vec3, Vec3)> {
+    let cursor = window
+        .cursor_position()
+        .filter(|cursor| dock.pointer_in_board(*cursor))?;
+    let ray = camera
+        .viewport_to_world(&GlobalTransform::from(*transform), cursor)
+        .ok()?;
+    Some((ray.origin, *ray.direction))
 }
 
 /// Ponto do plano do tabuleiro sob o cursor, **sem** olhar se o egui quer o ponteiro:
