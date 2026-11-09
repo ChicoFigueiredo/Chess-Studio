@@ -1322,6 +1322,36 @@ mod tests {
         assert_eq!(p3.load_layout(), DockLayout::default());
     }
 
+    /// C18: janelas flutuantes (painel, posição, tamanho) persistem no layout e no Perfil de
+    /// interface, e voltam ao reabrir.
+    #[test]
+    fn floating_windows_round_trip_in_the_layout_and_in_a_profile() {
+        use crate::dock::ids;
+        use crate::profiles::{InterfaceProfile, InterfaceState, ProfilesState};
+        let mut layout = DockLayout::default();
+        layout.detach(ids::STUDY, [111.0, 77.0], [333.0, 222.0]);
+        let mut p = new_persistence();
+        p.sync_layout(&layout);
+        let mut profiles = ProfilesState::default();
+        let state = InterfaceState {
+            presentation: Presentation::Technical2d,
+            dock: layout.clone(),
+            aids: AidSettings::physical(),
+            focus: false,
+        };
+        profiles
+            .save_user("Flutuante", InterfaceProfile::capture(&state, None))
+            .unwrap();
+        p.sync_profiles(&profiles);
+        let mut p2 = Persistence::new(p.into_store());
+        let back = p2.load_layout();
+        assert_eq!(back, layout);
+        assert!(back.is_floating(ids::STUDY));
+        assert_eq!(back.floating[0].pos, [111.0, 77.0]);
+        assert_eq!(back.floating[0].size, [333.0, 222.0]);
+        assert_eq!(p2.load_profiles(), profiles);
+    }
+
     /// UI-09: o perfil ativo e os perfis do usuário persistem e voltam ao reabrir.
     #[test]
     fn interface_profiles_round_trip_through_sqlite() {

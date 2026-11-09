@@ -44,3 +44,6 @@ study-hint = Escreva sua anotação para este Lance…
 study-note-no-effect = Anotações são só suas: não alteram a Partida e saem como comentários no PGN.
 study-list = Anotações ({ $count })
 study-unavailable-training = Indisponível durante um Exercício de Treino.
+
+dock-detach = Destacar em janela
+dock-dock-back = Devolver ao dock
