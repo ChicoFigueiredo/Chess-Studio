@@ -1,0 +1,207 @@
+{
+  "schema_version": 2,
+  "run": {
+    "app_version": "0.1.0",
+    "git_commit": "7fddcf388471",
+    "started_utc": "2026-11-09T13:10:15Z",
+    "requested_minutes": 5.0,
+    "measured_seconds": 297.016913189888,
+    "warmup_seconds": 3.0,
+    "scene_load_seconds": 0.690132812,
+    "preset": "equilibrado",
+    "quality": "economico",
+    "hud": true,
+    "engine": "ativa",
+    "engine_integrated": true,
+    "present_mode": "vsync",
+    "window_width": 1280,
+    "window_height": 720,
+    "route": "órbita de 20 s por volta; Vista a cada 15 s (Padrão, Oblíqua, Superior, Invertida)"
+  },
+  "system": {
+    "os": "Linux (Ubuntu 26.04)",
+    "kernel": "7.0.0-43-generic",
+    "cpu_brand": "AMD Ryzen 7 3700X 8-Core Processor",
+    "cpu_logical_cores": 16,
+    "ram_total_mib": 128688.8515625
+  },
+  "machine": {
+    "start": {
+      "load_average_1m": 1.66,
+      "system_cpu_percent": 9.027777671813965
+    },
+    "end": {
+      "load_average_1m": 5.3,
+      "system_cpu_percent": 34.57648849487305
+    },
+    "cpu_logical_cores": 16,
+    "load_per_core_limit": 0.7,
+    "system_cpu_limit_percent": 70.0,
+    "load_per_core_max": 0.33125,
+    "maquina_ocupada": false
+  },
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 4080 SUPER",
+    "vendor_id": 4318,
+    "device_id": 9986,
+    "device_type": "DiscreteGpu",
+    "driver": "NVIDIA",
+    "driver_info": "620.70.06",
+    "backend": "Vulkan",
+    "vram_source": "nvidia-smi",
+    "vram_total_mib": 16376.0
+  },
+  "frame_time": {
+    "frames": 17814,
+    "total_seconds": 297.016913189888,
+    "fps_avg": 59.97638251869922,
+    "frame_ms_avg": 16.673229661495903,
+    "frame_ms_min": 9.413975715637207,
+    "frame_ms_max": 32.045894622802734,
+    "frame_ms_p1": 15.188959121704102,
+    "frame_ms_p5": 15.819149017333984,
+    "frame_ms_p50": 16.67925453186035,
+    "frame_ms_p95": 17.492292404174805,
+    "frame_ms_p99": 18.101255416870117,
+    "fps_1pct_low": 51.77691798683132
+  },
+  "process_ram_mib": {
+    "samples": 294,
+    "min": 707.20703125,
+    "avg": 713.3566512542517,
+    "max": 716.57421875
+  },
+  "process_cpu_percent": {
+    "samples": 294,
+    "min": 0.0,
+    "avg": 77.71553711664109,
+    "max": 92.75362396240234
+  },
+  "gpu_vram_used_mib": {
+    "samples": 294,
+    "min": 2167.0,
+    "avg": 2168.4319727891157,
+    "max": 2210.0
+  },
+  "gpu_utilization_percent": {
+    "samples": 294,
+    "min": 4.0,
+    "avg": 28.472789115646258,
+    "max": 32.0
+  },
+  "analysis": {
+    "load_mode": "equilibrado",
+    "target_fps": 60,
+    "phases": [
+      {
+        "name": "sem-analise",
+        "engine": null,
+        "engine_path": null,
+        "backend": null,
+        "start_s": 3.0,
+        "end_s": 151.5,
+        "settle_seconds": 0.0,
+        "frame_time": {
+          "frames": 8907,
+          "total_seconds": 148.50934195804595,
+          "fps_avg": 59.97602495953579,
+          "frame_ms_avg": 16.6733290623157,
+          "frame_ms_min": 12.805041313171387,
+          "frame_ms_max": 32.045894622802734,
+          "frame_ms_p1": 15.356900215148926,
+          "frame_ms_p5": 15.850140571594238,
+          "frame_ms_p50": 16.684816360473633,
+          "frame_ms_p95": 17.419578552246094,
+          "frame_ms_p99": 17.946638107299805,
+          "fps_1pct_low": 53.133223570652746
+        },
+        "process_cpu_percent": {
+          "samples": 147,
+          "min": 0.0,
+          "avg": 77.55034232626156,
+          "max": 86.37789916992188
+        },
+        "gpu_vram_used_mib": {
+          "samples": 147,
+          "min": 2167.0,
+          "avg": 2168.5442176870747,
+          "max": 2210.0
+        },
+        "gpu_utilization_percent": {
+          "samples": 147,
+          "min": 4.0,
+          "avg": 28.020408163265305,
+          "max": 31.0
+        },
+        "analysis_depth_max": null,
+        "analysis_nps_avg": null,
+        "load_level_seconds": {}
+      },
+      {
+        "name": "com-analise-stockfish-linux-x86-64-universal",
+        "engine": "Stockfish-linux-x86-64-universal",
+        "engine_path": "/home/chico/.local/share/ChessStudio/engines/stockfish-19/stockfish-linux-x86-64-universal",
+        "backend": null,
+        "start_s": 151.5,
+        "end_s": 300.0,
+        "settle_seconds": 2.0,
+        "frame_time": {
+          "frames": 8786,
+          "total_seconds": 146.48991299057008,
+          "fps_avg": 59.97682584851816,
+          "frame_ms_avg": 16.673106418230148,
+          "frame_ms_min": 9.413975715637207,
+          "frame_ms_max": 29.947040557861328,
+          "frame_ms_p1": 15.073357582092285,
+          "frame_ms_p5": 15.784443855285645,
+          "frame_ms_p50": 16.67193031311035,
+          "frame_ms_p95": 17.5474853515625,
+          "frame_ms_p99": 18.272127151489258,
+          "fps_1pct_low": 50.69873510439616
+        },
+        "process_cpu_percent": {
+          "samples": 145,
+          "min": 67.12586212158203,
+          "avg": 77.89456239897629,
+          "max": 92.75362396240234
+        },
+        "gpu_vram_used_mib": {
+          "samples": 145,
+          "min": 2167.0,
+          "avg": 2168.3379310344826,
+          "max": 2175.0
+        },
+        "gpu_utilization_percent": {
+          "samples": 145,
+          "min": 25.0,
+          "avg": 28.93103448275862,
+          "max": 32.0
+        },
+        "analysis_depth_max": 45,
+        "analysis_nps_avg": 2828797.5862068967,
+        "load_level_seconds": {
+          "pleno": 147.0
+        }
+      }
+    ],
+    "impact": [
+      {
+        "phase": "com-analise-stockfish-linux-x86-64-universal",
+        "fps_avg_delta_percent": 0.0013353485545413483,
+        "fps_1pct_low_delta_percent": -4.5818572686812065,
+        "frame_ms_p95_delta": 0.12790679931640625,
+        "frame_ms_p99_delta": 0.3254890441894531,
+        "process_cpu_percent_delta": 0.34422007271473376,
+        "gpu_vram_used_mib_delta": -0.2062866525920981,
+        "gpu_utilization_percent_delta": 0.9106263194933142
+      }
+    ],
+    "machine": {
+      "load_average_1m_start": 1.81,
+      "load_average_1m_end": 5.3,
+      "cpu_logical_cores": 16,
+      "vram_used_before_mib": 1935.0
+    }
+  },
+  "notes": []
+}
