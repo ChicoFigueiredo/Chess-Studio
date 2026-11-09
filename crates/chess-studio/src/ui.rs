@@ -146,6 +146,7 @@ struct Extras<'w> {
     support: Res<'w, GpuSupport>,
     training: Res<'w, crate::training_ui::TrainingUi>,
     scoresheet: Option<Res<'w, crate::scoresheet::ScoresheetUi>>,
+    coordinates: ResMut<'w, crate::coordinates::BoardCoordinates>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -177,6 +178,7 @@ fn info_panel(
     let mut chosen_quality = *quality;
     let mut chosen_view = *view_state;
     let mut chosen_effects = extras.effects.0;
+    let mut chosen_coordinates = extras.coordinates.0;
     let ctx = contexts.ctx_mut()?;
     let screen = ctx.viewport_rect();
     let responsive = crate::responsive::responsive_layout(
@@ -225,6 +227,8 @@ fn info_panel(
                 crate::dock::panels_section(ui, &i18n, &mut dock, &registry, &session);
                 ui.separator();
                 crate::focus::view_section(ui, &i18n, &mut chosen_view);
+                ui.checkbox(&mut chosen_coordinates, i18n.t("board-coordinates"))
+                    .on_hover_text(i18n.t("board-coordinates-hint"));
                 ui.separator();
                 crate::profiles::profiles_section(ui, &i18n, &mut profiles);
                 ui.separator();
@@ -269,6 +273,9 @@ fn info_panel(
     }
     if chosen_quality != *quality {
         *quality = chosen_quality;
+    }
+    if chosen_coordinates != extras.coordinates.0 {
+        extras.coordinates.0 = chosen_coordinates;
     }
     if chosen_effects != extras.effects.0 {
         extras.effects.0 = chosen_effects;

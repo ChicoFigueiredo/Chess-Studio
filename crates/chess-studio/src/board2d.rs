@@ -106,7 +106,7 @@ fn spawn_board(mut commands: Commands) {
                 },
                 TextColor(LABEL),
                 Transform::from_xyz(pos.x, pos.y, 1.0),
-                VisibleIn::TECHNICAL,
+                crate::coordinates::Labels2d,
             ));
         }
     }

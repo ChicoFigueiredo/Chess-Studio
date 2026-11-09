@@ -17,6 +17,7 @@ mod capture;
 mod captured;
 mod clock;
 mod controls;
+mod coordinates;
 mod dock;
 mod engine;
 mod engine_consent;
@@ -167,6 +168,7 @@ fn main() {
         play::PlayPlugin,
         highlight::HighlightPlugin,
         board2d::Board2dPlugin,
+        coordinates::CoordinatesPlugin,
         camera::CameraPlugin,
         picking::PickingPlugin,
         ui::UiPlugin,
@@ -207,6 +209,9 @@ fn main() {
         let manager = std::env::args().any(|a| a == "--profile-manager");
         if picker || manager {
             app.insert_resource(local_profiles::LocalProfiles::sample(picker, manager));
+        }
+        if std::env::args().any(|a| a == "--no-coords") {
+            app.insert_resource(coordinates::BoardCoordinates(false));
         }
         match option_value("--quality").as_deref() {
             Some("economic") => app.insert_resource(presentation::GraphicsQuality::Economic),

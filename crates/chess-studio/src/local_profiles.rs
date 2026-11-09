@@ -163,6 +163,7 @@ struct Applied<'w> {
     presentation: ResMut<'w, Presentation>,
     quality: ResMut<'w, GraphicsQuality>,
     effects: ResMut<'w, UltraEffects>,
+    coordinates: ResMut<'w, crate::coordinates::BoardCoordinates>,
     view: ResMut<'w, ViewState>,
     dock: ResMut<'w, Dock>,
     interface: ResMut<'w, InterfaceProfiles>,
@@ -189,6 +190,7 @@ impl Applied<'_> {
         *self.presentation = prefs.presentation;
         *self.quality = prefs.quality;
         *self.effects = prefs.ultra_effects;
+        *self.coordinates = prefs.coordinates;
         *self.view = prefs.view;
         self.dock.layout = layout;
         *self.interface = InterfaceProfiles::with_state(interface);
