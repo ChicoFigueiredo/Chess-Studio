@@ -270,6 +270,10 @@ fn main() {
         if picker || manager {
             app.insert_resource(local_profiles::LocalProfiles::sample(picker, manager));
         }
+        // `--captured-text`: o Painel Capturadas no estilo texto (a opção de Tabuleiro).
+        if std::env::args().any(|a| a == "--captured-text") {
+            app.insert_resource(captured::CapturedStyle::Text);
+        }
         if std::env::args().any(|a| a == "--no-coords") {
             app.insert_resource(coordinates::BoardCoordinates(false));
         }

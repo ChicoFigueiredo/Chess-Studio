@@ -541,3 +541,44 @@ fn library_and_training_tabs_keep_their_own_actions() {
         Some("reason-pgn-scoresheet")
     );
 }
+
+#[test]
+fn the_new_game_group_opens_the_home_tab_with_the_dialog_as_the_big_button() {
+    let new_game: Vec<Action> = Action::ALL
+        .into_iter()
+        .filter(|a| meta(*a).group == Some("ribbon-group-new-game"))
+        .collect();
+    assert_eq!(
+        new_game,
+        [
+            Action::NewGame,
+            Action::NewGameVsEngine,
+            Action::NewGameTwoPlayers,
+            Action::ResumeGame
+        ]
+    );
+    for a in &new_game {
+        assert_eq!(meta(*a).tab, Some(RibbonTab::Home), "{a:?}");
+    }
+}
+
+#[test]
+fn starting_a_game_is_always_possible_but_resuming_needs_another_unfinished_game() {
+    let ctx = ActionContext::default();
+    for a in [
+        Action::NewGame,
+        Action::NewGameVsEngine,
+        Action::NewGameTwoPlayers,
+    ] {
+        assert!(state(a, &ctx).is_enabled(), "{a:?}");
+    }
+    assert_eq!(
+        state(Action::ResumeGame, &ctx).disabled_reason,
+        Some("reason-no-resumable-game")
+    );
+    let ctx = ActionContext {
+        resumable_game: true,
+        ..ctx
+    };
+    assert!(state(Action::ResumeGame, &ctx).is_enabled());
+}

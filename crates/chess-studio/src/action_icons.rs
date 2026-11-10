@@ -57,6 +57,7 @@ pub fn glyph(name: &str) -> &'static str {
         "squares-four" => icon::SQUARES_FOUR,
         "stack" => icon::STACK,
         "student" => icon::STUDENT,
+        "users" => icon::USERS,
         "table" => icon::TABLE,
         "text-aa" => icon::TEXT_AA,
         "timer" => icon::TIMER,

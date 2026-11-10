@@ -19,7 +19,7 @@ use crate::dock::Dock;
 use crate::focus::ViewState;
 use crate::hover::HoverHighlight;
 use crate::hud::HudSettings;
-use crate::new_game::NewGameDialog;
+use crate::new_game::{NewGameDialog, Opponent};
 use crate::presentation::Presentation;
 use crate::session::Session;
 use bevy::ecs::system::SystemParam;
@@ -86,6 +86,8 @@ impl Plugin for ActionsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<crate::ui_theme::Appearance>()
             .init_resource::<HiddenPanels>()
+            .init_resource::<ResumableGame>()
+            .add_systems(Update, refresh_resumable)
             .add_message::<ActionRequested>()
             .add_systems(
                 Update,
@@ -95,6 +97,33 @@ impl Plugin for ActionsPlugin {
                     .before(crate::camera::CameraSet)
                     .before(crate::play::PlaySet),
             );
+    }
+}
+
+/// A Partida não terminada que "Retomar" reabriria (#193), consultada no banco a cada
+/// segundo e quando a Partida da tela troca; `None` sem banco ou sem outra Partida.
+#[derive(Resource, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ResumableGame(pub Option<chess_store::GameId>);
+
+fn refresh_resumable(
+    time: Res<Time>,
+    session: Res<Session>,
+    handle: Option<Res<crate::persistence::PersistenceHandle>>,
+    mut resumable: ResMut<ResumableGame>,
+    mut state: Local<(f32, Option<u64>)>,
+) {
+    let Some(handle) = handle else { return };
+    state.0 -= time.delta_secs();
+    let epoch = session.epoch();
+    if state.0 > 0.0 && state.1 == Some(epoch) {
+        return;
+    }
+    *state = (1.0, Some(epoch));
+    if let Ok(persistence) = handle.0.lock() {
+        let found = persistence.resumable_game();
+        if resumable.0 != found {
+            resumable.0 = found;
+        }
     }
 }
 
@@ -152,6 +181,8 @@ pub struct ActionEnv<'w> {
     appearance: ResMut<'w, crate::ui_theme::Appearance>,
     flip: ResMut<'w, crate::board2d::BoardFlip>,
     ribbon: Option<Res<'w, crate::ribbon::RibbonState>>,
+    resumable: Option<Res<'w, ResumableGame>>,
+    persistence: Option<Res<'w, crate::persistence::PersistenceHandle>>,
     pub(crate) palette: ResMut<'w, crate::palette::PaletteState>,
 }
 
@@ -204,6 +235,7 @@ impl ActionEnv<'_> {
             has_floating_panel: !self.dock.layout.floating.is_empty()
                 || !self.dock.layout.windows.is_empty(),
             panels_hidden: self.hidden.is_hidden(),
+            resumable_game: self.resumable.as_ref().is_some_and(|r| r.0.is_some()),
             pgn_blocked: self.scoresheet.as_ref().is_some_and(|s| s.hides_notation()),
         }
     }
@@ -220,6 +252,9 @@ impl ActionEnv<'_> {
                 let config = self.session.config().clone();
                 self.dialog.open_from(&config, &self.aids);
             }
+            Action::NewGameVsEngine => self.open_new_game(Opponent::Engine),
+            Action::NewGameTwoPlayers => self.open_new_game(Opponent::TwoLocal),
+            Action::ResumeGame => self.resume_game(),
             Action::OpenControls => self.controls_ui.open = true,
             Action::OpenOptions => {
                 self.options_ui.open = true;
@@ -308,6 +343,34 @@ impl ActionEnv<'_> {
             },
         }
         true
+    }
+
+    /// Abre a Nova Partida já com o adversário escolhido; a atual segue até "Iniciar".
+    fn open_new_game(&mut self, opponent: Opponent) {
+        let mut config = self.session.config().clone();
+        config.opponent = opponent;
+        self.dialog.open_from(&config, &self.aids);
+    }
+
+    /// Reabre, pausada, a última Partida não terminada que não está na tela. A atual fica
+    /// no banco, retomável (mesmo caminho da Biblioteca).
+    fn resume_game(&mut self) {
+        let Some(id) = self.resumable.as_ref().and_then(|r| r.0) else {
+            return;
+        };
+        let Some(handle) = self.persistence.as_ref() else {
+            return;
+        };
+        let Ok(mut persistence) = handle.0.lock() else {
+            return;
+        };
+        match persistence.switch_to_game(id) {
+            Ok(game) => {
+                self.session.open_game(game);
+                persistence.track(&self.session);
+            }
+            Err(err) => warn!("não foi possível retomar a Partida: {err}"),
+        }
     }
 
     /// Vira o tabuleiro para o outro lado em todas as superfícies: a Vista 3D (padrão <->
@@ -439,6 +502,7 @@ pub(crate) fn test_app() -> App {
         .init_resource::<HiddenPanels>()
         .init_resource::<crate::training_ui::TrainingUi>()
         .init_resource::<crate::palette::PaletteState>()
+        .init_resource::<ResumableGame>()
         .add_message::<ActionRequested>()
         .add_systems(Update, (dispatch_shortcuts, perform_actions).chain());
     app
@@ -615,6 +679,36 @@ mod tests {
         app.update();
         assert!(app.world().resource::<NewGameDialog>().open);
         assert_eq!(app.world().resource::<Session>().revision(), revision);
+    }
+
+    #[test]
+    fn the_engine_and_two_player_shortcuts_open_the_dialog_with_that_opponent() {
+        let mut app = test_app();
+        for (action, opponent) in [
+            (Action::NewGameVsEngine, Opponent::Engine),
+            (Action::NewGameTwoPlayers, Opponent::TwoLocal),
+        ] {
+            let revision = app.world().resource::<Session>().revision();
+            app.world_mut().resource_mut::<NewGameDialog>().open = false;
+            app.world_mut().write_message(ActionRequested(action));
+            app.update();
+            let dialog = app.world().resource::<NewGameDialog>();
+            assert!(dialog.open, "{action:?}");
+            assert_eq!(dialog.draft.opponent, opponent, "{action:?}");
+            assert_eq!(app.world().resource::<Session>().revision(), revision);
+        }
+    }
+
+    #[test]
+    fn resume_is_disabled_without_a_resumable_game_and_does_nothing() {
+        let mut app = test_app();
+        app.world_mut().resource_mut::<NewGameDialog>().open = false;
+        let revision = app.world().resource::<Session>().revision();
+        app.world_mut()
+            .write_message(ActionRequested(Action::ResumeGame));
+        app.update();
+        assert_eq!(app.world().resource::<Session>().revision(), revision);
+        assert!(!app.world().resource::<NewGameDialog>().open);
     }
 
     #[test]

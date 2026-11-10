@@ -119,7 +119,25 @@ pub fn meta(action: Action) -> ActionMeta {
         A::Zoom => gesture!("zoom", "magnifying-glass-plus"),
         A::Cancel => gesture!("cancel", "x-circle"),
         // Arquivo.
-        A::NewGame => item!("new-game", "file-plus", Command, File, "game", "N"),
+        // Início: grupo Nova Partida, o primeiro da aba (a ordem segue `Action::ALL`).
+        A::NewGame => item!("new-game", "file-plus", Command, Home, "new-game", "N"),
+        A::NewGameVsEngine => item!("new-game-vs-engine", "cpu", Command, Home, "new-game", "NE"),
+        A::NewGameTwoPlayers => item!(
+            "new-game-two-players",
+            "users",
+            Command,
+            Home,
+            "new-game",
+            "ND"
+        ),
+        A::ResumeGame => item!(
+            "resume-game",
+            "clock-counter-clockwise",
+            Command,
+            Home,
+            "new-game",
+            "NR"
+        ),
         A::OpenControls => item!(
             "open-controls",
             "keyboard",
@@ -419,6 +437,8 @@ pub struct ActionContext {
     pub has_floating_panel: bool,
     /// "Ocultar todos os Painéis" está ativo (há um conjunto guardado para restaurar).
     pub panels_hidden: bool,
+    /// Há outra Partida não terminada no banco para retomar.
+    pub resumable_game: bool,
     /// A Súmula está aberta e esconde a notação: exportar PGN a revelaria.
     pub pgn_blocked: bool,
 }
@@ -537,6 +557,7 @@ fn disabled_reason(action: Action, ctx: &ActionContext) -> Option<&'static str> 
         A::OpenLibrary | A::OpenOpenings if ctx.competitive_in_progress => {
             Some("reason-competitive-lock")
         }
+        A::ResumeGame if !ctx.resumable_game => Some("reason-no-resumable-game"),
         A::ExportPgn if ctx.pgn_blocked => Some("reason-pgn-scoresheet"),
         A::Undo if ctx.competitive => Some("reason-assisted-only"),
         A::Undo if !ctx.can_undo => Some("reason-nothing-to-undo"),

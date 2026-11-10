@@ -10,6 +10,7 @@ ribbon-tab-training = Treino
 ribbon-tab-view = Exibir
 
 # Grupos do Ribbon.
+ribbon-group-new-game = Nova Partida
 ribbon-group-game = Partida
 ribbon-group-clock = Relógio
 ribbon-group-preferences = Preferências
@@ -41,6 +42,12 @@ action-cancel-desc = Cancela o gesto em curso sem gerar Lance.
 # Arquivo.
 action-new-game = Nova Partida
 action-new-game-desc = Abre a configuração de uma nova Partida; a atual segue até você iniciar.
+action-new-game-vs-engine = Contra a Engine
+action-new-game-vs-engine-desc = Abre a Nova Partida já contra a Engine; a atual segue até você iniciar.
+action-new-game-two-players = Dois jogadores
+action-new-game-two-players-desc = Abre a Nova Partida para dois jogadores no mesmo computador.
+action-resume-game = Retomar
+action-resume-game-desc = Reabre, pausada, a última Partida não terminada que não está na tela.
 action-open-controls = Controles…
 action-open-controls-desc = Reatribui os atalhos de mouse, trackpad e teclado.
 action-open-options = Opções…
@@ -180,6 +187,7 @@ reason-engine-consent = Autorize uma Engine antes de usar a Análise.
 reason-training-lock = Indisponível durante um Exercício de Treino.
 reason-competitive-lock = Indisponível numa Partida competitiva em andamento.
 reason-no-docked-panel = Não há Painel encaixado para flutuar ou destacar.
+reason-no-resumable-game = Não há outra Partida não terminada para retomar.
 reason-no-floating-panel = Não há Painel flutuante para encaixar.
 reason-3d-only = A câmera só existe nas Apresentações em 3D.
 reason-coming-soon = Ainda não disponível.

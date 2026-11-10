@@ -55,6 +55,12 @@ pub enum Action {
     // --- Ações de menu (DS-14): a lista única do Ribbon, da Barra de Acesso Rápido, dos
     // KeyTips e da Paleta de Ações. Metadados em `crate::actions`.
     NewGame,
+    /// Abre a Nova Partida já contra a Engine.
+    NewGameVsEngine,
+    /// Abre a Nova Partida para dois jogadores no mesmo computador.
+    NewGameTwoPlayers,
+    /// Reabre a última Partida não terminada (que não é a da tela).
+    ResumeGame,
     OpenControls,
     OpenOptions,
     Undo,
@@ -108,7 +114,7 @@ pub enum Action {
 }
 
 impl Action {
-    pub const ALL: [Action; 63] = [
+    pub const ALL: [Action; 66] = [
         Action::Select,
         Action::Adjust,
         Action::Orbit,
@@ -129,6 +135,9 @@ impl Action {
         Action::ToggleTableClock,
         Action::ToggleTableCaptured,
         Action::NewGame,
+        Action::NewGameVsEngine,
+        Action::NewGameTwoPlayers,
+        Action::ResumeGame,
         Action::OpenControls,
         Action::OpenOptions,
         Action::Undo,
@@ -195,6 +204,9 @@ impl Action {
             Action::ToggleHud => "toggle-hud",
             Action::ToggleCoordinates => "toggle-coordinates",
             Action::NewGame => "new-game",
+            Action::NewGameVsEngine => "new-game-vs-engine",
+            Action::NewGameTwoPlayers => "new-game-two-players",
+            Action::ResumeGame => "resume-game",
             Action::OpenControls => "open-controls",
             Action::OpenOptions => "open-options",
             Action::Undo => "undo",
