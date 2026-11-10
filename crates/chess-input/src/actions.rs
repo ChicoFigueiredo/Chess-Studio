@@ -508,9 +508,7 @@ fn disabled_reason(action: Action, ctx: &ActionContext) -> Option<&'static str> 
         A::DockPanel if !ctx.has_floating_panel => Some("reason-no-floating-panel"),
         // Superfícies que os tickets seguintes da DS-0x entregam.
         A::ToggleRibbonCollapse if ctx.ribbon_visible => None,
-        A::DetachPanel | A::OpenPalette | A::OpenOptions | A::ToggleRibbonCollapse => {
-            Some("reason-coming-soon")
-        }
+        A::DetachPanel | A::OpenOptions | A::ToggleRibbonCollapse => Some("reason-coming-soon"),
         _ => None,
     }
 }

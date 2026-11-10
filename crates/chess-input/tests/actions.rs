@@ -357,11 +357,7 @@ fn float_and_dock_depend_on_the_panels() {
 
 #[test]
 fn surfaces_that_do_not_exist_yet_are_disabled_with_a_reason() {
-    for a in [
-        Action::DetachPanel,
-        Action::OpenPalette,
-        Action::OpenOptions,
-    ] {
+    for a in [Action::DetachPanel, Action::OpenOptions] {
         let ctx = ActionContext {
             has_docked_panel: true,
             ..assisted()
@@ -371,6 +367,13 @@ fn surfaces_that_do_not_exist_yet_are_disabled_with_a_reason() {
             Some("reason-coming-soon"),
             "{a:?}"
         );
+    }
+}
+
+#[test]
+fn the_palette_action_is_enabled() {
+    for ctx in [assisted(), fide(), ActionContext::default()] {
+        assert!(state(Action::OpenPalette, &ctx).is_enabled());
     }
 }
 

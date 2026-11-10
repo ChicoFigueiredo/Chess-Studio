@@ -95,12 +95,6 @@ impl RibbonState {
 #[derive(Resource, Debug, Default)]
 pub struct RibbonActionContext(pub ActionContext);
 
-/// O flag de desenvolvimento está ligado (`--nova-ui` ou `CHESS_STUDIO_NOVA_UI=1`).
-pub fn nova_ui_enabled(args: &[String]) -> bool {
-    args.iter().any(|a| a == "--nova-ui")
-        || std::env::var("CHESS_STUDIO_NOVA_UI").is_ok_and(|v| v == "1")
-}
-
 const INSET_ID: &str = "chess-studio/ribbon/top-inset";
 
 /// Altura (em pontos) que o Ribbon ocupa no topo da janela; 0 sem Ribbon.
@@ -444,7 +438,8 @@ mod tests {
     #[test]
     fn the_usable_rect_starts_below_the_ribbon() {
         let ctx = egui::Context::default();
-        let _ = ctx.run_ui(egui::RawInput::default(), |_| {});
+        let mut out = ctx.run_ui(egui::RawInput::default(), |_| {});
+        out.textures_delta.clear();
         let full = ctx.viewport_rect();
         assert_eq!(usable_rect(&ctx), full);
         set_top_inset(&ctx, 100.0);
