@@ -723,7 +723,7 @@ pub fn cs_slider(ui: &mut Ui, value: &mut f32, range: RangeInclusive<f32>, step:
         let v = ui.visuals_mut();
         v.selection.bg_fill = p.accent;
         v.slider_trailing_fill = true;
-        v.widgets.inactive.bg_fill = p.surface_4;
+        v.widgets.inactive.bg_fill = p.control_track;
         v.widgets.inactive.fg_stroke = Stroke::new(3.0, p.accent);
         v.widgets.hovered.bg_fill = p.accent_hover;
         v.widgets.hovered.fg_stroke = Stroke::new(3.0, p.accent_hover);
