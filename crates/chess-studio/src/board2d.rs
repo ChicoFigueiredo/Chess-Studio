@@ -7,6 +7,7 @@
 use crate::picking::{HoveredSquare, SelectedSquare};
 use crate::presentation::{TechnicalCamera, VisibleIn};
 use bevy::camera::ScalingMode;
+use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::prelude::*;
 use chess_core::Square;
 use chess_input::{BOARD_SIZE, all_squares, square_center};
@@ -61,6 +62,11 @@ pub(crate) fn spawn_camera(mut commands: Commands) {
     commands.spawn((
         Camera2d,
         TechnicalCamera,
+        // `Camera2d` exige `Tonemapping::Linear`; com HDR (bloom) isso cria uma passada de pós-
+        // processamento que troca a textura principal compartilhada com a câmera do egui, e o
+        // `egui_pass` não tem ordem definida em relação a ela: em alguns quadros a interface
+        // inteira era sobrescrita (issue #156). Tonemapping fica só na câmera 3D.
+        Tonemapping::None,
         Camera {
             is_active: false,
             ..default()
