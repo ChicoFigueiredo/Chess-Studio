@@ -241,6 +241,15 @@ pub fn meta(action: Action) -> ActionMeta {
         A::ToggleHud => item!("toggle-hud", "chart-polar", Toggle, View, "window", "TH"),
         // Exibir: tabuleiro.
         A::ToggleCoordinates => item!("toggle-coordinates", "text-aa", Toggle, View, "board", "BC"),
+        A::ToggleTableClock => item!("toggle-table-clock", "clock", Toggle, View, "board", "BL"),
+        A::ToggleTableCaptured => item!(
+            "toggle-table-captured",
+            "stack",
+            Toggle,
+            View,
+            "board",
+            "BT"
+        ),
         A::ToggleHoverHighlight => item!(
             "toggle-hover-highlight",
             "cursor-click",
@@ -393,6 +402,10 @@ pub struct ActionContext {
     pub focus: bool,
     pub hud_enabled: bool,
     pub coordinates: bool,
+    /// O relógio 3D está sobre a mesa (aba Tabuleiro).
+    pub table_clock: bool,
+    /// As peças tomadas aparecem em 3D ao lado do tabuleiro (aba Tabuleiro).
+    pub table_captured: bool,
     pub hover_highlight: bool,
     /// O tabuleiro está virado (Ação `FlipBoard`: Vista 3D, 2D técnico e Tabuleiro 2D).
     pub board_flipped: bool,
@@ -505,6 +518,8 @@ fn checked(action: Action, ctx: &ActionContext) -> Option<bool> {
         A::HideAllPanels => ctx.panels_hidden,
         A::ToggleHud => ctx.hud_enabled,
         A::ToggleCoordinates => ctx.coordinates,
+        A::ToggleTableClock => ctx.table_clock,
+        A::ToggleTableCaptured => ctx.table_captured,
         A::ToggleHoverHighlight => ctx.hover_highlight,
         A::FlipBoard => ctx.board_flipped,
         A::ToggleRibbonCollapse => ctx.ribbon_collapsed,

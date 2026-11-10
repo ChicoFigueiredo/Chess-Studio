@@ -136,6 +136,8 @@ pub struct ActionEnv<'w> {
     view: ResMut<'w, ViewState>,
     hud: ResMut<'w, HudSettings>,
     coordinates: ResMut<'w, BoardCoordinates>,
+    table_clock: ResMut<'w, crate::table::TableClock>,
+    table_captured: ResMut<'w, crate::table::TableCaptured>,
     hover: ResMut<'w, HoverHighlight>,
     analysis: ResMut<'w, Analysis>,
     dock: ResMut<'w, Dock>,
@@ -191,6 +193,8 @@ impl ActionEnv<'_> {
             focus: self.view.focus,
             hud_enabled: self.hud.enabled,
             coordinates: self.coordinates.0,
+            table_clock: self.table_clock.0,
+            table_captured: self.table_captured.0,
             hover_highlight: self.hover.0,
             board_flipped: self.flip.0,
             ribbon_collapsed: self.ribbon.as_ref().is_some_and(|r| r.collapsed),
@@ -251,6 +255,8 @@ impl ActionEnv<'_> {
             Action::ToggleFocus => self.view.toggle_focus(),
             Action::ToggleHud => self.hud.enabled = !self.hud.enabled,
             Action::ToggleCoordinates => self.coordinates.0 = !self.coordinates.0,
+            Action::ToggleTableClock => self.table_clock.0 = !self.table_clock.0,
+            Action::ToggleTableCaptured => self.table_captured.0 = !self.table_captured.0,
             Action::ToggleHoverHighlight => self.hover.0 = !self.hover.0,
             Action::FlipBoard => self.flip_board(),
             Action::ToggleAnalysis => {
@@ -423,6 +429,8 @@ pub(crate) fn test_app() -> App {
         .init_resource::<ViewState>()
         .init_resource::<HudSettings>()
         .init_resource::<BoardCoordinates>()
+        .init_resource::<crate::table::TableClock>()
+        .init_resource::<crate::table::TableCaptured>()
         .init_resource::<HoverHighlight>()
         .init_resource::<crate::ui_theme::Appearance>()
         .init_resource::<crate::board2d::BoardFlip>()
@@ -501,6 +509,35 @@ mod tests {
             app.world().resource::<CameraRig>().view,
             Some(CameraView::Standard)
         );
+    }
+
+    #[test]
+    fn the_table_toggles_flip_their_resources_and_report_the_checked_state() {
+        use chess_input::actions::state;
+        let mut app = test_app();
+        for (action, read) in [
+            (
+                Action::ToggleTableClock,
+                (|w: &World| w.resource::<crate::table::TableClock>().0) as fn(&World) -> bool,
+            ),
+            (Action::ToggleTableCaptured, |w: &World| {
+                w.resource::<crate::table::TableCaptured>().0
+            }),
+        ] {
+            assert!(read(app.world()), "{action:?} começa ligada");
+            app.world_mut().write_message(ActionRequested(action));
+            app.update();
+            assert!(!read(app.world()), "{action:?} desligou");
+            let ctx = chess_input::actions::ActionContext {
+                table_clock: app.world().resource::<crate::table::TableClock>().0,
+                table_captured: app.world().resource::<crate::table::TableCaptured>().0,
+                ..Default::default()
+            };
+            assert_eq!(state(action, &ctx).checked, Some(false));
+            app.world_mut().write_message(ActionRequested(action));
+            app.update();
+            assert!(read(app.world()), "{action:?} religou");
+        }
     }
 
     #[test]

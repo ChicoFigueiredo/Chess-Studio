@@ -216,6 +216,7 @@ fn apply_capture_options(state: &mut RibbonState) {
             ("training", RibbonView::Tab(RibbonTab::Training)),
             ("view", RibbonView::Tab(RibbonTab::View)),
             ("scoresheet", RibbonView::Scoresheet),
+            ("board", RibbonView::Board),
         ]
         .into_iter()
         .find(|(name, _)| *name == tab)
@@ -334,7 +335,10 @@ fn keytips_input(
     }
 
     let scoresheet_open = context.0.visible_panels.contains("Scoresheet");
-    let tabs = model::visible_tabs(scoresheet_open);
+    let tabs = model::visible_tabs_for(
+        scoresheet_open,
+        model::board_tab_visible(context.0.presentation),
+    );
     let mut captured = was_active && !inputs.is_empty();
     for input in inputs {
         let outcome = state
