@@ -153,28 +153,27 @@ pub fn meta(action: Action) -> ActionMeta {
             "engine",
             "A"
         ),
-        A::PanelAnalysis => item!(
-            "panel-analysis",
-            "chart-bar",
-            Toggle,
-            Analysis,
-            "panels",
-            "N"
-        ),
-        A::PanelStudy => item!("panel-study", "student", Toggle, Analysis, "panels", "E"),
-        A::PanelEngines => item!("panel-engines", "cpu", Toggle, Analysis, "panels", "M"),
-        // Biblioteca.
-        A::PanelLibrary => item!("panel-library", "books", Toggle, Library, "panels", "B"),
-        A::PanelOpenings => item!(
-            "panel-openings",
+        // Biblioteca e Treino: Ações de abrir o que já existe (o Painel é alternado em Exibir).
+        A::OpenLibrary => item!("open-library", "books", Command, Library, "library", "B"),
+        A::OpenOpenings => item!(
+            "open-openings",
             "tree-structure",
-            Toggle,
+            Command,
             Library,
-            "panels",
+            "library",
             "A"
         ),
-        // Treino.
-        A::PanelTraining => item!("panel-training", "barbell", Toggle, Training, "panels", "T"),
+        A::ExportPgn => item!("export-pgn", "export", Command, Library, "library", "E"),
+        A::OpenTraining => item!(
+            "open-training",
+            "barbell",
+            Command,
+            Training,
+            "training",
+            "T"
+        ),
+        // Os Painéis (Análise, Estudo, Engines, Biblioteca, Aberturas, Treino…) não repetem
+        // botões nas abas de domínio: moram só no grupo Painéis da aba Exibir (#183).
         // Exibir: Apresentação.
         A::PresentProfessional => item!(
             "present-professional",
@@ -281,6 +280,19 @@ pub fn meta(action: Action) -> ActionMeta {
             "panels",
             "N2"
         ),
+        A::PanelAnalysis => item!("panel-analysis", "chart-bar", Toggle, View, "panels", "NY"),
+        A::PanelStudy => item!("panel-study", "student", Toggle, View, "panels", "NE"),
+        A::PanelEngines => item!("panel-engines", "cpu", Toggle, View, "panels", "NM"),
+        A::PanelLibrary => item!("panel-library", "books", Toggle, View, "panels", "NL"),
+        A::PanelOpenings => item!(
+            "panel-openings",
+            "tree-structure",
+            Toggle,
+            View,
+            "panels",
+            "NO"
+        ),
+        A::PanelTraining => item!("panel-training", "barbell", Toggle, View, "panels", "NT"),
         // Exibir: janelas dos Painéis.
         A::FloatPanel => item!(
             "float-panel",
@@ -308,6 +320,14 @@ pub fn meta(action: Action) -> ActionMeta {
             "JG"
         ),
         A::ResetLayout => item!("reset-layout", "layout", Command, View, "windows", "JR"),
+        A::HideAllPanels => item!(
+            "hide-all-panels",
+            "eye-slash",
+            Toggle,
+            View,
+            "windows",
+            "JH"
+        ),
         // Exibir: interface.
         A::OpenPalette => item!("open-palette", "command", Command, View, "interface", "IP"),
         A::UiZoomIn => item!(
@@ -384,6 +404,10 @@ pub struct ActionContext {
     pub has_docked_panel: bool,
     /// Há Painel flutuante ou janela destacada para encaixar.
     pub has_floating_panel: bool,
+    /// "Ocultar todos os Painéis" está ativo (há um conjunto guardado para restaurar).
+    pub panels_hidden: bool,
+    /// A Súmula está aberta e esconde a notação: exportar PGN a revelaria.
+    pub pgn_blocked: bool,
 }
 
 /// Estado de uma Ação num dado [`ActionContext`].
@@ -414,6 +438,8 @@ impl Action {
             Action::Cancel
                 | Action::ToggleFullscreen
                 | Action::ToggleFocus
+                // Ctrl+Shift+F12 também não digita.
+                | Action::HideAllPanels
                 // Ctrl+, não digita nada: vale também de dentro da Paleta (campo de busca).
                 | Action::OpenOptions
         )
@@ -476,6 +502,7 @@ fn checked(action: Action, ctx: &ActionContext) -> Option<bool> {
         A::PresentTechnical => ctx.presentation == PresentationId::Technical2d,
         A::ToggleFullscreen => ctx.fullscreen,
         A::ToggleFocus => ctx.focus,
+        A::HideAllPanels => ctx.panels_hidden,
         A::ToggleHud => ctx.hud_enabled,
         A::ToggleCoordinates => ctx.coordinates,
         A::ToggleHoverHighlight => ctx.hover_highlight,
@@ -492,6 +519,10 @@ fn disabled_reason(action: Action, ctx: &ActionContext) -> Option<&'static str> 
             .then_some("reason-competitive-lock");
     }
     match action {
+        A::OpenLibrary | A::OpenOpenings if ctx.competitive_in_progress => {
+            Some("reason-competitive-lock")
+        }
+        A::ExportPgn if ctx.pgn_blocked => Some("reason-pgn-scoresheet"),
         A::Undo if ctx.competitive => Some("reason-assisted-only"),
         A::Undo if !ctx.can_undo => Some("reason-nothing-to-undo"),
         A::Redo if ctx.competitive => Some("reason-assisted-only"),

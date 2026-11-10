@@ -162,6 +162,12 @@ pub const INVENTORY: &[InventoryItem] = &[
         ])],
     },
     InventoryItem {
+        name: "Ocultar todos os Painéis (Ctrl+Shift+F12)",
+        origin: "actions.rs::toggle_hide_all",
+        keys: &[],
+        dests: &[Actions(&[Action::HideAllPanels])],
+    },
+    InventoryItem {
         name: "Restaurar layout padrão",
         origin: "dock.rs::panels_section",
         keys: &["dock-reset"],

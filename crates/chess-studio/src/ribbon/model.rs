@@ -106,6 +106,10 @@ pub fn groups(view: RibbonView) -> Vec<Group> {
             }),
         }
     }
+    // Em Exibir, os Painéis abrem a aba (como o "Mostrar" do Word): são o que mais se usa ali.
+    if let Some(i) = out.iter().position(|g| g.label == "ribbon-group-panels") {
+        out[..=i].rotate_right(1);
+    }
     out
 }
 
@@ -333,6 +337,29 @@ mod tests {
                 assert!(found.is_empty(), "{action:?}");
             } else {
                 assert_eq!(found.len(), 1, "{action:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn view_tab_has_one_panels_group_with_every_panel_and_other_tabs_have_none() {
+        let view = groups(RibbonView::Tab(RibbonTab::View));
+        let panels = view
+            .iter()
+            .find(|g| g.label == "ribbon-group-panels")
+            .expect("grupo Painéis em Exibir");
+        assert_eq!(view[0].label, "ribbon-group-panels", "Painéis abre a aba");
+        for action in Action::ALL {
+            if action.panel().is_some() {
+                assert!(panels.actions.contains(&action), "{action:?}");
+            }
+        }
+        for tab in RibbonTab::ALL {
+            if tab == RibbonTab::View {
+                continue;
+            }
+            for action in actions_of(RibbonView::Tab(tab)) {
+                assert!(action.panel().is_none(), "{action:?} repetido em {tab:?}");
             }
         }
     }

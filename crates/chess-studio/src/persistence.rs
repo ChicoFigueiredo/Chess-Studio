@@ -16,7 +16,9 @@ use crate::hover::HoverHighlight;
 use crate::hud::HudSettings;
 use crate::play::PlaySet;
 use crate::presentation::{GraphicsQuality, Presentation, UltraEffects};
-use crate::profiles::{InterfaceProfiles, ProfilesState, RibbonSetup};
+use crate::profiles::{
+    FIRST_RUN_PROFILE, InterfaceProfiles, InterfaceState, ProfileKey, ProfilesState, RibbonSetup,
+};
 use crate::session::Session;
 use crate::training_ui::TrainingUi;
 use crate::ui_theme::{Appearance, Density, ThemeMode, UiScale};
@@ -48,6 +50,7 @@ const KEY_DOCK_LAYOUT: &str = "dock_layout";
 /// Perfis de interface (C4, UI-09): o ativo e os salvos pelo usuário.
 const KEY_INTERFACE_PROFILES: &str = "interface_profiles";
 /// Estado do Ribbon (modo, recolhido, aba ativa, Barra de Acesso Rápido), por Perfil local.
+const KEY_HIDDEN_PANELS: &str = "hidden_panels";
 const KEY_RIBBON: &str = "ribbon_state";
 /// Mapa de controles (US-28): ação -> atalhos, por perfil de usuário.
 const KEY_CONTROLS: &str = "controls";
@@ -116,6 +119,10 @@ pub struct ProfileData {
     pub interface: ProfilesState,
     pub controls: ControlMap,
     pub notes: BTreeMap<usize, String>,
+    /// Ribbon do perfil recém-criado ("tabuleiro primeiro"); `None` num perfil que já existia.
+    pub ribbon: Option<RibbonSetup>,
+    /// "Ocultar todos os Painéis" ativo: o conjunto a restaurar (#183).
+    pub hidden: crate::actions::HiddenPanels,
 }
 
 /// Resultado de abrir o app: a Partida a jogar e se ela veio do banco.
@@ -141,6 +148,7 @@ pub struct Persistence {
     saved_layout: Option<Value>,
     /// Últimos Perfis de interface gravados (ou carregados).
     saved_profiles: Option<Value>,
+    saved_hidden: Option<Value>,
     saved_ribbon: Option<Value>,
     /// Último mapa de controles gravado (ou carregado).
     saved_controls: Option<Value>,
@@ -205,6 +213,7 @@ impl Persistence {
             saved: None,
             saved_layout: None,
             saved_profiles: None,
+            saved_hidden: None,
             saved_ribbon: None,
             saved_controls: None,
             failing: false,
@@ -243,14 +252,39 @@ impl Persistence {
     /// Carrega o perfil em uso: preferências, Partida (retomada em Pausa, ou nova),
     /// layout, Perfis de interface, controles e Anotações.
     pub fn open_profile(&mut self) -> ProfileData {
-        let prefs = self.load_prefs();
+        let fresh = self.is_first_run();
+        let mut prefs = self.load_prefs();
         let mut restored = self.restore();
         restored.session.set_move_method(prefs.move_method);
         self.saved = Some(prefs);
-        let layout = self.load_layout();
-        let interface = self.load_profiles();
+        let mut layout = self.load_layout();
+        let mut interface = self.load_profiles();
         let controls = self.load_controls();
         let notes = self.load_notes();
+        let hidden = self.load_hidden();
+        let mut ribbon = None;
+        if fresh {
+            // Instalação nova ou Perfil local novo: "tabuleiro primeiro", no Perfil de
+            // interface de fábrica Jogo físico (#183). O que muda em relação ao que foi lido
+            // (padrões) é gravado pelos `persist_*` logo no primeiro quadro.
+            let mut state = InterfaceState {
+                presentation: prefs.presentation,
+                dock: layout,
+                aids: prefs.aids,
+                focus: prefs.view.focus,
+                ribbon: Some(RibbonSetup::default()),
+            };
+            FIRST_RUN_PROFILE.profile().apply(&mut state);
+            prefs.presentation = state.presentation;
+            prefs.aids = state.aids;
+            prefs.view.focus = state.focus;
+            layout = state.dock;
+            ribbon = state.ribbon;
+            interface.active = ProfileKey::Factory(FIRST_RUN_PROFILE);
+            if let Some(setup) = &ribbon {
+                self.sync_ribbon(setup);
+            }
+        }
         ProfileData {
             prefs,
             restored,
@@ -258,7 +292,22 @@ impl Persistence {
             interface,
             controls,
             notes,
+            ribbon,
+            hidden,
         }
+    }
+
+    /// Nada de interface foi gravado ainda neste perfil local (nem layout, nem Perfil de
+    /// interface): é uma instalação nova ou um Perfil local recém-criado.
+    fn is_first_run(&self) -> bool {
+        let stored = |key: &str| {
+            self.store
+                .get_pref(self.profile, key)
+                .ok()
+                .flatten()
+                .is_some()
+        };
+        !stored(KEY_INTERFACE_PROFILES) && !stored(KEY_DOCK_LAYOUT)
     }
 
     /// Troca o perfil local em uso: grava o que falta da Partida atual (`current`), fecha-a
@@ -283,6 +332,7 @@ impl Persistence {
         self.saved = None;
         self.saved_layout = None;
         self.saved_profiles = None;
+        self.saved_hidden = None;
         self.saved_controls = None;
         self.failing = false;
         self.scoresheet_failing = false;
@@ -564,6 +614,34 @@ impl Persistence {
         let profiles = ProfilesState::from_json(stored);
         self.saved_profiles = Some(profiles.to_json());
         profiles
+    }
+
+    /// O conjunto de Painéis a restaurar com "Ocultar todos os Painéis"; ausente = nada oculto.
+    pub fn load_hidden(&mut self) -> crate::actions::HiddenPanels {
+        let stored = self
+            .store
+            .get_pref(self.profile, KEY_HIDDEN_PANELS)
+            .ok()
+            .flatten();
+        self.saved_hidden = stored.clone();
+        let open = stored.and_then(|v| serde_json::from_value::<Vec<String>>(v).ok());
+        crate::actions::HiddenPanels::from_saved(open)
+    }
+
+    /// Grava o conjunto a restaurar (ou o apaga) se mudou desde a última chamada.
+    pub fn sync_hidden(&mut self, hidden: &crate::actions::HiddenPanels) {
+        let json = match hidden.open_set() {
+            Some(open) => serde_json::to_value(open).unwrap_or(Value::Null),
+            None => Value::Null,
+        };
+        let current = self.saved_hidden.clone().unwrap_or(Value::Null);
+        if current == json {
+            return;
+        }
+        match self.store.set_pref(self.profile, KEY_HIDDEN_PANELS, &json) {
+            Ok(()) => self.saved_hidden = Some(json),
+            Err(err) => self.report(&err),
+        }
     }
 
     /// Grava os Perfis de interface se mudaram desde a última chamada.
@@ -856,6 +934,8 @@ impl Plugin for PersistencePlugin {
             interface: profiles,
             controls,
             notes,
+            ribbon: _,
+            hidden,
         } = persistence.open_profile();
         if restored.resumed {
             info!(
@@ -884,6 +964,7 @@ impl Plugin for PersistencePlugin {
             .insert_resource(prefs.view)
             .insert_resource(Dock::with_layout(layout))
             .insert_resource(InterfaceProfiles::with_state(profiles))
+            .insert_resource(hidden)
             .insert_resource(notes)
             .insert_resource(
                 EngineUi::default().with_saved(prefs.engine_user_side, prefs.engine_elo),
@@ -897,6 +978,7 @@ impl Plugin for PersistencePlugin {
                     persist_prefs,
                     persist_layout,
                     persist_profiles,
+                    persist_hidden,
                     persist_controls,
                 )
                     .after(PlaySet),
@@ -1051,6 +1133,14 @@ fn persist_layout(
     }
     if let Ok(mut p) = handle.0.lock() {
         p.sync_layout(&dock.layout);
+    }
+}
+
+/// Grava o conjunto de Painéis do "Ocultar todos" quando muda: depois de reiniciar com tudo
+/// oculto, a mesma Ação ainda devolve o que estava aberto (#183).
+fn persist_hidden(hidden: Res<crate::actions::HiddenPanels>, handle: Res<PersistenceHandle>) {
+    if let Ok(mut p) = handle.0.lock() {
+        p.sync_hidden(&hidden);
     }
 }
 
@@ -1645,10 +1735,13 @@ mod tests {
         let ana = p.create_profile("Ana").unwrap();
         let ana_data = p.switch_profile(ana, Some(&data.restored.session)).unwrap();
         assert_eq!(p.profile(), ana);
+        // Perfil novo: padrões, menos o que o Jogo físico muda (#183).
         assert_eq!(
             ana_data.prefs,
-            SavedPrefs::default(),
-            "perfil novo: padrões"
+            SavedPrefs {
+                aids: crate::aids::AidSettings::physical(),
+                ..SavedPrefs::default()
+            },
         );
         assert!(ana_data.controls.is_default());
         assert!(!ana_data.restored.resumed, "Partida própria, nova");
@@ -1663,6 +1756,93 @@ mod tests {
         assert!(back.restored.resumed);
         assert_eq!(back.restored.session.snapshot().history.len(), 1);
         assert_eq!(p.store.active_profile().unwrap(), first);
+    }
+
+    fn visible_panels(layout: &crate::dock::DockLayout) -> Vec<String> {
+        let mut v: Vec<String> = layout
+            .pane_ids()
+            .into_iter()
+            .filter(|id| layout.is_visible(id))
+            .collect();
+        v.sort();
+        v
+    }
+
+    /// #183: instalação nova e Perfil local novo abrem em Jogo físico ("tabuleiro primeiro").
+    #[test]
+    fn a_new_install_and_a_new_local_profile_start_in_the_physical_game_profile() {
+        use crate::dock::ids;
+        use crate::profiles::{FactoryProfile, ProfileKey, RibbonLayout};
+        let check = |data: &ProfileData| {
+            assert_eq!(
+                data.interface.active,
+                ProfileKey::Factory(FactoryProfile::PhysicalGame)
+            );
+            assert_eq!(
+                visible_panels(&data.layout),
+                vec![ids::CLOCK.to_owned(), ids::NOTATION.to_owned()]
+            );
+            assert_eq!(data.prefs.aids, crate::aids::AidSettings::physical());
+            let ribbon = data.ribbon.as_ref().expect("Ribbon do perfil novo");
+            assert_eq!(
+                (ribbon.layout, ribbon.collapsed),
+                (RibbonLayout::Simple, false)
+            );
+        };
+        let mut p = new_persistence();
+        let first = p.profile();
+        let data = p.open_profile();
+        check(&data);
+        // Como o app faz no primeiro quadro: grava o que o perfil aplicou.
+        p.sync_layout(&data.layout);
+        p.sync_profiles(&data.interface);
+        // O Ribbon já fica gravado para o `RibbonPlugin` ler na partida.
+        assert_eq!(
+            p.load_ribbon().map(|r| r.layout),
+            Some(RibbonLayout::Simple)
+        );
+
+        let ana = p.create_profile("Ana").unwrap();
+        let ana_data = p.switch_profile(ana, Some(&data.restored.session)).unwrap();
+        check(&ana_data);
+
+        // Gravado o estado, reabrir não reaplica o perfil de fábrica por cima.
+        let mut custom = ana_data.layout.clone();
+        custom.set_visible(ids::CAPTURED, true);
+        p.sync_layout(&custom);
+        p.sync_profiles(&ProfilesState {
+            active: ProfileKey::Custom,
+            user: Vec::new(),
+        });
+        let back = p.switch_profile(first, None).unwrap();
+        assert!(
+            back.ribbon.is_none(),
+            "o primeiro perfil já tinha interface gravada"
+        );
+        let again = p.switch_profile(ana, None).unwrap();
+        assert!(again.ribbon.is_none());
+        assert_eq!(again.interface.active, ProfileKey::Custom);
+        assert!(again.layout.is_visible(ids::CAPTURED));
+    }
+
+    /// #183: o conjunto do "Ocultar todos os Painéis" sobrevive ao reinício.
+    #[test]
+    fn the_hidden_panels_restore_set_survives_a_restart_and_is_per_profile() {
+        use crate::actions::HiddenPanels;
+        let mut p = new_persistence();
+        let first = p.profile();
+        assert!(!p.open_profile().hidden.is_hidden());
+        let set = vec!["Clock".to_owned(), "Notation".to_owned()];
+        p.sync_hidden(&HiddenPanels::from_saved(Some(set.clone())));
+        let data = p.open_profile();
+        assert_eq!(data.hidden.open_set(), Some(set.as_slice()));
+        // Outro perfil local não herda.
+        let ana = p.create_profile("Ana").unwrap();
+        assert!(!p.switch_profile(ana, None).unwrap().hidden.is_hidden());
+        assert!(p.switch_profile(first, None).unwrap().hidden.is_hidden());
+        // Restaurar apaga.
+        p.sync_hidden(&HiddenPanels::default());
+        assert!(!p.open_profile().hidden.is_hidden());
     }
 
     #[test]

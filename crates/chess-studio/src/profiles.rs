@@ -25,6 +25,10 @@ pub const PANEL_ANALYSIS: &str = "Analysis";
 /// Id reservado do painel da Biblioteca (C7); ignorado enquanto não estiver registrado.
 pub const PANEL_LIBRARY: &str = "Library";
 
+/// O Perfil de interface com que uma instalação nova ou um Perfil local novo abre: Jogo físico
+/// ("tabuleiro primeiro": Ribbon simples, só Relógio e Notação).
+pub const FIRST_RUN_PROFILE: FactoryProfile = FactoryProfile::PhysicalGame;
+
 /// Perfis de fábrica (prompt mestre §9). "Personalizado" não é um deles: é o estado atual.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum FactoryProfile {
@@ -465,6 +469,7 @@ fn apply_requests(
     mut profiles: ResMut<InterfaceProfiles>,
     mut presentation: ResMut<Presentation>,
     mut dock: ResMut<Dock>,
+    mut hidden: ResMut<crate::actions::HiddenPanels>,
     mut aids: ResMut<AidSettings>,
     mut view_state: ResMut<ViewState>,
     mut rig: ResMut<CameraRig>,
@@ -474,9 +479,21 @@ fn apply_requests(
     let Some(request) = profiles.request.take() else {
         return;
     };
+    // Aplicar (ou restaurar) um Perfil devolve os Painéis dele: acaba o "tudo oculto".
+    let hidden_before = hidden.clone();
+    if matches!(request, ProfileRequest::Apply(_)) {
+        hidden.clear();
+    }
+    let saving = matches!(request, ProfileRequest::SaveCurrent(_));
+    // Salvar com "tudo oculto" guarda os Painéis que estavam abertos, não o layout vazio.
+    let layout = if saving {
+        hidden_before.restored(&dock.layout)
+    } else {
+        dock.layout.clone()
+    };
     let mut state = InterfaceState {
         presentation: *presentation,
-        dock: dock.layout.clone(),
+        dock: layout,
         aids: *aids,
         focus: view_state.focus,
         ribbon: ribbon.as_ref().map(|r| r.setup()),
@@ -502,7 +519,7 @@ fn apply_requests(
     if state.presentation != was.presentation {
         *presentation = state.presentation;
     }
-    if state.dock != was.dock {
+    if state.dock != was.dock && !saving {
         dock.set_layout(state.dock);
     }
     if state.aids != was.aids {
@@ -527,11 +544,16 @@ fn track_active(
     mut profiles: ResMut<InterfaceProfiles>,
     presentation: Res<Presentation>,
     dock: Res<Dock>,
+    hidden: Res<crate::actions::HiddenPanels>,
     aids: Res<AidSettings>,
     view_state: Res<ViewState>,
     ribbon: Option<Res<crate::ribbon::RibbonState>>,
 ) {
-    if profiles.state.active == ProfileKey::Custom || profiles.request.is_some() {
+    // "Ocultar todos os Painéis" é um estado temporário por cima do Perfil, não um desvio dele.
+    if profiles.state.active == ProfileKey::Custom
+        || profiles.request.is_some()
+        || hidden.is_hidden()
+    {
         return;
     }
     let state = InterfaceState {
@@ -637,10 +659,12 @@ pub struct ProfilesPlugin;
 impl Plugin for ProfilesPlugin {
     fn build(&self, app: &mut App) {
         // `init_resource` preserva os perfis carregados do banco pelo `PersistencePlugin`.
-        app.init_resource::<InterfaceProfiles>().add_systems(
-            Update,
-            (apply_requests, track_active).chain().before(CameraSet),
-        );
+        app.init_resource::<InterfaceProfiles>()
+            .init_resource::<crate::actions::HiddenPanels>()
+            .add_systems(
+                Update,
+                (apply_requests, track_active).chain().before(CameraSet),
+            );
     }
 }
 
@@ -919,6 +943,7 @@ mod tests {
         w.insert_resource(CameraRig::default());
         w.insert_resource(CameraMemory::default());
         w.insert_resource(InterfaceProfiles::default());
+        w.insert_resource(crate::actions::HiddenPanels::default());
         w
     }
 
@@ -1200,6 +1225,101 @@ mod tests {
             let session = w.resource::<crate::session::Session>();
             assert_eq!(session.game().events().len(), before, "{f:?}");
         }
+    }
+
+    /// #183: "Ocultar todos os Painéis" não tira o app do Perfil ativo; abrir um Painel à
+    /// mão sim, e trocar de Perfil encerra o "tudo oculto".
+    #[test]
+    fn hiding_all_panels_alone_does_not_turn_the_profile_into_custom() {
+        let mut w = world();
+        request(
+            &mut w,
+            ProfileRequest::Apply(ProfileKey::Factory(FactoryProfile::PhysicalGame)),
+        );
+        // Oculta tudo, como a Ação faz.
+        let open: Vec<String> = {
+            let layout = &w.resource::<Dock>().layout;
+            layout
+                .pane_ids()
+                .into_iter()
+                .filter(|id| layout.is_visible(id))
+                .collect()
+        };
+        assert!(!open.is_empty());
+        w.resource_scope(|_, mut dock: Mut<Dock>| {
+            for id in dock.layout.pane_ids() {
+                dock.layout.set_visible(&id, false);
+            }
+        });
+        w.resource_mut::<crate::actions::HiddenPanels>()
+            .hide_for_test(open.clone());
+        w.run_system_once(track_active).unwrap();
+        assert_eq!(
+            w.resource::<InterfaceProfiles>().state.active,
+            ProfileKey::Factory(FactoryProfile::PhysicalGame),
+            "tudo oculto não é Personalizado"
+        );
+        // Restaura: continua no perfil.
+        w.resource_mut::<crate::actions::HiddenPanels>().clear();
+        w.resource_scope(|_, mut dock: Mut<Dock>| {
+            for id in &open {
+                dock.layout.set_visible(id, true);
+            }
+        });
+        w.run_system_once(track_active).unwrap();
+        assert_eq!(
+            w.resource::<InterfaceProfiles>().state.active,
+            ProfileKey::Factory(FactoryProfile::PhysicalGame)
+        );
+        // Abrir um Painel à mão é mudança de verdade.
+        w.resource_mut::<Dock>()
+            .layout
+            .set_visible(ids::CAPTURED, true);
+        w.run_system_once(track_active).unwrap();
+        assert_eq!(
+            w.resource::<InterfaceProfiles>().state.active,
+            ProfileKey::Custom
+        );
+    }
+
+    #[test]
+    fn saving_the_current_state_while_all_is_hidden_saves_the_panels_that_were_open() {
+        let mut w = world();
+        request(
+            &mut w,
+            ProfileRequest::Apply(ProfileKey::Factory(FactoryProfile::PhysicalGame)),
+        );
+        let open = vec![ids::CLOCK.to_owned(), ids::NOTATION.to_owned()];
+        w.resource_scope(|_, mut dock: Mut<Dock>| {
+            for id in dock.layout.pane_ids() {
+                dock.layout.set_visible(&id, false);
+            }
+        });
+        w.resource_mut::<crate::actions::HiddenPanels>()
+            .hide_for_test(open.clone());
+        request(&mut w, ProfileRequest::SaveCurrent("Meu".into()));
+        // O dock segue oculto e o "tudo oculto" também.
+        assert!(!w.resource::<Dock>().layout.any_visible());
+        assert!(w.resource::<crate::actions::HiddenPanels>().is_hidden());
+        let saved = w.resource::<InterfaceProfiles>().state.user[0]
+            .profile
+            .clone();
+        let DockSetup::Layout(layout) = saved.dock else {
+            panic!("layout inteiro")
+        };
+        assert_eq!(visible_ids(&layout), vec![ids::CLOCK, ids::NOTATION]);
+    }
+
+    #[test]
+    fn applying_a_profile_ends_the_hidden_state() {
+        let mut w = world();
+        w.resource_mut::<crate::actions::HiddenPanels>()
+            .hide_for_test(vec![ids::CLOCK.to_owned()]);
+        request(
+            &mut w,
+            ProfileRequest::Apply(ProfileKey::Factory(FactoryProfile::Minimal)),
+        );
+        assert!(!w.resource::<crate::actions::HiddenPanels>().is_hidden());
     }
 
     #[test]

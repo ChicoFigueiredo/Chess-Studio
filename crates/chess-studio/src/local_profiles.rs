@@ -166,6 +166,8 @@ struct Applied<'w> {
     appearance: ResMut<'w, crate::ui_theme::Appearance>,
     view: ResMut<'w, ViewState>,
     dock: ResMut<'w, Dock>,
+    hidden: ResMut<'w, crate::actions::HiddenPanels>,
+    ribbon: Option<ResMut<'w, crate::ribbon::RibbonState>>,
     interface: ResMut<'w, InterfaceProfiles>,
     engine: ResMut<'w, EngineUi>,
     notes: ResMut<'w, StudyNotes>,
@@ -181,6 +183,8 @@ impl Applied<'_> {
             interface,
             controls,
             notes,
+            ribbon,
+            hidden,
         } = data;
         let mut session = restored.session;
         session.supersede(&self.session);
@@ -195,6 +199,10 @@ impl Applied<'_> {
         *self.appearance = prefs.appearance;
         *self.view = prefs.view;
         self.dock.set_layout(layout);
+        *self.hidden = hidden;
+        if let (Some(setup), Some(state)) = (&ribbon, self.ribbon.as_mut()) {
+            state.apply_setup(setup);
+        }
         *self.interface = InterfaceProfiles::with_state(interface);
         self.engine
             .apply_saved(prefs.engine_user_side, prefs.engine_elo);

@@ -252,14 +252,136 @@ fn separator(ui: &mut Ui, p: &Palette, height: f32) {
     ui.add_space(4.0);
 }
 
+// --- Grupo Painéis: caixas de seleção (#183) ---
+
+/// O grupo "Painéis" da aba Exibir: uma caixa de seleção por Painel, no estilo da aba Exibir
+/// do Word. Nos modos simples e recolhido vira o menu "Painéis ▾".
+fn is_panels_group(group: &Group) -> bool {
+    group.label == "ribbon-group-panels"
+}
+
+/// Quantas caixas por coluna no corpo clássico.
+const PANEL_ROWS: usize = 3;
+/// Espaço entre colunas de caixas.
+const PANEL_COLUMN_GAP: f32 = 14.0;
+
+/// A caixa de seleção de um Painel: marcada se ele está visível; clicar escreve a mesma
+/// `ActionRequested` que o atalho e a Paleta.
+fn panel_checkbox(ui: &mut Ui, env: &mut Env<'_>, action: Action) -> Response {
+    let m = meta(action);
+    let st = state(action, env.ctx);
+    let enabled = st.is_enabled();
+    let label = env.i18n.t(m.label);
+    let mut checked = st.checked == Some(true);
+    let before = checked;
+    let response = ui
+        .add_enabled_ui(enabled, |ui| {
+            crate::ui_theme::cs_checkbox(ui, &mut checked, &label)
+        })
+        .inner;
+    if env.register {
+        env.rects.push((action, response.rect));
+    }
+    if enabled && checked != before {
+        env.out.push(action);
+    }
+    if response.contains_pointer() || response.has_focus() {
+        let description = env.i18n.t(m.description);
+        let reason = st.disabled_reason.map(|r| env.i18n.t(r));
+        let shortcut = env
+            .controls
+            .map()
+            .triggers(action)
+            .first()
+            .map(|t| trigger_label(env.i18n, t));
+        let mut tip = ActionTip::new(&label).description(&description);
+        if let Some(s) = shortcut.as_deref() {
+            tip = tip.shortcut(s);
+        }
+        if let Some(r) = reason.as_deref() {
+            tip = tip.disabled(r);
+        }
+        return action_tooltip(response, &tip);
+    }
+    response
+}
+
+fn panel_label_width(ui: &Ui, env: &Env<'_>, action: Action) -> f32 {
+    let galley = ui.painter().layout_no_wrap(
+        env.i18n.t(meta(action).label),
+        body_font(),
+        Color32::PLACEHOLDER,
+    );
+    galley.size().x + ui.spacing().icon_width + 8.0 + 6.0
+}
+
+/// Largura do grupo Painéis no corpo clássico: colunas de `PANEL_ROWS` caixas.
+fn panels_classic_width(ui: &Ui, env: &Env<'_>, group: &Group) -> f32 {
+    group
+        .actions
+        .chunks(PANEL_ROWS)
+        .map(|chunk| {
+            chunk
+                .iter()
+                .map(|a| panel_label_width(ui, env, *a))
+                .fold(0.0, f32::max)
+                + PANEL_COLUMN_GAP
+        })
+        .sum()
+}
+
+/// As caixas, uma por linha (menu "Painéis ▾" e menu "⋯").
+fn panel_checkbox_list(ui: &mut Ui, env: &mut Env<'_>, group: &Group) {
+    for action in &group.actions {
+        panel_checkbox(ui, env, *action);
+    }
+}
+
+/// Botão "Painéis ▾": abre o menu com as mesmas caixas e fica aberto enquanto se marca.
+fn panels_menu_button(ui: &mut Ui, env: &mut Env<'_>, group: &Group) {
+    let label = env.i18n.t(group.label);
+    let ctx = ui.ctx().clone();
+    let caret = glyph("caret-down");
+    let job = icon_job(&ctx, caret, &label, body_font(), Color32::PLACEHOLDER);
+    let galley = ui.painter().layout_job(job);
+    let (response, rect, look) =
+        button_core(ui, vec2(galley.size().x + 20.0, SMALL_H), true, false);
+    let pos = Align2::CENTER_CENTER
+        .align_size_within_rect(galley.size(), rect)
+        .min;
+    ui.painter().galley(pos, galley, look.text);
+    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    egui::Popup::menu(&response)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show(|ui| {
+            ui.set_min_width(180.0);
+            panel_checkbox_list(ui, env, group);
+        });
+}
+
 // --- Corpo clássico ---
 
 fn classic_group(ui: &mut Ui, env: &mut Env<'_>, group: &Group) {
     let p = palette(ui);
     let label = env.i18n.t(group.label);
+    let panels = is_panels_group(group);
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing = vec2(2.0, 2.0);
         let row = ui.horizontal(|ui| {
+            if panels {
+                ui.spacing_mut().item_spacing.x = PANEL_COLUMN_GAP;
+                for chunk in group.actions.chunks(PANEL_ROWS) {
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing = vec2(2.0, 2.0);
+                        // Três caixas cabem na altura do corpo, como três botões pequenos.
+                        ui.spacing_mut().interact_size.y = SMALL_H;
+                        for action in chunk {
+                            panel_checkbox(ui, env, *action);
+                        }
+                    });
+                }
+                return;
+            }
             action_button(ui, env, group.actions[0], Form::Big, Extra::default());
             for chunk in group.actions[1..].chunks(3) {
                 let width = chunk
@@ -295,6 +417,9 @@ fn classic_group(ui: &mut Ui, env: &mut Env<'_>, group: &Group) {
 
 /// Largura estimada de um grupo clássico: botão grande mais as colunas de pequenos.
 fn classic_group_width(ui: &Ui, env: &Env<'_>, group: &Group) -> f32 {
+    if is_panels_group(group) {
+        return panels_classic_width(ui, env, group);
+    }
     let big = meta(group.actions[0]);
     let mut width = small_width(ui, None, &env.i18n.t(big.label)).max(52.0);
     for chunk in group.actions[1..].chunks(3) {
@@ -336,6 +461,10 @@ fn classic_body(ui: &mut Ui, env: &mut Env<'_>, view: RibbonView, available: f32
 // --- Corpo simples ---
 
 fn group_width(ui: &Ui, env: &Env<'_>, group: &Group) -> f32 {
+    if is_panels_group(group) {
+        let label = env.i18n.t(group.label);
+        return small_width(ui, glyph("caret-down"), &label) + 4.0;
+    }
     let items: f32 = group
         .actions
         .iter()
@@ -372,6 +501,10 @@ fn overflow_menu(
                     .small()
                     .color(p.ink_muted),
             );
+            if is_panels_group(group) {
+                panel_checkbox_list(ui, env, group);
+                continue;
+            }
             let width = group
                 .actions
                 .iter()
@@ -402,6 +535,10 @@ fn simple_body(ui: &mut Ui, env: &mut Env<'_>, view: RibbonView, available: f32)
         for (i, group) in groups.iter().take(split.visible).enumerate() {
             if i > 0 {
                 separator(ui, p, 24.0);
+            }
+            if is_panels_group(group) {
+                panels_menu_button(ui, env, group);
+                continue;
             }
             for action in &group.actions {
                 action_button(ui, env, *action, Form::Small, Extra::default());
@@ -729,6 +866,7 @@ pub(super) fn ribbon_ui(
             )
         });
         let outside = pressed
+            && !egui::Popup::is_any_open(&ctx)
             && pos.is_some_and(|pos| {
                 !area_rect.contains(pos) && !popup_rect.is_some_and(|r| r.contains(pos))
             });
@@ -737,7 +875,8 @@ pub(super) fn ribbon_ui(
         }
     }
     // Executar uma Ação fecha o corpo aberto por cima do tabuleiro.
-    if !env.out.is_empty() && collapsed {
+    // (marcar Painéis em série não fecha: são caixas de seleção, como no menu "Painéis ▾").
+    if env.out.iter().any(|a| a.panel().is_none()) && collapsed {
         ribbon.body_open = false;
     }
     for action in env.out.drain(..) {

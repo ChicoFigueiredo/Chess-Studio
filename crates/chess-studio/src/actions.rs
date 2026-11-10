@@ -30,6 +30,52 @@ use chess_input::CameraView;
 use chess_input::actions::{ActionContext, PresentationId, state};
 use chess_input::controls::Action;
 
+/// O conjunto de Painéis que estava aberto quando "Ocultar todos os Painéis" foi acionada
+/// (#183). `Some` = tudo oculto agora; a mesma Ação o devolve exatamente. Não é Perfil de
+/// interface: o estado "tudo oculto" não vira "Personalizado" (ver `profiles::track_active`).
+#[derive(Resource, Debug, Default, Clone, PartialEq, Eq)]
+pub struct HiddenPanels(Option<Vec<String>>);
+
+impl HiddenPanels {
+    pub fn is_hidden(&self) -> bool {
+        self.0.is_some()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn hide_for_test(&mut self, open: Vec<String>) {
+        self.0 = Some(open);
+    }
+
+    /// O conjunto guardado (ids dos Painéis que estavam abertos), se há "tudo oculto".
+    pub fn open_set(&self) -> Option<&[String]> {
+        self.0.as_deref()
+    }
+
+    /// Reconstrói o estado gravado (`None` = nada oculto).
+    pub fn from_saved(open: Option<Vec<String>>) -> Self {
+        Self(open)
+    }
+
+    /// O layout com os Painéis guardados de volta (sem tocar o estado). Janelas do sistema
+    /// ficam como estão. Sem "tudo oculto", é cópia fiel do layout.
+    pub fn restored(&self, layout: &crate::dock::DockLayout) -> crate::dock::DockLayout {
+        let mut out = layout.clone();
+        if let Some(open) = &self.0 {
+            for id in out.pane_ids() {
+                if out.window_tile_of(&id).is_none() {
+                    out.set_visible(&id, open.contains(&id));
+                }
+            }
+        }
+        out
+    }
+
+    /// Esquece o conjunto guardado (o usuário mexeu nos Painéis ou trocou de Perfil).
+    pub fn clear(&mut self) {
+        self.0 = None;
+    }
+}
+
 /// Pedido para executar uma Ação (atalho, Ribbon, Paleta…).
 #[derive(Message, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ActionRequested(pub Action);
@@ -39,6 +85,7 @@ pub struct ActionsPlugin;
 impl Plugin for ActionsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<crate::ui_theme::Appearance>()
+            .init_resource::<HiddenPanels>()
             .add_message::<ActionRequested>()
             .add_systems(
                 Update,
@@ -92,6 +139,10 @@ pub struct ActionEnv<'w> {
     hover: ResMut<'w, HoverHighlight>,
     analysis: ResMut<'w, Analysis>,
     dock: ResMut<'w, Dock>,
+    hidden: ResMut<'w, HiddenPanels>,
+    scoresheet: Option<Res<'w, crate::scoresheet::ScoresheetUi>>,
+    notes: Option<Res<'w, crate::study::StudyNotes>>,
+    file_tools: Option<ResMut<'w, crate::fen_pgn::FileTools>>,
     controls_ui: ResMut<'w, ControlsUi>,
     options_ui: ResMut<'w, crate::options::OptionsUi>,
     training: Res<'w, crate::training_ui::TrainingUi>,
@@ -148,6 +199,8 @@ impl ActionEnv<'_> {
             has_docked_panel: self.dock.layout.active_docked_panel().is_some(),
             has_floating_panel: !self.dock.layout.floating.is_empty()
                 || !self.dock.layout.windows.is_empty(),
+            panels_hidden: self.hidden.is_hidden(),
+            pgn_blocked: self.scoresheet.as_ref().is_some_and(|s| s.hides_notation()),
         }
     }
 
@@ -230,7 +283,15 @@ impl ActionEnv<'_> {
                         .detach_group_to_window(&id, crate::detached::DEFAULT_WINDOW_SIZE);
                 }
             }
-            Action::ResetLayout => self.dock.reset(),
+            Action::ResetLayout => {
+                self.hidden.clear();
+                self.dock.reset();
+            }
+            Action::HideAllPanels => self.toggle_hide_all(),
+            Action::OpenLibrary => self.show_panel(crate::dock::ids::LIBRARY),
+            Action::OpenOpenings => self.show_panel(crate::dock::ids::OPENINGS),
+            Action::OpenTraining => self.show_panel(crate::dock::ids::TRAINING),
+            Action::ExportPgn => self.export_pgn(),
             Action::UiZoomIn => self.appearance.scale = self.appearance.scale.zoom_in(),
             Action::UiZoomOut => self.appearance.scale = self.appearance.scale.zoom_out(),
             other => match other.panel() {
@@ -273,7 +334,71 @@ impl ActionEnv<'_> {
         self.rig.view = Some(view);
     }
 
+    /// "Ocultar todos os Painéis": guarda quais estavam visíveis (encaixados e flutuantes) e
+    /// oculta todos; de novo, devolve exatamente esses. Só a visibilidade muda: abas, divisões
+    /// e janelas flutuantes ficam como estão.
+    fn toggle_hide_all(&mut self) {
+        let layout = &mut self.dock.layout;
+        // Janelas do sistema (Painéis destacados) ficam como estão: ocultar tudo vale para o
+        // dock e os flutuantes; fechar uma janela do SO é decisão do usuário (ela voltaria ao
+        // dock sozinha se ficasse sem aba visível).
+        let ids: Vec<String> = layout
+            .pane_ids()
+            .into_iter()
+            .filter(|id| layout.window_tile_of(id).is_none())
+            .collect();
+        match self.hidden.0.take() {
+            Some(open) => {
+                for id in &ids {
+                    layout.set_visible(id, open.contains(id));
+                }
+            }
+            None => {
+                let open: Vec<String> = ids
+                    .iter()
+                    .filter(|id| layout.is_visible(id))
+                    .cloned()
+                    .collect();
+                for id in &ids {
+                    layout.set_visible(id, false);
+                }
+                self.hidden.0 = Some(open);
+            }
+        }
+    }
+
+    /// Mostra o Painel (se oculto) e o põe à frente; nunca o esconde.
+    fn show_panel(&mut self, id: &str) {
+        if !self.dock.layout.is_visible(id) {
+            self.toggle_panel(id);
+        } else {
+            self.dock.layout.activate(id);
+        }
+    }
+
+    /// "Exportar PGN": grava na pasta Documentos; o resultado aparece no Painel Revisão
+    /// (que a Ação mostra), onde a exportação já vivia.
+    fn export_pgn(&mut self) {
+        let Some(tools) = self.file_tools.as_mut() else {
+            return;
+        };
+        let epoch = self.session.epoch();
+        let notes = self
+            .notes
+            .as_ref()
+            .map(|n| n.export(epoch))
+            .unwrap_or_default();
+        let dir = crate::paths::documents_dir(
+            crate::paths::Platform::current(),
+            &crate::paths::process_env,
+        );
+        tools.export(&self.session, &notes, &dir);
+        self.show_panel(crate::dock::ids::REVIEW);
+    }
+
     fn toggle_panel(&mut self, id: &str) {
+        // Mexer num Painel encerra o "tudo oculto": vale o que o usuário acabou de escolher.
+        self.hidden.clear();
         let visible = self.dock.layout.is_visible(id);
         self.dock.layout.set_visible(id, !visible);
         if !visible {
@@ -303,6 +428,7 @@ pub(crate) fn test_app() -> App {
         .init_resource::<crate::board2d::BoardFlip>()
         .init_resource::<Analysis>()
         .init_resource::<Dock>()
+        .init_resource::<HiddenPanels>()
         .init_resource::<crate::training_ui::TrainingUi>()
         .init_resource::<crate::palette::PaletteState>()
         .add_message::<ActionRequested>()
@@ -324,6 +450,7 @@ pub(crate) fn press(app: &mut App, key: KeyCode) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::ecs::system::RunSystemOnce;
 
     #[test]
     fn dec_51_keys_reach_their_actions_through_one_path() {
@@ -519,6 +646,167 @@ mod tests {
                 );
             }
         }
+    }
+
+    fn visible_set(app: &App) -> Vec<String> {
+        let layout = &app.world().resource::<Dock>().layout;
+        let mut v: Vec<String> = layout
+            .pane_ids()
+            .into_iter()
+            .filter(|id| layout.is_visible(id))
+            .collect();
+        v.sort();
+        v
+    }
+
+    fn request(app: &mut App, action: Action) {
+        app.world_mut().write_message(ActionRequested(action));
+        app.update();
+    }
+
+    #[test]
+    fn hiding_all_panels_and_doing_it_again_restores_the_exact_set_including_floating() {
+        use crate::dock::ids;
+        let mut app = test_app();
+        {
+            let mut dock = app.world_mut().resource_mut::<Dock>();
+            for id in dock.layout.pane_ids() {
+                dock.layout.set_visible(&id, false);
+            }
+            for id in [ids::NOTATION, ids::CLOCK, ids::BOARD2D] {
+                dock.layout.set_visible(id, true);
+            }
+            assert!(dock.float(ids::BOARD2D));
+        }
+        let before = visible_set(&app);
+        assert_eq!(before.len(), 3);
+        assert!(
+            app.world()
+                .resource::<Dock>()
+                .layout
+                .is_floating(ids::BOARD2D)
+        );
+
+        request(&mut app, Action::HideAllPanels);
+        assert!(
+            visible_set(&app).is_empty(),
+            "tudo oculto, flutuantes também"
+        );
+        assert!(!app.world().resource::<Dock>().layout.any_visible());
+        // O Painel flutuante continua flutuante (só oculto).
+        assert!(
+            app.world()
+                .resource::<Dock>()
+                .layout
+                .is_floating(ids::BOARD2D)
+        );
+        assert!(app.world().resource::<HiddenPanels>().is_hidden());
+
+        request(&mut app, Action::HideAllPanels);
+        assert_eq!(visible_set(&app), before);
+        assert!(
+            app.world()
+                .resource::<Dock>()
+                .layout
+                .is_floating(ids::BOARD2D)
+        );
+        assert!(!app.world().resource::<HiddenPanels>().is_hidden());
+    }
+
+    #[test]
+    fn ctrl_shift_f12_hides_and_restores_the_panels() {
+        let mut app = test_app();
+        let before = visible_set(&app);
+        assert!(!before.is_empty());
+        {
+            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            keys.press(KeyCode::ControlLeft);
+            keys.press(KeyCode::ShiftLeft);
+        }
+        press(&mut app, KeyCode::F12);
+        assert!(visible_set(&app).is_empty());
+        press(&mut app, KeyCode::F12);
+        assert_eq!(visible_set(&app), before);
+    }
+
+    #[test]
+    fn opening_a_panel_while_all_are_hidden_ends_the_hidden_state_and_keeps_the_rest_hidden() {
+        use crate::dock::ids;
+        let mut app = test_app();
+        request(&mut app, Action::HideAllPanels);
+        request(&mut app, Action::PanelNotation);
+        assert_eq!(visible_set(&app), vec![ids::NOTATION.to_owned()]);
+        assert!(!app.world().resource::<HiddenPanels>().is_hidden());
+        // Outra vez "ocultar": agora esconde só o que está aberto, e restaura isso.
+        request(&mut app, Action::HideAllPanels);
+        request(&mut app, Action::HideAllPanels);
+        assert_eq!(visible_set(&app), vec![ids::NOTATION.to_owned()]);
+    }
+
+    #[test]
+    fn the_checkbox_state_follows_the_dock_and_the_hidden_toggle_is_checked_while_hidden() {
+        use crate::dock::ids;
+        let mut app = test_app();
+        app.world_mut()
+            .resource_mut::<Dock>()
+            .layout
+            .set_visible(ids::NOTATION, true);
+        let ctx = |app: &mut App| {
+            app.world_mut()
+                .run_system_once(|env: ActionEnv| env.context())
+                .unwrap()
+        };
+        let c = ctx(&mut app);
+        assert_eq!(state(Action::PanelNotation, &c).checked, Some(true));
+        assert_eq!(state(Action::HideAllPanels, &c).checked, Some(false));
+        request(&mut app, Action::HideAllPanels);
+        let c = ctx(&mut app);
+        assert_eq!(state(Action::PanelNotation, &c).checked, Some(false));
+        assert_eq!(state(Action::HideAllPanels, &c).checked, Some(true));
+    }
+
+    #[test]
+    fn open_actions_show_the_panel_and_never_hide_it() {
+        use crate::dock::ids;
+        let mut app = test_app();
+        app.world_mut()
+            .resource_mut::<Dock>()
+            .layout
+            .set_visible(ids::TRAINING, false);
+        for _ in 0..2 {
+            request(&mut app, Action::OpenTraining);
+            assert!(
+                app.world()
+                    .resource::<Dock>()
+                    .layout
+                    .is_visible(ids::TRAINING)
+            );
+        }
+    }
+
+    #[test]
+    fn hiding_all_leaves_detached_os_windows_untouched() {
+        use crate::dock::ids;
+        let mut app = test_app();
+        {
+            let mut dock = app.world_mut().resource_mut::<Dock>();
+            dock.layout.set_visible(ids::NOTATION, true);
+            dock.layout.set_visible(ids::CLOCK, true);
+            let size = crate::detached::DEFAULT_WINDOW_SIZE;
+            assert!(
+                dock.layout
+                    .detach_panel_to_window(ids::CLOCK, size)
+                    .is_some()
+            );
+        }
+        request(&mut app, Action::HideAllPanels);
+        let layout = &app.world().resource::<Dock>().layout;
+        assert!(layout.is_visible(ids::CLOCK), "janela do SO intacta");
+        assert!(!layout.is_visible(ids::NOTATION));
+        request(&mut app, Action::HideAllPanels);
+        let layout = &app.world().resource::<Dock>().layout;
+        assert!(layout.is_visible(ids::CLOCK) && layout.is_visible(ids::NOTATION));
+        assert!(!layout.windows.is_empty());
     }
 
     #[test]

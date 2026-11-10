@@ -439,3 +439,105 @@ fn collapsing_the_ribbon_needs_the_ribbon_on_screen() {
     assert!(s.is_enabled());
     assert_eq!(s.checked, Some(true));
 }
+
+// --- #183: Exibir > Painéis ---
+
+#[test]
+fn every_panel_action_lives_in_the_view_tab_panels_group_and_nowhere_else() {
+    let panels: Vec<Action> = Action::ALL
+        .into_iter()
+        .filter(|a| a.panel().is_some())
+        .collect();
+    assert!(panels.len() >= 14);
+    for action in panels {
+        let m = meta(action);
+        assert_eq!(m.tab, Some(RibbonTab::View), "{action:?}");
+        assert_eq!(m.group, Some("ribbon-group-panels"), "{action:?}");
+        assert_eq!(m.kind, ActionKind::Toggle, "{action:?}");
+    }
+    // Só Painéis moram no grupo Painéis.
+    for action in Action::ALL {
+        if meta(action).group == Some("ribbon-group-panels") {
+            assert!(action.panel().is_some(), "{action:?} não é Painel");
+        }
+    }
+}
+
+#[test]
+fn panel_checkboxes_reflect_which_panels_are_visible() {
+    let ctx = ActionContext {
+        visible_panels: ["Notation", "Clock"]
+            .into_iter()
+            .map(String::from)
+            .collect(),
+        ..assisted()
+    };
+    for action in Action::ALL {
+        let Some((id, _)) = action.panel() else {
+            continue;
+        };
+        assert_eq!(
+            state(action, &ctx).checked,
+            Some(id == "Notation" || id == "Clock"),
+            "{action:?}"
+        );
+    }
+}
+
+#[test]
+fn hide_all_panels_is_a_view_toggle_with_ctrl_shift_f12() {
+    let m = meta(Action::HideAllPanels);
+    assert_eq!(m.tab, Some(RibbonTab::View));
+    assert_eq!(m.kind, ActionKind::Toggle);
+    let map = ControlMap::default();
+    let triggers = map.triggers(Action::HideAllPanels);
+    assert_eq!(triggers.len(), 1);
+    assert_eq!(triggers[0].to_string(), "Ctrl+Shift+Key:F12");
+    assert!(Action::HideAllPanels.fires_while_typing());
+    let off = state(Action::HideAllPanels, &assisted());
+    assert!(off.is_enabled());
+    assert_eq!(off.checked, Some(false));
+    let on = ActionContext {
+        panels_hidden: true,
+        ..assisted()
+    };
+    assert_eq!(state(Action::HideAllPanels, &on).checked, Some(true));
+}
+
+// --- #183: Biblioteca e Treino com Ações próprias ---
+
+#[test]
+fn library_and_training_tabs_keep_their_own_actions() {
+    for tab in [RibbonTab::Library, RibbonTab::Training] {
+        let own: Vec<Action> = Action::ALL
+            .into_iter()
+            .filter(|a| meta(*a).tab == Some(tab))
+            .collect();
+        assert!(!own.is_empty(), "{tab:?} sem Ações");
+        assert!(own.iter().all(|a| a.panel().is_none()), "{tab:?}");
+    }
+    let ctx = assisted();
+    for a in [
+        Action::OpenLibrary,
+        Action::OpenOpenings,
+        Action::OpenTraining,
+    ] {
+        assert_eq!(meta(a).kind, ActionKind::Command);
+        assert!(state(a, &ctx).is_enabled(), "{a:?}");
+    }
+    for a in [Action::OpenLibrary, Action::OpenOpenings] {
+        assert_eq!(
+            state(a, &fide()).disabled_reason,
+            Some("reason-competitive-lock")
+        );
+    }
+    assert!(state(Action::ExportPgn, &ctx).is_enabled());
+    let blocked = ActionContext {
+        pgn_blocked: true,
+        ..assisted()
+    };
+    assert_eq!(
+        state(Action::ExportPgn, &blocked).disabled_reason,
+        Some("reason-pgn-scoresheet")
+    );
+}
