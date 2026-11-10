@@ -78,6 +78,9 @@ pub struct Group {
     pub actions: Vec<Action>,
 }
 
+/// Rótulo do grupo "Conjuntos" da aba Exibir (sem Ações: ver [`groups`]).
+pub const SETS_GROUP: &str = "ribbon-group-sets";
+
 /// Os grupos de uma aba, montados só a partir de `meta()`. A primeira Ação do grupo é o botão
 /// grande do modo clássico. A aba Arquivo não tem corpo: abre os bastidores.
 pub fn groups(view: RibbonView) -> Vec<Group> {
@@ -109,6 +112,15 @@ pub fn groups(view: RibbonView) -> Vec<Group> {
     // Em Exibir, os Painéis abrem a aba (como o "Mostrar" do Word): são o que mais se usa ali.
     if let Some(i) = out.iter().position(|g| g.label == "ribbon-group-panels") {
         out[..=i].rotate_right(1);
+        // Os Conjuntos de Painéis (#186) vêm logo depois: não são Ações, o grupo é desenhado à
+        // parte (lista de Conjuntos e menu), por isso não tem Ações.
+        out.insert(
+            1,
+            Group {
+                label: SETS_GROUP,
+                actions: Vec::new(),
+            },
+        );
     }
     out
 }

@@ -7,12 +7,15 @@
 //! [`super::usable_rect`] para ficar abaixo dele.
 
 use super::icons::glyph;
-use super::model::{Group, KeyTipLevel, RibbonView, groups, split_overflow, visible_tabs};
+use super::model::{
+    Group, KeyTipLevel, RibbonView, SETS_GROUP, groups, split_overflow, visible_tabs,
+};
 use super::{RibbonActionContext, RibbonMode, RibbonState, set_top_inset};
 use crate::actions::ActionRequested;
 use crate::controls::{Controls, trigger_label};
 use crate::focus::ViewState;
 use crate::i18n::I18n;
+use crate::panel_sets::{FACTORY, PanelSetRequested, PanelSets, SetRef};
 use crate::ui_theme::{
     ActionTip, ButtonVariant, Look, Palette, VisualState, action_tooltip, button_look, icon_font,
     icon_job, palette, strong_font, toggle_look,
@@ -56,6 +59,9 @@ struct Env<'a> {
     /// Retângulos dos itens do corpo, para os KeyTips.
     rects: Vec<(Action, Rect)>,
     register: bool,
+    /// Conjuntos de Painéis do Perfil local (#186) e os pedidos feitos neste quadro.
+    sets: &'a PanelSets,
+    set_out: Vec<PanelSetRequested>,
 }
 
 /// Cor, tamanho e retângulo comuns a todo botão do Ribbon.
@@ -359,15 +365,221 @@ fn panels_menu_button(ui: &mut Ui, env: &mut Env<'_>, group: &Group) {
         });
 }
 
+// --- Grupo Conjuntos (#186) ---
+
+fn is_sets_group(group: &Group) -> bool {
+    group.label == SETS_GROUP
+}
+
+/// Quantos botões de Conjunto por coluna no corpo clássico.
+const SET_ROWS: usize = 3;
+
+/// Os Conjuntos na ordem da galeria: de fábrica, depois os salvos. (Conjunto, rótulo, dica.)
+fn set_entries(env: &Env<'_>) -> Vec<(SetRef, String, String)> {
+    let mut out: Vec<(SetRef, String, String)> = FACTORY
+        .iter()
+        .map(|f| {
+            (
+                SetRef::Factory(f.id),
+                env.i18n.t(f.label_key),
+                env.i18n.t("panel-set-tip-open"),
+            )
+        })
+        .collect();
+    for saved in env.sets.saved() {
+        out.push((
+            SetRef::Saved(saved.name.clone()),
+            saved.name.clone(),
+            env.i18n.t_with(
+                "panel-set-tip-saved",
+                &[("count", &saved.panels.len().to_string())],
+            ),
+        ));
+    }
+    out
+}
+
+/// Um botão de Conjunto: clique abre, Shift+clique mostra só.
+fn set_button(ui: &mut Ui, env: &mut Env<'_>, set: SetRef, label: &str, tip: &str, width: f32) {
+    let job = icon_job(ui.ctx(), None, label, body_font(), Color32::PLACEHOLDER);
+    let galley = ui.painter().layout_job(job);
+    let size = vec2(width.max(galley.size().x + 16.0), SMALL_H);
+    let (response, rect, look) = button_core(ui, size, true, false);
+    let pos = Align2::CENTER_CENTER
+        .align_size_within_rect(galley.size(), rect)
+        .min;
+    ui.painter().galley(pos, galley, look.text);
+    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    if response.clicked() {
+        let only = ui.input(|i| i.modifiers.shift);
+        env.set_out.push(if only {
+            PanelSetRequested::ShowOnly(set)
+        } else {
+            PanelSetRequested::Open(set)
+        });
+    }
+    let _ = response.on_hover_text(tip);
+}
+
+fn sets_classic_width(ui: &Ui, env: &Env<'_>) -> f32 {
+    let entries = set_entries(env);
+    let columns: f32 = entries
+        .chunks(SET_ROWS)
+        .map(|chunk| {
+            chunk
+                .iter()
+                .map(|(_, label, _)| small_width(ui, None, label))
+                .fold(0.0, f32::max)
+                + 2.0
+        })
+        .sum();
+    let menu = small_width(ui, glyph("caret-down"), &env.i18n.t("panel-set-menu"));
+    columns + menu + 2.0
+}
+
+/// Corpo clássico: colunas de botões (a galeria) e o menu "Conjuntos ▾" com salvar e gerenciar.
+fn sets_classic_row(ui: &mut Ui, env: &mut Env<'_>) {
+    let entries = set_entries(env);
+    for chunk in entries.chunks(SET_ROWS) {
+        let width = chunk
+            .iter()
+            .map(|(_, label, _)| small_width(ui, None, label))
+            .fold(0.0, f32::max);
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing = vec2(2.0, 2.0);
+            for (set, label, tip) in chunk {
+                set_button(ui, env, set.clone(), label, tip, width);
+            }
+        });
+    }
+    ui.vertical(|ui| sets_menu_button_core(ui, env, false));
+}
+
+fn sets_menu_button(ui: &mut Ui, env: &mut Env<'_>) {
+    sets_menu_button_core(ui, env, true);
+}
+
+/// Botão "Conjuntos ▾". `with_list` inclui a lista de Conjuntos no menu (modos simples e
+/// recolhido); no clássico a lista já é a galeria.
+fn sets_menu_button_core(ui: &mut Ui, env: &mut Env<'_>, with_list: bool) {
+    let label = env.i18n.t("panel-set-menu");
+    let ctx = ui.ctx().clone();
+    let caret = glyph("caret-down");
+    let job = icon_job(&ctx, caret, &label, body_font(), Color32::PLACEHOLDER);
+    let galley = ui.painter().layout_job(job);
+    let (response, rect, look) =
+        button_core(ui, vec2(galley.size().x + 20.0, SMALL_H), true, false);
+    let pos = Align2::CENTER_CENTER
+        .align_size_within_rect(galley.size(), rect)
+        .min;
+    ui.painter().galley(pos, galley, look.text);
+    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    egui::Popup::menu(&response)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show(|ui| {
+            ui.set_min_width(220.0);
+            if with_list {
+                sets_list(ui, env);
+                ui.separator();
+            }
+            sets_save_and_manage(ui, env);
+        });
+}
+
+/// Conteúdo do menu "⋯" do modo simples: lista, salvar e gerenciar.
+fn sets_menu_contents(ui: &mut Ui, env: &mut Env<'_>) {
+    sets_list(ui, env);
+    ui.separator();
+    sets_save_and_manage(ui, env);
+}
+
+fn sets_list(ui: &mut Ui, env: &mut Env<'_>) {
+    for (set, label, tip) in set_entries(env) {
+        set_button(ui, env, set, &label, &tip, 200.0);
+    }
+}
+
+/// "Salvar Painéis abertos como Conjunto…" e "Gerenciar" (renomear e excluir).
+fn sets_save_and_manage(ui: &mut Ui, env: &mut Env<'_>) {
+    let p = palette(ui);
+    let heading = |text: String| egui::RichText::new(text).small().color(p.ink_muted);
+    ui.label(heading(env.i18n.t("panel-set-save-heading")));
+    let name_id = Id::new("chess-studio/panel-sets/save-name");
+    let mut name: String = ui.data(|d| d.get_temp(name_id)).unwrap_or_default();
+    let field = ui.add(
+        egui::TextEdit::singleline(&mut name)
+            .hint_text(env.i18n.t("panel-set-save-hint"))
+            .desired_width(200.0),
+    );
+    let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+    if ui.button(env.i18n.t("panel-set-save")).clicked() || enter {
+        env.set_out
+            .push(PanelSetRequested::SaveCurrent(name.clone()));
+        name.clear();
+    }
+    ui.data_mut(|d| d.insert_temp(name_id, name));
+    if let Some(error) = env.sets.error {
+        ui.label(
+            egui::RichText::new(env.i18n.t(error.key()))
+                .small()
+                .color(p.danger),
+        );
+    }
+    ui.separator();
+    ui.label(heading(env.i18n.t("panel-set-manage")));
+    if env.sets.saved().is_empty() {
+        ui.label(egui::RichText::new(env.i18n.t("panel-set-none-saved")).small());
+        return;
+    }
+    let rename_id = Id::new("chess-studio/panel-sets/renaming");
+    let mut renaming: Option<(String, String)> = ui.data(|d| d.get_temp(rename_id));
+    for saved in env.sets.saved() {
+        ui.horizontal(|ui| match renaming.as_mut() {
+            Some((from, text)) if *from == saved.name => {
+                let field = ui.add(egui::TextEdit::singleline(text).desired_width(120.0));
+                let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                if ui.small_button(env.i18n.t("panel-set-save")).clicked() || enter {
+                    env.set_out.push(PanelSetRequested::Rename {
+                        from: from.clone(),
+                        to: text.clone(),
+                    });
+                    renaming = None;
+                }
+            }
+            _ => {
+                ui.label(&saved.name);
+                if ui.small_button(env.i18n.t("panel-set-rename")).clicked() {
+                    renaming = Some((saved.name.clone(), saved.name.clone()));
+                }
+                if ui.small_button(env.i18n.t("panel-set-delete")).clicked() {
+                    env.set_out
+                        .push(PanelSetRequested::Delete(saved.name.clone()));
+                }
+            }
+        });
+    }
+    ui.data_mut(|d| {
+        d.remove::<(String, String)>(rename_id);
+        if let Some(r) = renaming {
+            d.insert_temp(rename_id, r);
+        }
+    });
+}
+
 // --- Corpo clássico ---
 
 fn classic_group(ui: &mut Ui, env: &mut Env<'_>, group: &Group) {
     let p = palette(ui);
     let label = env.i18n.t(group.label);
     let panels = is_panels_group(group);
+    let sets = is_sets_group(group);
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing = vec2(2.0, 2.0);
         let row = ui.horizontal(|ui| {
+            if sets {
+                sets_classic_row(ui, env);
+                return;
+            }
             if panels {
                 ui.spacing_mut().item_spacing.x = PANEL_COLUMN_GAP;
                 for chunk in group.actions.chunks(PANEL_ROWS) {
@@ -417,6 +629,9 @@ fn classic_group(ui: &mut Ui, env: &mut Env<'_>, group: &Group) {
 
 /// Largura estimada de um grupo clássico: botão grande mais as colunas de pequenos.
 fn classic_group_width(ui: &Ui, env: &Env<'_>, group: &Group) -> f32 {
+    if is_sets_group(group) {
+        return sets_classic_width(ui, env);
+    }
     if is_panels_group(group) {
         return panels_classic_width(ui, env, group);
     }
@@ -461,6 +676,10 @@ fn classic_body(ui: &mut Ui, env: &mut Env<'_>, view: RibbonView, available: f32
 // --- Corpo simples ---
 
 fn group_width(ui: &Ui, env: &Env<'_>, group: &Group) -> f32 {
+    if is_sets_group(group) {
+        let label = env.i18n.t("panel-set-menu");
+        return small_width(ui, glyph("caret-down"), &label) + 4.0;
+    }
     if is_panels_group(group) {
         let label = env.i18n.t(group.label);
         return small_width(ui, glyph("caret-down"), &label) + 4.0;
@@ -501,6 +720,10 @@ fn overflow_menu(
                     .small()
                     .color(p.ink_muted),
             );
+            if is_sets_group(group) {
+                sets_menu_contents(ui, env);
+                continue;
+            }
             if is_panels_group(group) {
                 panel_checkbox_list(ui, env, group);
                 continue;
@@ -535,6 +758,10 @@ fn simple_body(ui: &mut Ui, env: &mut Env<'_>, view: RibbonView, available: f32)
         for (i, group) in groups.iter().take(split.visible).enumerate() {
             if i > 0 {
                 separator(ui, p, 24.0);
+            }
+            if is_sets_group(group) {
+                sets_menu_button(ui, env);
+                continue;
             }
             if is_panels_group(group) {
                 panels_menu_button(ui, env, group);
@@ -643,8 +870,11 @@ pub(super) fn ribbon_ui(
     mut ribbon: ResMut<RibbonState>,
     view_state: Option<Res<ViewState>>,
     capture: Option<Res<crate::capture::CaptureMode>>,
+    sets: Option<Res<PanelSets>>,
     mut requests: MessageWriter<ActionRequested>,
+    mut set_requests: MessageWriter<PanelSetRequested>,
 ) -> Result {
+    let sets = sets.as_deref().cloned().unwrap_or_default();
     let ctx = contexts.ctx_mut()?.clone();
     // Modo Foco: sem Ribbon. Capturas limpas (sem `--panel`) também não o mostram.
     if view_state.is_some_and(|v| v.focus) || capture.is_some_and(|c| !c.show_panel) {
@@ -674,6 +904,8 @@ pub(super) fn ribbon_ui(
         out: Vec::new(),
         rects: Vec::new(),
         register: false,
+        sets: &sets,
+        set_out: Vec::new(),
     };
     let mut decisions = Decisions::default();
     let mut tab_rects: Vec<(RibbonView, Rect)> = Vec::new();
@@ -881,6 +1113,20 @@ pub(super) fn ribbon_ui(
     }
     for action in env.out.drain(..) {
         requests.write(ActionRequested(action));
+    }
+    // Abrir um Conjunto também fecha o corpo aberto por cima do tabuleiro; salvar e gerenciar não.
+    if collapsed
+        && env.set_out.iter().any(|r| {
+            matches!(
+                r,
+                PanelSetRequested::Open(_) | PanelSetRequested::ShowOnly(_)
+            )
+        })
+    {
+        ribbon.body_open = false;
+    }
+    for request in env.set_out.drain(..) {
+        set_requests.write(request);
     }
     ribbon.registered.tabs = tab_rects;
     ribbon.registered.actions = std::mem::take(&mut env.rects);

@@ -540,7 +540,7 @@ impl DockLayout {
     }
 
     /// A largura é sensata e a árvore tem raiz.
-    fn is_valid(&self) -> bool {
+    pub(crate) fn is_valid(&self) -> bool {
         self.width.is_finite()
             && (MIN_WIDTH..=MAX_WIDTH).contains(&self.width)
             // Um dock inteiro destacado em janelas (árvore vazia) é legítimo.
