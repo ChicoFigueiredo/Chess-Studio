@@ -6,6 +6,7 @@
 use crate::dock::{PanelAccess, PanelDef, ids};
 use crate::i18n::I18n;
 use crate::session::Session;
+use crate::study::{StudyNotes, StudyPanelRequest};
 use bevy::prelude::*;
 use bevy_egui::egui;
 use chess_core::Color as Side;
@@ -93,17 +94,163 @@ impl Plugin for NotationPlugin {
                 id: ids::NOTATION,
                 label_key: "dock-panel-notation",
                 access: PanelAccess::Always,
-                ui: |ui, i18n, world| {
-                    let hidden = world
-                        .get_resource::<crate::scoresheet::ScoresheetUi>()
-                        .is_some_and(crate::scoresheet::ScoresheetUi::hides_notation);
-                    if let Some(mut session) = world.get_resource_mut::<Session>() {
-                        self::ui(ui, i18n, &mut session, hidden);
-                    }
-                },
+                ui: panel_ui,
             },
         );
     }
+}
+
+fn panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
+    let hidden = world
+        .get_resource::<crate::scoresheet::ScoresheetUi>()
+        .is_some_and(crate::scoresheet::ScoresheetUi::hides_notation);
+    let swapped = world
+        .get_resource::<crate::training_ui::TrainingUi>()
+        .is_some_and(crate::training_ui::TrainingUi::session_swapped);
+    let Some(mut session) = world.remove_resource::<Session>() else {
+        return;
+    };
+    let mut notes = world.remove_resource::<StudyNotes>();
+    let available = crate::study::quick_notes_available(session.competitive_in_progress(), swapped);
+    let mut open_study = false;
+    {
+        let quick = notes
+            .as_mut()
+            .filter(|_| available)
+            .map(|notes| QuickNotes {
+                notes,
+                open_study: &mut open_study,
+            });
+        ui_with_notes(ui, i18n, &mut session, hidden, quick);
+    }
+    world.insert_resource(session);
+    if let Some(notes) = notes {
+        world.insert_resource(notes);
+    }
+    if open_study && let Some(mut request) = world.get_resource_mut::<StudyPanelRequest>() {
+        request.0 = true;
+    }
+}
+
+/// Segunda vista da Anotação de estudo (#180): os mesmos dados do Painel Anotações.
+pub struct QuickNotes<'a> {
+    pub notes: &'a mut StudyNotes,
+    /// Marcado quando o usuário pede (Shift+Enter) o Painel Anotações naquele Lance.
+    pub open_study: &'a mut bool,
+}
+
+/// Editor inline em andamento: meio-lance e texto da 1ª linha.
+#[derive(Clone)]
+struct InlineEdit {
+    ply: usize,
+    text: String,
+    focus: bool,
+}
+
+/// Largura máxima (em caracteres) da 1ª linha mostrada ao lado do Lance.
+const QUICK_NOTE_CHARS: usize = 14;
+
+/// 1ª linha cortada em `QUICK_NOTE_CHARS` com reticências; só aloca quando corta.
+fn truncated(text: &str) -> std::borrow::Cow<'_, str> {
+    match text.char_indices().nth(QUICK_NOTE_CHARS) {
+        Some((end, _)) => std::borrow::Cow::Owned(format!("{}…", text[..end].trim_end())),
+        None => std::borrow::Cow::Borrowed(text),
+    }
+}
+
+/// Indicador + 1ª linha da anotação (ou o botão discreto) ao lado do Lance, e o editor
+/// inline quando é este Lance. Devolve `true` se Shift+Enter pediu o Painel Anotações.
+fn note_slot(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    p: &crate::ui_theme::Palette,
+    quick: &mut QuickNotes<'_>,
+    ply: usize,
+    row_hovered: bool,
+) -> bool {
+    let edit_id = egui::Id::new("quick_note_inline_edit");
+    let editing: Option<InlineEdit> = ui.data(|d| d.get_temp(edit_id));
+    if let Some(mut edit) = editing.filter(|e| e.ply == ply) {
+        let field =
+            crate::ui_theme::cs_text_field(ui, &mut edit.text, &i18n.t("notation-note-hint"), None);
+        if edit.focus {
+            field.request_focus();
+            edit.focus = false;
+        }
+        let (esc, enter, shift) = ui.input(|i| {
+            (
+                i.key_pressed(egui::Key::Escape),
+                i.key_pressed(egui::Key::Enter),
+                i.modifiers.shift,
+            )
+        });
+        let mut open_panel = false;
+        let finished = if esc {
+            true
+        } else if field.lost_focus() || (field.has_focus() && enter) {
+            quick.notes.set_first_line(ply, &edit.text);
+            open_panel = enter && shift;
+            true
+        } else {
+            false
+        };
+        ui.data_mut(|d| {
+            if finished {
+                d.remove::<InlineEdit>(edit_id);
+            } else {
+                d.insert_temp(edit_id, edit);
+            }
+        });
+        return open_panel;
+    }
+    let first = quick.notes.first_line(ply);
+    let icon = if quick.notes.is_multiline(ply) {
+        egui_phosphor::regular::LIST_DASHES
+    } else if first.is_some() {
+        egui_phosphor::regular::NOTE_PENCIL
+    } else {
+        egui_phosphor::regular::NOTE_BLANK
+    };
+    let color = if first.is_some() || row_hovered {
+        p.ink_muted
+    } else {
+        egui::Color32::TRANSPARENT
+    };
+    let text = first.unwrap_or_default();
+    let shown = truncated(text);
+    let job = crate::ui_theme::icon_job(
+        ui.ctx(),
+        Some(icon),
+        &shown,
+        egui::FontId::proportional(12.0),
+        color,
+    );
+    let button = ui
+        .add(
+            egui::Button::new(job)
+                .frame(false)
+                .wrap_mode(egui::TextWrapMode::Extend),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    let button = if let Some(full) = quick.notes.get(ply) {
+        button.on_hover_text(full)
+    } else {
+        button.on_hover_text(i18n.t("notation-note-add"))
+    };
+    if button.clicked() {
+        let text = text.to_owned();
+        ui.data_mut(|d| {
+            d.insert_temp(
+                edit_id,
+                InlineEdit {
+                    ply,
+                    text,
+                    focus: true,
+                },
+            );
+        });
+    }
+    false
 }
 
 /// Um Lance na lista: o atual em `accent-subtle` com texto `accent-ink`; clicar navega.
@@ -142,7 +289,14 @@ fn move_cell(
 }
 
 /// Conteúdo do painel Notação.
-pub fn ui(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session, hidden: bool) {
+/// Conteúdo do painel Notação; com `quick`, cada Lance ganha a nota rápida (#180).
+pub fn ui_with_notes(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    session: &mut Session,
+    hidden: bool,
+    mut quick: Option<QuickNotes<'_>>,
+) {
     if hidden {
         crate::scoresheet::hidden_notice(ui, i18n);
         return;
@@ -179,13 +333,24 @@ pub fn ui(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session, hidden: bool) {
                         {
                             match cell {
                                 Some(cell) => {
-                                    let response = move_cell(ui, p, &cell.san, cell.ply == current);
-                                    if cell.ply == current && follow {
-                                        response.scroll_to_me(Some(egui::Align::Center));
-                                    }
-                                    if response.clicked() {
-                                        go_to = Some(cell.ply);
-                                    }
+                                    ui.horizontal(|ui| {
+                                        ui.spacing_mut().item_spacing.x = 2.0;
+                                        let response =
+                                            move_cell(ui, p, &cell.san, cell.ply == current);
+                                        if cell.ply == current && follow {
+                                            response.scroll_to_me(Some(egui::Align::Center));
+                                        }
+                                        if response.clicked() {
+                                            go_to = Some(cell.ply);
+                                        }
+                                        if let Some(quick) = quick.as_mut() {
+                                            let hover = response.hovered();
+                                            if note_slot(ui, i18n, p, quick, cell.ply, hover) {
+                                                go_to = Some(cell.ply);
+                                                *quick.open_study = true;
+                                            }
+                                        }
+                                    });
                                 }
                                 None if gap => {
                                     ui.label(egui::RichText::new("…").color(p.ink_muted));
@@ -304,6 +469,14 @@ mod tests {
         assert!(s.review().is_none(), "o último Lance é a Partida ao vivo");
         assert_eq!(s.game().events().len(), events, "nenhum Evento gerado");
         assert_eq!(s.snapshot(), &snapshot);
+    }
+
+    #[test]
+    fn the_quick_note_preview_is_cut_only_when_long() {
+        assert_eq!(truncated("curta"), "curta");
+        assert_eq!(truncated("Ataca o centro e abre o jogo"), "Ataca o centro…");
+        assert_eq!(truncated("áéíóúáéíóúáéíóúá"), "áéíóúáéíóúáéíó…");
+        assert_eq!(truncated("exatamente 14c"), "exatamente 14c");
     }
 
     #[test]

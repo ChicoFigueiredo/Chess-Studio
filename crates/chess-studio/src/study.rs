@@ -35,6 +35,20 @@ impl StudyNotes {
         self.notes.get(&ply).map(String::as_str)
     }
 
+    pub fn first_line(&self, ply: usize) -> Option<&str> {
+        self.get(ply).map(first_line)
+    }
+
+    pub fn is_multiline(&self, ply: usize) -> bool {
+        self.get(ply).is_some_and(|n| n.contains('\n'))
+    }
+
+    /// Edição rápida da Notação: troca só a 1ª linha da anotação do Lance.
+    pub fn set_first_line(&mut self, ply: usize, first: &str) {
+        let merged = replace_first_line(self.get(ply).unwrap_or_default(), first);
+        self.set(ply, &merged);
+    }
+
     pub fn is_dirty(&self) -> bool {
         self.dirty
     }
@@ -77,6 +91,40 @@ impl StudyNotes {
     pub fn take_dirty(&mut self, epoch: u64) -> Option<&BTreeMap<usize, String>> {
         let dirty = std::mem::take(&mut self.dirty);
         (dirty && epoch == self.epoch).then_some(&self.notes)
+    }
+}
+
+/// Primeira linha da anotação (sem `\r`): o que a Notação mostra.
+pub fn first_line(note: &str) -> &str {
+    note.lines().next().unwrap_or_default()
+}
+
+/// Troca só a 1ª linha da anotação e preserva as demais. `new_first` é de uma linha (quebras
+/// viram espaço); vazia, apaga a 1ª linha.
+pub fn replace_first_line(note: &str, new_first: &str) -> String {
+    let new_first = new_first.replace(['\r', '\n'], " ");
+    let rest = note.split_once('\n').map(|(_, rest)| rest);
+    match rest {
+        Some(rest) if new_first.trim().is_empty() => rest.to_owned(),
+        Some(rest) => format!("{new_first}\n{rest}"),
+        None => new_first,
+    }
+}
+
+/// A anotação rápida na Notação aparece? Não em Partida competitiva em andamento (UI-08) nem
+/// com a `Session` trocada por um Exercício de Treino.
+pub fn quick_notes_available(competitive_in_progress: bool, training_swapped: bool) -> bool {
+    !competitive_in_progress && !training_swapped
+}
+
+/// Pedido da Notação (Shift+Enter) para abrir o Painel Anotações no Lance já navegado.
+#[derive(Resource, Debug, Default)]
+pub struct StudyPanelRequest(pub bool);
+
+fn open_study_panel(mut request: ResMut<StudyPanelRequest>, mut dock: ResMut<crate::dock::Dock>) {
+    if std::mem::take(&mut request.0) {
+        dock.layout.set_visible(ids::STUDY, true);
+        dock.layout.activate(ids::STUDY);
     }
 }
 
@@ -180,14 +228,20 @@ fn capture_note(
     capture: Option<Res<crate::capture::CaptureMode>>,
     mut notes: ResMut<StudyNotes>,
     mut frame: Local<u32>,
+    mut done: Local<bool>,
 ) {
     if capture.is_none() {
         return;
     }
     *frame += 1;
-    if *frame == 20
+    // Espera o roteiro (`--moves`) jogar: a nota vai para o último Lance, não para a abertura.
+    let scripted = crate::capture::option_value("--moves").is_some();
+    if *frame >= 20
+        && !*done
+        && (!scripted || !session.snapshot().history.is_empty())
         && let Some(text) = crate::capture::option_value("--note")
     {
+        *done = true;
         notes.set(notation::current_ply(&session), &text);
     }
 }
@@ -196,10 +250,16 @@ pub struct StudyPlugin;
 
 impl Plugin for StudyPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<StudyNotes>().add_systems(
-            Update,
-            (follow_game.before(crate::play::PlaySet), capture_note),
-        );
+        app.init_resource::<StudyNotes>()
+            .init_resource::<StudyPanelRequest>()
+            .add_systems(
+                Update,
+                (
+                    follow_game.before(crate::play::PlaySet),
+                    capture_note,
+                    open_study_panel,
+                ),
+            );
         crate::dock::register_panel(
             app,
             PanelDef {
@@ -251,5 +311,63 @@ mod tests {
         assert!(notes_from_json(None).is_empty());
         assert!(notes_from_json(Some(serde_json::json!([1, 2]))).is_empty());
         assert!(notes_from_json(Some(serde_json::json!({"x": "a", "2": 7}))).is_empty());
+    }
+
+    #[test]
+    fn first_line_is_extracted_without_the_rest() {
+        assert_eq!(first_line("a\nb\nc"), "a");
+        assert_eq!(first_line("só uma"), "só uma");
+        assert_eq!(first_line(""), "");
+        assert_eq!(first_line("a\r\nb"), "a");
+    }
+
+    #[test]
+    fn replacing_the_first_line_keeps_the_remaining_lines() {
+        assert_eq!(replace_first_line("velha\n2ª\n3ª", "nova"), "nova\n2ª\n3ª");
+        assert_eq!(replace_first_line("velha", "nova"), "nova");
+        assert_eq!(replace_first_line("", "nova"), "nova");
+        assert_eq!(
+            replace_first_line("velha\n2ª", ""),
+            "2ª",
+            "apagar a 1ª linha"
+        );
+        assert_eq!(replace_first_line("a\r\nb", "x"), "x\nb");
+        assert_eq!(replace_first_line("a", "x\ny"), "x y", "campo de uma linha");
+    }
+
+    #[test]
+    fn inline_edit_and_the_study_panel_share_the_same_note() {
+        let mut notes = StudyNotes::default();
+        notes.set_first_line(3, "rápida");
+        assert_eq!(
+            notes.get(3),
+            Some("rápida"),
+            "o Painel Anotações vê a edição"
+        );
+        notes.set(3, "do painel\ncom detalhes\nmais");
+        assert_eq!(
+            notes.first_line(3),
+            Some("do painel"),
+            "a Notação vê o Painel"
+        );
+        assert!(notes.is_multiline(3));
+        notes.set_first_line(3, "editada inline");
+        assert_eq!(
+            notes.get(3),
+            Some("editada inline\ncom detalhes\nmais"),
+            "várias linhas nunca são truncadas ao salvar"
+        );
+        notes.set_first_line(3, "");
+        assert_eq!(notes.get(3), Some("com detalhes\nmais"));
+        notes.set(4, "x");
+        notes.set_first_line(4, "  ");
+        assert_eq!(notes.get(4), None, "vazia apaga");
+    }
+
+    #[test]
+    fn quick_notes_are_hidden_in_competitive_games_and_training() {
+        assert!(quick_notes_available(false, false));
+        assert!(!quick_notes_available(true, false), "UI-08");
+        assert!(!quick_notes_available(false, true), "Exercício de Treino");
     }
 }
