@@ -43,9 +43,9 @@ fn system_dark(window: Option<&Window>) -> Option<bool> {
 }
 
 /// Estado do instalador (fontes, estilos e Escala).
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct ApplyState {
-    fonts_requested: bool,
+    pub(crate) fonts_requested: bool,
     /// Tema e Densidade já instalados nos estilos do egui.
     applied: Option<(ThemeKind, Density)>,
 }
@@ -58,18 +58,35 @@ pub fn apply_appearance(
     mut state: Local<ApplyState>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
+    apply_to_context(
+        ctx,
+        &appearance,
+        system_dark(windows.single().ok()),
+        &mut state,
+    );
+    Ok(())
+}
+
+/// O mesmo instalador para qualquer contexto egui (as janelas destacadas, #168, têm o seu).
+/// `system_dark` é o tema do sistema, se conhecido.
+pub fn apply_to_context(
+    ctx: &egui::Context,
+    appearance: &Appearance,
+    system_dark: Option<bool>,
+    state: &mut ApplyState,
+) {
     if !state.fonts_requested {
         // As fontes só valem no passe seguinte; os estilos que as usam esperam por ele.
         ctx.set_fonts(fonts::definitions());
         // A Escala é nossa (Ações UiZoomIn e UiZoomOut, em degraus); o atalho de zoom do egui sai.
         ctx.options_mut(|o| o.zoom_with_keyboard = false);
         state.fonts_requested = true;
-        return Ok(());
+        return;
     }
     widgets::mark_fonts_ready(ctx);
     widgets::track_keyboard_focus(ctx);
 
-    let theme = resolve_theme(appearance.theme, system_dark(windows.single().ok()));
+    let theme = resolve_theme(appearance.theme, system_dark);
     if state.applied != Some((theme, appearance.density)) {
         let tokens = Tokens::embedded();
         for kind in ThemeKind::ALL {
@@ -85,5 +102,4 @@ pub fn apply_appearance(
         state.applied = Some((theme, appearance.density));
     }
     ctx.set_zoom_factor(appearance.scale.factor());
-    Ok(())
 }

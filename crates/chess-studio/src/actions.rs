@@ -146,7 +146,8 @@ impl ActionEnv<'_> {
             ribbon_visible: self.ribbon.is_some(),
             visible_panels,
             has_docked_panel: self.dock.layout.active_docked_panel().is_some(),
-            has_floating_panel: !self.dock.layout.floating.is_empty(),
+            has_floating_panel: !self.dock.layout.floating.is_empty()
+                || !self.dock.layout.windows.is_empty(),
         }
     }
 
@@ -211,6 +212,22 @@ impl ActionEnv<'_> {
             Action::DockPanel => {
                 if let Some(id) = self.dock.layout.floating.last().map(|f| f.id.0.clone()) {
                     self.dock.layout.dock_back(&id);
+                } else if let Some(window) = self.dock.layout.last_window() {
+                    self.dock.layout.dock_window_back(window);
+                }
+            }
+            Action::DetachPanel => {
+                if let Some(id) = self.dock.layout.active_docked_panel() {
+                    self.dock
+                        .layout
+                        .detach_panel_to_window(&id, crate::detached::DEFAULT_WINDOW_SIZE);
+                }
+            }
+            Action::DetachGroup => {
+                if let Some(id) = self.dock.layout.active_docked_panel() {
+                    self.dock
+                        .layout
+                        .detach_group_to_window(&id, crate::detached::DEFAULT_WINDOW_SIZE);
                 }
             }
             Action::ResetLayout => self.dock.reset(),

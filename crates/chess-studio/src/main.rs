@@ -21,6 +21,7 @@ mod captured;
 mod clock;
 mod controls;
 mod coordinates;
+mod detached;
 mod dock;
 mod end_game;
 mod engine;
@@ -175,6 +176,8 @@ fn main() {
     app.add_plugins(
         DefaultPlugins
             .set(WindowPlugin {
+                // Fechar a janela principal encerra o app mesmo com janelas destacadas abertas.
+                exit_condition: bevy::window::ExitCondition::OnPrimaryClosed,
                 primary_window: Some(Window {
                     title: i18n::I18n::pt_br().t("app-title"),
                     resolution,
@@ -189,6 +192,7 @@ fn main() {
             }),
     )
     .add_plugins(EguiPlugin::default())
+    .add_plugins(detached::DetachedPlugin)
     .add_plugins((
         i18n::I18nPlugin,
         persistence::PersistencePlugin { db_path },
