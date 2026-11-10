@@ -1284,6 +1284,14 @@ fn frame_dock(
             screen.max,
         );
         let pointer = ctx.input(|i| i.pointer.latest_pos());
+        // A faixa de Painéis (#185) é alvo de soltura; a região do dock termina antes dela.
+        if drag.stopped
+            && crate::panel_stripe::drop_on_stripe(pointer, crate::panel_stripe::drop_zone(ctx))
+        {
+            behavior
+                .actions
+                .push(DockAction::DockBack(drag.panel.clone()));
+        }
         match panel_chrome::float_drag_zone(pointer, region, any_visible) {
             panel_chrome::FloatDragZone::Dock if !drag.stopped => {
                 behavior.actions.push(DockAction::BeginTileDrag(drag.panel));

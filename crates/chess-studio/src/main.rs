@@ -50,6 +50,7 @@ mod options;
 mod palette;
 mod panel_chrome;
 mod panel_sets;
+mod panel_stripe;
 mod paths;
 mod persistence;
 mod picking;
@@ -245,6 +246,7 @@ fn main() {
     app.add_plugins((
         palette::PalettePlugin,
         status_bar::StatusBarPlugin,
+        panel_stripe::PanelStripePlugin,
         ribbon::RibbonPlugin,
     ));
     // `--gallery`: janela com todos os widgets do design system nos dois Temas e Densidades.
