@@ -5,6 +5,7 @@
 //! `snapshot()`. `--screenshot <dir>` gera as capturas de evidência e encerra (com
 //! `--moves`, `--select`, `--panel`, `--aids physical|training|ghosts` e `--review <n>` opcionais); `--benchmark` liga o modo benchmark.
 
+mod action_icons;
 mod actions;
 mod aids;
 mod aids_panel;
@@ -42,7 +43,9 @@ mod load_control;
 mod local_profiles;
 mod new_game;
 mod notation;
+mod nova_ui;
 mod openings;
+mod palette;
 mod paths;
 mod persistence;
 mod picking;
@@ -54,6 +57,7 @@ mod ready;
 mod responsive;
 mod scoresheet;
 mod session;
+mod status_bar;
 mod study;
 mod training_ui;
 mod ui;
@@ -209,6 +213,11 @@ fn main() {
     app.add_plugins(openings::OpeningsPlugin);
     app.add_plugins(scoresheet::ScoresheetPlugin);
     app.add_plugins(ui_theme::UiThemePlugin);
+    // A Paleta de Ações (Ctrl+K) vale nos dois modos; a barra de status é da interface nova.
+    app.add_plugins(palette::PalettePlugin);
+    if nova_ui::enabled() {
+        app.add_plugins(status_bar::StatusBarPlugin);
+    }
     // `--gallery`: janela com todos os widgets do design system nos dois Temas e Densidades.
     if args.iter().any(|a| a == "--gallery") {
         app.insert_resource(ui_theme::GalleryMode::default());
@@ -229,6 +238,13 @@ fn main() {
         }
         if std::env::args().any(|a| a == "--no-coords") {
             app.insert_resource(coordinates::BoardCoordinates(false));
+        }
+        // `--palette [--palette-query <texto>]`: a Paleta de Ações aberta, para a evidência.
+        if std::env::args().any(|a| a == "--palette") {
+            let mut palette = palette::PaletteState::default();
+            palette.open();
+            palette.query = option_value("--palette-query").unwrap_or_default();
+            app.insert_resource(palette);
         }
         match option_value("--quality").as_deref() {
             Some("economic") => app.insert_resource(presentation::GraphicsQuality::Economic),
