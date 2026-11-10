@@ -52,6 +52,7 @@ mod presentation;
 mod profiles;
 mod ready;
 mod responsive;
+mod ribbon;
 mod scoresheet;
 mod session;
 mod study;
@@ -209,6 +210,11 @@ fn main() {
     app.add_plugins(openings::OpeningsPlugin);
     app.add_plugins(scoresheet::ScoresheetPlugin);
     app.add_plugins(ui_theme::UiThemePlugin);
+    // `--nova-ui` (ou CHESS_STUDIO_NOVA_UI=1): o Ribbon novo (DS-3); sem o flag, a interface
+    // atual segue intacta.
+    if ribbon::nova_ui_enabled(&args) {
+        app.add_plugins(ribbon::RibbonPlugin);
+    }
     // `--gallery`: janela com todos os widgets do design system nos dois Temas e Densidades.
     if args.iter().any(|a| a == "--gallery") {
         app.insert_resource(ui_theme::GalleryMode::default());

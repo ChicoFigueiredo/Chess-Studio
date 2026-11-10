@@ -326,14 +326,11 @@ fn panel_toggles_follow_visibility_and_the_competitive_lock() {
 }
 
 #[test]
-fn flipping_the_board_needs_the_2d_panel() {
-    assert_eq!(
-        state(Action::FlipBoard, &assisted()).disabled_reason,
-        Some("reason-board2d-hidden")
-    );
+fn flipping_the_board_works_without_the_2d_panel() {
+    // Vira a Vista 3D e o 2D técnico também (#162): não depende do Painel Tabuleiro 2D.
+    assert!(state(Action::FlipBoard, &assisted()).is_enabled());
     let mut ctx = assisted();
-    ctx.visible_panels.insert("Board2d".into());
-    ctx.board2d_flipped = true;
+    ctx.board_flipped = true;
     let s = state(Action::FlipBoard, &ctx);
     assert!(s.is_enabled());
     assert_eq!(s.checked, Some(true));
@@ -364,7 +361,6 @@ fn surfaces_that_do_not_exist_yet_are_disabled_with_a_reason() {
         Action::DetachPanel,
         Action::OpenPalette,
         Action::OpenOptions,
-        Action::ToggleRibbonCollapse,
     ] {
         let ctx = ActionContext {
             has_docked_panel: true,
@@ -411,4 +407,20 @@ fn camera_views_do_not_exist_in_the_2d_presentation() {
         );
         assert!(state(a, &assisted()).is_enabled(), "{a:?}");
     }
+}
+
+#[test]
+fn collapsing_the_ribbon_needs_the_ribbon_on_screen() {
+    assert_eq!(
+        state(Action::ToggleRibbonCollapse, &assisted()).disabled_reason,
+        Some("reason-coming-soon")
+    );
+    let ctx = ActionContext {
+        ribbon_visible: true,
+        ribbon_collapsed: true,
+        ..assisted()
+    };
+    let s = state(Action::ToggleRibbonCollapse, &ctx);
+    assert!(s.is_enabled());
+    assert_eq!(s.checked, Some(true));
 }

@@ -2,7 +2,7 @@
 //! pura), não o picking de mesh do Bevy. Aqui só se descobre a casa (e o ponto do plano)
 //! sob o cursor; quem interpreta cliques e arrastos é o intérprete de gestos (`play`).
 
-use crate::board2d::{cursor_to_world, to_board_plane};
+use crate::board2d::to_board_plane;
 use crate::camera::{CameraSet, MainCamera};
 use crate::presentation::Presentation;
 use bevy::prelude::*;
@@ -98,6 +98,7 @@ fn pick(
     presentation: Res<Presentation>,
     egui: Res<EguiWantsInput>,
     dock: Res<crate::dock::Dock>,
+    flip: Res<crate::board2d::BoardFlip>,
     session: Res<crate::session::Session>,
     editor: Res<crate::pieces::BoardOverride>,
     mut hovered: ResMut<HoveredSquare>,
@@ -108,7 +109,7 @@ fn pick(
     let point = if over_ui {
         None
     } else {
-        board_point_under_cursor(&window, camera, transform, *presentation, &dock)
+        board_point_under_cursor(&window, camera, transform, *presentation, &dock, *flip)
     };
     let mut square = point.and_then(point_to_square);
     // No 3D o corpo da peça cobre casas atrás dela: clicar no alto da peça escolhe a casa
@@ -161,6 +162,7 @@ pub fn board_point_under_cursor(
     transform: &Transform,
     presentation: Presentation,
     dock: &crate::dock::Dock,
+    flip: crate::board2d::BoardFlip,
 ) -> Option<Vec3> {
     window
         .cursor_position()
@@ -174,9 +176,11 @@ pub fn board_point_under_cursor(
             } else {
                 // 2D técnico: raio vertical sobre o ponto do tabuleiro sob o cursor.
                 // A câmera renderiza só na área livre (viewport recortado).
-                Some(to_board_plane(cursor_to_world(
-                    cursor,
+                // O viewport pode começar abaixo do Ribbon: o cursor é relativo à área.
+                Some(to_board_plane(crate::board2d::cursor_to_world_flipped(
+                    cursor - dock.board_origin(),
                     dock.board_size(window.size()),
+                    flip,
                 )))
             }
         })
