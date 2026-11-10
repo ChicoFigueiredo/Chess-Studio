@@ -1,11 +1,11 @@
 //! Reorganização responsiva (C4, UI-10): função **pura** que, dado o tamanho da janela (em
-//! pontos do egui), decide onde fica o dock e se a janela principal se compacta. Só
+//! pontos do egui), decide onde fica o dock e se a interface se compacta (barra de essenciais). Só
 //! Apresentação (ADR-0001): nada aqui toca a Partida.
 //!
 //! Regras:
 //! - largura >= [`SIDE_FROM`]: dock à direita, como sempre;
 //! - [`OVERLAY_BELOW`] <= largura < [`SIDE_FROM`]: dock à direita, mais estreito, e a
-//!   janela principal compacta;
+//!   interface compacta;
 //! - largura < [`OVERLAY_BELOW`]: o dock vira uma sobreposição recolhível sobre o tabuleiro
 //!   (o tabuleiro ocupa a janela toda);
 //! - sempre que compacta, a barra de essenciais (Nova Partida, Painéis e, no 2D, o relógio
@@ -27,9 +27,9 @@ use chess_core::Color as Side;
 
 /// Abaixo desta largura o dock é sobreposição recolhível.
 pub const OVERLAY_BELOW: f32 = 720.0;
-/// A partir desta largura a interface é a "grande" (dock largo, janela principal completa).
+/// A partir desta largura a interface é a "grande" (dock largo).
 pub const SIDE_FROM: f32 = 1100.0;
-/// Abaixo desta altura a janela principal também compacta.
+/// Abaixo desta altura a interface também compacta.
 pub const COMPACT_HEIGHT: f32 = 700.0;
 /// Largura mínima garantida ao tabuleiro quando o dock fica ao lado.
 pub const MIN_BOARD_WIDTH: f32 = 400.0;
@@ -46,12 +46,10 @@ pub enum DockPlacement {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ResponsiveLayout {
     pub dock: DockPlacement,
-    /// A janela principal mostra só o essencial (sem textos de ajuda).
+    /// A interface se compacta.
     pub compact: bool,
     /// Barra de essenciais sempre visível (Nova Partida, Painéis, relógio no 2D).
     pub essentials_bar: bool,
-    /// Altura máxima da janela principal (rola por dentro; nunca passa da tela).
-    pub main_window_max_height: f32,
 }
 
 impl ResponsiveLayout {
@@ -86,7 +84,6 @@ pub fn responsive_layout(window: Vec2, wanted_dock_width: f32) -> ResponsiveLayo
         dock,
         compact,
         essentials_bar: compact,
-        main_window_max_height: (window.y - 16.0).max(window.y * 0.5),
     }
 }
 
@@ -98,7 +95,7 @@ impl Plugin for ResponsivePlugin {
     }
 }
 
-/// Barra de essenciais das janelas pequenas, sempre sobre o dock e a janela principal:
+/// Barra de essenciais das janelas pequenas, sempre sobre o dock:
 /// Nova Partida, "Painéis" (abre/fecha a sobreposição) e, no 2D técnico (sem relógio na
 /// mesa), o relógio com o botão de acioná-lo. No modo Foco quem cuida disso é `focus`.
 #[allow(clippy::too_many_arguments)]
@@ -129,7 +126,11 @@ fn essentials_bar(
     let mut open_overlay = dock.overlay_open;
     egui::Area::new(egui::Id::new("essentials-bar"))
         .order(egui::Order::Foreground)
-        .anchor(egui::Align2::LEFT_BOTTOM, [8.0, -8.0])
+        // Acima da barra de status, que reserva a faixa inferior.
+        .anchor(
+            egui::Align2::LEFT_BOTTOM,
+            [8.0, -8.0 - crate::status_bar::bottom_inset(ctx)],
+        )
         .show(ctx, |ui| {
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
             egui::Frame::popup(ui.style()).show(ui, |ui| {
@@ -223,7 +224,6 @@ mod tests {
         let l = layout(800.0, 600.0);
         assert!(l.compact && l.essentials_bar);
         assert!(800.0 - l.board_inset() >= MIN_BOARD_WIDTH);
-        assert!(l.main_window_max_height <= 600.0);
     }
 
     #[test]
@@ -250,10 +250,8 @@ mod tests {
             for h in (240..=1440).step_by(60) {
                 let (w, h) = (w as f32, h as f32);
                 let l = layout(w, h);
-                // Compacto implica barra de essenciais; a janela principal cabe na tela.
+                // Compacto implica barra de essenciais.
                 assert_eq!(l.compact, l.essentials_bar, "{w}x{h}");
-                assert!(l.main_window_max_height <= h, "{w}x{h}");
-                assert!(l.main_window_max_height > 0.0, "{w}x{h}");
                 match l.dock {
                     DockPlacement::Side { width } => {
                         assert!((MIN_WIDTH..=MAX_WIDTH).contains(&width), "{w}x{h}: {width}");

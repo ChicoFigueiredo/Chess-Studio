@@ -3,12 +3,12 @@
 //! (ADR-0001): os sistemas daqui não recebem a `Session` para escrita, exceto o botão do
 //! relógio compacto do 2D, que envia a mesma intenção do relógio da mesa.
 //!
-//! - **Tela cheia**: F11 ou "Tela cheia" na janela principal alterna `BorderlessFullscreen`
+//! - **Tela cheia**: F11 ou "Tela cheia" (Ribbon, aba Exibir; Paleta) alterna `BorderlessFullscreen`
 //!   e `Windowed`, lembrando tamanho e posição da janela para a volta. Alguns sistemas
 //!   interceptam F11 (macOS usa Ctrl+Cmd+F para a tela cheia do sistema); o item de menu
 //!   funciona em todos. Ver `docs/decisoes/2026-11-06-tela-cheia-foco.md`.
-//! - **Modo Foco**: F10 ou "Modo Foco" na janela principal esconde o dock e a janela
-//!   principal, deixando tabuleiro, mesa, relógio 3D (e um relógio compacto no 2D técnico),
+//! - **Modo Foco**: F10 ou "Modo Foco" (Ribbon, aba Exibir; Paleta) esconde o Ribbon, o dock
+//!   e a barra de status, deixando tabuleiro, mesa, relógio 3D (e um relógio compacto no 2D técnico),
 //!   mais o botão discreto "Sair do Foco". Janelas que a Partida exige (promoção, retomada,
 //!   Nova Partida em curso) continuam. Os HUDs permitidos pela Política (C5) devem desenhar
 //!   sob a condição [`in_focus`]/[`ViewState::focus`]: o Foco não os esconde.
@@ -96,13 +96,6 @@ fn apply_fullscreen(
             }
         }
     }
-}
-
-/// Seção "Exibição" da janela principal: alternativas de menu para F11 e F10.
-pub fn view_section(ui: &mut egui::Ui, i18n: &I18n, state: &mut ViewState) {
-    ui.strong(i18n.t("view-heading"));
-    ui.checkbox(&mut state.fullscreen, i18n.t("view-fullscreen"));
-    ui.checkbox(&mut state.focus, i18n.t("view-focus"));
 }
 
 /// Controles mínimos do Foco: "Sair do Foco" e, no 2D técnico (sem relógio na mesa), o

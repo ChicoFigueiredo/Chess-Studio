@@ -266,7 +266,6 @@ pub fn section(ui: &mut egui::Ui, i18n: &I18n, state: &mut LocalProfiles, blocke
     let Some(active) = state.active else {
         return;
     };
-    ui.strong(i18n.t("lp-heading"));
     let mut chosen = None;
     ui.add_enabled_ui(!blocked, |ui| {
         egui::ComboBox::from_label(i18n.t("lp-current"))

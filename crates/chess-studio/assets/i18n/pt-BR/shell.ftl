@@ -10,6 +10,7 @@ statusbar-turn-white = Vez das brancas
 statusbar-turn-black = Vez das pretas
 statusbar-game-over = Partida encerrada
 statusbar-move = Lance { $number }
+statusbar-hover = Casa: { $square }
 statusbar-warn-check = Xeque
 statusbar-warn-low-clock = Pouco tempo: { $side } { $time }
 statusbar-side-white = brancas

@@ -64,87 +64,105 @@ fn every_option_destination_is_a_real_row_with_texts() {
     }
 }
 
-/// Chaves i18n usadas literalmente no corpo de `fn_name` em `source`.
-fn keys_in(source: &str, fn_name: &str) -> Vec<String> {
-    let start = source
-        .find(&format!("fn {fn_name}("))
-        .unwrap_or_else(|| panic!("fn {fn_name} não encontrada"));
-    let body = &source[start..];
-    let end = body.find("\n}\n").map_or(body.len(), |e| e + 3);
-    let body = &body[..end];
-    let mut keys = Vec::new();
-    for marker in [".t(\"", ".t_with(\""] {
-        let mut rest = body;
-        while let Some(at) = rest.find(marker) {
-            rest = &rest[at + marker.len()..];
-            if let Some(close) = rest.find('"') {
-                keys.push(rest[..close].to_owned());
+/// Troca única (#167): o painel esquerdo antigo não existe mais, então cada item do inventário
+/// precisa ter um destino alcançável na interface nova. Uma Ação é alcançável quando está na
+/// Paleta (toda Ação que não é gesto) e num grupo do Ribbon (ou nos bastidores, na aba Arquivo).
+#[test]
+fn every_inventory_action_is_reachable_in_the_ribbon_and_the_palette() {
+    use crate::palette::entries;
+    use crate::ribbon::model::{actions_of, visible_tabs};
+    use chess_input::actions::{ActionKind, RibbonTab, meta};
+    use chess_input::controls::Action;
+
+    let palette: Vec<Action> = entries(
+        &I18n::pt_br(),
+        &Controls::default(),
+        &chess_input::actions::ActionContext::default(),
+    )
+    .into_iter()
+    .map(|e| e.action)
+    .collect();
+    let in_ribbon: Vec<Action> = visible_tabs(true)
+        .into_iter()
+        .flat_map(actions_of)
+        .collect();
+    let mut gaps = Vec::new();
+    for item in INVENTORY {
+        for dest in item.dests {
+            let Destination::Actions(actions) = dest else {
+                continue;
+            };
+            for action in *actions {
+                let m = meta(*action);
+                let ribbon_tab_without_body = m.tab == Some(RibbonTab::File);
+                if m.kind == ActionKind::Gesture {
+                    gaps.push(format!("{}: {action:?} é só gesto", item.name));
+                } else if !palette.contains(action) {
+                    gaps.push(format!("{}: {action:?} fora da Paleta", item.name));
+                } else if !in_ribbon.contains(action) && !ribbon_tab_without_body {
+                    gaps.push(format!("{}: {action:?} fora do Ribbon", item.name));
+                }
             }
         }
     }
-    keys
+    assert!(gaps.is_empty(), "sem caminho na interface nova: {gaps:#?}");
 }
 
-/// Nada se perde: todo texto de controle das seções do painel esquerdo precisa estar no
-/// inventário. Quem acrescentar um controle ao painel sem destino quebra este teste.
+/// Todo painel do dock tem uma Ação de alternar (Ribbon e Paleta): nada fica só no painel antigo.
 #[test]
-fn every_left_panel_item_in_the_source_is_in_the_inventory() {
-    let sections: [(&str, &str, &str); 8] = [
-        (include_str!("../ui.rs"), "info_panel", "ui.rs::info_panel"),
-        (
-            include_str!("../ui.rs"),
-            "game_section",
-            "ui.rs::game_section",
-        ),
-        (
-            include_str!("../dock.rs"),
-            "panels_section",
-            "dock.rs::panels_section",
-        ),
-        (
-            include_str!("../focus.rs"),
-            "view_section",
-            "focus.rs::view_section",
-        ),
-        (
-            include_str!("../profiles.rs"),
-            "profiles_section",
-            "profiles.rs::profiles_section",
-        ),
-        (
-            include_str!("../local_profiles.rs"),
-            "section",
-            "local_profiles.rs::section",
-        ),
-        (
-            include_str!("../controls.rs"),
-            "controls_section",
-            "controls.rs::controls_section",
-        ),
-        (
-            include_str!("../engine.rs"),
-            "engine_section",
-            "engine.rs::engine_section",
-        ),
-    ];
-    let known: Vec<&str> = INVENTORY
+fn every_dock_panel_has_a_toggle_action() {
+    use chess_input::controls::Action;
+    let panels: Vec<&Action> = INVENTORY
         .iter()
-        .flat_map(|i| i.keys.iter().copied())
+        .flat_map(|i| i.dests.iter())
+        .filter_map(|d| match d {
+            Destination::Actions(a) => Some(*a),
+            _ => None,
+        })
+        .flatten()
         .collect();
-    let mut missing = Vec::new();
-    for (source, fn_name, origin) in sections {
-        let keys = keys_in(source, fn_name);
-        assert!(!keys.is_empty(), "{origin}: nenhuma chave lida");
-        for key in keys {
-            if !known.contains(&key.as_str()) {
-                missing.push(format!("{origin}: {key}"));
-            }
-        }
+    for action in [
+        Action::PanelNotation,
+        Action::PanelClock,
+        Action::PanelCaptured,
+        Action::PanelStudy,
+        Action::PanelAids,
+        Action::PanelReview,
+        Action::PanelArbitration,
+        Action::PanelTraining,
+        Action::PanelAnalysis,
+        Action::PanelLibrary,
+        Action::PanelOpenings,
+        Action::PanelScoresheet,
+        Action::PanelBoard2d,
+        Action::PanelEngines,
+    ] {
+        assert!(panels.contains(&&action), "{action:?} fora do inventário");
     }
-    assert!(
-        missing.is_empty(),
-        "sem destino no inventário: {missing:#?}"
-    );
+}
+
+/// As superfícies prometidas à barra de status existem de fato: casa sob o cursor e Vista.
+#[test]
+fn the_status_bar_text_covers_its_inventory_surfaces() {
+    use crate::status_bar::{StatusSnapshot, status_text};
+    let snapshot = StatusSnapshot {
+        profile: "Estudo e análise".into(),
+        engine_name: None,
+        engine_consented: false,
+        side_to_move: Side::White,
+        move_number: 1,
+        game_over: false,
+        in_check: false,
+        low_clock: None,
+        fps: None,
+        scale_percent: 100,
+        hovered: "e4".parse().ok(),
+        view: Some(CameraView::Oblique),
+    };
+    let text = status_text(&snapshot, &I18n::pt_br());
+    assert_eq!(text.hover.as_deref(), Some("Casa: e4"));
+    assert_eq!(text.view, "Vista: Oblíqua");
+    assert!(text.turn.contains("Vez das brancas"));
 }
 
 #[test]

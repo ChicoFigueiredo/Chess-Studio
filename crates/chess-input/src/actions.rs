@@ -369,7 +369,7 @@ pub struct ActionContext {
     /// O tabuleiro está virado (Ação `FlipBoard`: Vista 3D, 2D técnico e Tabuleiro 2D).
     pub board_flipped: bool,
     pub ribbon_collapsed: bool,
-    /// O Ribbon novo está na tela (`--nova-ui`); sem ele, recolher não faz sentido.
+    /// O Ribbon está na tela; sem ele (modo Foco), recolher não faz sentido.
     pub ribbon_visible: bool,
     /// Ids dos Painéis visíveis (encaixados ou flutuantes).
     pub visible_panels: BTreeSet<String>,

@@ -385,13 +385,6 @@ pub fn help_lines(i18n: &I18n, map: &ControlMap) -> Vec<String> {
     ]
 }
 
-/// Botão "Controles…" da janela principal.
-pub fn controls_section(ui: &mut egui::Ui, i18n: &I18n, state: &mut ControlsUi) {
-    if ui.button(i18n.t("ctl-open")).clicked() {
-        state.open = true;
-    }
-}
-
 fn controls_window(
     mut contexts: EguiContexts,
     i18n: Res<I18n>,

@@ -505,11 +505,12 @@ pub(super) fn ribbon_ui(
     context: Res<RibbonActionContext>,
     mut ribbon: ResMut<RibbonState>,
     view_state: Option<Res<ViewState>>,
+    capture: Option<Res<crate::capture::CaptureMode>>,
     mut requests: MessageWriter<ActionRequested>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?.clone();
-    // Modo Foco: sem janela principal nem Ribbon.
-    if view_state.is_some_and(|v| v.focus) {
+    // Modo Foco: sem Ribbon. Capturas limpas (sem `--panel`) também não o mostram.
+    if view_state.is_some_and(|v| v.focus) || capture.is_some_and(|c| !c.show_panel) {
         set_top_inset(&ctx, 0.0);
         return Ok(());
     }

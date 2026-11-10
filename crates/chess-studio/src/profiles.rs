@@ -134,7 +134,7 @@ pub struct InterfaceState {
     pub dock: DockLayout,
     pub aids: AidSettings,
     pub focus: bool,
-    /// `None` quando o app roda sem o Ribbon (sem `--nova-ui`): o perfil não o toca.
+    /// `None` quando o app roda sem o Ribbon (testes mínimos): o perfil não o toca.
     pub ribbon: Option<RibbonSetup>,
 }
 
@@ -544,13 +544,13 @@ fn track_active(
     }
 }
 
-/// Seção "Perfil de interface" da janela principal.
+/// Seletor de Perfil de interface (Opções e bastidores). Sem título próprio: quem o hospeda
+/// já o rotula (linha das Opções, título da página dos bastidores).
 pub fn profiles_section(
     ui: &mut egui::Ui,
     i18n: &crate::i18n::I18n,
     profiles: &mut InterfaceProfiles,
 ) {
-    ui.strong(i18n.t("iprofile-heading"));
     let mut chosen: Option<ProfileKey> = None;
     egui::ComboBox::from_id_salt("interface-profile")
         .selected_text(profiles.active_label(i18n))
