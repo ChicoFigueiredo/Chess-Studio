@@ -582,6 +582,58 @@ pub struct DetachedWindowMarker {
     pub window_id: u32,
 }
 
+/// A janela nasceu de um arrasto com o botão ainda pressionado (#201): assim que o SO a
+/// criou, `Window::start_drag_move` entrega o resto do arrasto ao gerenciador de janelas
+/// (funciona em X11 e Wayland; a posição por `WindowPosition` não funciona no Wayland).
+#[derive(Component, Debug, Default)]
+pub struct FollowMouse {
+    /// Quadros desde que a entidade foi criada.
+    pub age: u32,
+}
+
+/// O que fazer com uma janela que deve acompanhar o mouse neste quadro.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FollowStep {
+    /// A janela do SO ainda não existe.
+    Wait,
+    /// Pedir o arrasto ao sistema.
+    Start,
+    /// O botão foi solto antes: não há o que acompanhar.
+    Cancel,
+}
+
+/// Quadros até a janela do SO existir (o `spawn` é adiado e o Bevy cria a janela depois).
+const FOLLOW_AFTER_FRAMES: u32 = 2;
+
+pub fn follow_step(age: u32, button_pressed: bool) -> FollowStep {
+    if !button_pressed {
+        FollowStep::Cancel
+    } else if age < FOLLOW_AFTER_FRAMES {
+        FollowStep::Wait
+    } else {
+        FollowStep::Start
+    }
+}
+
+fn follow_mouse(
+    mut commands: Commands,
+    buttons: Res<ButtonInput<MouseButton>>,
+    mut windows: Query<(Entity, &mut Window, &mut FollowMouse)>,
+) {
+    for (entity, mut window, mut follow) in &mut windows {
+        match follow_step(follow.age, buttons.pressed(MouseButton::Left)) {
+            FollowStep::Wait => follow.age += 1,
+            FollowStep::Start => {
+                window.start_drag_move();
+                commands.entity(entity).remove::<FollowMouse>();
+            }
+            FollowStep::Cancel => {
+                commands.entity(entity).remove::<FollowMouse>();
+            }
+        }
+    }
+}
+
 /// Estado de execução: que entidades existem para cada janela do layout.
 #[derive(Resource, Default, Debug)]
 pub struct DetachedRuntime {
@@ -589,6 +641,8 @@ pub struct DetachedRuntime {
     /// Tentativas de ler os monitores antes de desistir de conferir a posição.
     monitor_wait: u32,
     restored: bool,
+    /// Janela nascida ao arrastar com o botão ainda pressionado: o SO continua o arrasto.
+    follow: Option<u32>,
 }
 
 #[derive(Debug)]
@@ -596,6 +650,10 @@ struct Slot {
     window_id: u32,
     window: Entity,
     camera: Entity,
+    /// A janela do SO já apareceu como entidade ao menos uma vez. Os `spawn` são adiados: no
+    /// quadro em que o slot nasce a entidade ainda não existe e isso não é "janela fechada"
+    /// (#201: a câmera era destruída e o grupo voltava ao dock no mesmo quadro).
+    seen: bool,
     /// Fontes e estilos já instalados no contexto egui desta janela.
     apply: crate::ui_theme::ApplyState,
 }
@@ -615,13 +673,58 @@ impl Plugin for DetachedPlugin {
             (
                 restore_on_open,
                 note_cursor_left,
+                detach_demo,
                 open_dragged_out_window,
                 handle_close_requests,
                 sync_windows,
+                follow_mouse,
                 track_window_geometry,
             )
                 .chain(),
         );
+    }
+}
+
+/// Evidência no aplicativo de verdade (`--detach-demo button|drag`, sem captura interna):
+/// depois de alguns quadros, destaca o Painel Capturadas como a Ação "Destacar em janela"
+/// (`button`) ou como o arrasto para fora (`drag`, pedido de saída no meio da janela).
+fn detach_demo(
+    mut frames: Local<u32>,
+    mut dock: ResMut<Dock>,
+    mut new_game: ResMut<crate::new_game::NewGameDialog>,
+    primary: Query<&Window, With<PrimaryWindow>>,
+    windows: Query<(Entity, &Window)>,
+    mut commands: Commands,
+) {
+    let Some(mode) = crate::capture::option_value("--detach-demo") else {
+        return;
+    };
+    *frames += 1;
+    new_game.open = false;
+    if *frames == 480
+        && let Some(dir) = crate::capture::option_value("--detach-shots")
+    {
+        // Captura do próprio Bevy de cada janela do SO (independe do compositor).
+        for (i, (entity, _)) in windows.iter().enumerate() {
+            commands
+                .spawn(bevy::render::view::screenshot::Screenshot::window(entity))
+                .observe(bevy::render::view::screenshot::save_to_disk(format!(
+                    "{dir}/janela-{i}.png"
+                )));
+        }
+    }
+    if *frames != 240 {
+        return;
+    }
+    let id = crate::dock::ids::CAPTURED;
+    dock.layout.set_visible(id, true);
+    if mode == "drag" {
+        let size = primary.single().map_or(egui::vec2(1280.0, 720.0), |w| {
+            egui::vec2(w.width(), w.height())
+        });
+        dock.request_exit(PanelId::new(id), egui::pos2(size.x - 4.0, size.y * 0.5));
+    } else {
+        dock.layout.detach_panel_to_window(id, DEFAULT_WINDOW_SIZE);
     }
 }
 
@@ -643,6 +746,8 @@ fn note_cursor_left(
 /// por onde ele saiu (#195).
 fn open_dragged_out_window(
     mut dock: ResMut<Dock>,
+    mut runtime: ResMut<DetachedRuntime>,
+    buttons: Res<ButtonInput<MouseButton>>,
     primary: Query<&Window, With<PrimaryWindow>>,
     monitors: Query<&Monitor>,
 ) {
@@ -655,6 +760,9 @@ fn open_dragged_out_window(
     else {
         return;
     };
+    if buttons.pressed(MouseButton::Left) {
+        runtime.follow = Some(window);
+    }
     let rects = monitors_of(&monitors);
     if let Ok(main) = primary.single()
         && let WindowPosition::At(p) = main.position
@@ -725,6 +833,7 @@ fn sync_windows(
     mut runtime: ResMut<DetachedRuntime>,
     mut dock: ResMut<Dock>,
     primary: Query<(), With<PrimaryWindow>>,
+    main_window: Query<&Window, With<PrimaryWindow>>,
     existing: Query<(), With<Window>>,
     registry: Res<PanelRegistry>,
     i18n: Res<I18n>,
@@ -736,7 +845,7 @@ fn sync_windows(
     let primary_alive = !primary.is_empty();
     // Janelas do layout sem entidade: abre.
     let ids: Vec<u32> = dock.layout.windows.iter().map(|w| w.id).collect();
-    for window in dock.layout.windows.clone() {
+    for mut window in dock.layout.windows.clone() {
         if runtime
             .slots
             .iter()
@@ -749,12 +858,36 @@ fn sync_windows(
             continue;
         };
         let title = window_title(&window, &registry, &i18n);
+        let rects = monitors_of(&monitors);
+        if window.pos.is_none()
+            && let Ok(main) = main_window.single()
+            && let WindowPosition::At(p) = main.position
+        {
+            // Aberta pela Ação: perto da janela principal (o Wayland decide por conta própria).
+            let at = egui::pos2(main.width() * 0.5, main.height() * 0.3);
+            let ppp = main.scale_factor();
+            let pos = exit_window_pos([p.x, p.y], at, ppp, window.size, &rects);
+            window.pos = Some(pos);
+            dock.layout.set_window_rect(
+                window.id,
+                Some(pos),
+                window.size,
+                monitor_index_at(pos, &rects),
+            );
+        }
         let (window_entity, camera_entity) =
-            spawn_detached_window(&mut commands, free, &window, title, &monitors_of(&monitors));
+            spawn_detached_window(&mut commands, free, &window, title, &rects);
+        if runtime.follow == Some(window.id) {
+            runtime.follow = None;
+            commands
+                .entity(window_entity)
+                .insert(FollowMouse::default());
+        }
         runtime.slots[free] = Some(Slot {
             window_id: window.id,
             window: window_entity,
             camera: camera_entity,
+            seen: false,
             apply: default(),
         });
     }
@@ -762,16 +895,21 @@ fn sync_windows(
     for slot in &mut runtime.slots {
         let Some(s) = slot.as_ref() else { continue };
         let in_layout = ids.contains(&s.window_id);
-        let alive = existing.get(s.window).is_ok();
-        if in_layout && !alive && primary_alive {
+        let exists = existing.get(s.window).is_ok();
+        if exists && let Some(s) = slot.as_mut() {
+            s.seen = true;
+        }
+        let Some(s) = slot.as_ref() else { continue };
+        // Ainda não aplicado pelo `Commands` (slot recém-criado): espera o próximo quadro.
+        let alive = exists || !s.seen && in_layout;
+        if in_layout && !exists && s.seen && primary_alive {
             // O usuário fechou a janela por fora do pedido de fechamento: encaixa.
             dock.layout.dock_window_back(s.window_id);
         }
         if !in_layout || !alive {
-            if alive {
-                commands.entity(s.window).despawn();
-            }
-            commands.entity(s.camera).despawn();
+            // Mesmo recém-criada (spawn adiado) a janela some junto com o slot.
+            commands.entity(s.window).try_despawn();
+            commands.entity(s.camera).try_despawn();
             *slot = None;
         }
     }
@@ -1447,5 +1585,143 @@ mod tests {
             &monitors,
         );
         assert!(reachable(far, &monitors));
+    }
+
+    // ---- #201: a janela destacada nasce com o Painel e acompanha o mouse -----------------
+
+    fn sync_app() -> App {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .init_resource::<ButtonInput<MouseButton>>()
+            .insert_resource(I18n::pt_br())
+            .init_resource::<PanelRegistry>()
+            .init_resource::<Dock>()
+            .insert_resource(DetachedRuntime {
+                restored: true,
+                ..default()
+            })
+            .add_systems(
+                Update,
+                (open_dragged_out_window, sync_windows, follow_mouse).chain(),
+            );
+        app.world_mut().spawn((Window::default(), PrimaryWindow));
+        app
+    }
+
+    fn cameras(app: &mut App) -> usize {
+        app.world_mut()
+            .query_filtered::<(), With<DetachedCamera>>()
+            .iter(app.world())
+            .count()
+    }
+
+    #[test]
+    fn a_detached_window_keeps_its_camera_and_stays_out_of_the_dock() {
+        let mut app = sync_app();
+        {
+            let mut dock = app.world_mut().resource_mut::<Dock>();
+            dock.layout.set_visible(ids::CAPTURED, true);
+            dock.layout
+                .detach_panel_to_window(ids::CAPTURED, DEFAULT_WINDOW_SIZE)
+                .unwrap();
+        }
+        for _ in 0..5 {
+            app.update();
+        }
+        let dock = app.world().resource::<Dock>();
+        assert_eq!(
+            dock.layout.windows.len(),
+            1,
+            "a janela não pode voltar ao dock"
+        );
+        assert!(dock.layout.tile_of(ids::CAPTURED).is_none());
+        // Sem a correção a câmera (que tem o contexto egui) era destruída no mesmo quadro
+        // em que nascia e a janela do SO ficava vazia.
+        assert_eq!(cameras(&mut app), 1);
+        let windows = app
+            .world_mut()
+            .query_filtered::<(), With<DetachedWindowMarker>>()
+            .iter(app.world())
+            .count();
+        assert_eq!(windows, 1);
+    }
+
+    #[test]
+    fn the_context_of_a_detached_window_runs_its_own_pass() {
+        let mut app = sync_app();
+        app.world_mut()
+            .resource_mut::<Dock>()
+            .layout
+            .detach_panel_to_window(ids::NOTATION, DEFAULT_WINDOW_SIZE)
+            .unwrap();
+        app.update();
+        app.update();
+        let (schedule, _) = app
+            .world_mut()
+            .query::<(&EguiSchedule, &DetachedCamera)>()
+            .single(app.world())
+            .map(|(s, c)| (s.0, c))
+            .unwrap();
+        assert_eq!(schedule, DetachedPass(0).intern());
+    }
+
+    #[test]
+    fn dragging_out_with_the_button_down_follows_the_mouse() {
+        let mut app = sync_app();
+        app.world_mut()
+            .resource_mut::<Dock>()
+            .layout
+            .set_visible(ids::CAPTURED, true);
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .press(MouseButton::Left);
+        app.world_mut()
+            .resource_mut::<Dock>()
+            .request_exit(PanelId::new(ids::CAPTURED), egui::pos2(10.0, 10.0));
+        app.update();
+        let follow = app
+            .world_mut()
+            .query::<&FollowMouse>()
+            .iter(app.world())
+            .count();
+        assert_eq!(follow, 1, "a janela nova pede o arrasto ao sistema");
+        for _ in 0..4 {
+            app.update();
+        }
+        let follow = app
+            .world_mut()
+            .query::<&FollowMouse>()
+            .iter(app.world())
+            .count();
+        assert_eq!(follow, 0, "o pedido de arrasto é feito uma vez");
+    }
+
+    #[test]
+    fn dropping_with_the_button_up_does_not_follow() {
+        let mut app = sync_app();
+        app.world_mut()
+            .resource_mut::<Dock>()
+            .layout
+            .set_visible(ids::CAPTURED, true);
+        app.world_mut()
+            .resource_mut::<Dock>()
+            .request_exit(PanelId::new(ids::CAPTURED), egui::pos2(10.0, 10.0));
+        app.update();
+        let follow = app
+            .world_mut()
+            .query::<&FollowMouse>()
+            .iter(app.world())
+            .count();
+        assert_eq!(follow, 0);
+        assert_eq!(app.world().resource::<Dock>().layout.windows.len(), 1);
+    }
+
+    #[test]
+    fn follow_waits_for_the_os_window_and_cancels_on_release() {
+        assert_eq!(follow_step(0, true), FollowStep::Wait);
+        assert_eq!(follow_step(1, true), FollowStep::Wait);
+        assert_eq!(follow_step(2, true), FollowStep::Start);
+        assert_eq!(follow_step(0, false), FollowStep::Cancel);
+        assert_eq!(follow_step(9, false), FollowStep::Cancel);
     }
 }
