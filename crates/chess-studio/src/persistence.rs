@@ -51,6 +51,7 @@ const KEY_DOCK_LAYOUT: &str = "dock_layout";
 const KEY_INTERFACE_PROFILES: &str = "interface_profiles";
 /// Estado do Ribbon (modo, recolhido, aba ativa, Barra de Acesso Rápido), por Perfil local.
 const KEY_HIDDEN_PANELS: &str = "hidden_panels";
+const KEY_PANEL_SETS: &str = "panel_sets";
 const KEY_RIBBON: &str = "ribbon_state";
 /// Mapa de controles (US-28): ação -> atalhos, por perfil de usuário.
 const KEY_CONTROLS: &str = "controls";
@@ -123,6 +124,8 @@ pub struct ProfileData {
     pub ribbon: Option<RibbonSetup>,
     /// "Ocultar todos os Painéis" ativo: o conjunto a restaurar (#183).
     pub hidden: crate::actions::HiddenPanels,
+    /// Conjuntos de Painéis salvos deste perfil local (#186).
+    pub panel_sets: crate::panel_sets::PanelSets,
 }
 
 /// Resultado de abrir o app: a Partida a jogar e se ela veio do banco.
@@ -149,6 +152,7 @@ pub struct Persistence {
     /// Últimos Perfis de interface gravados (ou carregados).
     saved_profiles: Option<Value>,
     saved_hidden: Option<Value>,
+    saved_panel_sets: Option<Value>,
     saved_ribbon: Option<Value>,
     /// Último mapa de controles gravado (ou carregado).
     saved_controls: Option<Value>,
@@ -214,6 +218,7 @@ impl Persistence {
             saved_layout: None,
             saved_profiles: None,
             saved_hidden: None,
+            saved_panel_sets: None,
             saved_ribbon: None,
             saved_controls: None,
             failing: false,
@@ -262,6 +267,7 @@ impl Persistence {
         let controls = self.load_controls();
         let notes = self.load_notes();
         let hidden = self.load_hidden();
+        let panel_sets = self.load_panel_sets();
         let mut ribbon = None;
         if fresh {
             // Instalação nova ou Perfil local novo: "tabuleiro primeiro", no Perfil de
@@ -294,6 +300,7 @@ impl Persistence {
             notes,
             ribbon,
             hidden,
+            panel_sets,
         }
     }
 
@@ -333,6 +340,7 @@ impl Persistence {
         self.saved_layout = None;
         self.saved_profiles = None;
         self.saved_hidden = None;
+        self.saved_panel_sets = None;
         self.saved_controls = None;
         self.failing = false;
         self.scoresheet_failing = false;
@@ -644,6 +652,36 @@ impl Persistence {
         }
     }
 
+    /// Conjuntos de Painéis salvos deste perfil local; ausente ou ilegível = nenhum.
+    pub fn load_panel_sets(&mut self) -> crate::panel_sets::PanelSets {
+        let stored = self
+            .store
+            .get_pref(self.profile, KEY_PANEL_SETS)
+            .ok()
+            .flatten();
+        self.saved_panel_sets = stored.clone();
+        let saved = stored
+            .and_then(|v| serde_json::from_value::<Vec<crate::panel_sets::SavedSet>>(v).ok())
+            .unwrap_or_default();
+        crate::panel_sets::PanelSets::from_saved(saved)
+    }
+
+    /// Grava os Conjuntos de Painéis se mudaram desde a última chamada.
+    pub fn sync_panel_sets(&mut self, sets: &crate::panel_sets::PanelSets) {
+        let json = serde_json::to_value(sets.saved()).unwrap_or(Value::Null);
+        let current = self
+            .saved_panel_sets
+            .clone()
+            .unwrap_or_else(|| Value::Array(Vec::new()));
+        if current == json {
+            return;
+        }
+        match self.store.set_pref(self.profile, KEY_PANEL_SETS, &json) {
+            Ok(()) => self.saved_panel_sets = Some(json),
+            Err(err) => self.report(&err),
+        }
+    }
+
     /// Grava os Perfis de interface se mudaram desde a última chamada.
     pub fn sync_profiles(&mut self, profiles: &ProfilesState) {
         let json = profiles.to_json();
@@ -936,6 +974,7 @@ impl Plugin for PersistencePlugin {
             notes,
             ribbon: _,
             hidden,
+            panel_sets,
         } = persistence.open_profile();
         if restored.resumed {
             info!(
@@ -965,6 +1004,7 @@ impl Plugin for PersistencePlugin {
             .insert_resource(Dock::with_layout(layout))
             .insert_resource(InterfaceProfiles::with_state(profiles))
             .insert_resource(hidden)
+            .insert_resource(panel_sets)
             .insert_resource(notes)
             .insert_resource(
                 EngineUi::default().with_saved(prefs.engine_user_side, prefs.engine_elo),
@@ -979,6 +1019,7 @@ impl Plugin for PersistencePlugin {
                     persist_layout,
                     persist_profiles,
                     persist_hidden,
+                    persist_panel_sets,
                     persist_controls,
                 )
                     .after(PlaySet),
@@ -1141,6 +1182,13 @@ fn persist_layout(
 fn persist_hidden(hidden: Res<crate::actions::HiddenPanels>, handle: Res<PersistenceHandle>) {
     if let Ok(mut p) = handle.0.lock() {
         p.sync_hidden(&hidden);
+    }
+}
+
+/// Grava os Conjuntos de Painéis salvos quando mudam (#186).
+fn persist_panel_sets(sets: Res<crate::panel_sets::PanelSets>, handle: Res<PersistenceHandle>) {
+    if let Ok(mut p) = handle.0.lock() {
+        p.sync_panel_sets(&sets);
     }
 }
 
@@ -1843,6 +1891,33 @@ mod tests {
         // Restaurar apaga.
         p.sync_hidden(&HiddenPanels::default());
         assert!(!p.open_profile().hidden.is_hidden());
+    }
+
+    /// #186: os Conjuntos de Painéis salvos sobrevivem ao reinício e são por perfil local.
+    #[test]
+    fn saved_panel_sets_survive_a_restart_and_are_per_profile() {
+        use crate::panel_sets::PanelSets;
+        let mut p = new_persistence();
+        let first = p.profile();
+        assert!(p.open_profile().panel_sets.saved().is_empty());
+        let mut sets = PanelSets::default();
+        sets.save("Meu", vec!["Clock".into(), "Training".into()])
+            .unwrap();
+        p.sync_panel_sets(&sets);
+        assert_eq!(p.open_profile().panel_sets, sets);
+        let ana = p.create_profile("Ana").unwrap();
+        assert!(
+            p.switch_profile(ana, None)
+                .unwrap()
+                .panel_sets
+                .saved()
+                .is_empty()
+        );
+        assert_eq!(p.switch_profile(first, None).unwrap().panel_sets, sets);
+        // Excluir apaga.
+        sets.delete("Meu");
+        p.sync_panel_sets(&sets);
+        assert!(p.open_profile().panel_sets.saved().is_empty());
     }
 
     #[test]

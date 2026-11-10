@@ -78,9 +78,10 @@ fn every_inventory_action_is_reachable_in_the_ribbon_and_the_palette() {
         &I18n::pt_br(),
         &Controls::default(),
         &chess_input::actions::ActionContext::default(),
+        &crate::panel_sets::PanelSets::default(),
     )
     .into_iter()
-    .map(|e| e.action)
+    .filter_map(|e| e.action())
     .collect();
     let in_ribbon: Vec<Action> = visible_tabs(true)
         .into_iter()

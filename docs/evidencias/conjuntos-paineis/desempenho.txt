@@ -1,0 +1,2 @@
+standard: 4.47 ms/quadro (224 quadros/s)
+carregamento da cena: 0.40 s

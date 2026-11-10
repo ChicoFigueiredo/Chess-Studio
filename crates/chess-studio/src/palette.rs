@@ -10,6 +10,7 @@ use crate::action_icons::glyph;
 use crate::actions::{ActionEnv, ActionRequested};
 use crate::controls::{Controls, trigger_label};
 use crate::i18n::I18n;
+use crate::panel_sets::{FACTORY, PanelSetRequested, PanelSets, SetRef};
 use crate::ui_theme::{self, Palette, ThemeKind, Tokens};
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
@@ -47,10 +48,18 @@ impl PaletteState {
     }
 }
 
-/// Uma Ação como a Paleta a mostra.
+/// O que uma linha da Paleta executa: uma Ação da lista única ou, como entrada dinâmica, abrir
+/// um Conjunto de Painéis (#186; os Conjuntos salvos não cabem num enum fixo de Ações).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Target {
+    Action(Action),
+    OpenSet(SetRef),
+}
+
+/// Uma Ação (ou Conjunto) como a Paleta a mostra.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {
-    pub action: Action,
+    pub target: Target,
     pub label: String,
     /// Glifo Phosphor.
     pub icon: &'static str,
@@ -60,6 +69,15 @@ pub struct Entry {
 }
 
 impl Entry {
+    /// A Ação, se a linha é de Ação.
+    #[cfg(test)]
+    pub fn action(&self) -> Option<Action> {
+        match self.target {
+            Target::Action(a) => Some(a),
+            Target::OpenSet(_) => None,
+        }
+    }
+
     pub fn is_enabled(&self) -> bool {
         self.disabled_reason.is_none()
     }
@@ -133,21 +151,56 @@ pub fn visible(entries: &[Entry], query: &str) -> Vec<usize> {
     rank(query, &labels)
 }
 
-/// A Ação que Enter (ou o clique) executa na linha escolhida: nenhuma se está desabilitada.
-pub fn activation(entries: &[Entry], shown: &[usize], selected: usize) -> Option<Action> {
+/// O que Enter (ou o clique) executa na linha escolhida: nada se está desabilitada.
+pub fn activation(entries: &[Entry], shown: &[usize], selected: usize) -> Option<Target> {
     let entry = entries.get(*shown.get(selected)?)?;
-    entry.is_enabled().then_some(entry.action)
+    entry.is_enabled().then(|| entry.target.clone())
+}
+
+/// Executa o alvo: Ação vira [`ActionRequested`]; Conjunto vira [`PanelSetRequested`] (abrir,
+/// ou mostrar só com Shift).
+fn dispatch(
+    target: Target,
+    show_only: bool,
+    actions: &mut MessageWriter<ActionRequested>,
+    sets: &mut MessageWriter<PanelSetRequested>,
+) {
+    match target {
+        Target::Action(action) => {
+            actions.write(ActionRequested(action));
+        }
+        Target::OpenSet(set) => {
+            sets.write(if show_only {
+                PanelSetRequested::ShowOnly(set)
+            } else {
+                PanelSetRequested::Open(set)
+            });
+        }
+    }
 }
 
 /// As Ações da Paleta: tudo menos os gestos e a própria Paleta.
-pub fn entries(i18n: &I18n, controls: &Controls, ctx: &ActionContext) -> Vec<Entry> {
-    Action::ALL
+pub fn entries(
+    i18n: &I18n,
+    controls: &Controls,
+    ctx: &ActionContext,
+    sets: &PanelSets,
+) -> Vec<Entry> {
+    let set_icon = glyph(meta(Action::HideAllPanels).icon);
+    let open_set = |set: SetRef, name: &str| Entry {
+        target: Target::OpenSet(set),
+        label: i18n.t_with("palette-open-set", &[("name", name)]),
+        icon: set_icon,
+        shortcut: None,
+        disabled_reason: None,
+    };
+    let actions = Action::ALL
         .into_iter()
         .filter(|a| *a != Action::OpenPalette && meta(*a).kind != ActionKind::Gesture)
         .map(|action| {
             let m = meta(action);
             Entry {
-                action,
+                target: Target::Action(action),
                 label: i18n.t(m.label),
                 icon: glyph(m.icon),
                 shortcut: controls
@@ -157,8 +210,15 @@ pub fn entries(i18n: &I18n, controls: &Controls, ctx: &ActionContext) -> Vec<Ent
                     .map(|t| trigger_label(i18n, t)),
                 disabled_reason: state(action, ctx).disabled_reason.map(|r| i18n.t(r)),
             }
-        })
-        .collect()
+        });
+    let factory = FACTORY
+        .iter()
+        .map(|f| open_set(SetRef::Factory(f.id), &i18n.t(f.label_key)));
+    let saved = sets
+        .saved()
+        .iter()
+        .map(|s| open_set(SetRef::Saved(s.name.clone()), &s.name));
+    actions.chain(factory).chain(saved).collect()
 }
 
 pub struct PalettePlugin;
@@ -180,13 +240,20 @@ fn palette_ui(
     i18n: Res<I18n>,
     controls: Res<Controls>,
     mut env: ActionEnv,
+    sets: Option<Res<PanelSets>>,
     mut out: MessageWriter<ActionRequested>,
+    mut set_out: MessageWriter<PanelSetRequested>,
 ) -> Result {
     if !env.palette.open {
         return Ok(());
     }
     let ctx = contexts.ctx_mut()?;
-    let list = entries(&i18n, &controls, &env.context());
+    let list = entries(
+        &i18n,
+        &controls,
+        &env.context(),
+        sets.as_deref().unwrap_or(&PanelSets::default()),
+    );
     let palette = &mut env.palette;
     let mut shown = visible(&list, &palette.query);
 
@@ -212,8 +279,9 @@ fn palette_ui(
     if up && palette.selected > 0 {
         palette.selected -= 1;
     }
-    if enter && let Some(action) = activation(&list, &shown, palette.selected) {
-        out.write(ActionRequested(action));
+    let shift = ctx.input(|i| i.modifiers.shift);
+    if enter && let Some(target) = activation(&list, &shown, palette.selected) {
+        dispatch(target, shift, &mut out, &mut set_out);
         palette.close();
         return Ok(());
     }
@@ -262,7 +330,7 @@ fn palette_ui(
                             hit.scroll_to_me(None);
                         }
                         if hit.clicked() && list[index].is_enabled() {
-                            clicked = Some(list[index].action);
+                            clicked = Some(list[index].target.clone());
                         }
                         if hit.hovered() && hit.ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO)
                         {
@@ -283,8 +351,8 @@ fn palette_ui(
     } else {
         palette.selected = selected;
     }
-    if let Some(action) = clicked {
-        out.write(ActionRequested(action));
+    if let Some(target) = clicked {
+        dispatch(target, shift, &mut out, &mut set_out);
         palette.close();
     } else if response.backdrop_response.clicked() {
         palette.close();
@@ -391,7 +459,7 @@ mod tests {
 
     fn entry(action: Action, label: &str, reason: Option<&str>) -> Entry {
         Entry {
-            action,
+            target: Target::Action(action),
             label: label.to_owned(),
             icon: "",
             shortcut: None,
@@ -406,7 +474,10 @@ mod tests {
             entry(Action::FlipBoard, "Virar tabuleiro", None),
         ];
         let shown = visible(&list, "virar");
-        assert_eq!(activation(&list, &shown, 0), Some(Action::FlipBoard));
+        assert_eq!(
+            activation(&list, &shown, 0),
+            Some(Target::Action(Action::FlipBoard))
+        );
     }
 
     #[test]
@@ -428,24 +499,66 @@ mod tests {
         let controls = Controls::default();
         // Sem Partida competitiva: Desfazer é permitido, mas não há o que desfazer.
         let ctx = ActionContext::default();
-        let list = entries(&i18n, &controls, &ctx);
-        assert!(list.iter().all(|e| e.action != Action::OpenPalette));
-        assert!(
-            list.iter()
-                .all(|e| meta(e.action).kind != ActionKind::Gesture)
-        );
-        let undo = list.iter().find(|e| e.action == Action::Undo).unwrap();
+        let list = entries(&i18n, &controls, &ctx, &PanelSets::default());
+        assert!(list.iter().all(|e| e.action() != Some(Action::OpenPalette)));
+        assert!(list.iter().all(|e| {
+            e.action()
+                .is_none_or(|a| meta(a).kind != ActionKind::Gesture)
+        }));
+        let undo = list
+            .iter()
+            .find(|e| e.action() == Some(Action::Undo))
+            .unwrap();
         assert!(!undo.is_enabled());
         assert_eq!(
             undo.disabled_reason.as_deref(),
             Some("Não há Lance para desfazer.")
         );
-        let new_game = list.iter().find(|e| e.action == Action::NewGame).unwrap();
+        let new_game = list
+            .iter()
+            .find(|e| e.action() == Some(Action::NewGame))
+            .unwrap();
         assert!(new_game.is_enabled());
         assert!(new_game.shortcut.is_some());
         assert!(
             list.iter()
                 .all(|e| !e.icon.is_empty() && !e.label.is_empty())
+        );
+    }
+
+    /// #186: "Abrir Conjunto: <nome>" é uma entrada dinâmica (de fábrica e salvos), achada pela
+    /// busca e executada como pedido de Conjunto, sem Ação no enum.
+    #[test]
+    fn the_palette_lists_open_set_entries_for_factory_and_saved_sets() {
+        let i18n = I18n::pt_br();
+        let mut sets = PanelSets::default();
+        sets.save("Meu final", vec!["Clock".to_owned()]).unwrap();
+        let list = entries(
+            &i18n,
+            &Controls::default(),
+            &ActionContext::default(),
+            &sets,
+        );
+        let open_sets: Vec<&Entry> = list
+            .iter()
+            .filter(|e| matches!(e.target, Target::OpenSet(_)))
+            .collect();
+        assert_eq!(open_sets.len(), FACTORY.len() + 1);
+        assert!(
+            open_sets
+                .iter()
+                .all(|e| e.is_enabled() && !e.icon.is_empty())
+        );
+        let shown = visible(&list, "abrir conjunto analise");
+        assert_eq!(
+            activation(&list, &shown, 0),
+            Some(Target::OpenSet(SetRef::Factory("analysis")))
+        );
+        assert_eq!(list[shown[0]].label, "Abrir Conjunto: Análise");
+        let shown = visible(&list, "conjunto final");
+        assert_eq!(
+            activation(&list, &shown, 0),
+            Some(Target::OpenSet(SetRef::Saved("Meu final".into())))
         );
     }
 

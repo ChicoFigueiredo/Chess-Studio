@@ -49,6 +49,7 @@ mod openings;
 mod options;
 mod palette;
 mod panel_chrome;
+mod panel_sets;
 mod panel_stripe;
 mod paths;
 mod persistence;
@@ -240,6 +241,7 @@ fn main() {
     app.add_plugins(scoresheet::ScoresheetPlugin);
     app.add_plugins(ui_theme::UiThemePlugin);
     app.add_plugins(options::OptionsPlugin);
+    app.add_plugins(panel_sets::PanelSetsPlugin);
     // O invólucro da interface: Paleta de Ações (Ctrl+K), barra de status e Ribbon.
     app.add_plugins((
         palette::PalettePlugin,
