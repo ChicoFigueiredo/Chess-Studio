@@ -115,12 +115,10 @@ impl LocalProfiles {
         self.active = Some(persistence.profile());
     }
 
-    #[cfg(test)]
     pub fn list(&self) -> &[ProfileInfo] {
         &self.list
     }
 
-    #[cfg(test)]
     pub fn active(&self) -> Option<ProfileId> {
         self.active
     }

@@ -363,7 +363,6 @@ fn surfaces_that_do_not_exist_yet_are_disabled_with_a_reason() {
     for a in [
         Action::DetachPanel,
         Action::OpenPalette,
-        Action::OpenOptions,
         Action::ToggleRibbonCollapse,
     ] {
         let ctx = ActionContext {
@@ -375,6 +374,13 @@ fn surfaces_that_do_not_exist_yet_are_disabled_with_a_reason() {
             Some("reason-coming-soon"),
             "{a:?}"
         );
+    }
+}
+
+#[test]
+fn open_options_is_enabled_in_every_context() {
+    for ctx in [assisted(), fide(), ActionContext::default()] {
+        assert!(state(Action::OpenOptions, &ctx).is_enabled());
     }
 }
 

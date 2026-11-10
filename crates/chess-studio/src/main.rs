@@ -43,6 +43,7 @@ mod local_profiles;
 mod new_game;
 mod notation;
 mod openings;
+mod options;
 mod paths;
 mod persistence;
 mod picking;
@@ -209,6 +210,7 @@ fn main() {
     app.add_plugins(openings::OpeningsPlugin);
     app.add_plugins(scoresheet::ScoresheetPlugin);
     app.add_plugins(ui_theme::UiThemePlugin);
+    app.add_plugins(options::OptionsPlugin);
     // `--gallery`: janela com todos os widgets do design system nos dois Temas e Densidades.
     if args.iter().any(|a| a == "--gallery") {
         app.insert_resource(ui_theme::GalleryMode::default());
