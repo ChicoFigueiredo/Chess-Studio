@@ -214,6 +214,10 @@ pub struct DockLayout {
     /// Painéis destacados. Ausente nos layouts anteriores ao C18 (vira lista vazia).
     #[serde(default)]
     pub floating: Vec<FloatingPanel>,
+    /// Janelas do sistema com grupos de abas destacados (#168). No perfil de interface elas
+    /// vão no campo `detached`, não dentro do layout.
+    #[serde(default)]
+    pub windows: Vec<crate::detached::DetachedWindow>,
 }
 
 impl std::fmt::Debug for DockLayout {
@@ -222,6 +226,7 @@ impl std::fmt::Debug for DockLayout {
             .field("width", &self.width)
             .field("tree", &self.tree)
             .field("floating", &self.floating)
+            .field("windows", &self.windows)
             .finish()
     }
 }
@@ -254,11 +259,12 @@ impl Default for DockLayout {
             width: DEFAULT_WIDTH,
             tree: Tree::new("chess-studio-dock", root, tiles),
             floating: Vec::new(),
+            windows: Vec::new(),
         }
     }
 }
 
-fn simplification() -> SimplificationOptions {
+pub(crate) fn simplification() -> SimplificationOptions {
     // Mantém a barra de abas mesmo com um painel só: é a alça para arrastar.
     SimplificationOptions {
         prune_single_child_tabs: false,
@@ -267,7 +273,7 @@ fn simplification() -> SimplificationOptions {
 }
 
 impl DockLayout {
-    fn floating_index(&self, id: &str) -> Option<usize> {
+    pub(crate) fn floating_index(&self, id: &str) -> Option<usize> {
         self.floating.iter().position(|f| f.id.0 == id)
     }
 
@@ -381,7 +387,7 @@ impl DockLayout {
     }
 
     /// Primeiro grupo de abas na ordem da árvore (de cima para baixo).
-    fn first_tab_group(&self) -> Option<TileId> {
+    pub(crate) fn first_tab_group(&self) -> Option<TileId> {
         let mut stack = vec![self.tree.root()?];
         while let Some(tile) = stack.pop() {
             if let Some(Tile::Container(c)) = self.tree.tiles.get(tile) {
@@ -401,7 +407,7 @@ impl DockLayout {
         }
     }
 
-    fn tile_of(&self, id: &str) -> Option<TileId> {
+    pub(crate) fn tile_of(&self, id: &str) -> Option<TileId> {
         self.tree.tiles.find_pane(&PanelId::new(id))
     }
 
@@ -410,6 +416,9 @@ impl DockLayout {
         if let Some(i) = self.floating_index(id) {
             return self.floating[i].visible;
         }
+        if let Some((w, tile)) = self.window_tile_of(id) {
+            return self.windows[w].tree.is_visible(tile);
+        }
         self.tile_of(id).is_some_and(|t| self.tree.is_visible(t))
     }
 
@@ -417,6 +426,8 @@ impl DockLayout {
     pub fn set_visible(&mut self, id: &str, visible: bool) {
         if let Some(i) = self.floating_index(id) {
             self.floating[i].visible = visible;
+        } else if let Some((w, tile)) = self.window_tile_of(id) {
+            self.windows[w].tree.set_visible(tile, visible);
         } else if let Some(tile) = self.tile_of(id) {
             self.tree.set_visible(tile, visible);
         }
@@ -426,6 +437,9 @@ impl DockLayout {
     pub fn activate(&mut self, id: &str) {
         if self.is_floating(id) {
             self.set_visible(id, true);
+            return;
+        }
+        if self.activate_in_window(id) {
             return;
         }
         let Some(tile) = self.tile_of(id) else { return };
@@ -468,6 +482,7 @@ impl DockLayout {
                 _ => None,
             })
             .chain(self.floating.iter().map(|f| f.id.0.clone()))
+            .chain(self.windows.iter().flat_map(|w| w.pane_ids()))
             .collect()
     }
 
@@ -477,6 +492,7 @@ impl DockLayout {
         let present = self.pane_ids();
         let floating_before = self.floating.len();
         self.floating.retain(|f| registry.get(&f.id.0).is_some());
+        let windows_changed = self.retain_registered_in_windows(registry);
         let unknown: Vec<TileId> = present
             .iter()
             .filter(|id| registry.get(id).is_none())
@@ -487,7 +503,7 @@ impl DockLayout {
             .map(|d| d.id)
             .filter(|id| !present.iter().any(|p| p == id))
             .collect();
-        let floating_changed = self.floating.len() != floating_before;
+        let floating_changed = self.floating.len() != floating_before || windows_changed;
         if unknown.is_empty() && missing.is_empty() {
             return floating_changed;
         }
@@ -522,7 +538,7 @@ impl DockLayout {
         self.width.is_finite()
             && (MIN_WIDTH..=MAX_WIDTH).contains(&self.width)
             // Um dock inteiro destacado em janelas (árvore vazia) é legítimo.
-            && (self.tree.root().is_some() || !self.floating.is_empty())
+            && (self.tree.root().is_some() || !self.floating.is_empty() || !self.windows.is_empty())
     }
 
     /// Descarta janelas duplicadas ou de painéis que continuam na árvore e saneia a geometria.
@@ -548,6 +564,7 @@ impl DockLayout {
             keep.push(f);
         }
         self.floating = keep;
+        self.sanitize_windows();
         self
     }
 
@@ -710,22 +727,31 @@ pub(crate) enum DockAction {
     FloatAt(PanelId, egui::Pos2),
     /// "Fechar Painel": oculta, como desmarcar na lista "Painéis".
     Close(PanelId),
+    /// "Destacar em janela": só este Painel vai para uma janela do sistema (#168).
+    DetachWindow(PanelId),
+    /// "Destacar grupo em janela": o grupo de abas inteiro vai para uma janela do sistema.
+    DetachGroup(PanelId),
+    /// "Encaixar grupo": a janela do sistema inteira volta ao dock principal.
+    DockWindow(u32),
 }
 
-struct DockBehavior<'a> {
-    i18n: &'a I18n,
+pub(crate) struct DockBehavior<'a> {
+    pub(crate) i18n: &'a I18n,
     registry: &'a PanelRegistry,
     world: &'a mut World,
-    actions: Vec<DockAction>,
+    pub(crate) actions: Vec<DockAction>,
+    /// Janela do sistema que este comportamento desenha; `None` na janela principal.
+    pub(crate) window: Option<u32>,
 }
 
 impl<'a> DockBehavior<'a> {
-    fn new(i18n: &'a I18n, registry: &'a PanelRegistry, world: &'a mut World) -> Self {
+    pub(crate) fn new(i18n: &'a I18n, registry: &'a PanelRegistry, world: &'a mut World) -> Self {
         Self {
             i18n,
             registry,
             world,
             actions: Vec::new(),
+            window: None,
         }
     }
 
@@ -755,7 +781,7 @@ impl<'a> DockBehavior<'a> {
         }
     }
 
-    fn title(&self, id: &PanelId) -> String {
+    pub(crate) fn title(&self, id: &PanelId) -> String {
         self.registry
             .get(&id.0)
             .map_or_else(|| id.0.clone(), |d| self.i18n.t(d.label_key))
@@ -777,8 +803,11 @@ impl Behavior<PanelId> for DockBehavior<'_> {
     ) -> egui::Response {
         if let Some(Tile::Pane(pane)) = tiles.get(tile_id) {
             let pane = pane.clone();
-            button_response.context_menu(|ui| {
-                panel_menu(ui, self.i18n, &mut self.actions, &pane, false);
+            button_response.context_menu(|ui| match self.window {
+                Some(window) => {
+                    panel_chrome::window_menu(ui, self.i18n, &mut self.actions, &pane, window)
+                }
+                None => panel_menu(ui, self.i18n, &mut self.actions, &pane, false),
             });
         }
         button_response
@@ -831,7 +860,16 @@ impl Behavior<PanelId> for DockBehavior<'_> {
         });
         if let Some(active) = active {
             ui.add_space(4.0);
-            header_tools(ui, self.i18n, &mut self.actions, &active, false);
+            match self.window {
+                Some(window) => panel_chrome::window_header_tools(
+                    ui,
+                    self.i18n,
+                    &mut self.actions,
+                    &active,
+                    window,
+                ),
+                None => header_tools(ui, self.i18n, &mut self.actions, &active, false),
+            }
         }
     }
 
@@ -1184,6 +1222,21 @@ pub(crate) fn dock_ui(world: &mut World) {
                             dock.layout.detach(&id.0, [at.x, at.y], DEFAULT_FLOAT_SIZE);
                         }
                         DockAction::Close(id) => dock.layout.set_visible(&id.0, false),
+                        DockAction::DetachWindow(id) => {
+                            dock.layout.detach_panel_to_window(
+                                &id.0,
+                                crate::detached::DEFAULT_WINDOW_SIZE,
+                            );
+                        }
+                        DockAction::DetachGroup(id) => {
+                            dock.layout.detach_group_to_window(
+                                &id.0,
+                                crate::detached::DEFAULT_WINDOW_SIZE,
+                            );
+                        }
+                        DockAction::DockWindow(window) => {
+                            dock.layout.dock_window_back(window);
+                        }
                     }
                 }
                 if !show_dock {
@@ -1321,6 +1374,7 @@ mod tests {
             width: 300.0,
             tree: Tree::new("chess-studio-dock", root, tiles),
             floating: Vec::new(),
+            windows: Vec::new(),
         };
         let mut loaded = DockLayout::from_json(Some(old.to_json()));
         assert_eq!(loaded.width, 300.0, "o layout antigo é aproveitado");

@@ -299,6 +299,14 @@ pub fn meta(action: Action) -> ActionMeta {
             "windows",
             "JD"
         ),
+        A::DetachGroup => item!(
+            "detach-group",
+            "arrow-square-out",
+            Command,
+            View,
+            "windows",
+            "JG"
+        ),
         A::ResetLayout => item!("reset-layout", "layout", Command, View, "windows", "JR"),
         // Exibir: interface.
         A::OpenPalette => item!("open-palette", "command", Command, View, "interface", "IP"),
@@ -374,6 +382,7 @@ pub struct ActionContext {
     /// Ids dos Painéis visíveis (encaixados ou flutuantes).
     pub visible_panels: BTreeSet<String>,
     pub has_docked_panel: bool,
+    /// Há Painel flutuante ou janela destacada para encaixar.
     pub has_floating_panel: bool,
 }
 
@@ -508,11 +517,13 @@ fn disabled_reason(action: Action, ctx: &ActionContext) -> Option<&'static str> 
         {
             Some("reason-3d-only")
         }
-        A::FloatPanel if !ctx.has_docked_panel => Some("reason-no-docked-panel"),
+        A::FloatPanel | A::DetachPanel | A::DetachGroup if !ctx.has_docked_panel => {
+            Some("reason-no-docked-panel")
+        }
         A::DockPanel if !ctx.has_floating_panel => Some("reason-no-floating-panel"),
         // Superfícies que os tickets seguintes da DS-0x entregam.
         A::ToggleRibbonCollapse if ctx.ribbon_visible => None,
-        A::DetachPanel | A::ToggleRibbonCollapse => Some("reason-coming-soon"),
+        A::ToggleRibbonCollapse => Some("reason-coming-soon"),
         _ => None,
     }
 }

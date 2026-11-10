@@ -356,18 +356,22 @@ fn float_and_dock_depend_on_the_panels() {
 }
 
 #[test]
-fn surfaces_that_do_not_exist_yet_are_disabled_with_a_reason() {
-    {
-        let a = Action::DetachPanel;
-        let ctx = ActionContext {
-            has_docked_panel: true,
+fn detaching_a_panel_or_a_group_needs_a_docked_panel() {
+    for a in [Action::DetachPanel, Action::DetachGroup] {
+        let none = ActionContext {
+            has_docked_panel: false,
             ..assisted()
         };
         assert_eq!(
-            state(a, &ctx).disabled_reason,
-            Some("reason-coming-soon"),
+            state(a, &none).disabled_reason,
+            Some("reason-no-docked-panel"),
             "{a:?}"
         );
+        let some = ActionContext {
+            has_docked_panel: true,
+            ..assisted()
+        };
+        assert!(state(a, &some).is_enabled(), "{a:?}");
     }
 }
 

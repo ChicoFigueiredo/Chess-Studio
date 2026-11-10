@@ -83,6 +83,7 @@ pub enum Action {
     FloatPanel,
     DockPanel,
     DetachPanel,
+    DetachGroup,
     ResetLayout,
     OpenPalette,
     ToggleRibbonCollapse,
@@ -93,7 +94,7 @@ pub enum Action {
 }
 
 impl Action {
-    pub const ALL: [Action; 55] = [
+    pub const ALL: [Action; 56] = [
         Action::Select,
         Action::Adjust,
         Action::Orbit,
@@ -144,6 +145,7 @@ impl Action {
         Action::FloatPanel,
         Action::DockPanel,
         Action::DetachPanel,
+        Action::DetachGroup,
         Action::ResetLayout,
         Action::OpenPalette,
         Action::ToggleRibbonCollapse,
@@ -204,6 +206,7 @@ impl Action {
             Action::FloatPanel => "float-panel",
             Action::DockPanel => "dock-panel",
             Action::DetachPanel => "detach-panel",
+            Action::DetachGroup => "detach-group",
             Action::ResetLayout => "reset-layout",
             Action::OpenPalette => "open-palette",
             Action::ToggleRibbonCollapse => "toggle-ribbon-collapse",
