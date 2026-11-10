@@ -106,6 +106,41 @@ impl Plugin for NotationPlugin {
     }
 }
 
+/// Um Lance na lista: o atual em `accent-subtle` com texto `accent-ink`; clicar navega.
+fn move_cell(
+    ui: &mut egui::Ui,
+    p: &crate::ui_theme::Palette,
+    san: &str,
+    current: bool,
+) -> egui::Response {
+    let galley = ui.painter().layout_no_wrap(
+        san.to_owned(),
+        egui::FontId::proportional(14.0),
+        egui::Color32::PLACEHOLDER,
+    );
+    let width = (galley.size().x + 16.0).max(64.0);
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 24.0), egui::Sense::click());
+    if ui.is_rect_visible(rect) {
+        let corner = crate::panel_chrome::radius("radius-s");
+        let ink = if current {
+            ui.painter().rect_filled(rect, corner, p.accent_subtle);
+            p.accent_ink
+        } else {
+            if response.hovered() {
+                ui.painter().rect_filled(rect, corner, p.surface_3);
+            }
+            p.ink
+        };
+        let at = egui::Align2::LEFT_CENTER
+            .align_size_within_rect(galley.size(), rect.shrink2(egui::vec2(8.0, 0.0)))
+            .min;
+        ui.painter().galley(at, galley, ink);
+    }
+    response
+        .widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, current, san));
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
 /// Conteúdo do painel Notação.
 pub fn ui(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session, hidden: bool) {
     if hidden {
@@ -127,27 +162,42 @@ pub fn ui(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session, hidden: bool) {
     // Rolagem automática só quando o Lance atual muda: não briga com a rolagem manual.
     let follow = previous != Some(current);
     let mut go_to = None;
+    let p = crate::panel_chrome::palette_of(ui.visuals());
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
-            for row in rows(&snapshot.history, first_number) {
-                ui.horizontal(|ui| {
-                    ui.monospace(format!("{:>3}.", row.number));
-                    if row.white.is_none() {
-                        ui.weak("…");
-                    }
-                    for cell in [&row.white, &row.black].into_iter().flatten() {
-                        let selected = cell.ply == current;
-                        let response = ui.selectable_label(selected, &cell.san);
-                        if selected && follow {
-                            response.scroll_to_me(Some(egui::Align::Center));
+            // NotationList: três colunas (número, brancas, pretas).
+            egui::Grid::new("notation_grid")
+                .num_columns(3)
+                .spacing([4.0, 2.0])
+                .show(ui, |ui| {
+                    for row in rows(&snapshot.history, first_number) {
+                        ui.label(
+                            egui::RichText::new(format!("{}.", row.number)).color(p.ink_muted),
+                        );
+                        for (cell, gap) in [(&row.white, row.white.is_none()), (&row.black, false)]
+                        {
+                            match cell {
+                                Some(cell) => {
+                                    let response = move_cell(ui, p, &cell.san, cell.ply == current);
+                                    if cell.ply == current && follow {
+                                        response.scroll_to_me(Some(egui::Align::Center));
+                                    }
+                                    if response.clicked() {
+                                        go_to = Some(cell.ply);
+                                    }
+                                }
+                                None if gap => {
+                                    ui.label(egui::RichText::new("…").color(p.ink_muted));
+                                }
+                                None => {
+                                    ui.label("");
+                                }
+                            }
                         }
-                        if response.clicked() {
-                            go_to = Some(cell.ply);
-                        }
+                        ui.end_row();
                     }
                 });
-            }
             if let Some(outcome) = snapshot.outcome {
                 ui.separator();
                 ui.strong(score(outcome.result));

@@ -331,6 +331,8 @@ pub struct Palette {
     pub warning: Color32,
     pub danger: Color32,
     pub scrim: Color32,
+    pub eval_white: Color32,
+    pub eval_black: Color32,
 }
 
 impl Palette {
@@ -359,6 +361,8 @@ impl Palette {
             warning: c("warning")?,
             danger: c("danger")?,
             scrim: c("scrim")?,
+            eval_white: c("eval-white")?,
+            eval_black: c("eval-black")?,
         })
     }
 

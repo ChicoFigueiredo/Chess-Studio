@@ -357,7 +357,8 @@ fn float_and_dock_depend_on_the_panels() {
 
 #[test]
 fn surfaces_that_do_not_exist_yet_are_disabled_with_a_reason() {
-    for a in [Action::DetachPanel] {
+    {
+        let a = Action::DetachPanel;
         let ctx = ActionContext {
             has_docked_panel: true,
             ..assisted()
