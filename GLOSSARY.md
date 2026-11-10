@@ -114,12 +114,28 @@ Conjunto nomeado de Auxílios visuais ligados e desligados, como Jogo físico (n
 _Evitar_: preset de ajuda, nível de dificuldade
 
 **Perfil de interface** (_en_: `InterfaceProfile`):
-Conjunto nomeado de Apresentação, layout do dock (painéis visíveis, abas, larguras), Perfil de auxílios, modo Foco e Vista da câmera: Jogo físico, Treinamento assistido, Estudo e análise (de fábrica) ou um salvo pelo usuário; "Personalizado" é o estado atual quando não coincide com nenhum. Trocar de perfil nunca altera a Partida. Não confundir com Perfil de auxílios (só os Auxílios) nem com Perfil de treino.
+Conjunto nomeado de Apresentação, layout do dock (Painéis visíveis, abas, larguras), Painéis flutuantes e destacados com suas posições, estado do Ribbon (aba, modo simples ou recolhido), Perfil de auxílios, modo Foco e Vista da câmera. De fábrica: Jogo físico, Treinamento assistido, Estudo e análise, Competição e Mínimo; os outros são salvos pelo usuário. "Personalizado" é o estado atual quando não coincide com nenhum. Trocar de perfil nunca altera a Partida nem o Tema. Não confundir com Perfil de auxílios (só os Auxílios) nem com Perfil de treino.
 _Evitar_: tema, workspace, modo
 
 **Perfil local** (_en_: `LocalProfiles`):
 Um jogador deste computador: nome e, só dele, preferências, Perfis de interface, controles, Partidas e Resoluções. Vários podem coexistir; o seletor da abertura aparece quando há mais de um. Excluir apaga os dados do perfil; o último não se exclui. Não confundir com Perfil de interface, Perfil de auxílios nem Perfil de treino, que existem *dentro* de um perfil local.
 _Evitar_: usuário, conta, login
+
+**Ação** (_en_: `Action`):
+Algo que o usuário pode mandar o aplicativo fazer (Nova Partida, Desfazer, Virar tabuleiro, Flutuar Painel…), com rótulo, ícone, atalhos e estado (habilitada ou marcada). É uma lista única: Ribbon, Barra de Acesso Rápido, KeyTips, Paleta de Ações e Mapa de controles são lugares onde a mesma Ação aparece.
+_Evitar_: comando, command, botão (como sinônimo)
+
+**Barra de Acesso Rápido** (_en_: `QuickAccessBar`):
+Fileira de Ações fixas acima do Ribbon, escolhidas pelo usuário e guardadas no Perfil de interface.
+_Evitar_: QAT, favoritos
+
+**Paleta de Ações** (_en_: `ActionPalette`):
+Busca por nome de qualquer Ação habilitada (Ctrl+K), que a executa ao confirmar.
+_Evitar_: paleta de comandos, command palette
+
+**Densidade** (_en_: `Density`):
+Espaçamento da interface, Confortável ou Compacta; junto com a Escala da interface (80% a 200%), é preferência do Perfil local, como o Tema.
+_Evitar_: zoom (para densidade)
 
 **Mapa de controles** (_en_: `ControlMap`):
 Tabela única ação -> atalhos (tecla, botão do mouse com modificadores, roda ou gesto de trackpad), consultada por todos os sistemas de entrada. O padrão é o da DEC-51; cada Perfil local guarda o seu. Um mesmo atalho não serve a duas ações (conflito).
@@ -128,6 +144,30 @@ _Evitar_: keybindings, hotkeys
 **HUD** (_en_: `HudSettings`):
 Sobreposição virtual de treino ou análise presa às casas e peças; não envolve câmera física.
 _Evitar_: realidade aumentada
+
+**Painel** (_en_: `Panel`):
+Bloco da interface com um assunto só (Relógio, Notação, Análise, Aberturas, Súmula…), que pode estar encaixado no dock, flutuante ou destacado. A configuração do Painel vai junto quando ele muda de lugar.
+_Evitar_: quadro, card, gadget, widget
+
+**Painel flutuante** (_en_: `Floating`):
+Painel em janela própria *dentro* da janela principal, sobre o tabuleiro. Ação: Flutuar.
+_Evitar_: janela interna, popup
+
+**Painel destacado** (_en_: `Detached`):
+Painel numa janela do sistema operacional separada da principal, que pode ir para outro monitor. Ação: Destacar; Encaixar devolve ao dock.
+_Evitar_: janela externa, pop-out
+
+**Ribbon** (_en_: `Ribbon`):
+Menu superior em abas com grupos de Ações, no estilo Office; pode estar no modo clássico, no modo simples (uma linha) ou recolhido. A aba Arquivo abre os bastidores: Partidas, Perfis e Opções.
+_Evitar_: toolbar, barra de ferramentas, menu
+
+**Opções** (_en_: `OptionsDialog`):
+Diálogo com as preferências persistentes por categoria (Aparência, Tabuleiro, Auxílios, Engines, Controles…). Ações de uso imediato ficam no Ribbon, não nas Opções.
+_Evitar_: configurações, settings, preferências (como nome do diálogo)
+
+**Tema** (_en_: `Theme`):
+Aparência da interface (claro, escuro ou segue o sistema), preferência do Perfil local; independente do Perfil de interface.
+_Evitar_: skin, estilo
 
 **Tela cheia** (_en_: `ViewState::fullscreen`):
 Janela sem bordas ocupando o monitor inteiro (F11 ou item de menu); estado de interface, independente do modo Foco.
