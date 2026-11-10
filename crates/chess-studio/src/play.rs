@@ -78,12 +78,14 @@ fn gesture_input(
     windows: Query<&Window, With<PrimaryWindow>>,
     mut press_at: Local<Option<Vec2>>,
     mut drag_started: Local<bool>,
-    (editor, panel, frames): (
+    extras: (
         Res<crate::pieces::BoardOverride>,
         Option<Res<crate::board2d_panel::Board2dPanel>>,
         Res<bevy::diagnostic::FrameCount>,
+        MessageReader<crate::actions::ActionRequested>,
     ),
 ) {
+    let (editor, panel, frames, mut requests) = extras;
     let panel_playing = panel.is_some_and(|p| p.pointer_over_playable(frames.0));
     // O editor de posição (C11) usa o tabuleiro: os gestos não chegam à Partida.
     if editor.is_active() {
@@ -101,7 +103,10 @@ fn gesture_input(
     if focus.read().any(|f| !f.focused) {
         session.gesture(GestureEvent::FocusLost);
     }
-    if controls.key_just_pressed(Action::Cancel, &keys) {
+    // Os atalhos de teclado chegam como `ActionRequested` (`actions`), já filtrados pelo foco
+    // do egui; Esc vale mesmo com um campo de texto em foco.
+    let requested: Vec<Action> = requests.read().map(|r| r.0).collect();
+    if requested.contains(&Action::Cancel) {
         session.gesture(GestureEvent::Escape);
     }
     // `is_changed` não serve: o egui toma `&mut` do recurso todo quadro. Compara o valor.
@@ -109,11 +114,7 @@ fn gesture_input(
         session.gesture(GestureEvent::PanelInteraction);
     }
     *last_presentation = Some(*presentation);
-    if !egui.wants_keyboard_input()
-        && VIEW_ACTIONS
-            .iter()
-            .any(|a| controls.key_just_pressed(*a, &keys))
-    {
+    if VIEW_ACTIONS.iter().any(|a| requested.contains(a)) {
         session.gesture(GestureEvent::OrbitStarted);
     }
     // Cada botão apertado vira a ação que o mapa de controles diz (DEC-51 por padrão):
@@ -230,6 +231,7 @@ mod tests {
             .init_resource::<BoardOverride>()
             .init_resource::<Session>()
             .add_message::<WindowFocused>()
+            .add_message::<crate::actions::ActionRequested>()
             .add_systems(Update, gesture_input);
         app.world_mut().spawn((Window::default(), PrimaryWindow));
         app.world_mut()

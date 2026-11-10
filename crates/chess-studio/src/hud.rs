@@ -369,26 +369,7 @@ impl Plugin for HudPlugin {
         app.init_resource::<HudSettings>()
             .init_resource::<HudAnalysis>()
             .init_resource::<HudMarks>()
-            .add_systems(
-                Update,
-                (hud_shortcut, update_hud.in_set(HudSet))
-                    .chain()
-                    .after(PlaySet),
-            );
-    }
-}
-
-/// H (remapeável, `controls`) liga e desliga o HUD inteiro (útil no Foco, sem painéis). Não escreve se o egui quer
-/// o teclado.
-fn hud_shortcut(
-    keys: Res<ButtonInput<KeyCode>>,
-    controls: Res<crate::controls::Controls>,
-    egui: Option<Res<bevy_egui::input::EguiWantsInput>>,
-    mut settings: ResMut<HudSettings>,
-) {
-    let typing = egui.is_some_and(|e| e.wants_keyboard_input());
-    if !typing && controls.key_just_pressed(chess_input::controls::Action::ToggleHud, &keys) {
-        settings.enabled = !settings.enabled;
+            .add_systems(Update, update_hud.in_set(HudSet).chain().after(PlaySet));
     }
 }
 
@@ -777,19 +758,9 @@ mod tests {
 
     #[test]
     fn h_key_toggles_the_master_switch() {
-        let mut app = App::new();
-        app.init_resource::<ButtonInput<KeyCode>>()
-            .init_resource::<crate::controls::Controls>()
-            .init_resource::<HudSettings>()
-            .add_systems(Update, hud_shortcut);
+        let mut app = crate::actions::test_app();
         for expected in [false, true] {
-            app.world_mut()
-                .resource_mut::<ButtonInput<KeyCode>>()
-                .press(KeyCode::KeyH);
-            app.update();
-            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
-            keys.release(KeyCode::KeyH);
-            keys.clear();
+            crate::actions::press(&mut app, KeyCode::KeyH);
             assert_eq!(app.world().resource::<HudSettings>().enabled, expected);
         }
     }

@@ -444,6 +444,18 @@ impl DockLayout {
             .any(|(tile, t)| matches!(t, Tile::Pane(_)) && self.tree.is_visible(*tile))
     }
 
+    /// O painel **encaixado** e visível que está à frente no dock (a aba ativa do primeiro
+    /// grupo). É o alvo da Ação "Flutuar Painel".
+    pub fn active_docked_panel(&self) -> Option<String> {
+        let active = self.tree.active_tiles();
+        self.tree.tiles.iter().find_map(|(tile, t)| match t {
+            Tile::Pane(p) if active.contains(tile) && self.tree.is_visible(*tile) => {
+                Some(p.0.clone())
+            }
+            _ => None,
+        })
+    }
+
     /// Ids de todos os painéis presentes na árvore.
     pub fn pane_ids(&self) -> Vec<String> {
         self.tree
@@ -593,6 +605,14 @@ impl Dock {
             blocked: None,
             floating_rects: Vec::new(),
         }
+    }
+
+    /// Põe o painel numa janela flutuante, em cascata a partir do canto superior esquerdo
+    /// (a Ação "Flutuar Painel"; o menu da aba posiciona junto ao dock).
+    pub fn float(&mut self, id: &str) -> bool {
+        let n = self.layout.floating.len() as f32;
+        let pos = [96.0 + 24.0 * n, 96.0 + 24.0 * n];
+        self.layout.detach(id, pos, DEFAULT_FLOAT_SIZE)
     }
 
     /// "Restaurar layout padrão" (UI-02): também fecha as janelas flutuantes.

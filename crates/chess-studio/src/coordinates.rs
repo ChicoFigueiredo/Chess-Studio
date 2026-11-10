@@ -372,7 +372,7 @@ impl Plugin for CoordinatesPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<BoardCoordinates>()
             .add_systems(Startup, spawn_labels_3d)
-            .add_systems(Update, (coordinates_shortcut, sync_visibility).chain());
+            .add_systems(Update, sync_visibility);
     }
 }
 
@@ -406,20 +406,6 @@ fn spawn_labels_3d(
             NotShadowCaster,
             Labels3d { turned },
         ));
-    }
-}
-
-/// C (remapeável, `controls`) alterna as coordenadas. Não age se o egui quer o teclado.
-fn coordinates_shortcut(
-    keys: Res<ButtonInput<KeyCode>>,
-    controls: Res<crate::controls::Controls>,
-    egui: Option<Res<bevy_egui::input::EguiWantsInput>>,
-    mut coordinates: ResMut<BoardCoordinates>,
-) {
-    let typing = egui.is_some_and(|e| e.wants_keyboard_input());
-    if !typing && controls.key_just_pressed(chess_input::controls::Action::ToggleCoordinates, &keys)
-    {
-        coordinates.0 = !coordinates.0;
     }
 }
 

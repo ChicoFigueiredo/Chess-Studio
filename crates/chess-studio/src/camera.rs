@@ -105,7 +105,6 @@ impl Plugin for CameraPlugin {
                 Update,
                 (
                     switch_camera,
-                    view_keys,
                     crate::framing::fit_active_view,
                     pointer_controls,
                     apply_pose,
@@ -129,30 +128,6 @@ fn spawn_camera(mut commands: Commands, rig: Res<CameraRig>) {
 
 fn pose_transform(pose: &CameraPose) -> Transform {
     Transform::from_translation(pose.position()).looking_at(pose.target, Vec3::Y)
-}
-
-fn view_keys(
-    keys: Res<ButtonInput<KeyCode>>,
-    controls: Res<Controls>,
-    egui: Res<EguiWantsInput>,
-    mut rig: ResMut<CameraRig>,
-) {
-    if egui.wants_keyboard_input() {
-        return;
-    }
-    let bindings = [
-        (Action::ViewTop, CameraView::Top),
-        (Action::ViewOblique, CameraView::Oblique),
-        (Action::ViewStandard, CameraView::Standard),
-        (Action::ViewInverted, CameraView::Inverted),
-        (Action::ResetCamera, CameraView::Standard), // reset = Vista padrão
-    ];
-    for (action, view) in bindings {
-        if controls.key_just_pressed(action, &keys) {
-            rig.pose = view.pose();
-            rig.view = Some(view);
-        }
-    }
 }
 
 #[allow(clippy::too_many_arguments)]
