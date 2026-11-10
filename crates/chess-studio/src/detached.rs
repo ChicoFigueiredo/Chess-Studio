@@ -828,6 +828,7 @@ fn apply_window_action(layout: &mut DockLayout, action: DockAction, window: u32)
         DockAction::Detach(_)
         | DockAction::DetachWindow(_)
         | DockAction::DetachGroup(_)
+        | DockAction::BeginTileDrag(_)
         | DockAction::FloatAt(..) => {
             let _ = window;
         }

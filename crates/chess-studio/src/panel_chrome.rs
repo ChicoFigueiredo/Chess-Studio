@@ -33,6 +33,31 @@ pub fn dropped_outside(pointer: Option<egui::Pos2>, dock: egui::Rect) -> bool {
     pointer.is_some_and(|p| !dock.contains(p))
 }
 
+/// Onde está o ponteiro durante o arrasto do cabeçalho de um Painel flutuante.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FloatDragZone {
+    /// Sobre o dock com Painéis: o arrasto passa ao `egui_tiles` (guias nativas).
+    Dock,
+    /// Sobre a borda direita com o dock vazio: a zona de soltura que recria o dock.
+    EmptyDock,
+    /// Fora: a janela segue o ponteiro e, solta, continua flutuante.
+    Free,
+}
+
+/// Classifica o ponteiro em relação à região do dock (borda direita). `dock_has_panels`
+/// diz se há algum Painel encaixado visível; sem ele a região vira a zona de soltura.
+pub fn float_drag_zone(
+    pointer: Option<egui::Pos2>,
+    dock: egui::Rect,
+    dock_has_panels: bool,
+) -> FloatDragZone {
+    match pointer {
+        Some(p) if dock.contains(p) && dock_has_panels => FloatDragZone::Dock,
+        Some(p) if dock.contains(p) => FloatDragZone::EmptyDock,
+        _ => FloatDragZone::Free,
+    }
+}
+
 /// Ícone Phosphor do Painel, para a aba (PanelTabs).
 pub fn panel_icon(id: &str) -> &'static str {
     match id {
@@ -395,6 +420,34 @@ mod tests {
         assert!(dropped_outside(Some(egui::pos2(300.0, 300.0)), dock));
         assert!(!dropped_outside(Some(egui::pos2(1000.0, 300.0)), dock));
         assert!(!dropped_outside(None, dock));
+    }
+
+    #[test]
+    fn a_floating_header_over_the_dock_hands_the_drag_to_the_tiles() {
+        let dock = egui::Rect::from_min_max(egui::pos2(940.0, 0.0), egui::pos2(1280.0, 720.0));
+        let at = |x, y| Some(egui::pos2(x, y));
+        assert_eq!(
+            float_drag_zone(at(1000.0, 300.0), dock, true),
+            FloatDragZone::Dock
+        );
+        assert_eq!(
+            float_drag_zone(at(300.0, 300.0), dock, true),
+            FloatDragZone::Free
+        );
+        assert_eq!(float_drag_zone(None, dock, true), FloatDragZone::Free);
+    }
+
+    #[test]
+    fn an_empty_dock_turns_its_region_into_the_drop_zone() {
+        let dock = egui::Rect::from_min_max(egui::pos2(940.0, 0.0), egui::pos2(1280.0, 720.0));
+        assert_eq!(
+            float_drag_zone(Some(egui::pos2(1000.0, 300.0)), dock, false),
+            FloatDragZone::EmptyDock
+        );
+        assert_eq!(
+            float_drag_zone(Some(egui::pos2(100.0, 300.0)), dock, false),
+            FloatDragZone::Free
+        );
     }
 
     #[test]

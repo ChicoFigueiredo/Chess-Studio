@@ -59,3 +59,4 @@ dock-dock-back = Encaixar
 dock-float = Flutuar
 dock-close = Fechar Painel
 dock-more = Mais opções do Painel
+dock-drop-here = Solte aqui para encaixar

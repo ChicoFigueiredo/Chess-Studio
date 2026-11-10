@@ -317,9 +317,14 @@ impl DockLayout {
     /// Devolve a janela ao dock: ao grupo de origem se ainda existe, senão ao primeiro grupo
     /// de abas (recriando a raiz se o dock estava vazio). O painel volta visível e ativo.
     pub fn dock_back(&mut self, id: &str) -> bool {
-        let Some(index) = self.floating_index(id) else {
-            return false;
-        };
+        self.redock_for_drag(id).is_some()
+    }
+
+    /// Como [`Self::dock_back`], devolvendo o tile do Painel e o tamanho que a janela tinha:
+    /// é o primeiro passo de arrastar o cabeçalho flutuante sobre o dock (#184), quando o
+    /// Painel entra na árvore para o `egui_tiles` mostrar as guias e fazer o encaixe.
+    pub fn redock_for_drag(&mut self, id: &str) -> Option<(TileId, [f32; 2])> {
+        let index = self.floating_index(id)?;
         let panel = self.floating.remove(index);
         let home_group = panel
             .home
@@ -333,6 +338,7 @@ impl DockLayout {
                 )
             });
         let group = home_group.or_else(|| self.first_tab_group());
+        let size = panel.size;
         let pane = self.tree.tiles.insert_pane(panel.id);
         match group {
             Some(group) => {
@@ -356,7 +362,7 @@ impl DockLayout {
                 }
             }
         }
-        true
+        Some((pane, size))
     }
 
     /// Move a aba `id` para o grupo de abas onde está `sibling` (o resultado de arrastá-la
@@ -605,6 +611,8 @@ pub struct Dock {
     floating_rects: Vec<egui::Rect>,
     /// Janelas flutuantes cuja posição já foi conferida contra a tela ao abrir.
     float_checked: std::collections::HashSet<String>,
+    /// Painel flutuante cujo cabeçalho virou arrasto de aba sobre o dock (#184).
+    float_drag: Option<FloatDrag>,
 }
 
 impl Default for Dock {
@@ -626,6 +634,7 @@ impl Dock {
             blocked: None,
             floating_rects: Vec::new(),
             float_checked: std::collections::HashSet::new(),
+            float_drag: None,
         }
     }
 
@@ -733,6 +742,17 @@ pub(crate) enum DockAction {
     DetachGroup(PanelId),
     /// "Encaixar grupo": a janela do sistema inteira volta ao dock principal.
     DockWindow(u32),
+    /// Cabeçalho flutuante arrastado até o dock: o Painel volta à árvore e o arrasto passa
+    /// ao `egui_tiles`, que mostra as guias e encaixa na soltura (#184).
+    BeginTileDrag(PanelId),
+}
+
+/// Arrasto de um Painel flutuante que virou arrasto de aba: guarda o tamanho da janela para
+/// que soltar fora do dock devolva a janela do mesmo tamanho.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct FloatDrag {
+    pub panel: PanelId,
+    pub size: [f32; 2],
 }
 
 pub(crate) struct DockBehavior<'a> {
@@ -742,6 +762,8 @@ pub(crate) struct DockBehavior<'a> {
     pub(crate) actions: Vec<DockAction>,
     /// Janela do sistema que este comportamento desenha; `None` na janela principal.
     pub(crate) window: Option<u32>,
+    /// Tamanho da janela que nasce se a aba for solta fora do dock.
+    float_size: [f32; 2],
 }
 
 impl<'a> DockBehavior<'a> {
@@ -752,6 +774,7 @@ impl<'a> DockBehavior<'a> {
             world,
             actions: Vec::new(),
             window: None,
+            float_size: DEFAULT_FLOAT_SIZE,
         }
     }
 
@@ -989,7 +1012,8 @@ fn draw_dock(
                 if panel_chrome::dropped_outside(pointer, rect)
                     && let Some(pointer) = pointer
                 {
-                    let at = panel_chrome::float_pos_at_drop(pointer, DEFAULT_FLOAT_SIZE, screen);
+                    let size = behavior.float_size;
+                    let at = panel_chrome::float_pos_at_drop(pointer, size, screen);
                     if ctx.input(|i| i.pointer.any_released()) {
                         behavior
                             .actions
@@ -1001,7 +1025,7 @@ fn draw_dock(
                         ));
                         let ghost = egui::Rect::from_min_size(
                             egui::pos2(at[0], at[1]),
-                            egui::vec2(DEFAULT_FLOAT_SIZE[0], DEFAULT_FLOAT_SIZE[1]),
+                            egui::vec2(size[0], size[1]),
                         );
                         panel_chrome::paint_guide(
                             &painter,
@@ -1036,7 +1060,7 @@ fn draw_floating(
     layout: &mut DockLayout,
     behavior: &mut DockBehavior<'_>,
     checked: &mut std::collections::HashSet<String>,
-) -> Vec<egui::Rect> {
+) -> (Vec<egui::Rect>, Option<HeaderDrag>) {
     let screen = crate::ribbon::usable_rect(ctx);
     let visuals = ctx.global_style().visuals.clone();
     let p = palette_of(&visuals);
@@ -1048,6 +1072,7 @@ fn draw_floating(
     checked.retain(|id| layout.floating.iter().any(|f| f.visible && f.id.0 == *id));
     let mut rects = Vec::new();
     let mut moved: Vec<(String, [f32; 2], [f32; 2])> = Vec::new();
+    let mut header_drag = None;
     for panel in layout.floating.iter_mut().filter(|f| f.visible) {
         if checked.insert(panel.id.0.clone()) {
             panel.pos = panel_chrome::clamp_floating(panel.pos, panel.size, screen);
@@ -1081,6 +1106,23 @@ fn draw_floating(
         if let Some(shown) = shown {
             let rect = shown.response.rect;
             rects.push(rect);
+            // Só o arrasto que começou no cabeçalho tenta encaixar (corpo e bordas não).
+            let grab = egui::Id::new(("chess-studio-float-grab", generation, &panel.id));
+            if shown.response.drag_started() {
+                let in_header = ctx
+                    .input(|i| i.pointer.press_origin())
+                    .is_some_and(|o| o.y <= rect.min.y + token("panel-header-h", 32.0) + 4.0);
+                ctx.data_mut(|d| d.insert_temp(grab, in_header));
+            }
+            let stopped = shown.response.drag_stopped();
+            if (shown.response.dragged() || stopped)
+                && ctx.data(|d| d.get_temp::<bool>(grab)).unwrap_or(false)
+            {
+                header_drag = Some(HeaderDrag {
+                    panel: panel.id.clone(),
+                    stopped,
+                });
+            }
             let (pos, size) = ([rect.min.x, rect.min.y], [rect.width(), rect.height()]);
             let differs =
                 |a: [f32; 2], b: [f32; 2]| (a[0] - b[0]).abs() > 0.5 || (a[1] - b[1]).abs() > 0.5;
@@ -1092,7 +1134,13 @@ fn draw_floating(
     for (id, pos, size) in moved {
         layout.set_floating_rect(&id, pos, size);
     }
-    rects
+    (rects, header_drag)
+}
+
+/// Janela flutuante cujo cabeçalho está sendo arrastado (ou acabou de ser solto).
+struct HeaderDrag {
+    panel: PanelId,
+    stopped: bool,
 }
 
 /// Sistema exclusivo: os painéis recebem o `World` (ver [`PanelUi`]).
@@ -1125,6 +1173,12 @@ pub(crate) fn dock_ui(world: &mut World) {
             {
                 dock.layout.reconcile(world.resource::<PanelRegistry>());
                 match demo.as_str() {
+                    "window" => {
+                        dock.layout.detach_group_to_window(
+                            ids::NOTATION,
+                            crate::detached::DEFAULT_WINDOW_SIZE,
+                        );
+                    }
                     "regroup" => {
                         dock.layout.move_into_group_of(ids::CLOCK, ids::NOTATION);
                     }
@@ -1175,93 +1229,160 @@ pub(crate) fn dock_ui(world: &mut World) {
                     return;
                 }
                 let mut behavior = DockBehavior::new(&i18n, &registry, world);
-                let show_dock = dock.layout.any_visible() && (!overlay || dock.overlay_open);
-                let mut dock_left = screen.max.x;
-                let mut width = 0.0;
-                if show_dock {
-                    width = draw_dock(
-                        &ctx,
-                        dock.generation,
-                        &mut dock.layout,
-                        &mut behavior,
-                        placed_width,
-                        overlay,
-                    );
-                    dock_left = screen.max.x - width;
-                }
-                dock.floating_rects = draw_floating(
-                    &ctx,
-                    dock.generation,
-                    &mut dock.layout,
-                    &mut behavior,
-                    &mut dock.float_checked,
-                );
-                for action in std::mem::take(&mut behavior.actions) {
-                    let float_here = |layout: &mut DockLayout, id: &PanelId| {
-                        let n = layout.floating.len() as f32;
-                        let size = DEFAULT_FLOAT_SIZE;
-                        let pos = [
-                            (dock_left - size[0] - 16.0 - 24.0 * n).max(0.0),
-                            (72.0 + 24.0 * n).min((screen.height() - size[1]).max(0.0)),
-                        ];
-                        layout.detach(&id.0, pos, size);
-                    };
-                    match action {
-                        DockAction::Detach(id) => float_here(&mut dock.layout, &id),
-                        DockAction::DockBack(id) => {
-                            dock.layout.dock_back(&id.0);
-                        }
-                        DockAction::Toggle(id) => {
-                            if dock.layout.is_floating(&id.0) {
-                                dock.layout.dock_back(&id.0);
-                            } else {
-                                float_here(&mut dock.layout, &id);
-                            }
-                        }
-                        DockAction::FloatAt(id, at) => {
-                            dock.layout.detach(&id.0, [at.x, at.y], DEFAULT_FLOAT_SIZE);
-                        }
-                        DockAction::Close(id) => dock.layout.set_visible(&id.0, false),
-                        DockAction::DetachWindow(id) => {
-                            dock.layout.detach_panel_to_window(
-                                &id.0,
-                                crate::detached::DEFAULT_WINDOW_SIZE,
-                            );
-                        }
-                        DockAction::DetachGroup(id) => {
-                            dock.layout.detach_group_to_window(
-                                &id.0,
-                                crate::detached::DEFAULT_WINDOW_SIZE,
-                            );
-                        }
-                        DockAction::DockWindow(window) => {
-                            dock.layout.dock_window_back(window);
-                        }
-                    }
-                }
-                if !show_dock {
-                    dock.inset = 0.0;
-                    dock.board_rect = Some(screen);
-                    return;
-                }
-                if overlay {
-                    // Sobre o tabuleiro: ele segue com a janela toda, mas a área coberta não é dele.
-                    dock.inset = 0.0;
-                    dock.board_rect = Some(screen);
-                    dock.blocked = Some(egui::Rect::from_min_max(
-                        egui::pos2(screen.max.x - width, screen.min.y),
-                        screen.max,
-                    ));
-                } else {
-                    dock.inset = width;
-                    dock.board_rect = Some(egui::Rect::from_min_max(
-                        screen.min,
-                        egui::pos2(screen.max.x - width, screen.max.y),
-                    ));
-                }
+                frame_dock(&ctx, dock, &mut behavior, screen, placed_width, overlay);
             });
         });
     });
+}
+
+/// Um quadro do dock e das janelas flutuantes: desenha, aplica as ações e atualiza as
+/// áreas do tabuleiro. Separado de [`dock_ui`] para os testes dirigirem o mesmo caminho.
+fn frame_dock(
+    ctx: &egui::Context,
+    dock: &mut Dock,
+    behavior: &mut DockBehavior<'_>,
+    screen: egui::Rect,
+    placed_width: f32,
+    overlay: bool,
+) {
+    let any_visible = dock.layout.any_visible();
+    let show_dock = any_visible && (!overlay || dock.overlay_open);
+    let mut dock_left = screen.max.x;
+    let mut width = 0.0;
+    // Soltar a aba fora do dock devolve a janela do tamanho que ela tinha.
+    behavior.float_size = dock
+        .float_drag
+        .as_ref()
+        .map_or(DEFAULT_FLOAT_SIZE, |d| d.size);
+    if show_dock {
+        width = draw_dock(
+            ctx,
+            dock.generation,
+            &mut dock.layout,
+            behavior,
+            placed_width,
+            overlay,
+        );
+        dock_left = screen.max.x - width;
+    }
+    let (floating_rects, header_drag) = draw_floating(
+        ctx,
+        dock.generation,
+        &mut dock.layout,
+        behavior,
+        &mut dock.float_checked,
+    );
+    dock.floating_rects = floating_rects;
+    if let Some(drag) = header_drag
+        && dock.float_drag.is_none()
+        && (!overlay || dock.overlay_open)
+    {
+        // A região do dock é sempre a borda direita; com o dock vazio ela vira a zona de
+        // soltura (guia + rótulo) e a soltura sobre ela recria o dock.
+        let region = egui::Rect::from_min_max(
+            egui::pos2(screen.max.x - placed_width, screen.min.y),
+            screen.max,
+        );
+        let pointer = ctx.input(|i| i.pointer.latest_pos());
+        match panel_chrome::float_drag_zone(pointer, region, any_visible) {
+            panel_chrome::FloatDragZone::Dock if !drag.stopped => {
+                behavior.actions.push(DockAction::BeginTileDrag(drag.panel));
+            }
+            panel_chrome::FloatDragZone::EmptyDock if drag.stopped => {
+                behavior.actions.push(DockAction::DockBack(drag.panel));
+            }
+            panel_chrome::FloatDragZone::EmptyDock => {
+                let painter = ctx.layer_painter(egui::LayerId::new(
+                    egui::Order::Foreground,
+                    egui::Id::new("chess-studio-empty-dock-zone"),
+                ));
+                let palette = palette_of(&ctx.global_style().visuals);
+                panel_chrome::paint_guide(&painter, palette, region.shrink(6.0));
+                painter.text(
+                    region.center(),
+                    egui::Align2::CENTER_CENTER,
+                    behavior.i18n.t("dock-drop-here"),
+                    egui::FontId::proportional(token("font-size-body", 14.0)),
+                    palette.accent,
+                );
+            }
+            _ => {}
+        }
+    }
+    for action in std::mem::take(&mut behavior.actions) {
+        let float_here = |layout: &mut DockLayout, id: &PanelId| {
+            let n = layout.floating.len() as f32;
+            let size = DEFAULT_FLOAT_SIZE;
+            let pos = [
+                (dock_left - size[0] - 16.0 - 24.0 * n).max(0.0),
+                (72.0 + 24.0 * n).min((screen.height() - size[1]).max(0.0)),
+            ];
+            layout.detach(&id.0, pos, size);
+        };
+        match action {
+            DockAction::Detach(id) => float_here(&mut dock.layout, &id),
+            DockAction::DockBack(id) => {
+                dock.layout.dock_back(&id.0);
+            }
+            DockAction::Toggle(id) => {
+                if dock.layout.is_floating(&id.0) {
+                    dock.layout.dock_back(&id.0);
+                } else {
+                    float_here(&mut dock.layout, &id);
+                }
+            }
+            DockAction::FloatAt(id, at) => {
+                let size = dock
+                    .float_drag
+                    .as_ref()
+                    .filter(|d| d.panel == id)
+                    .map_or(DEFAULT_FLOAT_SIZE, |d| d.size);
+                dock.layout.detach(&id.0, [at.x, at.y], size);
+            }
+            DockAction::Close(id) => dock.layout.set_visible(&id.0, false),
+            DockAction::DetachWindow(id) => {
+                dock.layout
+                    .detach_panel_to_window(&id.0, crate::detached::DEFAULT_WINDOW_SIZE);
+            }
+            DockAction::DetachGroup(id) => {
+                dock.layout
+                    .detach_group_to_window(&id.0, crate::detached::DEFAULT_WINDOW_SIZE);
+            }
+            DockAction::DockWindow(window) => {
+                dock.layout.dock_window_back(window);
+            }
+            DockAction::BeginTileDrag(id) => {
+                if let Some((tile, size)) = dock.layout.redock_for_drag(&id.0) {
+                    // O arrasto do mouse continua; agora quem o conduz é o `egui_tiles`.
+                    ctx.set_dragged_id(tile.egui_id(dock.layout.tree.id()));
+                    dock.float_drag = Some(FloatDrag { panel: id, size });
+                }
+            }
+        }
+    }
+    if dock.float_drag.is_some() && !ctx.input(|i| i.pointer.any_down()) {
+        dock.float_drag = None;
+    }
+    if !show_dock {
+        dock.inset = 0.0;
+        dock.board_rect = Some(screen);
+        return;
+    }
+    if overlay {
+        // Sobre o tabuleiro: ele segue com a janela toda, mas a área coberta não é dele.
+        dock.inset = 0.0;
+        dock.board_rect = Some(screen);
+        dock.blocked = Some(egui::Rect::from_min_max(
+            egui::pos2(screen.max.x - width, screen.min.y),
+            screen.max,
+        ));
+    } else {
+        dock.inset = width;
+        dock.board_rect = Some(egui::Rect::from_min_max(
+            screen.min,
+            egui::pos2(screen.max.x - width, screen.max.y),
+        ));
+    }
 }
 
 /// Recorta o viewport das câmeras do tabuleiro (3D e 2D técnico) à área livre à esquerda
@@ -1900,5 +2021,209 @@ mod tests {
             layout.pane_ids().len(),
             DockLayout::default().pane_ids().len()
         );
+    }
+
+    #[test]
+    fn redocking_for_a_drag_puts_the_panel_in_the_tree_and_remembers_the_window_size() {
+        let mut layout = DockLayout::default();
+        layout.detach(ids::STUDY, [200.0, 100.0], [300.0, 200.0]);
+        let (tile, size) = layout.redock_for_drag(ids::STUDY).unwrap();
+        assert_eq!(size, [300.0, 200.0]);
+        assert_eq!(layout.tile_of(ids::STUDY), Some(tile));
+        assert!(!layout.is_floating(ids::STUDY));
+        assert!(layout.redock_for_drag(ids::STUDY).is_none(), "só flutuante");
+    }
+
+    #[test]
+    fn redocking_into_an_empty_dock_recreates_the_root() {
+        let mut layout = DockLayout::default();
+        for id in layout.pane_ids() {
+            layout.detach(&id, [0.0, 0.0], [300.0, 200.0]);
+        }
+        assert!(!layout.any_visible());
+        let (tile, _) = layout.redock_for_drag(ids::CLOCK).unwrap();
+        assert!(layout.any_visible());
+        assert_eq!(layout.tile_of(ids::CLOCK), Some(tile));
+    }
+
+    /// Dirige o mesmo caminho do app (`frame_dock`) com eventos reais do egui.
+    struct FloatRig {
+        ctx: egui::Context,
+        dock: Dock,
+        i18n: I18n,
+        registry: PanelRegistry,
+        world: World,
+        screen: egui::Rect,
+    }
+
+    impl FloatRig {
+        fn new(dock: Dock) -> Self {
+            let mut world = World::new();
+            world.insert_resource(Session::new());
+            Self {
+                ctx: egui::Context::default(),
+                dock,
+                i18n: I18n::pt_br(),
+                registry: builtin_registry(),
+                world,
+                screen: egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1280.0, 720.0)),
+            }
+        }
+
+        fn frame(&mut self, pos: Option<egui::Pos2>, pressed: Option<bool>) {
+            let mut events = Vec::new();
+            if let Some(pos) = pos {
+                events.push(egui::Event::PointerMoved(pos));
+                if let Some(pressed) = pressed {
+                    events.push(egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: egui::Modifiers::NONE,
+                    });
+                }
+            }
+            for pass in 0..2 {
+                let mut behavior = DockBehavior::new(&self.i18n, &self.registry, &mut self.world);
+                let input = egui::RawInput {
+                    screen_rect: Some(self.screen),
+                    events: if pass == 0 { events.clone() } else { vec![] },
+                    ..Default::default()
+                };
+                let (ctx, dock, screen) = (self.ctx.clone(), &mut self.dock, self.screen);
+                let mut out = ctx.run_ui(input, |_| {
+                    frame_dock(&ctx, dock, &mut behavior, screen, DEFAULT_WIDTH, false);
+                });
+                out.textures_delta.clear();
+            }
+        }
+
+        /// Pressiona o cabeçalho da janela flutuante e arrasta até `to`.
+        fn drag_header_to(&mut self, grab: egui::Pos2, to: egui::Pos2) {
+            self.frame(Some(grab), None);
+            self.frame(Some(grab), Some(true));
+            self.frame(Some(grab + egui::vec2(12.0, 6.0)), None);
+            self.frame(Some(grab + egui::vec2(40.0, 20.0)), None);
+            self.frame(Some(to), None);
+            self.frame(Some(to), None);
+        }
+
+        /// Continua arrastando (botão preso) até `to`.
+        fn drag_header_to_dock_target(&mut self, to: egui::Pos2) {
+            for _ in 0..3 {
+                self.frame(Some(to), None);
+            }
+        }
+
+        fn release_at(&mut self, at: egui::Pos2) {
+            self.frame(Some(at), Some(false));
+            self.frame(None, None);
+        }
+    }
+
+    fn dock_with_study_floating() -> Dock {
+        let mut dock = Dock::default();
+        dock.layout
+            .detach(ids::STUDY, [200.0, 100.0], [300.0, 200.0]);
+        dock
+    }
+
+    /// Ponto vazio do cabeçalho da janela (longe da aba e das ferramentas).
+    const HEADER_GRAB: egui::Pos2 = egui::pos2(340.0, 116.0);
+
+    #[test]
+    fn dragging_a_floating_header_over_the_dock_hands_the_drag_to_the_tiles() {
+        let mut rig = FloatRig::new(dock_with_study_floating());
+        rig.frame(None, None);
+        rig.drag_header_to(HEADER_GRAB, egui::pos2(1100.0, 300.0));
+        assert!(rig.dock.float_drag.is_some(), "o arrasto passou ao dock");
+        assert!(!rig.dock.layout.is_floating(ids::STUDY));
+        let dragged = rig.dock.layout.tree.dragged_id(&rig.ctx);
+        assert_eq!(
+            dragged,
+            rig.dock.layout.tile_of(ids::STUDY),
+            "aba em arrasto"
+        );
+    }
+
+    #[test]
+    fn dropping_a_floating_header_in_the_middle_of_a_group_makes_it_a_tab_there() {
+        let mut rig = FloatRig::new(dock_with_study_floating());
+        rig.frame(None, None);
+        rig.drag_header_to(HEADER_GRAB, egui::pos2(1100.0, 300.0));
+        let aids = group_of(&rig.dock.layout, ids::AIDS).unwrap();
+        let target = rig.dock.layout.tree.tiles.rect(aids).unwrap();
+        rig.drag_header_to_dock_target(target.center());
+        rig.release_at(target.center());
+        assert_eq!(
+            group_of(&rig.dock.layout, ids::STUDY),
+            group_of(&rig.dock.layout, ids::AIDS),
+            "virou aba do grupo"
+        );
+        assert!(rig.dock.layout.floating.is_empty());
+    }
+
+    #[test]
+    fn dropping_a_floating_header_on_a_group_edge_splits_beside_it() {
+        let mut rig = FloatRig::new(dock_with_study_floating());
+        rig.frame(None, None);
+        rig.drag_header_to(HEADER_GRAB, egui::pos2(1100.0, 300.0));
+        let aids = group_of(&rig.dock.layout, ids::AIDS).unwrap();
+        let target = rig.dock.layout.tree.tiles.rect(aids).unwrap();
+        let side = egui::pos2(target.center().x, target.top() + 4.0);
+        rig.drag_header_to_dock_target(side);
+        rig.release_at(side);
+        let study = group_of(&rig.dock.layout, ids::STUDY).unwrap();
+        assert_ne!(
+            Some(study),
+            group_of(&rig.dock.layout, ids::AIDS),
+            "grupo novo"
+        );
+        assert!(rig.dock.layout.floating.is_empty());
+        assert_eq!(
+            rig.dock.layout.pane_ids().len(),
+            DockLayout::default().pane_ids().len()
+        );
+    }
+
+    #[test]
+    fn dropping_outside_the_dock_keeps_the_panel_floating_where_it_was_dropped() {
+        let mut rig = FloatRig::new(dock_with_study_floating());
+        rig.frame(None, None);
+        rig.drag_header_to(HEADER_GRAB, egui::pos2(1100.0, 300.0));
+        let outside = egui::pos2(500.0, 400.0);
+        rig.drag_header_to_dock_target(outside);
+        rig.release_at(outside);
+        assert!(rig.dock.layout.is_floating(ids::STUDY));
+        let f = &rig.dock.layout.floating[0];
+        assert_eq!(f.size, [300.0, 200.0], "mesmo tamanho");
+        assert!(
+            (f.pos[0] + 150.0 - outside.x).abs() < 1.0,
+            "sob o ponteiro: {f:?}"
+        );
+        assert!(rig.dock.layout.tile_of(ids::STUDY).is_none());
+    }
+
+    #[test]
+    fn an_empty_dock_shows_a_drop_zone_and_a_release_on_it_recreates_the_dock() {
+        let mut dock = Dock::default();
+        for id in dock.layout.pane_ids() {
+            dock.layout.detach(&id, [600.0, 400.0], [300.0, 200.0]);
+        }
+        dock.layout.floating[0].pos = [200.0, 100.0];
+        let first = dock.layout.floating[0].id.0.clone();
+        let mut rig = FloatRig::new(dock);
+        rig.frame(None, None);
+        assert!(!rig.dock.layout.any_visible());
+        let zone = egui::pos2(1100.0, 300.0);
+        rig.drag_header_to(HEADER_GRAB, zone);
+        assert!(
+            rig.dock.layout.is_floating(&first),
+            "ainda flutua até soltar"
+        );
+        rig.release_at(zone);
+        assert!(!rig.dock.layout.is_floating(&first));
+        assert!(rig.dock.layout.any_visible(), "o dock voltou");
+        assert!(rig.dock.layout.tile_of(&first).is_some());
     }
 }
