@@ -154,8 +154,12 @@ Painel em janela própria *dentro* da janela principal, sobre o tabuleiro. Açã
 _Evitar_: janela interna, popup
 
 **Painel destacado** (_en_: `Detached`):
-Painel numa janela do sistema operacional separada da principal, que pode ir para outro monitor. Ação: Destacar; Encaixar devolve ao dock.
+Painel, ou um grupo de abas inteiro, numa janela do sistema operacional separada da principal, que pode ir para outro monitor; dentro dela as abas se reorganizam como no dock. Ação: Destacar; Encaixar devolve ao dock.
 _Evitar_: janela externa, pop-out
+
+**Conjunto de Painéis** (_en_: `PanelSet`):
+Grupo nomeado de Painéis que se ligam e desligam juntos pela aba Exibir (ex.: Análise = Análise + Engines + Aberturas), sem mudar Apresentação, Ribbon nem Auxílios. Diferente do Perfil de interface, que troca tudo.
+_Evitar_: workspace, layout, preset
 
 **Ribbon** (_en_: `Ribbon`):
 Menu superior em abas com grupos de Ações, no estilo Office; pode estar no modo clássico, no modo simples (uma linha) ou recolhido. A aba Arquivo abre os bastidores: Partidas, Perfis e Opções.
@@ -196,6 +200,10 @@ _Evitar_: trilha, plano
 **Engine** (_en_: `Engine`):
 Programa externo de xadrez, falando UCI, que propõe Lances ou análises e nunca decide legalidade.
 _Evitar_: motor, IA, bot
+
+**Anotação de estudo** (_en_: `StudyNotes`):
+Comentário livre do usuário sobre um Lance, fora de Partida competitiva; não altera a Partida e sai no PGN como comentário. Edita-se no Painel Anotações ou, como nota rápida, ao lado do Lance na Notação: é o mesmo texto nas duas vistas.
+_Evitar_: comentário (sozinho), nota rápida (como dado separado)
 
 **Súmula manual** (_en_: `ManualScoresheet`):
 Registro escrito pelo próprio jogador como exercício de competição; diferente da notação automática. É um registro à parte, por perfil local e por Partida, que nunca altera a Partida nem o PGN; enquanto está em anotação a notação automática fica oculta.
