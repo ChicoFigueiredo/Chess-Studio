@@ -17,6 +17,8 @@ dock-panel-board2d = Tabuleiro 2D
 dock-unavailable-competitive = Indisponível em Partida competitiva.
 
 notation-empty = Nenhum lance ainda.
+notation-note-add = Anotar este lance (Enter salva, Esc cancela, Shift+Enter abre o painel Anotações)
+notation-note-hint = Nota rápida…
 
 clock-none = Esta Partida não tem relógio.
 clock-control = Controle de tempo: { $control }
