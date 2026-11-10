@@ -4,6 +4,11 @@
 //! é só Apresentação e preferência, gravada no SQLite.
 //!
 //! Não confundir com o Perfil de auxílios (`aids::AidProfile`), que é só uma parte deste.
+//!
+//! Desde o DS-07 (#166) o perfil guarda também o estado do Ribbon (modo, recolhido, aba ativa),
+//! a Barra de Acesso Rápido e os Painéis flutuantes (dentro do layout do dock). Tema,
+//! Densidade e Escala **não** entram: são do Perfil local (`ui_theme`). Perfis gravados antes
+//! do DS-07 não têm os campos novos e carregam com os padrões (nada do Ribbon é tocado).
 
 use crate::aids::AidSettings;
 use crate::camera::{CameraMemory, CameraRig, CameraSet};
@@ -26,6 +31,81 @@ pub enum FactoryProfile {
     PhysicalGame,
     AssistedTraining,
     StudyAnalysis,
+    /// Súmula + Relógio, sem Auxílios, Notação oculta, Ribbon recolhido.
+    Competition,
+    /// Só o tabuleiro e o Relógio, sem dock, Ribbon recolhido.
+    Minimal,
+}
+
+/// Disposição do Ribbon aberto (espelha `ribbon::RibbonMode` sem depender do módulo).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RibbonLayout {
+    #[default]
+    Classic,
+    Simple,
+}
+
+/// A parte do Ribbon que um Perfil de interface guarda.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RibbonSetup {
+    #[serde(default)]
+    pub layout: RibbonLayout,
+    #[serde(default)]
+    pub collapsed: bool,
+    /// Nome estável da aba (`RibbonView::id`); `None` mantém a aba atual.
+    #[serde(default)]
+    pub active_tab: Option<String>,
+    /// Ids das Ações fixas na Barra de Acesso Rápido, na ordem.
+    #[serde(default = "default_quick_access")]
+    pub quick_access: Vec<String>,
+}
+
+fn default_quick_access() -> Vec<String> {
+    use chess_input::controls::Action;
+    [Action::Undo, Action::NewGame, Action::FlipBoard]
+        .into_iter()
+        .map(|a| a.id().to_owned())
+        .collect()
+}
+
+impl Default for RibbonSetup {
+    fn default() -> Self {
+        Self {
+            layout: RibbonLayout::Classic,
+            collapsed: false,
+            active_tab: None,
+            quick_access: default_quick_access(),
+        }
+    }
+}
+
+impl RibbonSetup {
+    fn factory(layout: RibbonLayout, collapsed: bool) -> Self {
+        Self {
+            layout,
+            collapsed,
+            ..Self::default()
+        }
+    }
+
+    /// Mesmo modo, recolhimento e Barra de Acesso Rápido? A aba ativa não conta: trocar de
+    /// aba não tira do perfil (como a aba ativa de um grupo do dock).
+    fn same_as(&self, other: &Self) -> bool {
+        self.layout == other.layout
+            && self.collapsed == other.collapsed
+            && self.quick_access == other.quick_access
+    }
+}
+
+/// Painel destacado para outra janela do sistema (#168): reservado, sem efeito até lá.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DetachedPanel {
+    pub id: String,
+    /// Índice do monitor onde estava.
+    pub monitor: Option<u32>,
+    pub pos: [f32; 2],
+    pub size: [f32; 2],
 }
 
 /// Qual perfil está em uso.
@@ -54,6 +134,8 @@ pub struct InterfaceState {
     pub dock: DockLayout,
     pub aids: AidSettings,
     pub focus: bool,
+    /// `None` quando o app roda sem o Ribbon (sem `--nova-ui`): o perfil não o toca.
+    pub ribbon: Option<RibbonSetup>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -65,6 +147,12 @@ pub struct InterfaceProfile {
     /// Vista da câmera para a Apresentação do perfil; `None` mantém a que o usuário já tem
     /// (UI-11: as preferências de câmera por Apresentação sobrevivem à troca).
     pub camera_view: Option<String>,
+    /// Ribbon e Barra de Acesso Rápido; `None` (perfis antigos) não mexe no Ribbon.
+    #[serde(default)]
+    pub ribbon: Option<RibbonSetup>,
+    /// Painéis destacados em outras janelas (#168); sempre vazio por ora.
+    #[serde(default)]
+    pub detached: Vec<DetachedPanel>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -90,10 +178,12 @@ pub struct ProfilesState {
 }
 
 impl FactoryProfile {
-    pub const ALL: [FactoryProfile; 3] = [
+    pub const ALL: [FactoryProfile; 5] = [
         FactoryProfile::PhysicalGame,
         FactoryProfile::AssistedTraining,
         FactoryProfile::StudyAnalysis,
+        FactoryProfile::Competition,
+        FactoryProfile::Minimal,
     ];
 
     pub fn label_key(self) -> &'static str {
@@ -101,37 +191,57 @@ impl FactoryProfile {
             FactoryProfile::PhysicalGame => "iprofile-physical",
             FactoryProfile::AssistedTraining => "iprofile-training",
             FactoryProfile::StudyAnalysis => "iprofile-study",
+            FactoryProfile::Competition => "iprofile-competition",
+            FactoryProfile::Minimal => "iprofile-minimal",
         }
     }
 
-    /// O perfil de fábrica. "Relógio visível": na Mesa imersiva o relógio é o da mesa, então
-    /// o dock fica oculto sem esconder o relógio.
+    /// O perfil de fábrica, conforme a tabela do DS-07. No Mínimo a Apresentação é a Mesa
+    /// imersiva: o relógio é o da mesa, então o dock fica oculto sem esconder o Relógio.
     pub fn profile(self) -> InterfaceProfile {
         let panels = |ids: &[&str]| DockSetup::Panels {
             visible: ids.iter().map(|id| (*id).to_owned()).collect(),
         };
-        match self {
-            FactoryProfile::PhysicalGame => InterfaceProfile {
-                presentation: Presentation::ImmersiveTable,
-                dock: panels(&[]),
-                aids: AidSettings::physical(),
-                focus: false,
-                camera_view: None,
-            },
-            FactoryProfile::AssistedTraining => InterfaceProfile {
-                presentation: Presentation::Professional3d,
-                dock: panels(&[ids::NOTATION, ids::AIDS, ids::TRAINING]),
-                aids: AidSettings::training(),
-                focus: false,
-                camera_view: None,
-            },
-            FactoryProfile::StudyAnalysis => InterfaceProfile {
-                presentation: Presentation::Technical2d,
-                dock: panels(&[ids::NOTATION, PANEL_ANALYSIS, PANEL_LIBRARY, ids::STUDY]),
-                aids: AidSettings::training(),
-                focus: false,
-                camera_view: None,
-            },
+        let (presentation, dock, aids, ribbon) = match self {
+            FactoryProfile::PhysicalGame => (
+                Presentation::Professional3d,
+                panels(&[ids::CLOCK, ids::NOTATION]),
+                AidSettings::physical(),
+                RibbonSetup::factory(RibbonLayout::Simple, false),
+            ),
+            FactoryProfile::AssistedTraining => (
+                Presentation::Professional3d,
+                panels(&[ids::TRAINING, ids::NOTATION, ids::BOARD2D, ids::AIDS]),
+                AidSettings::training(),
+                RibbonSetup::factory(RibbonLayout::Simple, false),
+            ),
+            FactoryProfile::StudyAnalysis => (
+                Presentation::Technical2d,
+                panels(&[PANEL_ANALYSIS, ids::OPENINGS, ids::NOTATION, PANEL_LIBRARY]),
+                AidSettings::training(),
+                RibbonSetup::factory(RibbonLayout::Classic, false),
+            ),
+            FactoryProfile::Competition => (
+                Presentation::Professional3d,
+                panels(&[ids::SCORESHEET, ids::CLOCK]),
+                AidSettings::physical(),
+                RibbonSetup::factory(RibbonLayout::Simple, true),
+            ),
+            FactoryProfile::Minimal => (
+                Presentation::ImmersiveTable,
+                panels(&[]),
+                AidSettings::physical(),
+                RibbonSetup::factory(RibbonLayout::Simple, true),
+            ),
+        };
+        InterfaceProfile {
+            presentation,
+            dock,
+            aids,
+            focus: false,
+            camera_view: None,
+            ribbon: Some(ribbon),
+            detached: Vec::new(),
         }
     }
 }
@@ -142,6 +252,13 @@ impl InterfaceProfile {
         state.presentation = self.presentation;
         state.aids = self.aids;
         state.focus = self.focus;
+        if let (Some(wanted), Some(current)) = (&self.ribbon, &state.ribbon) {
+            let mut next = wanted.clone();
+            if next.active_tab.is_none() {
+                next.active_tab = current.active_tab.clone();
+            }
+            state.ribbon = Some(next);
+        }
         match &self.dock {
             DockSetup::Layout(layout) => state.dock = (**layout).clone(),
             DockSetup::Panels { visible } => {
@@ -164,6 +281,10 @@ impl InterfaceProfile {
         applied.presentation == state.presentation
             && applied.aids == state.aids
             && applied.focus == state.focus
+            && match (&applied.ribbon, &state.ribbon) {
+                (Some(a), Some(b)) => a.same_as(b),
+                _ => true,
+            }
             && match &self.dock {
                 DockSetup::Layout(_) => applied.dock == state.dock,
                 DockSetup::Panels { .. } => applied
@@ -182,6 +303,8 @@ impl InterfaceProfile {
             aids: state.aids,
             focus: state.focus,
             camera_view: camera_view.map(str::to_owned),
+            ribbon: state.ribbon.clone(),
+            detached: Vec::new(),
         }
     }
 }
@@ -340,6 +463,7 @@ fn apply_requests(
     mut view_state: ResMut<ViewState>,
     mut rig: ResMut<CameraRig>,
     mut memory: ResMut<CameraMemory>,
+    mut ribbon: Option<ResMut<crate::ribbon::RibbonState>>,
 ) {
     let Some(request) = profiles.request.take() else {
         return;
@@ -349,6 +473,7 @@ fn apply_requests(
         dock: dock.layout.clone(),
         aids: *aids,
         focus: view_state.focus,
+        ribbon: ribbon.as_ref().map(|r| r.setup()),
     };
     let was = state.clone();
     let mut next_rig = CameraRig {
@@ -384,6 +509,11 @@ fn apply_requests(
         rig.pose = next_rig.pose;
         rig.view = next_rig.view;
     }
+    if state.ribbon != was.ribbon
+        && let (Some(setup), Some(ribbon)) = (&state.ribbon, ribbon.as_mut())
+    {
+        ribbon.apply_setup(setup);
+    }
 }
 
 /// O estado saiu do perfil ativo (mexeu num painel, num Auxílio…)? Vira "Personalizado".
@@ -393,6 +523,7 @@ fn track_active(
     dock: Res<Dock>,
     aids: Res<AidSettings>,
     view_state: Res<ViewState>,
+    ribbon: Option<Res<crate::ribbon::RibbonState>>,
 ) {
     if profiles.state.active == ProfileKey::Custom || profiles.request.is_some() {
         return;
@@ -402,6 +533,7 @@ fn track_active(
         dock: dock.layout.clone(),
         aids: *aids,
         focus: view_state.focus,
+        ribbon: ribbon.as_ref().map(|r| r.setup()),
     };
     let still = profiles
         .state
@@ -517,6 +649,7 @@ mod tests {
             dock: DockLayout::default(),
             aids: AidSettings::training(),
             focus: false,
+            ribbon: Some(RibbonSetup::default()),
         }
     }
 
@@ -531,39 +664,84 @@ mod tests {
     }
 
     #[test]
-    fn physical_game_is_the_immersive_table_with_no_dock_and_no_aids() {
+    fn physical_game_is_the_professional_3d_with_clock_and_notation_and_no_aids() {
         let mut s = state();
+        s.presentation = Presentation::Technical2d;
         FactoryProfile::PhysicalGame.profile().apply(&mut s);
-        assert_eq!(s.presentation, Presentation::ImmersiveTable);
-        assert!(!s.dock.any_visible());
+        assert_eq!(s.presentation, Presentation::Professional3d);
+        assert_eq!(visible_ids(&s.dock), vec![ids::CLOCK, ids::NOTATION]);
         assert_eq!(s.aids, AidSettings::physical());
         assert!(!s.focus);
+        assert_eq!(s.ribbon.unwrap().layout, RibbonLayout::Simple);
     }
 
     #[test]
-    fn assisted_training_shows_notation_aids_and_training_in_the_professional_3d() {
+    fn assisted_training_shows_training_notation_and_the_2d_board_with_aids_on() {
         let mut s = state();
         s.presentation = Presentation::Technical2d;
         FactoryProfile::AssistedTraining.profile().apply(&mut s);
         assert_eq!(s.presentation, Presentation::Professional3d);
-        assert_eq!(
-            visible_ids(&s.dock),
-            vec![ids::AIDS, ids::NOTATION, ids::TRAINING]
-        );
+        let visible = visible_ids(&s.dock);
+        for id in [ids::TRAINING, ids::NOTATION, ids::BOARD2D] {
+            assert!(visible.iter().any(|v| v == id), "{id}");
+        }
         assert_eq!(s.aids, AidSettings::training());
+        let ribbon = s.ribbon.unwrap();
+        assert_eq!(
+            (ribbon.layout, ribbon.collapsed),
+            (RibbonLayout::Simple, false)
+        );
     }
 
     #[test]
-    fn study_and_analysis_shows_notation_and_annotations_in_the_technical_2d() {
+    fn study_and_analysis_shows_analysis_openings_notation_in_a_classic_ribbon() {
         let mut s = state();
         FactoryProfile::StudyAnalysis.profile().apply(&mut s);
         assert_eq!(s.presentation, Presentation::Technical2d);
-        // O painel Análise (C8) já está no layout padrão; a Biblioteca (C7) só entra
-        // quando registrada (ver o teste seguinte).
+        // Aberturas e Biblioteca só entram quando registradas (ver o teste seguinte).
+        let visible = visible_ids(&s.dock);
+        assert!(visible.iter().any(|v| v == PANEL_ANALYSIS));
+        assert!(visible.iter().any(|v| v == ids::NOTATION));
+        assert!(!visible.iter().any(|v| v == ids::CLOCK));
+        let ribbon = s.ribbon.unwrap();
         assert_eq!(
-            visible_ids(&s.dock),
-            vec![PANEL_ANALYSIS, ids::NOTATION, ids::STUDY]
+            (ribbon.layout, ribbon.collapsed),
+            (RibbonLayout::Classic, false)
         );
+    }
+
+    #[test]
+    fn competition_shows_scoresheet_and_clock_without_notation_or_aids_and_collapses_the_ribbon() {
+        let mut s = state();
+        let mut registry = crate::dock::PanelRegistry::default();
+        for id in s.dock.pane_ids() {
+            registry.register(stub(&id));
+        }
+        registry.register(stub(ids::SCORESHEET));
+        s.dock.reconcile(&registry);
+        FactoryProfile::Competition.profile().apply(&mut s);
+        assert_eq!(visible_ids(&s.dock), vec![ids::CLOCK, ids::SCORESHEET]);
+        assert!(!s.dock.is_visible(ids::NOTATION));
+        assert!(!s.dock.is_visible(ids::AIDS));
+        assert_eq!(s.aids, AidSettings::physical());
+        assert!(s.ribbon.unwrap().collapsed);
+    }
+
+    #[test]
+    fn minimal_has_no_dock_visible_and_a_collapsed_ribbon() {
+        let mut s = state();
+        FactoryProfile::Minimal.profile().apply(&mut s);
+        assert!(!s.dock.any_visible());
+        assert_eq!(s.aids, AidSettings::physical());
+        assert!(s.ribbon.unwrap().collapsed);
+    }
+
+    #[test]
+    fn there_are_five_factory_profiles_with_labels() {
+        assert_eq!(FactoryProfile::ALL.len(), 5);
+        let keys: std::collections::HashSet<_> =
+            FactoryProfile::ALL.iter().map(|f| f.label_key()).collect();
+        assert_eq!(keys.len(), 5);
     }
 
     #[test]
@@ -580,12 +758,12 @@ mod tests {
         }
         registry.register(stub(PANEL_ANALYSIS));
         registry.register(stub(PANEL_LIBRARY));
-        assert!(s.dock.reconcile(&registry));
+        registry.register(stub(ids::OPENINGS));
+        s.dock.reconcile(&registry);
         FactoryProfile::StudyAnalysis.profile().apply(&mut s);
-        assert_eq!(
-            visible_ids(&s.dock),
-            vec![PANEL_ANALYSIS, PANEL_LIBRARY, ids::NOTATION, ids::STUDY]
-        );
+        let mut expected = vec![PANEL_ANALYSIS, PANEL_LIBRARY, ids::NOTATION, ids::OPENINGS];
+        expected.sort();
+        assert_eq!(visible_ids(&s.dock), expected);
     }
 
     fn stub(id: &str) -> crate::dock::PanelDef {
@@ -603,7 +781,6 @@ mod tests {
         for factory in FactoryProfile::ALL {
             let profile = factory.profile();
             let mut s = state();
-            assert!(!profile.matches(&s) || factory == FactoryProfile::AssistedTraining);
             profile.apply(&mut s);
             assert!(profile.matches(&s), "{factory:?}");
             let once = s.clone();
@@ -626,7 +803,7 @@ mod tests {
 
     #[test]
     fn restoring_a_factory_profile_undoes_manual_changes() {
-        let profile = FactoryProfile::PhysicalGame.profile();
+        let profile = FactoryProfile::Minimal.profile();
         let mut s = state();
         profile.apply(&mut s);
         s.dock.set_visible(ids::NOTATION, true);
@@ -762,12 +939,12 @@ mod tests {
         }
         assert_eq!(
             *w.resource::<Presentation>(),
-            Presentation::Technical2d,
-            "o último perfil (Estudo) foi aplicado"
+            Presentation::ImmersiveTable,
+            "o último perfil (Mínimo) foi aplicado"
         );
         assert_eq!(
             w.resource::<InterfaceProfiles>().state.active,
-            ProfileKey::Factory(FactoryProfile::StudyAnalysis)
+            ProfileKey::Factory(FactoryProfile::Minimal)
         );
     }
 
@@ -829,6 +1006,163 @@ mod tests {
         let profiles = w.resource::<InterfaceProfiles>();
         assert_eq!(profiles.name_error, Some(NameError::Empty));
         assert!(profiles.state.user.is_empty());
+    }
+
+    // --- DS-07 (#166): Ribbon, Barra de Acesso Rápido, migração e Personalizado ---
+
+    fn ribbon_setup() -> RibbonSetup {
+        RibbonSetup {
+            layout: RibbonLayout::Simple,
+            collapsed: true,
+            active_tab: Some("analysis".into()),
+            quick_access: vec!["undo".into(), "flip-board".into()],
+        }
+    }
+
+    #[test]
+    fn a_saved_profile_round_trips_ribbon_quick_access_and_floating_panels() {
+        let mut s = state();
+        s.ribbon = Some(ribbon_setup());
+        s.dock.detach(ids::STUDY, [111.0, 77.0], [333.0, 222.0]);
+        let mut profiles = ProfilesState::default();
+        profiles
+            .save_user("Aula", InterfaceProfile::capture(&s, None))
+            .unwrap();
+        let back = ProfilesState::from_json(Some(profiles.to_json()));
+        assert_eq!(back, profiles);
+        let saved = &back.user[0].profile;
+        assert_eq!(saved.ribbon, Some(ribbon_setup()));
+        assert!(saved.detached.is_empty(), "reservado para #168");
+        let mut other = state();
+        saved.apply(&mut other);
+        assert_eq!(other.ribbon, Some(ribbon_setup()));
+        assert!(other.dock.is_floating(ids::STUDY));
+        assert_eq!(other.dock.floating[0].pos, [111.0, 77.0]);
+    }
+
+    #[test]
+    fn profiles_saved_before_ds7_load_with_defaults_and_leave_the_ribbon_alone() {
+        // Formato anterior: sem `ribbon` nem `detached` no perfil de usuário.
+        let old = serde_json::json!({
+            "active": { "User": "Antigo" },
+            "user": [{
+                "name": "Antigo",
+                "profile": {
+                    "presentation": "Technical2d",
+                    "dock": { "Panels": { "visible": ["Notation"] } },
+                    "aids": serde_json::to_value(AidSettings::physical()).unwrap(),
+                    "focus": true,
+                    "camera_view": null
+                }
+            }]
+        });
+        let loaded = ProfilesState::from_json(Some(old));
+        assert_eq!(loaded.user.len(), 1, "o perfil antigo carrega");
+        let profile = &loaded.user[0].profile;
+        assert_eq!(profile.ribbon, None);
+        assert!(profile.detached.is_empty());
+        assert!(profile.focus);
+        let mut s = state();
+        s.ribbon = Some(ribbon_setup());
+        profile.apply(&mut s);
+        assert_eq!(s.ribbon, Some(ribbon_setup()), "Ribbon intocado");
+        assert!(profile.matches(&s));
+        // Um RibbonSetup parcial também ganha padrões.
+        let partial: RibbonSetup = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(partial, RibbonSetup::default());
+        assert_eq!(partial.quick_access, vec!["undo", "new-game", "flip-board"]);
+    }
+
+    #[test]
+    fn leaving_the_ribbon_setup_makes_the_state_custom_but_changing_tab_does_not() {
+        let profile = FactoryProfile::Competition.profile();
+        let mut s = state();
+        profile.apply(&mut s);
+        assert!(profile.matches(&s));
+        s.ribbon.as_mut().unwrap().active_tab = Some("training".into());
+        assert!(profile.matches(&s), "a aba ativa não conta");
+        s.ribbon.as_mut().unwrap().collapsed = false;
+        assert!(!profile.matches(&s));
+        profile.apply(&mut s);
+        s.ribbon.as_mut().unwrap().quick_access.pop();
+        assert!(!profile.matches(&s), "a Barra de Acesso Rápido conta");
+    }
+
+    #[test]
+    fn without_a_ribbon_the_ribbon_never_makes_the_state_custom() {
+        let profile = FactoryProfile::Competition.profile();
+        let mut s = state();
+        s.ribbon = None;
+        profile.apply(&mut s);
+        assert_eq!(s.ribbon, None);
+        assert!(profile.matches(&s));
+    }
+
+    #[test]
+    fn appearance_is_not_part_of_the_profile() {
+        // Tema, Densidade e Escala vivem em `ui_theme`; nenhum campo do perfil as guarda.
+        let json = serde_json::to_string(&FactoryProfile::Minimal.profile()).unwrap();
+        for word in ["theme", "density", "scale"] {
+            assert!(!json.to_lowercase().contains(word), "{word}");
+        }
+    }
+
+    #[test]
+    fn applying_competition_and_minimal_in_the_world_sets_panels_and_ribbon() {
+        use crate::ribbon::{RibbonMode, RibbonState};
+        let mut w = world();
+        w.insert_resource(RibbonState::default());
+        request(
+            &mut w,
+            ProfileRequest::Apply(ProfileKey::Factory(FactoryProfile::Competition)),
+        );
+        {
+            let ribbon = w.resource::<RibbonState>();
+            assert!(ribbon.collapsed);
+            assert_eq!(ribbon.mode, RibbonMode::Simple);
+        }
+        request(
+            &mut w,
+            ProfileRequest::Apply(ProfileKey::Factory(FactoryProfile::Minimal)),
+        );
+        assert!(!w.resource::<Dock>().layout.any_visible());
+        assert!(w.resource::<RibbonState>().collapsed);
+        request(
+            &mut w,
+            ProfileRequest::Apply(ProfileKey::Factory(FactoryProfile::StudyAnalysis)),
+        );
+        let ribbon = w.resource::<RibbonState>();
+        assert!(!ribbon.collapsed);
+        assert_eq!(ribbon.mode, RibbonMode::Classic);
+        w.run_system_once(track_active).unwrap();
+        assert_eq!(
+            w.resource::<InterfaceProfiles>().state.active,
+            ProfileKey::Factory(FactoryProfile::StudyAnalysis),
+            "o Ribbon aplicado bate com o perfil"
+        );
+        // Mexer no Ribbon manualmente vira Personalizado.
+        w.resource_mut::<RibbonState>().collapsed = true;
+        w.run_system_once(track_active).unwrap();
+        assert_eq!(
+            w.resource::<InterfaceProfiles>().state.active,
+            ProfileKey::Custom
+        );
+    }
+
+    #[test]
+    fn switching_among_the_five_profiles_never_touches_the_game() {
+        let mut w = world();
+        w.insert_resource(crate::ribbon::RibbonState::default());
+        let before = w
+            .resource::<crate::session::Session>()
+            .game()
+            .events()
+            .len();
+        for f in FactoryProfile::ALL {
+            request(&mut w, ProfileRequest::Apply(ProfileKey::Factory(f)));
+            let session = w.resource::<crate::session::Session>();
+            assert_eq!(session.game().events().len(), before, "{f:?}");
+        }
     }
 
     #[test]

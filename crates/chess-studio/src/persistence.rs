@@ -16,7 +16,7 @@ use crate::hover::HoverHighlight;
 use crate::hud::HudSettings;
 use crate::play::PlaySet;
 use crate::presentation::{GraphicsQuality, Presentation, UltraEffects};
-use crate::profiles::{InterfaceProfiles, ProfilesState};
+use crate::profiles::{InterfaceProfiles, ProfilesState, RibbonSetup};
 use crate::session::Session;
 use crate::training_ui::TrainingUi;
 use crate::ui_theme::{Appearance, Density, ThemeMode, UiScale};
@@ -47,6 +47,8 @@ const KEY_FOCUS: &str = "focus_mode";
 const KEY_DOCK_LAYOUT: &str = "dock_layout";
 /// Perfis de interface (C4, UI-09): o ativo e os salvos pelo usuário.
 const KEY_INTERFACE_PROFILES: &str = "interface_profiles";
+/// Estado do Ribbon (modo, recolhido, aba ativa, Barra de Acesso Rápido), por Perfil local.
+const KEY_RIBBON: &str = "ribbon_state";
 /// Mapa de controles (US-28): ação -> atalhos, por perfil de usuário.
 const KEY_CONTROLS: &str = "controls";
 /// Efeitos opcionais da qualidade Ultra (US-30): ligados ou desligados.
@@ -139,6 +141,7 @@ pub struct Persistence {
     saved_layout: Option<Value>,
     /// Últimos Perfis de interface gravados (ou carregados).
     saved_profiles: Option<Value>,
+    saved_ribbon: Option<Value>,
     /// Último mapa de controles gravado (ou carregado).
     saved_controls: Option<Value>,
     failing: bool,
@@ -202,6 +205,7 @@ impl Persistence {
             saved: None,
             saved_layout: None,
             saved_profiles: None,
+            saved_ribbon: None,
             saved_controls: None,
             failing: false,
             scoresheet_failing: false,
@@ -573,6 +577,28 @@ impl Persistence {
             .set_pref(self.profile, KEY_INTERFACE_PROFILES, &json)
         {
             Ok(()) => self.saved_profiles = Some(json),
+            Err(err) => self.report(&err),
+        }
+    }
+
+    /// Estado do Ribbon gravado; ausente ou ilegível volta ao padrão (`None`).
+    pub fn load_ribbon(&mut self) -> Option<RibbonSetup> {
+        let stored = self.store.get_pref(self.profile, KEY_RIBBON).ok().flatten();
+        let setup = stored.and_then(|v| serde_json::from_value::<RibbonSetup>(v).ok());
+        self.saved_ribbon = setup.as_ref().and_then(|s| serde_json::to_value(s).ok());
+        setup
+    }
+
+    /// Grava o estado do Ribbon se mudou desde a última chamada.
+    pub fn sync_ribbon(&mut self, setup: &RibbonSetup) {
+        let Ok(json) = serde_json::to_value(setup) else {
+            return;
+        };
+        if self.saved_ribbon.as_ref() == Some(&json) {
+            return;
+        }
+        match self.store.set_pref(self.profile, KEY_RIBBON, &json) {
+            Ok(()) => self.saved_ribbon = Some(json),
             Err(err) => self.report(&err),
         }
     }
@@ -1035,6 +1061,27 @@ fn persist_profiles(profiles: Res<InterfaceProfiles>, handle: Res<PersistenceHan
     }
 }
 
+/// Lê o estado do Ribbon gravado (a construção do `RibbonPlugin` usa isto).
+pub(crate) fn load_ribbon_setup(world: &World) -> Option<RibbonSetup> {
+    let handle = world.get_resource::<PersistenceHandle>()?;
+    handle.0.lock().ok()?.load_ribbon()
+}
+
+/// Grava o estado do Ribbon quando muda.
+pub(crate) fn persist_ribbon(
+    ribbon: Res<crate::ribbon::RibbonState>,
+    handle: Option<Res<PersistenceHandle>>,
+) {
+    if !ribbon.is_changed() {
+        return;
+    }
+    if let Some(handle) = handle
+        && let Ok(mut p) = handle.0.lock()
+    {
+        p.sync_ribbon(&ribbon.setup());
+    }
+}
+
 /// Grava o mapa de controles quando muda.
 fn persist_controls(controls: Res<crate::controls::Controls>, handle: Res<PersistenceHandle>) {
     if let Ok(mut p) = handle.0.lock() {
@@ -1053,6 +1100,7 @@ fn close_on_exit(
     dock: Res<Dock>,
     profiles: Res<InterfaceProfiles>,
     controls: Res<crate::controls::Controls>,
+    ribbon: Option<Res<crate::ribbon::RibbonState>>,
 ) {
     let closing = close_requested.read().count() > 0 || exits.read().count() > 0;
     if closing && let Ok(mut p) = handle.0.lock() {
@@ -1062,6 +1110,9 @@ fn close_on_exit(
         p.sync_layout(&dock.layout);
         p.sync_profiles(&profiles.state);
         p.sync_controls(controls.map());
+        if let Some(ribbon) = ribbon {
+            p.sync_ribbon(&ribbon.setup());
+        }
         p.close();
     }
 }
@@ -1437,6 +1488,7 @@ mod tests {
             dock: layout.clone(),
             aids: AidSettings::physical(),
             focus: false,
+            ribbon: None,
         };
         profiles
             .save_user("Flutuante", InterfaceProfile::capture(&state, None))
@@ -1449,6 +1501,39 @@ mod tests {
         assert_eq!(back.floating[0].pos, [111.0, 77.0]);
         assert_eq!(back.floating[0].size, [333.0, 222.0]);
         assert_eq!(p2.load_profiles(), profiles);
+    }
+
+    /// #166: o estado do Ribbon (modo, recolhido, aba, Barra de Acesso Rápido) sobrevive ao
+    /// reabrir o app; sem nada gravado ou com lixo, volta ao padrão.
+    #[test]
+    fn ribbon_state_round_trips_through_sqlite() {
+        use crate::profiles::{RibbonLayout, RibbonSetup};
+        let mut p = new_persistence();
+        assert_eq!(p.load_ribbon(), None, "banco novo");
+        let setup = RibbonSetup {
+            layout: RibbonLayout::Simple,
+            collapsed: true,
+            active_tab: Some("training".into()),
+            quick_access: vec!["undo".into(), "open-palette".into()],
+        };
+        p.sync_ribbon(&setup);
+        let mut p2 = Persistence::new(p.into_store());
+        assert_eq!(p2.load_ribbon(), Some(setup));
+        // Um estado gravado por uma versão sem campos novos ainda carrega.
+        p2.store
+            .set_pref(
+                p2.profile,
+                KEY_RIBBON,
+                &serde_json::json!({ "collapsed": true }),
+            )
+            .unwrap();
+        let loaded = p2.load_ribbon().unwrap();
+        assert!(loaded.collapsed);
+        assert_eq!(loaded.quick_access, RibbonSetup::default().quick_access);
+        p2.store
+            .set_pref(p2.profile, KEY_RIBBON, &serde_json::json!("lixo"))
+            .unwrap();
+        assert_eq!(p2.load_ribbon(), None);
     }
 
     /// UI-09: o perfil ativo e os perfis do usuário persistem e voltam ao reabrir.
@@ -1471,6 +1556,7 @@ mod tests {
             },
             aids: AidSettings::physical(),
             focus: true,
+            ribbon: None,
         };
         profiles
             .save_user("Aula", InterfaceProfile::capture(&state, Some("Top")))

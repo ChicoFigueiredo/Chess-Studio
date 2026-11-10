@@ -22,6 +22,28 @@ impl RibbonView {
         }
     }
 
+    /// Nome estável da aba, gravado no Perfil de interface (nunca muda).
+    pub fn id(self) -> &'static str {
+        match self {
+            RibbonView::Tab(RibbonTab::File) => "file",
+            RibbonView::Tab(RibbonTab::Home) => "home",
+            RibbonView::Tab(RibbonTab::Analysis) => "analysis",
+            RibbonView::Tab(RibbonTab::Library) => "library",
+            RibbonView::Tab(RibbonTab::Training) => "training",
+            RibbonView::Tab(RibbonTab::View) => "view",
+            RibbonView::Scoresheet => "scoresheet",
+        }
+    }
+
+    /// Lê o nome gravado; desconhecido vira `None`.
+    pub fn from_id(id: &str) -> Option<Self> {
+        RibbonTab::ALL
+            .into_iter()
+            .map(RibbonView::Tab)
+            .chain([RibbonView::Scoresheet])
+            .find(|v| v.id() == id)
+    }
+
     pub fn is_file(self) -> bool {
         self == RibbonView::Tab(RibbonTab::File)
     }
