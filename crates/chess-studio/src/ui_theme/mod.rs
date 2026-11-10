@@ -13,7 +13,7 @@ mod widgets;
 
 pub use appearance::{Appearance, Density, ThemeMode, UiScale, resolve_theme};
 pub use gallery::GalleryMode;
-pub use tokens::{ThemeKind, Tokens};
+pub use tokens::{Palette, ThemeKind, Tokens};
 // Os widgets são a API do tema para os próximos tickets (Ribbon, Opções): o app ainda não usa todos.
 #[allow(unused_imports)]
 pub use widgets::*;

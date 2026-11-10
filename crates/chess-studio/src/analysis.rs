@@ -449,6 +449,14 @@ impl Analysis {
         self.default_engine.is_some() || self.engine.is_some()
     }
 
+    /// Nome da Engine para a barra de status: o que ela anunciou ou o nome do arquivo.
+    pub fn engine_label(&self) -> Option<String> {
+        self.engine_name.clone().or_else(|| {
+            let path = self.engine.as_ref().or(self.default_engine.as_ref())?;
+            Some(path.file_stem()?.to_string_lossy().into_owned())
+        })
+    }
+
     /// Há uma Engine de análise em execução (processo vivo ou subindo)?
     pub fn has_engine(&self) -> bool {
         self.controller.is_some()
