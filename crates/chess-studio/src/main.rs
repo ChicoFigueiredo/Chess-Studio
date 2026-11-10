@@ -65,6 +65,7 @@ mod screen_layouts;
 mod session;
 mod status_bar;
 mod study;
+mod table;
 mod training_ui;
 mod ui;
 mod ui_theme;
@@ -234,6 +235,7 @@ fn main() {
     app.add_plugins((hud::HudPlugin, hud_draw::HudDrawPlugin));
     app.add_plugins(board2d_panel::Board2dPanelPlugin);
     app.add_plugins(coordinates::CoordinatesPlugin);
+    app.add_plugins(table::TablePlugin);
     app.add_plugins(eval_bar::EvalBarPlugin);
     app.add_plugins(end_game::EndGamePlugin);
     app.add_plugins(training_ui::TrainingPlugin);

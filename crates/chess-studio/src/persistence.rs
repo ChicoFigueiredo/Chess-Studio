@@ -20,6 +20,7 @@ use crate::profiles::{
     FIRST_RUN_PROFILE, InterfaceProfiles, InterfaceState, ProfileKey, ProfilesState, RibbonSetup,
 };
 use crate::session::Session;
+use crate::table::{TableCaptured, TableClock};
 use crate::training_ui::TrainingUi;
 use crate::ui_theme::{Appearance, Density, ThemeMode, UiScale};
 use bevy::prelude::*;
@@ -64,6 +65,9 @@ const KEY_ULTRA_EFFECTS: &str = "ultra_effects";
 const KEY_COORDINATES: &str = "board_coordinates";
 /// Realce ao passar o mouse (C15): afordância de interface, fora dos Auxílios.
 const KEY_HOVER_HIGHLIGHT: &str = "hover_highlight";
+/// Relógio 3D e Peças tomadas 3D sobre a mesa (aba Tabuleiro, #194).
+const KEY_TABLE_CLOCK: &str = "table_clock";
+const KEY_TABLE_CAPTURED: &str = "table_captured";
 /// Aparência da interface (DS-1): Tema, Densidade e Escala, do Perfil local.
 const KEY_UI_THEME: &str = "ui_theme";
 const KEY_UI_DENSITY: &str = "ui_density";
@@ -91,6 +95,10 @@ pub struct SavedPrefs {
     pub coordinates: BoardCoordinates,
     /// Realce da peça sob o cursor (ligado por padrão; não é Auxílio).
     pub hover_highlight: HoverHighlight,
+    /// Relógio 3D sobre a mesa.
+    pub table_clock: TableClock,
+    /// Peças tomadas em 3D ao lado do tabuleiro.
+    pub table_captured: TableCaptured,
     /// Tema, Densidade e Escala da interface.
     pub appearance: Appearance,
 }
@@ -109,6 +117,8 @@ impl Default for SavedPrefs {
             ultra_effects: UltraEffects::default(),
             coordinates: BoardCoordinates::default(),
             hover_highlight: HoverHighlight::default(),
+            table_clock: TableClock::default(),
+            table_captured: TableCaptured::default(),
             appearance: Appearance::default(),
         }
     }
@@ -579,6 +589,16 @@ impl Persistence {
                     .and_then(|v| v.as_bool())
                     .unwrap_or(defaults.hover_highlight.0),
             ),
+            table_clock: TableClock(
+                get(KEY_TABLE_CLOCK)
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(defaults.table_clock.0),
+            ),
+            table_captured: TableCaptured(
+                get(KEY_TABLE_CAPTURED)
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(defaults.table_captured.0),
+            ),
             appearance: Appearance {
                 theme: from_debug_id(&ThemeMode::ALL, get(KEY_UI_THEME))
                     .unwrap_or(defaults.appearance.theme),
@@ -902,6 +922,12 @@ impl Persistence {
         if before.hover_highlight != now.hover_highlight {
             writes.push((KEY_HOVER_HIGHLIGHT, json!(now.hover_highlight.0)));
         }
+        if before.table_clock != now.table_clock {
+            writes.push((KEY_TABLE_CLOCK, json!(now.table_clock.0)));
+        }
+        if before.table_captured != now.table_captured {
+            writes.push((KEY_TABLE_CAPTURED, json!(now.table_captured.0)));
+        }
         if before.appearance.theme != now.appearance.theme {
             writes.push((KEY_UI_THEME, debug_id(&now.appearance.theme)));
         }
@@ -1013,6 +1039,8 @@ impl Plugin for PersistencePlugin {
             .insert_resource(prefs.ultra_effects)
             .insert_resource(prefs.coordinates)
             .insert_resource(prefs.hover_highlight)
+            .insert_resource(prefs.table_clock)
+            .insert_resource(prefs.table_captured)
             .insert_resource(prefs.appearance)
             .insert_resource(crate::controls::Controls::with_map(controls))
             .insert_resource(local_profiles)
@@ -1077,6 +1105,8 @@ fn persist_prefs(
     ultra_effects: Res<UltraEffects>,
     coordinates: Res<BoardCoordinates>,
     hover_highlight: Res<HoverHighlight>,
+    table_clock: Res<TableClock>,
+    table_captured: Res<TableCaptured>,
     appearance: Res<Appearance>,
     engine_ui: Res<EngineUi>,
     view: Res<ViewState>,
@@ -1095,6 +1125,8 @@ fn persist_prefs(
             ultra_effects: *ultra_effects,
             coordinates: *coordinates,
             hover_highlight: *hover_highlight,
+            table_clock: *table_clock,
+            table_captured: *table_captured,
             appearance: *appearance,
         });
     }
@@ -1543,6 +1575,8 @@ mod tests {
             ultra_effects: UltraEffects(false),
             coordinates: BoardCoordinates(false),
             hover_highlight: HoverHighlight(false),
+            table_clock: TableClock(false),
+            table_captured: TableCaptured(false),
             appearance: Appearance {
                 theme: ThemeMode::Light,
                 density: Density::Compact,
@@ -1569,6 +1603,29 @@ mod tests {
             .set_pref(p2.profile, KEY_COORDINATES, &json!("lixo"))
             .unwrap();
         assert!(p2.load_prefs().coordinates.0);
+    }
+
+    /// #194: Relógio e Peças tomadas ligados por padrão; o que o usuário desliga volta ao reabrir.
+    #[test]
+    fn table_options_default_on_and_persist_per_local_profile() {
+        let mut p = new_persistence();
+        let loaded = p.load_prefs();
+        assert!(loaded.table_clock.0 && loaded.table_captured.0);
+        p.sync_prefs(SavedPrefs {
+            table_clock: TableClock(false),
+            ..SavedPrefs::default()
+        });
+        let p2 = Persistence::new(p.into_store());
+        let loaded = p2.load_prefs();
+        assert!(!loaded.table_clock.0, "o relógio desligado persiste");
+        assert!(loaded.table_captured.0, "a outra opção não muda");
+        p2.store
+            .set_pref(p2.profile, KEY_TABLE_CAPTURED, &json!("lixo"))
+            .unwrap();
+        assert!(
+            p2.load_prefs().table_captured.0,
+            "valor ilegível usa o padrão"
+        );
     }
 
     /// DS-1: Tema, Densidade e Escala voltam ao reabrir; valor ilegível ou fora da faixa é corrigido.

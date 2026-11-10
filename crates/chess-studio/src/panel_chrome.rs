@@ -217,9 +217,30 @@ pub fn header_tools(
     }
 }
 
+/// Lado do botão X da aba, em pontos.
+const CLOSE_SIZE: f32 = 16.0;
+
+/// O X da aba aparece na aba ativa e ao apontar para a aba (como no VS Code); a aba em
+/// arrasto não mostra nada.
+pub fn close_visible(active: bool, hovered: bool, dragging: bool) -> bool {
+    !dragging && (active || hovered)
+}
+
+/// Retângulo do X dentro da aba: encostado à direita, centralizado na altura.
+pub fn close_rect(tab: egui::Rect) -> egui::Rect {
+    let pad = 4.0;
+    egui::Rect::from_center_size(
+        egui::pos2(tab.right() - pad - CLOSE_SIZE * 0.5, tab.center().y),
+        egui::vec2(CLOSE_SIZE, CLOSE_SIZE),
+    )
+}
+
 /// Aba de Painel (PanelTabs): ativa em `surface-1` com traço `accent` de 2px no alto;
-/// inativas em `ink-muted`; ícone + nome. `hidden` deixa só o vão (aba em arrasto).
-pub fn tab_button(
+/// inativas em `ink-muted`; ícone + nome. `hidden` deixa só o vão (aba em arrasto). Com
+/// `close_tip` ganha o botão X de fechar e devolve se ele foi clicado (o chamador pede
+/// `DockAction::Close`). O vão do X é sempre reservado: a largura não pula ao apontar.
+#[allow(clippy::too_many_arguments)]
+pub fn tab_button_closable(
     ui: &mut egui::Ui,
     id: egui::Id,
     glyph: Option<&str>,
@@ -227,7 +248,8 @@ pub fn tab_button(
     active: bool,
     hidden: bool,
     sense: egui::Sense,
-) -> egui::Response {
+    close_tip: Option<&str>,
+) -> (egui::Response, bool) {
     let p = palette_of(ui.visuals());
     let size = Tokens::embedded().text("body").map_or(14.0, |t| t.size);
     let font = if active {
@@ -238,8 +260,13 @@ pub fn tab_button(
     let job = crate::ui_theme::icon_job(ui.ctx(), glyph, title, font, egui::Color32::PLACEHOLDER);
     let galley = ui.painter().layout_job(job);
     let pad = token("space-2", 8.0);
+    let close_slot = if close_tip.is_some() {
+        CLOSE_SIZE + 4.0
+    } else {
+        0.0
+    };
     let (_, rect) = ui.allocate_space(egui::vec2(
-        galley.size().x + 2.0 * pad,
+        galley.size().x + 2.0 * pad + close_slot,
         ui.available_height(),
     ));
     let response = ui
@@ -253,8 +280,17 @@ pub fn tab_button(
             galley.text(),
         )
     });
+    // O X é criado depois da aba: o egui dá o clique ao widget mais novo sob o ponteiro.
+    let mut closed = false;
+    let mut close_hovered = false;
+    let close_response = close_tip.filter(|_| !hidden).map(|tip| {
+        let r = ui.interact(close_rect(rect), id.with("close"), egui::Sense::click());
+        close_hovered = r.hovered();
+        closed = r.clicked();
+        r.on_hover_text(tip)
+    });
     if ui.is_rect_visible(rect) && !hidden {
-        let hovered = response.hovered();
+        let hovered = response.hovered() || close_hovered;
         if active {
             ui.painter().rect_filled(rect, 0.0, p.surface_1);
             ui.painter().rect_filled(
@@ -271,11 +307,30 @@ pub fn tab_button(
             p.ink_muted
         };
         let at = egui::Align2::LEFT_CENTER
-            .align_size_within_rect(galley.size(), rect.shrink2(egui::vec2(pad, 0.0)))
+            .align_size_within_rect(
+                galley.size(),
+                egui::Rect::from_min_max(
+                    rect.min + egui::vec2(pad, 0.0),
+                    rect.max - egui::vec2(pad + close_slot, 0.0),
+                ),
+            )
             .min;
         ui.painter().galley(at, galley, ink);
+        if close_response.is_some() && close_visible(active, hovered, false) {
+            let x = close_rect(rect);
+            if close_hovered {
+                ui.painter().rect_filled(x, radius("radius-s"), p.surface_3);
+            }
+            ui.painter().text(
+                x.center(),
+                egui::Align2::CENTER_CENTER,
+                icon::X,
+                icon_font(ui.ctx(), 12.0),
+                if close_hovered { p.ink } else { p.ink_muted },
+            );
+        }
     }
-    response
+    (response, closed)
 }
 
 /// Cabeçalho de um Painel flutuante: a mesma aba (ativa) e as mesmas ferramentas, com
@@ -314,7 +369,7 @@ pub fn floating_header(
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     left.spacing_mut().item_spacing.x = 0.0;
-    let tab = tab_button(
+    let (tab, closed) = tab_button_closable(
         &mut left,
         egui::Id::new(("chess-studio-float-tab", &id.0)),
         Some(panel_icon(&id.0)),
@@ -322,7 +377,11 @@ pub fn floating_header(
         true,
         false,
         egui::Sense::click(),
+        Some(&i18n.t("dock-close")),
     );
+    if closed {
+        actions.push(DockAction::Close(id.clone()));
+    }
     if tab.double_clicked() {
         actions.push(DockAction::DockBack(id.clone()));
     }
@@ -472,5 +531,86 @@ mod tests {
         icons.dedup();
         assert_eq!(icons.len(), ids.len());
         assert_ne!(panel_icon("Outro"), "");
+    }
+
+    #[test]
+    fn the_close_x_shows_on_the_active_tab_and_on_hover_only() {
+        assert!(close_visible(true, false, false));
+        assert!(close_visible(false, true, false));
+        assert!(!close_visible(false, false, false));
+        assert!(!close_visible(true, true, true), "aba em arrasto");
+    }
+
+    #[test]
+    fn the_close_x_sits_inside_the_right_end_of_the_tab() {
+        let tab = egui::Rect::from_min_size(egui::pos2(10.0, 0.0), egui::vec2(120.0, 32.0));
+        let x = close_rect(tab);
+        assert!(tab.contains_rect(x));
+        assert!(x.center().x > tab.center().x);
+        assert_eq!(x.center().y, tab.center().y);
+    }
+
+    /// Desenha uma aba com X num quadro com o ponteiro em `at`; devolve (retângulo, fechou).
+    fn tab_frame(
+        ctx: &egui::Context,
+        at: Option<egui::Pos2>,
+        click: Option<bool>,
+        active: bool,
+    ) -> (egui::Rect, bool) {
+        let mut events = vec![];
+        if let Some(pos) = at {
+            events.push(egui::Event::PointerMoved(pos));
+            if let Some(pressed) = click {
+                events.push(egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                });
+            }
+        }
+        let input = egui::RawInput {
+            screen_rect: Some(screen()),
+            events,
+            ..Default::default()
+        };
+        let mut out = (egui::Rect::NOTHING, false);
+        let mut full = ctx.run_ui(input, |ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
+                let (r, closed) = tab_button_closable(
+                    ui,
+                    egui::Id::new("tab"),
+                    None,
+                    "Estudo",
+                    active,
+                    false,
+                    egui::Sense::click_and_drag(),
+                    Some("Fechar"),
+                );
+                out = (r.rect, closed);
+            });
+        });
+        full.textures_delta.clear();
+        out
+    }
+
+    #[test]
+    fn clicking_the_x_reports_a_close_and_clicking_the_tab_does_not() {
+        let ctx = egui::Context::default();
+        tab_frame(&ctx, None, None, true);
+        let (rect, _) = tab_frame(&ctx, None, None, true);
+        let x = close_rect(rect).center();
+        tab_frame(&ctx, Some(x), None, true);
+        tab_frame(&ctx, Some(x), Some(true), true);
+        let (_, closed) = tab_frame(&ctx, Some(x), Some(false), true);
+        assert!(closed, "o X fecha");
+        let ctx = egui::Context::default();
+        tab_frame(&ctx, None, None, true);
+        let (rect, _) = tab_frame(&ctx, None, None, true);
+        let body = egui::pos2(rect.left() + 10.0, rect.center().y);
+        tab_frame(&ctx, Some(body), None, true);
+        tab_frame(&ctx, Some(body), Some(true), true);
+        let (_, closed) = tab_frame(&ctx, Some(body), Some(false), true);
+        assert!(!closed, "o corpo da aba não fecha");
     }
 }
