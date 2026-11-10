@@ -60,3 +60,4 @@ dock-float = Flutuar
 dock-close = Fechar Painel
 dock-more = Mais opções do Painel
 dock-drop-here = Solte aqui para encaixar
+panelstripe-detached = Em janela do sistema; clique para trazer a aba à frente
