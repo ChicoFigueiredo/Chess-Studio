@@ -77,9 +77,18 @@ pub fn bar_rect(area: egui::Rect, width: f32, label_h: f32) -> egui::Rect {
     let bar_h = (total - label_h).max(32.0);
     let top = area.center().y - total / 2.0;
     egui::Rect::from_min_size(
-        egui::pos2(area.min.x + 4.0, top.max(area.min.y)),
+        egui::pos2(area.min.x + 12.0, top.max(area.min.y)),
         egui::vec2(width, bar_h),
     )
+}
+
+/// Só nas capturas (`--eval-demo 0.4`): avaliação falsa, em peões, que força a barra a
+/// aparecer sem Engine consentida. Nunca existe fora do modo de captura.
+pub fn demo_score(arg: &str) -> Option<Score> {
+    let pawns: f32 = arg.trim().replace(',', ".").parse().ok()?;
+    pawns
+        .is_finite()
+        .then(|| Score::Cp((pawns * 100.0).round().clamp(-100_000.0, 100_000.0) as i32))
 }
 
 pub struct EvalBarPlugin;
@@ -108,20 +117,28 @@ fn eval_bar_ui(
     rig: Option<Res<CameraRig>>,
     presentation: Option<Res<Presentation>>,
     view: Option<Res<crate::focus::ViewState>>,
+    capture: Option<Res<crate::capture::CaptureMode>>,
+    mut demo: Local<Option<Option<Score>>>,
     mut cache: Local<Cached>,
 ) -> Result {
+    let forced = *demo.get_or_insert_with(|| {
+        capture
+            .and_then(|_| crate::capture::option_value("--eval-demo"))
+            .and_then(|v| demo_score(&v))
+    });
     let locked = matches!(analysis.status(), Status::Locked(_));
-    if !is_visible(analysis.is_enabled(), analysis.engine_available(), locked) {
+    if forced.is_none() && !is_visible(analysis.is_enabled(), analysis.engine_available(), locked) {
         return Ok(());
     }
     if view.is_some_and(|v| v.focus) {
         return Ok(());
     }
-    let Some(score) = analysis
-        .shown()
-        .and_then(|s| s.update.lines.first())
-        .map(|l| l.score)
-    else {
+    let Some(score) = forced.or_else(|| {
+        analysis
+            .shown()
+            .and_then(|s| s.update.lines.first())
+            .map(|l| l.score)
+    }) else {
         return Ok(());
     };
     let Some(area) = dock.board_area() else {
@@ -249,6 +266,14 @@ mod tests {
     }
 
     #[test]
+    fn the_capture_demo_value_is_read_in_pawns() {
+        assert_eq!(demo_score("0.4"), Some(Score::Cp(40)));
+        assert_eq!(demo_score("-3,1"), Some(Score::Cp(-310)));
+        assert_eq!(demo_score("abc"), None);
+        assert_eq!(demo_score("inf"), None);
+    }
+
+    #[test]
     fn the_bar_flips_with_the_board() {
         let (h, bottom) = white_extent(0.75, 200.0, Orientation::WhiteBottom);
         assert_eq!((h, bottom), (150.0, true));
@@ -260,7 +285,7 @@ mod tests {
     fn the_bar_hugs_the_left_edge_inside_the_board_area() {
         let area = egui::Rect::from_min_max(egui::pos2(10.0, 50.0), egui::pos2(810.0, 650.0));
         let bar = bar_rect(area, 16.0, 20.0);
-        assert_eq!(bar.min.x, 14.0);
+        assert_eq!(bar.min.x, 22.0);
         assert_eq!(bar.width(), 16.0);
         assert!(area.contains_rect(bar));
     }
