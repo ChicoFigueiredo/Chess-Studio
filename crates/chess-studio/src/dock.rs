@@ -22,7 +22,9 @@
 
 use crate::capture::CaptureMode;
 use crate::i18n::I18n;
+use crate::panel_chrome::{self, header_tools, palette_of, panel_icon, panel_menu, token};
 use crate::session::Session;
+use crate::ui_theme::{ThemeKind, Tokens};
 use bevy::prelude::*;
 use bevy_egui::{EguiContext, EguiPrimaryContextPass, PrimaryEguiContext, egui};
 use egui_tiles::{
@@ -584,6 +586,8 @@ pub struct Dock {
     blocked: Option<egui::Rect>,
     /// Retângulos das janelas flutuantes no último quadro: também não são tabuleiro.
     floating_rects: Vec<egui::Rect>,
+    /// Janelas flutuantes cuja posição já foi conferida contra a tela ao abrir.
+    float_checked: std::collections::HashSet<String>,
 }
 
 impl Default for Dock {
@@ -604,6 +608,7 @@ impl Dock {
             overlay_open: false,
             blocked: None,
             floating_rects: Vec::new(),
+            float_checked: std::collections::HashSet::new(),
         }
     }
 
@@ -625,6 +630,7 @@ impl Dock {
     pub fn set_layout(&mut self, layout: DockLayout) {
         self.layout = layout;
         self.generation = self.generation.wrapping_add(1);
+        self.float_checked.clear();
     }
 
     /// Deslocamento horizontal para âncoras à direita (negativo = para dentro da tela).
@@ -641,6 +647,11 @@ impl Dock {
         self.board_rect.is_none_or(|r| r.contains(at))
             && !self.blocked.is_some_and(|b| b.contains(at))
             && !self.floating_rects.iter().any(|r| r.contains(at))
+    }
+
+    /// Área livre do tabuleiro no último quadro (pontos do egui), se já conhecida.
+    pub fn board_area(&self) -> Option<egui::Rect> {
+        self.board_rect
     }
 
     /// Tamanho da área do tabuleiro em pontos; sem layout conhecido, a janela toda.
@@ -684,9 +695,15 @@ pub fn board_viewport(
 /// Pedido feito durante o desenho (menu da aba, botão da janela) e aplicado depois: a
 /// árvore não pode mudar enquanto o `egui_tiles` a percorre.
 #[derive(Clone, Debug, PartialEq)]
-enum DockAction {
+pub(crate) enum DockAction {
     Detach(PanelId),
     DockBack(PanelId),
+    /// Duplo clique na aba: encaixado vira flutuante e flutuante volta ao dock.
+    Toggle(PanelId),
+    /// Aba solta fora de todo guia: o Painel flutua com o cabeçalho sob o ponteiro.
+    FloatAt(PanelId, egui::Pos2),
+    /// "Fechar Painel": oculta, como desmarcar na lista "Painéis".
+    Close(PanelId),
 }
 
 struct DockBehavior<'a> {
@@ -738,7 +755,7 @@ impl Behavior<PanelId> for DockBehavior<'_> {
         UiResponse::None
     }
 
-    /// Menu de contexto da aba: destacar o painel numa janela flutuante.
+    /// Menu de contexto da aba: o mesmo do "⋯".
     fn on_tab_button(
         &mut self,
         tiles: &mut Tiles<PanelId>,
@@ -747,15 +764,86 @@ impl Behavior<PanelId> for DockBehavior<'_> {
     ) -> egui::Response {
         if let Some(Tile::Pane(pane)) = tiles.get(tile_id) {
             let pane = pane.clone();
-            let label = self.i18n.t("dock-detach");
             button_response.context_menu(|ui| {
-                if ui.button(label).clicked() {
-                    self.actions.push(DockAction::Detach(pane));
-                    ui.close();
-                }
+                panel_menu(ui, self.i18n, &mut self.actions, &pane, false);
             });
         }
         button_response
+    }
+
+    /// Aba conforme PanelTabs: ativa em `surface-1` com traço `accent` de 2px no alto;
+    /// inativas em `ink-muted`; ícone + nome. Duplo clique alterna encaixado/flutuante.
+    fn tab_ui(
+        &mut self,
+        tiles: &mut Tiles<PanelId>,
+        ui: &mut egui::Ui,
+        id: egui::Id,
+        tile_id: TileId,
+        state: &egui_tiles::TabState,
+    ) -> egui::Response {
+        let pane = match tiles.get(tile_id) {
+            Some(Tile::Pane(pane)) => Some(pane.clone()),
+            _ => None,
+        };
+        let title = self.tab_title_for_tile(tiles, tile_id).text().to_owned();
+        let response = panel_chrome::tab_button(
+            ui,
+            id,
+            pane.as_ref().map(|p| panel_icon(&p.0)),
+            &title,
+            state.active,
+            state.is_being_dragged,
+            egui::Sense::click_and_drag(),
+        );
+        if response.double_clicked()
+            && let Some(pane) = pane
+        {
+            self.actions.push(DockAction::Toggle(pane));
+        }
+        self.on_tab_button(tiles, tile_id, response)
+    }
+
+    /// Ferramentas do grupo, sobre a aba ativa.
+    fn top_bar_right_ui(
+        &mut self,
+        tiles: &Tiles<PanelId>,
+        ui: &mut egui::Ui,
+        _tile_id: TileId,
+        tabs: &egui_tiles::Tabs,
+        _scroll_offset: &mut f32,
+    ) {
+        let active = tabs.active.and_then(|t| match tiles.get(t) {
+            Some(Tile::Pane(pane)) => Some(pane.clone()),
+            _ => None,
+        });
+        if let Some(active) = active {
+            ui.add_space(4.0);
+            header_tools(ui, self.i18n, &mut self.actions, &active, false);
+        }
+    }
+
+    fn tab_bar_height(&self, _style: &egui::Style) -> f32 {
+        token("panel-header-h", 32.0)
+    }
+
+    fn tab_bar_color(&self, visuals: &egui::Visuals) -> egui::Color32 {
+        palette_of(visuals).surface_2
+    }
+
+    fn tab_bar_hline_stroke(&self, visuals: &egui::Visuals) -> egui::Stroke {
+        egui::Stroke::new(1.0, palette_of(visuals).border)
+    }
+
+    /// Guia de encaixe (DockGuide): o `egui_tiles` calcula acima, abaixo, lados e centro
+    /// (como aba); a área de destino vai em `accent-subtle` com borda tracejada `accent`.
+    fn paint_drag_preview(
+        &self,
+        visuals: &egui::Visuals,
+        painter: &egui::Painter,
+        _parent_rect: Option<egui::Rect>,
+        preview_rect: egui::Rect,
+    ) {
+        panel_chrome::paint_guide(painter, palette_of(visuals), preview_rect);
     }
 
     fn tab_title_for_pane(&mut self, pane: &PanelId) -> egui::WidgetText {
@@ -831,6 +919,14 @@ fn draw_dock(
     let rect = egui::Rect::from_min_max(egui::pos2(screen.max.x - width, screen.min.y), screen.max);
     let id = egui::Id::new(("chess-studio-dock", generation));
     let mut new_width = width;
+    // Aba em arrasto (só Painéis): se for solta fora do dock, não há guia e o Painel flutua.
+    let dragged = layout
+        .tree
+        .dragged_id(ctx)
+        .and_then(|t| match layout.tree.tiles.get(t) {
+            Some(Tile::Pane(pane)) => Some(pane.clone()),
+            _ => None,
+        });
     egui::Area::new(id)
         .order(if overlay {
             egui::Order::Foreground
@@ -849,6 +945,33 @@ fn draw_dock(
                 ui.add_space(4.0);
                 layout.tree.ui(behavior, ui);
             });
+            if let Some(pane) = dragged {
+                let pointer = ctx.input(|i| i.pointer.latest_pos());
+                if panel_chrome::dropped_outside(pointer, rect)
+                    && let Some(pointer) = pointer
+                {
+                    let at = panel_chrome::float_pos_at_drop(pointer, DEFAULT_FLOAT_SIZE, screen);
+                    if ctx.input(|i| i.pointer.any_released()) {
+                        behavior
+                            .actions
+                            .push(DockAction::FloatAt(pane, egui::pos2(at[0], at[1])));
+                    } else {
+                        let painter = ctx.layer_painter(egui::LayerId::new(
+                            egui::Order::Foreground,
+                            egui::Id::new("chess-studio-float-guide"),
+                        ));
+                        let ghost = egui::Rect::from_min_size(
+                            egui::pos2(at[0], at[1]),
+                            egui::vec2(DEFAULT_FLOAT_SIZE[0], DEFAULT_FLOAT_SIZE[1]),
+                        );
+                        panel_chrome::paint_guide(
+                            &painter,
+                            palette_of(&ctx.global_style().visuals),
+                            ghost,
+                        );
+                    }
+                }
+            }
             let handle = egui::Rect::from_min_size(rect.min, egui::vec2(6.0, rect.height()));
             let response = ui
                 .interact(handle, id.with("resize"), egui::Sense::drag())
@@ -864,36 +987,59 @@ fn draw_dock(
     new_width
 }
 
-/// Desenha os painéis destacados como janelas do egui dentro da janela do app. Posição e
-/// tamanho vão para o layout (por Perfil de interface); "x" oculta o painel e o botão
-/// "Devolver ao dock" pede a volta ao grupo de origem. Devolve os retângulos ocupados.
+/// Desenha os painéis flutuantes como janelas do egui dentro da janela do app (FloatingPanel):
+/// contorno `border-strong`, `radius-l` e `shadow-floating`, com o cabeçalho de PanelTabs.
+/// Posição e tamanho vão para o layout (por Perfil de interface); uma posição fora da tela
+/// volta para dentro ao abrir. Devolve os retângulos ocupados.
 fn draw_floating(
     ctx: &egui::Context,
     generation: u32,
     layout: &mut DockLayout,
     behavior: &mut DockBehavior<'_>,
+    checked: &mut std::collections::HashSet<String>,
 ) -> Vec<egui::Rect> {
+    let screen = ctx.viewport_rect();
+    let visuals = ctx.global_style().visuals.clone();
+    let p = palette_of(&visuals);
+    let theme = ThemeKind::from_dark_mode(visuals.dark_mode);
+    let shadow = Tokens::embedded()
+        .shadow("shadow-floating", theme)
+        .unwrap_or_default();
+    // Fechada e reaberta, a janela é conferida de novo.
+    checked.retain(|id| layout.floating.iter().any(|f| f.visible && f.id.0 == *id));
     let mut rects = Vec::new();
     let mut moved: Vec<(String, [f32; 2], [f32; 2])> = Vec::new();
     for panel in layout.floating.iter_mut().filter(|f| f.visible) {
-        let mut open = true;
+        if checked.insert(panel.id.0.clone()) {
+            panel.pos = panel_chrome::clamp_floating(panel.pos, panel.size, screen);
+        }
         let title = behavior.title(&panel.id);
-        let shown = egui::Window::new(title)
+        let frame = egui::Frame::NONE
+            .fill(p.surface_1)
+            .stroke(egui::Stroke::new(1.0, p.border_strong))
+            .corner_radius(panel_chrome::radius("radius-l"))
+            .shadow(shadow);
+        let shown = egui::Window::new(title.clone())
             .id(egui::Id::new(("chess-studio-float", generation, &panel.id)))
             .current_pos(egui::pos2(panel.pos[0], panel.pos[1]))
             .default_size(egui::vec2(panel.size[0], panel.size[1]))
             .min_size(egui::vec2(MIN_FLOAT_SIZE[0], MIN_FLOAT_SIZE[1]))
+            .title_bar(false)
+            .frame(frame)
             .collapsible(false)
             .resizable(true)
-            .open(&mut open)
             .show(ctx, |ui| {
-                if ui.button(behavior.i18n.t("dock-dock-back")).clicked() {
-                    behavior
-                        .actions
-                        .push(DockAction::DockBack(panel.id.clone()));
-                }
-                ui.separator();
-                behavior.panel_body(ui, &panel.id);
+                ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
+                panel_chrome::floating_header(
+                    ui,
+                    behavior.i18n,
+                    &mut behavior.actions,
+                    &panel.id,
+                    &title,
+                );
+                egui::Frame::NONE
+                    .inner_margin(egui::Margin::same(8))
+                    .show(ui, |ui| behavior.panel_body(ui, &panel.id));
             });
         if let Some(shown) = shown {
             let rect = shown.response.rect;
@@ -905,9 +1051,6 @@ fn draw_floating(
                 moved.push((panel.id.0.clone(), pos, size));
             }
         }
-        if !open {
-            panel.visible = false;
-        }
     }
     for (id, pos, size) in moved {
         layout.set_floating_rect(&id, pos, size);
@@ -916,7 +1059,7 @@ fn draw_floating(
 }
 
 /// Sistema exclusivo: os painéis recebem o `World` (ver [`PanelUi`]).
-fn dock_ui(world: &mut World) {
+pub(crate) fn dock_ui(world: &mut World) {
     let Some(ctx) = world
         .query_filtered::<&mut EguiContext, With<PrimaryEguiContext>>()
         .iter_mut(world)
@@ -1009,22 +1152,39 @@ fn dock_ui(world: &mut World) {
                     );
                     dock_left = screen.max.x - width;
                 }
-                dock.floating_rects =
-                    draw_floating(&ctx, dock.generation, &mut dock.layout, &mut behavior);
+                dock.floating_rects = draw_floating(
+                    &ctx,
+                    dock.generation,
+                    &mut dock.layout,
+                    &mut behavior,
+                    &mut dock.float_checked,
+                );
                 for action in std::mem::take(&mut behavior.actions) {
+                    let float_here = |layout: &mut DockLayout, id: &PanelId| {
+                        let n = layout.floating.len() as f32;
+                        let size = DEFAULT_FLOAT_SIZE;
+                        let pos = [
+                            (dock_left - size[0] - 16.0 - 24.0 * n).max(0.0),
+                            (72.0 + 24.0 * n).min((screen.height() - size[1]).max(0.0)),
+                        ];
+                        layout.detach(&id.0, pos, size);
+                    };
                     match action {
-                        DockAction::Detach(id) => {
-                            let n = dock.layout.floating.len() as f32;
-                            let size = DEFAULT_FLOAT_SIZE;
-                            let pos = [
-                                (dock_left - size[0] - 16.0 - 24.0 * n).max(0.0),
-                                (72.0 + 24.0 * n).min((screen.height() - size[1]).max(0.0)),
-                            ];
-                            dock.layout.detach(&id.0, pos, size);
-                        }
+                        DockAction::Detach(id) => float_here(&mut dock.layout, &id),
                         DockAction::DockBack(id) => {
                             dock.layout.dock_back(&id.0);
                         }
+                        DockAction::Toggle(id) => {
+                            if dock.layout.is_floating(&id.0) {
+                                dock.layout.dock_back(&id.0);
+                            } else {
+                                float_here(&mut dock.layout, &id);
+                            }
+                        }
+                        DockAction::FloatAt(id, at) => {
+                            dock.layout.detach(&id.0, [at.x, at.y], DEFAULT_FLOAT_SIZE);
+                        }
+                        DockAction::Close(id) => dock.layout.set_visible(&id.0, false),
                     }
                 }
                 if !show_dock {
