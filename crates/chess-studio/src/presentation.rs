@@ -626,6 +626,15 @@ mod tests {
                 setups.windows(2).all(|w| w[0] == w[1]),
                 "passo {step}: MSAA/HDR divergente entre câmeras: {setups:?}"
             );
+            // Issue #156: câmeras 2D sem tonemapping (senão, com HDR, a passada de tonemapping
+            // concorre com o `egui_pass` e a interface some em alguns quadros).
+            let mut tm = world.query_filtered::<&Tonemapping, (With<Camera2d>, With<Camera>)>();
+            let tonemaps: Vec<_> = tm.iter(world).copied().collect();
+            assert_eq!(tonemaps.len(), 2, "passo {step}: as duas câmeras 2D");
+            assert!(
+                tonemaps.iter().all(|t| *t == Tonemapping::None),
+                "passo {step}: câmeras 2D sem tonemapping: {tonemaps:?}"
+            );
             let scene_active = q.iter(world).filter(|(c, ..)| c.is_active).count();
             assert_eq!(scene_active, 2, "UI + exatamente uma câmera de cena");
         }
