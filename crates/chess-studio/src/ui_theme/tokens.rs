@@ -316,6 +316,7 @@ pub struct Palette {
     pub surface_4: Color32,
     pub border: Color32,
     pub border_strong: Color32,
+    pub control_track: Color32,
     pub ink: Color32,
     pub ink_muted: Color32,
     pub ink_disabled: Color32,
@@ -346,6 +347,7 @@ impl Palette {
             surface_4: c("surface-4")?,
             border: c("border")?,
             border_strong: c("border-strong")?,
+            control_track: c("control-track")?,
             ink: c("ink")?,
             ink_muted: c("ink-muted")?,
             ink_disabled: c("ink-disabled")?,
@@ -551,5 +553,44 @@ mod tests {
                 assert!(ratio >= 3.0, "{theme:?} focus-ring/{name}: {ratio:.2}:1");
             }
         }
+    }
+
+    /// #196: o trilho do slider (e de controles de arrastar) precisa de 3:1 sobre as
+    /// superfícies onde fica, nos dois Temas; antes usava `surface-4` (cerca de 1,5:1).
+    #[test]
+    fn slider_rail_reaches_3_to_1_in_both_themes() {
+        for theme in ThemeKind::ALL {
+            let p = palette(theme);
+            for (name, surface) in [
+                ("surface-1", p.surface_1),
+                ("surface-2", p.surface_2),
+                ("surface-3", p.surface_3),
+            ] {
+                let ratio = contrast_ratio(p.control_track, surface);
+                assert!(ratio >= 3.0, "{theme:?} control-track/{name}: {ratio:.2}:1");
+            }
+        }
+    }
+
+    /// #196: no Tema escuro as superfícies vizinhas se distinguem (degraus de pelo menos
+    /// 1,1:1) e a divisória `border` aparece sobre `surface-1` (2:1).
+    #[test]
+    fn dark_surfaces_are_separated_and_the_border_shows() {
+        let p = palette(ThemeKind::Dark);
+        let steps = [
+            p.surface_0,
+            p.surface_1,
+            p.surface_2,
+            p.surface_3,
+            p.surface_4,
+        ];
+        for pair in steps.windows(2) {
+            let ratio = contrast_ratio(pair[0], pair[1]);
+            assert!(ratio >= 1.1, "degrau de superfície {ratio:.2}:1 < 1,1:1");
+        }
+        let ratio = contrast_ratio(p.border, p.surface_1);
+        assert!(ratio >= 2.0, "border/surface-1: {ratio:.2}:1");
+        let strong = contrast_ratio(p.border_strong, p.surface_3);
+        assert!(strong >= 3.0, "border-strong/surface-3: {strong:.2}:1");
     }
 }

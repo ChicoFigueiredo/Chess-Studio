@@ -638,10 +638,22 @@ pub fn cs_dropdown<T: PartialEq + Clone>(
     selected: &mut T,
     options: &[(T, String)],
 ) -> Response {
+    cs_dropdown_placeholder(ui, id_salt, selected, options, "")
+}
+
+/// Como [`cs_dropdown`], mas com `placeholder` no lugar do valor quando `selected` não está
+/// nas opções (uma lista de "ações": escolher um item dispara algo, nada fica marcado).
+pub fn cs_dropdown_placeholder<T: PartialEq + Clone>(
+    ui: &mut Ui,
+    id_salt: impl Hash + std::fmt::Debug,
+    selected: &mut T,
+    options: &[(T, String)],
+    placeholder: &str,
+) -> Response {
     let current_label = options
         .iter()
         .find(|(v, _)| v == selected)
-        .map_or("", |(_, l)| l.as_str());
+        .map_or(placeholder, |(_, l)| l.as_str());
     let before = selected.clone();
     let mut response = egui::ComboBox::from_id_salt(id_salt)
         .selected_text(current_label)
@@ -723,7 +735,7 @@ pub fn cs_slider(ui: &mut Ui, value: &mut f32, range: RangeInclusive<f32>, step:
         let v = ui.visuals_mut();
         v.selection.bg_fill = p.accent;
         v.slider_trailing_fill = true;
-        v.widgets.inactive.bg_fill = p.surface_4;
+        v.widgets.inactive.bg_fill = p.control_track;
         v.widgets.inactive.fg_stroke = Stroke::new(3.0, p.accent);
         v.widgets.hovered.bg_fill = p.accent_hover;
         v.widgets.hovered.fg_stroke = Stroke::new(3.0, p.accent_hover);

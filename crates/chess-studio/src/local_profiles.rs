@@ -167,7 +167,7 @@ struct Applied<'w> {
     view: ResMut<'w, ViewState>,
     dock: ResMut<'w, Dock>,
     hidden: ResMut<'w, crate::actions::HiddenPanels>,
-    panel_sets: ResMut<'w, crate::panel_sets::PanelSets>,
+    screen_layouts: ResMut<'w, crate::screen_layouts::ScreenLayouts>,
     ribbon: Option<ResMut<'w, crate::ribbon::RibbonState>>,
     interface: ResMut<'w, InterfaceProfiles>,
     engine: ResMut<'w, EngineUi>,
@@ -186,7 +186,7 @@ impl Applied<'_> {
             notes,
             ribbon,
             hidden,
-            panel_sets,
+            screen_layouts,
         } = data;
         let mut session = restored.session;
         session.supersede(&self.session);
@@ -202,7 +202,7 @@ impl Applied<'_> {
         *self.view = prefs.view;
         self.dock.set_layout(layout);
         *self.hidden = hidden;
-        *self.panel_sets = panel_sets;
+        *self.screen_layouts = screen_layouts;
         if let (Some(setup), Some(state)) = (&ribbon, self.ribbon.as_mut()) {
             state.apply_setup(setup);
         }

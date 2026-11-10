@@ -52,7 +52,10 @@ const KEY_DOCK_LAYOUT: &str = "dock_layout";
 const KEY_INTERFACE_PROFILES: &str = "interface_profiles";
 /// Estado do Ribbon (modo, recolhido, aba ativa, Barra de Acesso Rápido), por Perfil local.
 const KEY_HIDDEN_PANELS: &str = "hidden_panels";
-const KEY_PANEL_SETS: &str = "panel_sets";
+const KEY_SCREEN_LAYOUTS: &str = "screen_layouts";
+/// Nome antigo da preferência (#186, "Conjuntos de Painéis"): ainda é lida, para ninguém
+/// perder o que salvou; a gravação usa só a chave nova.
+const KEY_LEGACY_PANEL_SETS: &str = "panel_sets";
 const KEY_RIBBON: &str = "ribbon_state";
 /// Mapa de controles (US-28): ação -> atalhos, por perfil de usuário.
 const KEY_CONTROLS: &str = "controls";
@@ -135,10 +138,10 @@ pub struct ProfileData {
     pub notes: BTreeMap<usize, String>,
     /// Ribbon do perfil recém-criado ("tabuleiro primeiro"); `None` num perfil que já existia.
     pub ribbon: Option<RibbonSetup>,
-    /// "Ocultar todos os Painéis" ativo: o conjunto a restaurar (#183).
+    /// "Ocultar todos os Painéis" ativo: o layout a restaurar (#183).
     pub hidden: crate::actions::HiddenPanels,
-    /// Conjuntos de Painéis salvos deste perfil local (#186).
-    pub panel_sets: crate::panel_sets::PanelSets,
+    /// Layouts de Tela salvos deste perfil local (#186).
+    pub screen_layouts: crate::screen_layouts::ScreenLayouts,
 }
 
 /// Resultado de abrir o app: a Partida a jogar e se ela veio do banco.
@@ -165,7 +168,7 @@ pub struct Persistence {
     /// Últimos Perfis de interface gravados (ou carregados).
     saved_profiles: Option<Value>,
     saved_hidden: Option<Value>,
-    saved_panel_sets: Option<Value>,
+    saved_screen_layouts: Option<Value>,
     saved_ribbon: Option<Value>,
     /// Último mapa de controles gravado (ou carregado).
     saved_controls: Option<Value>,
@@ -231,7 +234,7 @@ impl Persistence {
             saved_layout: None,
             saved_profiles: None,
             saved_hidden: None,
-            saved_panel_sets: None,
+            saved_screen_layouts: None,
             saved_ribbon: None,
             saved_controls: None,
             failing: false,
@@ -280,7 +283,7 @@ impl Persistence {
         let controls = self.load_controls();
         let notes = self.load_notes();
         let hidden = self.load_hidden();
-        let panel_sets = self.load_panel_sets();
+        let screen_layouts = self.load_screen_layouts();
         let mut ribbon = None;
         if fresh {
             // Instalação nova ou Perfil local novo: "tabuleiro primeiro", no Perfil de
@@ -313,7 +316,7 @@ impl Persistence {
             notes,
             ribbon,
             hidden,
-            panel_sets,
+            screen_layouts,
         }
     }
 
@@ -353,7 +356,7 @@ impl Persistence {
         self.saved_layout = None;
         self.saved_profiles = None;
         self.saved_hidden = None;
-        self.saved_panel_sets = None;
+        self.saved_screen_layouts = None;
         self.saved_controls = None;
         self.failing = false;
         self.scoresheet_failing = false;
@@ -671,7 +674,7 @@ impl Persistence {
         profiles
     }
 
-    /// O conjunto de Painéis a restaurar com "Ocultar todos os Painéis"; ausente = nada oculto.
+    /// O layout de Painéis a restaurar com "Ocultar todos os Painéis"; ausente = nada oculto.
     pub fn load_hidden(&mut self) -> crate::actions::HiddenPanels {
         let stored = self
             .store
@@ -683,7 +686,7 @@ impl Persistence {
         crate::actions::HiddenPanels::from_saved(open)
     }
 
-    /// Grava o conjunto a restaurar (ou o apaga) se mudou desde a última chamada.
+    /// Grava o layout a restaurar (ou o apaga) se mudou desde a última chamada.
     pub fn sync_hidden(&mut self, hidden: &crate::actions::HiddenPanels) {
         let json = match hidden.open_set() {
             Some(open) => serde_json::to_value(open).unwrap_or(Value::Null),
@@ -699,32 +702,45 @@ impl Persistence {
         }
     }
 
-    /// Conjuntos de Painéis salvos deste perfil local; ausente ou ilegível = nenhum.
-    pub fn load_panel_sets(&mut self) -> crate::panel_sets::PanelSets {
-        let stored = self
+    /// Layouts de Tela salvos deste perfil local; ausente ou ilegível = nenhum. Sem a chave
+    /// nova, lê a antiga (`panel_sets`, dos "Conjuntos de Painéis") e a migra na próxima gravação.
+    pub fn load_screen_layouts(&mut self) -> crate::screen_layouts::ScreenLayouts {
+        let current = self
             .store
-            .get_pref(self.profile, KEY_PANEL_SETS)
+            .get_pref(self.profile, KEY_SCREEN_LAYOUTS)
             .ok()
             .flatten();
-        self.saved_panel_sets = stored.clone();
+        let (stored, migrated) = match current {
+            Some(v) => (Some(v), false),
+            None => (
+                self.store
+                    .get_pref(self.profile, KEY_LEGACY_PANEL_SETS)
+                    .ok()
+                    .flatten(),
+                true,
+            ),
+        };
+        // Vindo da chave antiga, o "último gravado" fica vazio: a primeira sincronização grava
+        // a chave nova.
+        self.saved_screen_layouts = if migrated { None } else { stored.clone() };
         let saved = stored
-            .and_then(|v| serde_json::from_value::<Vec<crate::panel_sets::SavedSet>>(v).ok())
+            .and_then(|v| serde_json::from_value::<Vec<crate::screen_layouts::SavedLayout>>(v).ok())
             .unwrap_or_default();
-        crate::panel_sets::PanelSets::from_saved(saved)
+        crate::screen_layouts::ScreenLayouts::from_saved(saved)
     }
 
-    /// Grava os Conjuntos de Painéis se mudaram desde a última chamada.
-    pub fn sync_panel_sets(&mut self, sets: &crate::panel_sets::PanelSets) {
+    /// Grava os Layouts de Tela se mudaram desde a última chamada.
+    pub fn sync_screen_layouts(&mut self, sets: &crate::screen_layouts::ScreenLayouts) {
         let json = serde_json::to_value(sets.saved()).unwrap_or(Value::Null);
         let current = self
-            .saved_panel_sets
+            .saved_screen_layouts
             .clone()
             .unwrap_or_else(|| Value::Array(Vec::new()));
         if current == json {
             return;
         }
-        match self.store.set_pref(self.profile, KEY_PANEL_SETS, &json) {
-            Ok(()) => self.saved_panel_sets = Some(json),
+        match self.store.set_pref(self.profile, KEY_SCREEN_LAYOUTS, &json) {
+            Ok(()) => self.saved_screen_layouts = Some(json),
             Err(err) => self.report(&err),
         }
     }
@@ -1030,7 +1046,7 @@ impl Plugin for PersistencePlugin {
             notes,
             ribbon: _,
             hidden,
-            panel_sets,
+            screen_layouts,
         } = persistence.open_profile();
         if restored.resumed {
             info!(
@@ -1063,7 +1079,7 @@ impl Plugin for PersistencePlugin {
             .insert_resource(Dock::with_layout(layout))
             .insert_resource(InterfaceProfiles::with_state(profiles))
             .insert_resource(hidden)
-            .insert_resource(panel_sets)
+            .insert_resource(screen_layouts)
             .insert_resource(notes)
             .insert_resource(
                 EngineUi::default().with_saved(prefs.engine_user_side, prefs.engine_elo),
@@ -1078,7 +1094,7 @@ impl Plugin for PersistencePlugin {
                     persist_layout,
                     persist_profiles,
                     persist_hidden,
-                    persist_panel_sets,
+                    persist_screen_layouts,
                     persist_controls,
                 )
                     .after(PlaySet),
@@ -1242,7 +1258,7 @@ fn persist_layout(
     }
 }
 
-/// Grava o conjunto de Painéis do "Ocultar todos" quando muda: depois de reiniciar com tudo
+/// Grava o layout de Painéis do "Ocultar todos" quando muda: depois de reiniciar com tudo
 /// oculto, a mesma Ação ainda devolve o que estava aberto (#183).
 fn persist_hidden(hidden: Res<crate::actions::HiddenPanels>, handle: Res<PersistenceHandle>) {
     if let Ok(mut p) = handle.0.lock() {
@@ -1250,10 +1266,13 @@ fn persist_hidden(hidden: Res<crate::actions::HiddenPanels>, handle: Res<Persist
     }
 }
 
-/// Grava os Conjuntos de Painéis salvos quando mudam (#186).
-fn persist_panel_sets(sets: Res<crate::panel_sets::PanelSets>, handle: Res<PersistenceHandle>) {
+/// Grava os Layouts de Tela salvos quando mudam (#186).
+fn persist_screen_layouts(
+    sets: Res<crate::screen_layouts::ScreenLayouts>,
+    handle: Res<PersistenceHandle>,
+) {
     if let Ok(mut p) = handle.0.lock() {
-        p.sync_panel_sets(&sets);
+        p.sync_screen_layouts(&sets);
     }
 }
 
@@ -1998,7 +2017,7 @@ mod tests {
         assert!(again.layout.is_visible(ids::CAPTURED));
     }
 
-    /// #183: o conjunto do "Ocultar todos os Painéis" sobrevive ao reinício.
+    /// #183: o layout do "Ocultar todos os Painéis" sobrevive ao reinício.
     #[test]
     fn the_hidden_panels_restore_set_survives_a_restart_and_is_per_profile() {
         use crate::actions::HiddenPanels;
@@ -2018,31 +2037,53 @@ mod tests {
         assert!(!p.open_profile().hidden.is_hidden());
     }
 
-    /// #186: os Conjuntos de Painéis salvos sobrevivem ao reinício e são por perfil local.
+    /// #186: os Layouts de Tela salvos sobrevivem ao reinício e são por perfil local.
     #[test]
-    fn saved_panel_sets_survive_a_restart_and_are_per_profile() {
-        use crate::panel_sets::PanelSets;
+    fn saved_screen_layouts_survive_a_restart_and_are_per_profile() {
+        use crate::screen_layouts::ScreenLayouts;
         let mut p = new_persistence();
         let first = p.profile();
-        assert!(p.open_profile().panel_sets.saved().is_empty());
-        let mut sets = PanelSets::default();
+        assert!(p.open_profile().screen_layouts.saved().is_empty());
+        let mut sets = ScreenLayouts::default();
         sets.save("Meu", vec!["Clock".into(), "Training".into()])
             .unwrap();
-        p.sync_panel_sets(&sets);
-        assert_eq!(p.open_profile().panel_sets, sets);
+        p.sync_screen_layouts(&sets);
+        assert_eq!(p.open_profile().screen_layouts, sets);
         let ana = p.create_profile("Ana").unwrap();
         assert!(
             p.switch_profile(ana, None)
                 .unwrap()
-                .panel_sets
+                .screen_layouts
                 .saved()
                 .is_empty()
         );
-        assert_eq!(p.switch_profile(first, None).unwrap().panel_sets, sets);
+        assert_eq!(p.switch_profile(first, None).unwrap().screen_layouts, sets);
         // Excluir apaga.
         sets.delete("Meu");
-        p.sync_panel_sets(&sets);
-        assert!(p.open_profile().panel_sets.saved().is_empty());
+        p.sync_screen_layouts(&sets);
+        assert!(p.open_profile().screen_layouts.saved().is_empty());
+    }
+
+    /// #196: o que foi salvo como "Conjunto de Painéis" (chave `panel_sets`) volta como Layout
+    /// de Tela, e a próxima gravação passa para a chave nova.
+    #[test]
+    fn legacy_panel_sets_load_as_screen_layouts_and_migrate_on_save() {
+        let mut p = new_persistence();
+        let profile = p.profile();
+        p.store
+            .set_pref(
+                profile,
+                KEY_LEGACY_PANEL_SETS,
+                &json!([{"name": "Antigo", "panels": ["Clock", "Training"]}]),
+            )
+            .unwrap();
+        let layouts = p.open_profile().screen_layouts;
+        assert_eq!(layouts.saved().len(), 1);
+        assert_eq!(layouts.saved()[0].name, "Antigo");
+        p.sync_screen_layouts(&layouts);
+        let migrated = p.store.get_pref(profile, KEY_SCREEN_LAYOUTS).unwrap();
+        assert!(migrated.is_some(), "a chave nova foi gravada");
+        assert_eq!(p.open_profile().screen_layouts, layouts);
     }
 
     #[test]
