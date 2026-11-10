@@ -10,7 +10,7 @@ use crate::action_icons::glyph;
 use crate::actions::{ActionEnv, ActionRequested};
 use crate::controls::{Controls, trigger_label};
 use crate::i18n::I18n;
-use crate::panel_sets::{FACTORY, PanelSetRequested, PanelSets, SetRef};
+use crate::screen_layouts::{FACTORY, LayoutRef, ScreenLayoutRequested, ScreenLayouts};
 use crate::ui_theme::{self, Palette, ThemeKind, Tokens};
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
@@ -49,14 +49,14 @@ impl PaletteState {
 }
 
 /// O que uma linha da Paleta executa: uma Ação da lista única ou, como entrada dinâmica, abrir
-/// um Conjunto de Painéis (#186; os Conjuntos salvos não cabem num enum fixo de Ações).
+/// um Layout de Painéis (#186; os Layouts salvos não cabem num enum fixo de Ações).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Target {
     Action(Action),
-    OpenSet(SetRef),
+    ApplyLayout(LayoutRef),
 }
 
-/// Uma Ação (ou Conjunto) como a Paleta a mostra.
+/// Uma Ação (ou Layout) como a Paleta a mostra.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {
     pub target: Target,
@@ -74,7 +74,7 @@ impl Entry {
     pub fn action(&self) -> Option<Action> {
         match self.target {
             Target::Action(a) => Some(a),
-            Target::OpenSet(_) => None,
+            Target::ApplyLayout(_) => None,
         }
     }
 
@@ -157,23 +157,23 @@ pub fn activation(entries: &[Entry], shown: &[usize], selected: usize) -> Option
     entry.is_enabled().then(|| entry.target.clone())
 }
 
-/// Executa o alvo: Ação vira [`ActionRequested`]; Conjunto vira [`PanelSetRequested`] (abrir,
+/// Executa o alvo: Ação vira [`ActionRequested`]; Layout vira [`ScreenLayoutRequested`] (abrir,
 /// ou mostrar só com Shift).
 fn dispatch(
     target: Target,
     show_only: bool,
     actions: &mut MessageWriter<ActionRequested>,
-    sets: &mut MessageWriter<PanelSetRequested>,
+    sets: &mut MessageWriter<ScreenLayoutRequested>,
 ) {
     match target {
         Target::Action(action) => {
             actions.write(ActionRequested(action));
         }
-        Target::OpenSet(set) => {
+        Target::ApplyLayout(set) => {
             sets.write(if show_only {
-                PanelSetRequested::ShowOnly(set)
+                ScreenLayoutRequested::ShowOnly(set)
             } else {
-                PanelSetRequested::Open(set)
+                ScreenLayoutRequested::Open(set)
             });
         }
     }
@@ -184,12 +184,12 @@ pub fn entries(
     i18n: &I18n,
     controls: &Controls,
     ctx: &ActionContext,
-    sets: &PanelSets,
+    sets: &ScreenLayouts,
 ) -> Vec<Entry> {
     let set_icon = glyph(meta(Action::HideAllPanels).icon);
-    let open_set = |set: SetRef, name: &str| Entry {
-        target: Target::OpenSet(set),
-        label: i18n.t_with("palette-open-set", &[("name", name)]),
+    let apply_layout = |set: LayoutRef, name: &str| Entry {
+        target: Target::ApplyLayout(set),
+        label: i18n.t_with("palette-apply-layout", &[("name", name)]),
         icon: set_icon,
         shortcut: None,
         disabled_reason: None,
@@ -213,11 +213,11 @@ pub fn entries(
         });
     let factory = FACTORY
         .iter()
-        .map(|f| open_set(SetRef::Factory(f.id), &i18n.t(f.label_key)));
+        .map(|f| apply_layout(LayoutRef::Factory(f.id), &i18n.t(f.label_key)));
     let saved = sets
         .saved()
         .iter()
-        .map(|s| open_set(SetRef::Saved(s.name.clone()), &s.name));
+        .map(|s| apply_layout(LayoutRef::Saved(s.name.clone()), &s.name));
     actions.chain(factory).chain(saved).collect()
 }
 
@@ -240,9 +240,9 @@ fn palette_ui(
     i18n: Res<I18n>,
     controls: Res<Controls>,
     mut env: ActionEnv,
-    sets: Option<Res<PanelSets>>,
+    sets: Option<Res<ScreenLayouts>>,
     mut out: MessageWriter<ActionRequested>,
-    mut set_out: MessageWriter<PanelSetRequested>,
+    mut set_out: MessageWriter<ScreenLayoutRequested>,
 ) -> Result {
     if !env.palette.open {
         return Ok(());
@@ -252,7 +252,7 @@ fn palette_ui(
         &i18n,
         &controls,
         &env.context(),
-        sets.as_deref().unwrap_or(&PanelSets::default()),
+        sets.as_deref().unwrap_or(&ScreenLayouts::default()),
     );
     let palette = &mut env.palette;
     let mut shown = visible(&list, &palette.query);
@@ -499,7 +499,7 @@ mod tests {
         let controls = Controls::default();
         // Sem Partida competitiva: Desfazer é permitido, mas não há o que desfazer.
         let ctx = ActionContext::default();
-        let list = entries(&i18n, &controls, &ctx, &PanelSets::default());
+        let list = entries(&i18n, &controls, &ctx, &ScreenLayouts::default());
         assert!(list.iter().all(|e| e.action() != Some(Action::OpenPalette)));
         assert!(list.iter().all(|e| {
             e.action()
@@ -526,12 +526,12 @@ mod tests {
         );
     }
 
-    /// #186: "Abrir Conjunto: <nome>" é uma entrada dinâmica (de fábrica e salvos), achada pela
-    /// busca e executada como pedido de Conjunto, sem Ação no enum.
+    /// #186: "Aplicar Layout: <nome>" é uma entrada dinâmica (de fábrica e salvos), achada pela
+    /// busca e executada como pedido de Layout, sem Ação no enum.
     #[test]
-    fn the_palette_lists_open_set_entries_for_factory_and_saved_sets() {
+    fn the_palette_lists_apply_layout_entries_for_factory_and_saved_sets() {
         let i18n = I18n::pt_br();
-        let mut sets = PanelSets::default();
+        let mut sets = ScreenLayouts::default();
         sets.save("Meu final", vec!["Clock".to_owned()]).unwrap();
         let list = entries(
             &i18n,
@@ -539,26 +539,26 @@ mod tests {
             &ActionContext::default(),
             &sets,
         );
-        let open_sets: Vec<&Entry> = list
+        let apply_entries: Vec<&Entry> = list
             .iter()
-            .filter(|e| matches!(e.target, Target::OpenSet(_)))
+            .filter(|e| matches!(e.target, Target::ApplyLayout(_)))
             .collect();
-        assert_eq!(open_sets.len(), FACTORY.len() + 1);
+        assert_eq!(apply_entries.len(), FACTORY.len() + 1);
         assert!(
-            open_sets
+            apply_entries
                 .iter()
                 .all(|e| e.is_enabled() && !e.icon.is_empty())
         );
-        let shown = visible(&list, "abrir conjunto analise");
+        let shown = visible(&list, "aplicar layout analise");
         assert_eq!(
             activation(&list, &shown, 0),
-            Some(Target::OpenSet(SetRef::Factory("analysis")))
+            Some(Target::ApplyLayout(LayoutRef::Factory("analysis")))
         );
-        assert_eq!(list[shown[0]].label, "Abrir Conjunto: Análise");
-        let shown = visible(&list, "conjunto final");
+        assert_eq!(list[shown[0]].label, "Aplicar Layout: Análise");
+        let shown = visible(&list, "layout final");
         assert_eq!(
             activation(&list, &shown, 0),
-            Some(Target::OpenSet(SetRef::Saved("Meu final".into())))
+            Some(Target::ApplyLayout(LayoutRef::Saved("Meu final".into())))
         );
     }
 

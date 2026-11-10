@@ -49,7 +49,6 @@ mod openings;
 mod options;
 mod palette;
 mod panel_chrome;
-mod panel_sets;
 mod panel_stripe;
 mod paths;
 mod persistence;
@@ -62,6 +61,7 @@ mod ready;
 mod responsive;
 mod ribbon;
 mod scoresheet;
+mod screen_layouts;
 mod session;
 mod status_bar;
 mod study;
@@ -241,7 +241,7 @@ fn main() {
     app.add_plugins(scoresheet::ScoresheetPlugin);
     app.add_plugins(ui_theme::UiThemePlugin);
     app.add_plugins(options::OptionsPlugin);
-    app.add_plugins(panel_sets::PanelSetsPlugin);
+    app.add_plugins(screen_layouts::ScreenLayoutsPlugin);
     // O invólucro da interface: Paleta de Ações (Ctrl+K), barra de status e Ribbon.
     app.add_plugins((
         palette::PalettePlugin,

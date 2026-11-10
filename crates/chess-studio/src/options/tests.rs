@@ -78,7 +78,7 @@ fn every_inventory_action_is_reachable_in_the_ribbon_and_the_palette() {
         &I18n::pt_br(),
         &Controls::default(),
         &chess_input::actions::ActionContext::default(),
-        &crate::panel_sets::PanelSets::default(),
+        &crate::screen_layouts::ScreenLayouts::default(),
     )
     .into_iter()
     .filter_map(|e| e.action())
