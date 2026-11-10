@@ -2,6 +2,8 @@
 
 ribbon-tab-scoresheet = Súmula
 ribbon-group-scoresheet = Súmula
+ribbon-tab-board = Tabuleiro
+ribbon-group-table = Mesa
 ribbon-mode-to-simple = Ribbon simples
 ribbon-mode-to-simple-desc = Mostra os grupos numa linha só; o que não cabe vai para o menu "Mais".
 ribbon-mode-to-classic = Ribbon clássico
