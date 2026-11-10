@@ -6,21 +6,6 @@ ctl-intro = Reatribua os atalhos de mouse, trackpad e teclado. Cada perfil local
 ctl-group-pointer = Mouse e trackpad
 ctl-group-keyboard = Teclado
 
-ctl-action-select = Selecionar / arrastar peça
-ctl-action-adjust = Ajustar peça (j'adoube)
-ctl-action-orbit = Órbita da câmera
-ctl-action-pan = Pan da câmera
-ctl-action-zoom = Zoom
-ctl-action-cancel = Cancelar gesto
-ctl-action-clock-press = Acionar o relógio
-ctl-action-view-top = Vista superior
-ctl-action-view-oblique = Vista oblíqua
-ctl-action-view-standard = Vista padrão
-ctl-action-view-inverted = Vista invertida
-ctl-action-reset-camera = Resetar a câmera
-ctl-action-cycle-presentation = Alternar Apresentação
-ctl-action-toggle-fullscreen = Tela cheia
-ctl-action-toggle-focus = Modo Foco
 
 ctl-mouse-left = Botão esquerdo
 ctl-mouse-middle = Botão do meio
@@ -45,5 +30,3 @@ ctl-conflict-replace = Substituir
 ctl-unsupported = Esse tipo de atalho não serve para «{ $action }».
 ctl-needs-one = «{ $action }» precisa de pelo menos um atalho.
 ctl-replaced = «{ $action }» agora usa o atalho que era de «{ $from }».
-ctl-action-toggle-hud = Ligar/desligar o HUD
-ctl-action-toggle-coordinates = Mostrar/ocultar as coordenadas do tabuleiro

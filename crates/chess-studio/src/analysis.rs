@@ -346,7 +346,6 @@ impl Default for Analysis {
 }
 
 impl Analysis {
-    #[cfg(test)]
     pub fn is_enabled(&self) -> bool {
         self.enabled
     }
@@ -443,6 +442,11 @@ impl Analysis {
         self.engine = Some(path);
         self.load.set_mode(mode);
         self.failure = None;
+    }
+
+    /// Há uma Engine liberada (pelo consentimento ou escolhida no gerenciador) para analisar.
+    pub fn engine_available(&self) -> bool {
+        self.default_engine.is_some() || self.engine.is_some()
     }
 
     /// Há uma Engine de análise em execução (processo vivo ou subindo)?

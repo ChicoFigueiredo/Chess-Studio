@@ -538,10 +538,13 @@ fn clock_input(
     button_query: Query<(&ClockButton, &GlobalTransform)>,
     mut ui: ResMut<ClockUi>,
     mut session: ResMut<Session>,
+    mut requests: MessageReader<crate::actions::ActionRequested>,
 ) {
     session.tick();
-    if !egui.wants_keyboard_input()
-        && controls.key_just_pressed(chess_input::controls::Action::ClockPress, &keys)
+    // O atalho chega como `ActionRequested` (`actions`), já filtrado pelo foco do egui.
+    if requests
+        .read()
+        .any(|r| r.0 == chess_input::controls::Action::ClockPress)
     {
         let slot = usize::from(session.snapshot().side_to_move != session.user_side());
         session.press_clock();

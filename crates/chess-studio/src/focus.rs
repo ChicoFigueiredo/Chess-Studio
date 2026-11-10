@@ -23,7 +23,6 @@ use bevy::prelude::*;
 use bevy::window::{MonitorSelection, PrimaryWindow, WindowMode, WindowPosition};
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use chess_core::Color as Side;
-use chess_input::controls::Action;
 
 /// Estado de interface de tela cheia e Foco. Independentes entre si.
 #[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -68,28 +67,8 @@ impl Plugin for FocusPlugin {
         // `init_resource` preserva o estado carregado do banco pelo `PersistencePlugin`.
         app.init_resource::<ViewState>()
             .init_resource::<WindowedGeometry>()
-            .add_systems(Update, (view_shortcuts, apply_fullscreen).chain())
+            .add_systems(Update, apply_fullscreen)
             .add_systems(EguiPrimaryContextPass, focus_overlay);
-    }
-}
-
-/// F11 alterna a tela cheia; F10, o modo Foco (atalhos remapeáveis, `controls`). Teclas de função não digitam texto, então
-/// valem mesmo com um campo do egui em foco.
-fn view_shortcuts(
-    keys: Res<ButtonInput<KeyCode>>,
-    controls: Res<crate::controls::Controls>,
-    mut state: ResMut<ViewState>,
-) {
-    let mut next = *state;
-    if controls.key_just_pressed(Action::ToggleFullscreen, &keys) {
-        next.toggle_fullscreen();
-    }
-    if controls.key_just_pressed(Action::ToggleFocus, &keys) {
-        next.toggle_focus();
-    }
-    // Só escreve se mudou: `is_changed` aciona a janela e a gravação da preferência.
-    if next != *state {
-        *state = next;
     }
 }
 
@@ -215,22 +194,11 @@ mod tests {
     use chess_game::{PolicyKind, TimeControl};
 
     fn app() -> App {
-        let mut app = App::new();
-        app.init_resource::<ButtonInput<KeyCode>>()
-            .init_resource::<crate::controls::Controls>()
-            .init_resource::<ViewState>()
-            .add_systems(Update, view_shortcuts);
-        app
+        crate::actions::test_app()
     }
 
     fn press(app: &mut App, key: KeyCode) {
-        app.world_mut()
-            .resource_mut::<ButtonInput<KeyCode>>()
-            .press(key);
-        app.update();
-        let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
-        keys.release(key);
-        keys.clear();
+        crate::actions::press(app, key);
     }
 
     #[test]

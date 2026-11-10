@@ -24,7 +24,6 @@ use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
 use bevy::render::renderer::RenderAdapter;
 use bevy::render::view::{Msaa, Tonemapping};
-use bevy_egui::input::EguiWantsInput;
 use wgpu_types::TextureFormat;
 
 #[derive(
@@ -280,7 +279,6 @@ impl Plugin for PresentationPlugin {
             .add_systems(
                 Update,
                 (
-                    cycle_with_tab,
                     apply_visibility,
                     apply_presentation,
                     detect_gpu_support,
@@ -289,19 +287,6 @@ impl Plugin for PresentationPlugin {
                 )
                     .chain(),
             );
-    }
-}
-
-fn cycle_with_tab(
-    keys: Res<ButtonInput<KeyCode>>,
-    controls: Res<crate::controls::Controls>,
-    egui: Res<EguiWantsInput>,
-    mut presentation: ResMut<Presentation>,
-) {
-    if !egui.wants_keyboard_input()
-        && controls.key_just_pressed(chess_input::controls::Action::CyclePresentation, &keys)
-    {
-        *presentation = presentation.next();
     }
 }
 
@@ -480,6 +465,7 @@ mod tests {
     use super::*;
     use crate::camera::MainCamera;
     use bevy_egui::EguiGlobalSettings;
+    use bevy_egui::input::EguiWantsInput;
 
     fn spawn_main_camera(mut commands: Commands) {
         commands.spawn((Camera3d::default(), MainCamera));
