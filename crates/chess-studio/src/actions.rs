@@ -53,12 +53,17 @@ impl Plugin for ActionsPlugin {
 
 /// Atalhos de teclado do Mapa de controles -> pedidos de Ação. Com um campo de texto em foco
 /// só valem as Ações que não digitam (Esc e teclas de função).
-fn dispatch_shortcuts(
+pub(crate) fn dispatch_shortcuts(
     keys: Res<ButtonInput<KeyCode>>,
     controls: Res<Controls>,
     egui: Option<Res<EguiWantsInput>>,
+    ribbon: Option<Res<crate::ribbon::RibbonState>>,
     mut out: MessageWriter<ActionRequested>,
 ) {
+    // Com os KeyTips ativos, as letras conduzem o Ribbon e não viram atalhos.
+    if ribbon.is_some_and(|r| r.keys_captured) {
+        return;
+    }
     let typing = egui.is_some_and(|e| e.wants_keyboard_input());
     for action in controls.pressed_actions(&keys) {
         if !typing || action.fires_while_typing() {
@@ -92,6 +97,9 @@ pub struct ActionEnv<'w> {
     training: Res<'w, crate::training_ui::TrainingUi>,
     board2d: Option<ResMut<'w, crate::board2d_panel::Board2dPanel>>,
     appearance: ResMut<'w, crate::ui_theme::Appearance>,
+    flip: ResMut<'w, crate::board2d::BoardFlip>,
+    /// Só existe com `--nova-ui`.
+    ribbon: Option<Res<'w, crate::ribbon::RibbonState>>,
     pub(crate) palette: ResMut<'w, crate::palette::PaletteState>,
 }
 
@@ -134,8 +142,9 @@ impl ActionEnv<'_> {
             hud_enabled: self.hud.enabled,
             coordinates: self.coordinates.0,
             hover_highlight: self.hover.0,
-            board2d_flipped: self.board2d.as_ref().is_some_and(|b| b.flipped),
-            ribbon_collapsed: false,
+            board_flipped: self.flip.0,
+            ribbon_collapsed: self.ribbon.as_ref().is_some_and(|r| r.collapsed),
+            ribbon_visible: self.ribbon.is_some(),
             visible_panels,
             has_docked_panel: self.dock.layout.active_docked_panel().is_some(),
             has_floating_panel: !self.dock.layout.floating.is_empty(),
@@ -190,11 +199,7 @@ impl ActionEnv<'_> {
             Action::ToggleHud => self.hud.enabled = !self.hud.enabled,
             Action::ToggleCoordinates => self.coordinates.0 = !self.coordinates.0,
             Action::ToggleHoverHighlight => self.hover.0 = !self.hover.0,
-            Action::FlipBoard => {
-                if let Some(board) = self.board2d.as_mut() {
-                    board.flipped = !board.flipped;
-                }
-            }
+            Action::FlipBoard => self.flip_board(),
             Action::ToggleAnalysis => {
                 let on = !self.analysis.is_enabled();
                 self.analysis.set_enabled(on);
@@ -220,6 +225,25 @@ impl ActionEnv<'_> {
             },
         }
         true
+    }
+
+    /// Vira o tabuleiro para o outro lado em todas as superfícies: a Vista 3D (padrão <->
+    /// invertida; qualquer outra gira a câmera meia-volta e fica livre), o 2D técnico e o
+    /// Painel Tabuleiro 2D.
+    fn flip_board(&mut self) {
+        self.flip.0 = !self.flip.0;
+        if let Some(board) = self.board2d.as_mut() {
+            board.flipped = !board.flipped;
+        }
+        match self.rig.view {
+            Some(CameraView::Standard) => self.set_view(CameraView::Inverted),
+            Some(CameraView::Inverted) => self.set_view(CameraView::Standard),
+            _ => {
+                self.rig.pose.yaw =
+                    (self.rig.pose.yaw + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU);
+                self.rig.view = None;
+            }
+        }
     }
 
     fn present(&mut self, to: Presentation) {
@@ -260,6 +284,7 @@ pub(crate) fn test_app() -> App {
         .init_resource::<BoardCoordinates>()
         .init_resource::<HoverHighlight>()
         .init_resource::<crate::ui_theme::Appearance>()
+        .init_resource::<crate::board2d::BoardFlip>()
         .init_resource::<Analysis>()
         .init_resource::<Dock>()
         .init_resource::<crate::training_ui::TrainingUi>()
@@ -349,6 +374,44 @@ mod tests {
             .write_message(ActionRequested(Action::ToggleHoverHighlight));
         app.update();
         assert!(!app.world().resource::<HoverHighlight>().0);
+    }
+
+    #[test]
+    fn flip_board_turns_the_3d_view_the_2d_technical_and_the_board2d_panel() {
+        let mut app = test_app();
+        app.world_mut()
+            .write_message(ActionRequested(Action::FlipBoard));
+        app.update();
+        assert_eq!(
+            app.world().resource::<CameraRig>().view,
+            Some(CameraView::Inverted)
+        );
+        assert!(app.world().resource::<crate::board2d::BoardFlip>().0);
+        // Outra vez: volta à Vista padrão.
+        app.world_mut()
+            .write_message(ActionRequested(Action::FlipBoard));
+        app.update();
+        assert_eq!(
+            app.world().resource::<CameraRig>().view,
+            Some(CameraView::Standard)
+        );
+        assert!(!app.world().resource::<crate::board2d::BoardFlip>().0);
+    }
+
+    #[test]
+    fn flipping_from_another_view_rotates_the_camera_half_a_turn() {
+        let mut app = test_app();
+        app.world_mut()
+            .write_message(ActionRequested(Action::ViewOblique));
+        app.update();
+        let yaw = app.world().resource::<CameraRig>().pose.yaw;
+        app.world_mut()
+            .write_message(ActionRequested(Action::FlipBoard));
+        app.update();
+        let rig = app.world().resource::<CameraRig>();
+        assert_eq!(rig.view, None);
+        let diff = (rig.pose.yaw - yaw).rem_euclid(std::f32::consts::TAU);
+        assert!((diff - std::f32::consts::PI).abs() < 1e-4);
     }
 
     #[test]

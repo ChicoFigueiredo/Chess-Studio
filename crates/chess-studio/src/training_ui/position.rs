@@ -410,6 +410,7 @@ pub(super) fn editor(
     camera: Single<(&Camera, &Transform), With<MainCamera>>,
     presentation: Res<Presentation>,
     dock: Res<Dock>,
+    flip: Res<crate::board2d::BoardFlip>,
     capture: Option<Res<CaptureMode>>,
 ) -> Result {
     let Some(position) = state.position.as_mut() else {
@@ -475,8 +476,9 @@ pub(super) fn editor(
     // Soltar da bandeja: a casa vem da geometria de picking, mesmo com o egui no ponteiro.
     if dropped.is_some() {
         let (camera, transform) = *camera;
-        let square = board_point_under_cursor(&window, camera, transform, *presentation, &dock)
-            .and_then(point_to_square);
+        let square =
+            board_point_under_cursor(&window, camera, transform, *presentation, &dock, *flip)
+                .and_then(point_to_square);
         position.drop_from_tray(square);
     }
 

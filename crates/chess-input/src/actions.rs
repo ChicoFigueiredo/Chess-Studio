@@ -366,8 +366,11 @@ pub struct ActionContext {
     pub hud_enabled: bool,
     pub coordinates: bool,
     pub hover_highlight: bool,
-    pub board2d_flipped: bool,
+    /// O tabuleiro está virado (Ação `FlipBoard`: Vista 3D, 2D técnico e Tabuleiro 2D).
+    pub board_flipped: bool,
     pub ribbon_collapsed: bool,
+    /// O Ribbon novo está na tela (`--nova-ui`); sem ele, recolher não faz sentido.
+    pub ribbon_visible: bool,
     /// Ids dos Painéis visíveis (encaixados ou flutuantes).
     pub visible_panels: BTreeSet<String>,
     pub has_docked_panel: bool,
@@ -430,8 +433,6 @@ impl Action {
     }
 }
 
-const BOARD2D: &str = "Board2d";
-
 fn view_of(action: Action) -> Option<CameraView> {
     match action {
         Action::ViewTop => Some(CameraView::Top),
@@ -469,7 +470,7 @@ fn checked(action: Action, ctx: &ActionContext) -> Option<bool> {
         A::ToggleHud => ctx.hud_enabled,
         A::ToggleCoordinates => ctx.coordinates,
         A::ToggleHoverHighlight => ctx.hover_highlight,
-        A::FlipBoard => ctx.board2d_flipped,
+        A::FlipBoard => ctx.board_flipped,
         A::ToggleRibbonCollapse => ctx.ribbon_collapsed,
         _ => return None,
     })
@@ -507,10 +508,10 @@ fn disabled_reason(action: Action, ctx: &ActionContext) -> Option<&'static str> 
         {
             Some("reason-3d-only")
         }
-        A::FlipBoard if !ctx.visible_panels.contains(BOARD2D) => Some("reason-board2d-hidden"),
         A::FloatPanel if !ctx.has_docked_panel => Some("reason-no-docked-panel"),
         A::DockPanel if !ctx.has_floating_panel => Some("reason-no-floating-panel"),
         // Superfícies que os tickets seguintes da DS-0x entregam.
+        A::ToggleRibbonCollapse if ctx.ribbon_visible => None,
         A::DetachPanel | A::ToggleRibbonCollapse => Some("reason-coming-soon"),
         _ => None,
     }

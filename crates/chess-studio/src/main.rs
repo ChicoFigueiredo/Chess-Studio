@@ -58,6 +58,7 @@ mod presentation;
 mod profiles;
 mod ready;
 mod responsive;
+mod ribbon;
 mod scoresheet;
 mod session;
 mod status_bar;
@@ -218,10 +219,12 @@ fn main() {
     app.add_plugins(scoresheet::ScoresheetPlugin);
     app.add_plugins(ui_theme::UiThemePlugin);
     app.add_plugins(options::OptionsPlugin);
-    // A Paleta de Ações (Ctrl+K) vale nos dois modos; a barra de status é da interface nova.
+    // A Paleta de Ações (Ctrl+K) vale nos dois modos; a barra de status e o Ribbon são da
+    // interface nova.
     app.add_plugins(palette::PalettePlugin);
     if nova_ui::enabled() {
         app.add_plugins(status_bar::StatusBarPlugin);
+        app.add_plugins(ribbon::RibbonPlugin);
     }
     // `--gallery`: janela com todos os widgets do design system nos dois Temas e Densidades.
     if args.iter().any(|a| a == "--gallery") {

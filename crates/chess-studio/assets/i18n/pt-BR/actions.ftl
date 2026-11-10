@@ -100,7 +100,7 @@ action-toggle-coordinates-desc = Mostra ou oculta as coordenadas a–h e 1–8 n
 action-toggle-hover-highlight = Realce ao passar o mouse
 action-toggle-hover-highlight-desc = Realça a casa sob o cursor.
 action-flip-board = Virar tabuleiro
-action-flip-board-desc = Gira o Tabuleiro 2D em relação à Vista.
+action-flip-board-desc = Vira o tabuleiro para o outro lado: a Vista 3D, o 2D técnico e o Tabuleiro 2D.
 
 # Exibir: Painéis.
 action-panel-notation = Notação
@@ -161,7 +161,6 @@ reason-no-claimable-draw = Nenhum empate pode ser reclamado nesta Posição.
 reason-engine-consent = Autorize uma Engine antes de usar a Análise.
 reason-training-lock = Indisponível durante um Exercício de Treino.
 reason-competitive-lock = Indisponível numa Partida competitiva em andamento.
-reason-board2d-hidden = Mostre o Painel Tabuleiro 2D primeiro.
 reason-no-docked-panel = Não há Painel encaixado para flutuar.
 reason-no-floating-panel = Não há Painel flutuante para encaixar.
 reason-3d-only = A câmera só existe nas Apresentações em 3D.

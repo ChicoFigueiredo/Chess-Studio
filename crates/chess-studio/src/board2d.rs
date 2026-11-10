@@ -35,12 +35,56 @@ struct HoverSprite;
 #[derive(Component)]
 struct ClickSprite;
 
+/// Tabuleiro virado pela Ação `FlipBoard` (Vista 3D, 2D técnico e Tabuleiro 2D). No 2D técnico
+/// a câmera gira 180° e o texto dos glifos e das coordenadas gira junto, para ficar em pé.
+#[derive(Resource, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct BoardFlip(pub bool);
+
+impl BoardFlip {
+    /// Rotação em Z da câmera 2D (e, ao contrário, dos textos).
+    fn rotation(self) -> Quat {
+        if self.0 {
+            Quat::from_rotation_z(std::f32::consts::PI)
+        } else {
+            Quat::IDENTITY
+        }
+    }
+}
+
+/// Cursor (relativo à área do tabuleiro) -> mundo 2D, levando em conta o tabuleiro virado.
+pub fn cursor_to_world_flipped(cursor: Vec2, window: Vec2, flip: BoardFlip) -> Vec2 {
+    let p = cursor_to_world(cursor, window);
+    if flip.0 { -p } else { p }
+}
+
 pub struct Board2dPlugin;
 
 impl Plugin for Board2dPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, (spawn_camera, spawn_board))
-            .add_systems(Update, update_markers.after(crate::picking::PickSet));
+        app.init_resource::<BoardFlip>()
+            .add_systems(Startup, (spawn_camera, spawn_board))
+            .add_systems(Update, update_markers.after(crate::picking::PickSet))
+            .add_systems(Update, apply_flip);
+    }
+}
+
+/// Gira a câmera 2D e desvira os textos quando o tabuleiro está virado.
+#[allow(clippy::type_complexity)]
+fn apply_flip(
+    flip: Res<BoardFlip>,
+    mut camera: Query<&mut Transform, With<TechnicalCamera>>,
+    mut texts: Query<&mut Transform, (With<Text2d>, Without<TechnicalCamera>)>,
+) {
+    let wanted = flip.rotation();
+    for mut t in &mut camera {
+        if t.rotation != wanted {
+            t.rotation = wanted;
+        }
+    }
+    for mut t in &mut texts {
+        if t.rotation != wanted {
+            t.rotation = wanted;
+        }
     }
 }
 
@@ -195,5 +239,14 @@ mod tests {
             Some("h8")
         );
         assert_eq!(square_at(Vec2::new(5.0, 5.0), w), None);
+    }
+
+    #[test]
+    fn a_flipped_board_mirrors_the_cursor_through_the_center() {
+        let w = Vec2::new(800.0, 800.0);
+        let cursor = Vec2::new(300.0, 250.0);
+        let normal = cursor_to_world_flipped(cursor, w, BoardFlip(false));
+        let flipped = cursor_to_world_flipped(cursor, w, BoardFlip(true));
+        assert_eq!(flipped, -normal);
     }
 }

@@ -649,6 +649,12 @@ impl Dock {
             && !self.floating_rects.iter().any(|r| r.contains(at))
     }
 
+    /// Canto superior esquerdo da área do tabuleiro em pontos (abaixo do Ribbon, se houver).
+    pub fn board_origin(&self) -> Vec2 {
+        self.board_rect
+            .map_or(Vec2::ZERO, |r| Vec2::new(r.min.x, r.min.y))
+    }
+
     /// Área livre do tabuleiro no último quadro (pontos do egui), se já conhecida.
     pub fn board_area(&self) -> Option<egui::Rect> {
         self.board_rect
@@ -930,7 +936,7 @@ fn draw_dock(
     width: f32,
     overlay: bool,
 ) -> f32 {
-    let screen = ctx.viewport_rect();
+    let screen = crate::ribbon::usable_rect(ctx);
     let max_width = if overlay {
         width
     } else {
@@ -1018,7 +1024,7 @@ fn draw_floating(
     behavior: &mut DockBehavior<'_>,
     checked: &mut std::collections::HashSet<String>,
 ) -> Vec<egui::Rect> {
-    let screen = ctx.viewport_rect();
+    let screen = crate::ribbon::usable_rect(ctx);
     let visuals = ctx.global_style().visuals.clone();
     let p = palette_of(&visuals);
     let theme = ThemeKind::from_dark_mode(visuals.dark_mode);
@@ -1086,7 +1092,7 @@ pub(crate) fn dock_ui(world: &mut World) {
     else {
         return;
     };
-    let screen = ctx.viewport_rect();
+    let screen = crate::ribbon::usable_rect(&ctx);
     // As capturas antigas continuam limpas: o dock só aparece com `--panel` (ou no roteiro
     // de Treino, que vive num painel).
     let hidden = world
