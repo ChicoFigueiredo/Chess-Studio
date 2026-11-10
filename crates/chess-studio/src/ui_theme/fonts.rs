@@ -16,6 +16,7 @@ const INTER_REGULAR: &[u8] = include_bytes!("../../assets/fonts/Inter-Regular.tt
 const INTER_SEMIBOLD: &[u8] = include_bytes!("../../assets/fonts/Inter-SemiBold.ttf");
 const JETBRAINS_MONO: &[u8] = include_bytes!("../../assets/fonts/JetBrainsMono-Regular.ttf");
 const NOTO_SANS: &[u8] = include_bytes!("../../assets/fonts/NotoSans-Regular.ttf");
+const NOTO_SYMBOLS: &[u8] = include_bytes!("../../assets/fonts/NotoSansSymbols2-Regular.ttf");
 const NOTO_CHESS: &[u8] = include_bytes!("../../assets/fonts/NotoSansSymbols2-chess.ttf");
 
 fn insert(fonts: &mut FontDefinitions, name: &str, bytes: &'static [u8]) {
@@ -35,13 +36,15 @@ pub fn definitions() -> FontDefinitions {
     insert(&mut fonts, "jetbrains-mono", JETBRAINS_MONO);
     insert(&mut fonts, "noto-sans", NOTO_SANS);
     insert(&mut fonts, "noto-chess", NOTO_CHESS);
+    // Setas de rolagem das abas (U+23F4/U+23F5) do egui_tiles, que nenhuma outra fonte tem.
+    insert(&mut fonts, "noto-symbols", NOTO_SYMBOLS);
     egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
 
     // Ícones numa família própria: a Inter tem glifos próprios em parte da faixa privada
     // (U+E000) e esconderia alguns ícones; já a Phosphor tem "letras" em branco, e por isso não
     // pode ficar à frente do texto. Use `widgets::icon_font` para os ícones.
     let family = |first: &str| {
-        [first, "noto-sans", "noto-chess"]
+        [first, "noto-sans", "noto-chess", "noto-symbols"]
             .into_iter()
             .map(str::to_owned)
             .collect::<Vec<_>>()
@@ -95,6 +98,6 @@ mod tests {
         // Ubuntu-Light e afins (Ubuntu Font Licence) não podem entrar (ADR-0004).
         let fonts = definitions();
         assert!(fonts.font_data.keys().all(|n| !n.contains("Ubuntu")));
-        assert_eq!(fonts.font_data.len(), 6);
+        assert_eq!(fonts.font_data.len(), 7);
     }
 }
