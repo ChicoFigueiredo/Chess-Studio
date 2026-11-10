@@ -165,6 +165,7 @@ struct Applied<'w> {
     effects: ResMut<'w, UltraEffects>,
     coordinates: ResMut<'w, crate::coordinates::BoardCoordinates>,
     hover: ResMut<'w, crate::hover::HoverHighlight>,
+    appearance: ResMut<'w, crate::ui_theme::Appearance>,
     view: ResMut<'w, ViewState>,
     dock: ResMut<'w, Dock>,
     interface: ResMut<'w, InterfaceProfiles>,
@@ -193,6 +194,7 @@ impl Applied<'_> {
         *self.effects = prefs.ultra_effects;
         *self.coordinates = prefs.coordinates;
         *self.hover = prefs.hover_highlight;
+        *self.appearance = prefs.appearance;
         *self.view = prefs.view;
         self.dock.set_layout(layout);
         *self.interface = InterfaceProfiles::with_state(interface);

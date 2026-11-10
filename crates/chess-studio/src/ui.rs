@@ -25,39 +25,14 @@ impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, spawn_ui_camera).add_systems(
             EguiPrimaryContextPass,
-            (install_fonts, info_panel, promotion_selector).chain(),
+            (
+                crate::ui_theme::apply_appearance,
+                info_panel,
+                promotion_selector,
+            )
+                .chain(),
         );
     }
-}
-
-/// Fonte da interface: Noto Sans (SIL OFL 1.1), com os acentos do pt-BR. As fontes
-/// embutidas do egui usam a Ubuntu Font Licence, fora da allowlist (ADR-0004).
-fn install_fonts(mut contexts: EguiContexts, mut done: Local<bool>) -> Result {
-    if *done {
-        return Ok(());
-    }
-    let mut fonts = egui::FontDefinitions::empty();
-    fonts.font_data.insert(
-        "noto-sans".to_owned(),
-        std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
-            "../assets/fonts/NotoSans-Regular.ttf"
-        ))),
-    );
-    // Glifos de xadrez (U+265A..265F) para a bandeja do editor de posição (C11).
-    fonts.font_data.insert(
-        "noto-chess".to_owned(),
-        std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
-            "../assets/fonts/NotoSansSymbols2-chess.ttf"
-        ))),
-    );
-    for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
-        let list = fonts.families.entry(family).or_default();
-        list.push("noto-sans".to_owned());
-        list.push("noto-chess".to_owned());
-    }
-    contexts.ctx_mut()?.set_fonts(fonts);
-    *done = true;
-    Ok(())
 }
 
 /// Câmera exclusiva do egui: o painel aparece em qualquer Apresentação (3D ou 2D), mesmo

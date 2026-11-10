@@ -1,7 +1,7 @@
 # Licenças dos assets
 
 Todos os assets de modelo e textura são **CC0 1.0** (domínio público, sem atribuição obrigatória;
-registramos a origem mesmo assim, conforme DEC-47 e ADR-0004). A fonte de glifos é **SIL OFL 1.1**.
+registramos a origem mesmo assim, conforme DEC-47 e ADR-0004). As fontes são **SIL OFL 1.1** (Noto, Inter e JetBrains Mono); os ícones Phosphor são uma dependência Rust (`egui-phosphor`, MIT OR Apache-2.0).
 Tamanho total do diretório `assets/`: cerca de 11 MB (orçamento: 30 MB).
 
 Data de download de tudo: **2026-11-06**.
@@ -14,6 +14,10 @@ Data de download de tudo: **2026-11-06**.
 | `textures/oak_{diff,nor_gl,arm}_1k.jpg` | [Poly Haven — Oak Veneer 01](https://polyhaven.com/a/oak_veneer_01) (1k, JPG) | Jenelle van Heerden | CC0 1.0 | Mesa da Mesa imersiva (B19), dessaturada por tinta em tempo de execução. Sem alteração do arquivo. Substitui `table_*` (Wood Table 001, veio avermelhado), removido. |
 | `fonts/NotoSansSymbols2-chess.ttf` | [Noto Sans Symbols 2](https://github.com/notofonts/symbols) (`NotoSansSymbols2-Regular.ttf`) | The Noto Project Authors | SIL OFL 1.1 (`fonts/OFL.txt`) | Subconjunto com os glifos de xadrez U+2654–U+265F (`pyftsubset`), usado no 2D técnico. |
 | `fonts/NotoSans-Regular.ttf` | Noto Sans (pacote `fonts-noto-core`, 2020-12) | The Noto Project Authors | SIL OFL 1.1 (`fonts/OFL.txt`) | Fonte da interface egui (texto pt-BR com acentos), sem alteração; também embutida (subconjunto) nos PDFs da Súmula (V2-SUM-03). As fontes embutidas do egui usam a Ubuntu Font Licence e por isso não são ativadas. |
+| `fonts/Inter-Regular.ttf`, `fonts/Inter-SemiBold.ttf` | [Inter 4.1](https://github.com/rsms/inter/releases/tag/v4.1) (`Inter-4.1.zip`, `extras/ttf/`) | The Inter Project Authors | SIL OFL 1.1 (`fonts/OFL-Inter.txt`) | Fonte da interface no design system (DS-12, #160): regular e semibold (`body-strong`), sem alteração. Baixado em 2026-11-09. SHA-256: `40d692fc…0c82` (Regular), `78a843fa…cde3` (SemiBold). |
+| `fonts/JetBrainsMono-Regular.ttf` | [JetBrains Mono 2.304](https://github.com/JetBrains/JetBrainsMono/releases/tag/v2.304) (`JetBrainsMono-2.304.zip`, `fonts/ttf/`) | The JetBrains Mono Project Authors | SIL OFL 1.1 (`fonts/OFL-JetBrainsMono.txt`) | Log UCI e FEN (estilo `log`), sem alteração. Baixado em 2026-11-09. SHA-256: `a0bf60ef…138f`. |
+
+Os ícones Phosphor vêm do crate [`egui-phosphor`](https://crates.io/crates/egui-phosphor) 0.14.0 (MIT OR Apache-2.0), que embute a fonte de ícones Phosphor (MIT) no peso regular; a licença da dependência entra no `THIRD-PARTY-LICENSES` (`scripts/gerar-licencas.sh`).
 
 As peças em madeira (B19) não têm arquivos novos: buxo = bordo (`maple_*`) com tinta amarelada; ébano = nogueira negra (`walnut_*`) com tinta quase preta, ambos com materiais PBR próprios no lugar dos materiais do glTF (`board.rs::piece_wood`).
 

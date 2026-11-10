@@ -19,6 +19,7 @@ use crate::presentation::{GraphicsQuality, Presentation, UltraEffects};
 use crate::profiles::{InterfaceProfiles, ProfilesState};
 use crate::session::Session;
 use crate::training_ui::TrainingUi;
+use crate::ui_theme::{Appearance, Density, ThemeMode, UiScale};
 use bevy::prelude::*;
 use bevy::window::WindowCloseRequested;
 use chess_core::Color;
@@ -54,6 +55,10 @@ const KEY_ULTRA_EFFECTS: &str = "ultra_effects";
 const KEY_COORDINATES: &str = "board_coordinates";
 /// Realce ao passar o mouse (C15): afordância de interface, fora dos Auxílios.
 const KEY_HOVER_HIGHLIGHT: &str = "hover_highlight";
+/// Aparência da interface (DS-1): Tema, Densidade e Escala, do Perfil local.
+const KEY_UI_THEME: &str = "ui_theme";
+const KEY_UI_DENSITY: &str = "ui_density";
+const KEY_UI_SCALE: &str = "ui_scale";
 /// Prefixo da chave das Anotações de estudo (C2): uma preferência por Partida.
 const KEY_STUDY_NOTES: &str = "study_notes";
 
@@ -77,6 +82,8 @@ pub struct SavedPrefs {
     pub coordinates: BoardCoordinates,
     /// Realce da peça sob o cursor (ligado por padrão; não é Auxílio).
     pub hover_highlight: HoverHighlight,
+    /// Tema, Densidade e Escala da interface.
+    pub appearance: Appearance,
 }
 
 impl Default for SavedPrefs {
@@ -93,6 +100,7 @@ impl Default for SavedPrefs {
             ultra_effects: UltraEffects::default(),
             coordinates: BoardCoordinates::default(),
             hover_highlight: HoverHighlight::default(),
+            appearance: Appearance::default(),
         }
     }
 }
@@ -506,6 +514,15 @@ impl Persistence {
                     .and_then(|v| v.as_bool())
                     .unwrap_or(defaults.hover_highlight.0),
             ),
+            appearance: Appearance {
+                theme: from_debug_id(&ThemeMode::ALL, get(KEY_UI_THEME))
+                    .unwrap_or(defaults.appearance.theme),
+                density: from_debug_id(&Density::ALL, get(KEY_UI_DENSITY))
+                    .unwrap_or(defaults.appearance.density),
+                scale: get(KEY_UI_SCALE)
+                    .and_then(|v| v.as_i64())
+                    .map_or(defaults.appearance.scale, UiScale::from_percent),
+            },
         }
     }
 
@@ -727,6 +744,15 @@ impl Persistence {
         if before.hover_highlight != now.hover_highlight {
             writes.push((KEY_HOVER_HIGHLIGHT, json!(now.hover_highlight.0)));
         }
+        if before.appearance.theme != now.appearance.theme {
+            writes.push((KEY_UI_THEME, debug_id(&now.appearance.theme)));
+        }
+        if before.appearance.density != now.appearance.density {
+            writes.push((KEY_UI_DENSITY, debug_id(&now.appearance.density)));
+        }
+        if before.appearance.scale != now.appearance.scale {
+            writes.push((KEY_UI_SCALE, json!(now.appearance.scale.percent())));
+        }
         for (key, value) in writes {
             if let Err(err) = self.store.set_pref(self.profile, key, &value) {
                 self.report(&err);
@@ -826,6 +852,7 @@ impl Plugin for PersistencePlugin {
             .insert_resource(prefs.ultra_effects)
             .insert_resource(prefs.coordinates)
             .insert_resource(prefs.hover_highlight)
+            .insert_resource(prefs.appearance)
             .insert_resource(crate::controls::Controls::with_map(controls))
             .insert_resource(local_profiles)
             .insert_resource(prefs.view)
@@ -885,6 +912,7 @@ fn persist_prefs(
     ultra_effects: Res<UltraEffects>,
     coordinates: Res<BoardCoordinates>,
     hover_highlight: Res<HoverHighlight>,
+    appearance: Res<Appearance>,
     engine_ui: Res<EngineUi>,
     view: Res<ViewState>,
     handle: Res<PersistenceHandle>,
@@ -902,6 +930,7 @@ fn persist_prefs(
             ultra_effects: *ultra_effects,
             coordinates: *coordinates,
             hover_highlight: *hover_highlight,
+            appearance: *appearance,
         });
     }
 }
@@ -1306,6 +1335,11 @@ mod tests {
             ultra_effects: UltraEffects(false),
             coordinates: BoardCoordinates(false),
             hover_highlight: HoverHighlight(false),
+            appearance: Appearance {
+                theme: ThemeMode::Light,
+                density: Density::Compact,
+                scale: UiScale::from_percent(125),
+            },
         };
         p.sync_prefs(custom);
         let p2 = Persistence::new(p.into_store());
@@ -1327,6 +1361,36 @@ mod tests {
             .set_pref(p2.profile, KEY_COORDINATES, &json!("lixo"))
             .unwrap();
         assert!(p2.load_prefs().coordinates.0);
+    }
+
+    /// DS-1: Tema, Densidade e Escala voltam ao reabrir; valor ilegível ou fora da faixa é corrigido.
+    #[test]
+    fn appearance_defaults_persist_and_unreadable_values_are_repaired() {
+        let mut p = new_persistence();
+        assert_eq!(p.load_prefs().appearance, Appearance::default());
+        p.sync_prefs(SavedPrefs {
+            appearance: Appearance {
+                theme: ThemeMode::Dark,
+                density: Density::Compact,
+                scale: UiScale::from_percent(150),
+            },
+            ..SavedPrefs::default()
+        });
+        let p2 = Persistence::new(p.into_store());
+        let a = p2.load_prefs().appearance;
+        assert_eq!(
+            (a.theme, a.density, a.scale.percent()),
+            (ThemeMode::Dark, Density::Compact, 150)
+        );
+        p2.store
+            .set_pref(p2.profile, KEY_UI_THEME, &json!("lixo"))
+            .unwrap();
+        p2.store
+            .set_pref(p2.profile, KEY_UI_SCALE, &json!(900))
+            .unwrap();
+        let a = p2.load_prefs().appearance;
+        assert_eq!(a.theme, ThemeMode::System);
+        assert_eq!(a.scale.percent(), 200);
     }
 
     /// UI-02: layout, tamanhos e visibilidade persistem no SQLite e voltam ao reabrir.

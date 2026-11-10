@@ -56,6 +56,7 @@ mod session;
 mod study;
 mod training_ui;
 mod ui;
+mod ui_theme;
 
 use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResolution};
@@ -205,6 +206,11 @@ fn main() {
     app.add_plugins(library_ui::LibraryPlugin);
     app.add_plugins(openings::OpeningsPlugin);
     app.add_plugins(scoresheet::ScoresheetPlugin);
+    app.add_plugins(ui_theme::UiThemePlugin);
+    // `--gallery`: janela com todos os widgets do design system nos dois Temas e Densidades.
+    if args.iter().any(|a| a == "--gallery") {
+        app.insert_resource(ui_theme::GalleryMode::default());
+    }
     if let Some(dir) = capture {
         if let Err(err) = std::fs::create_dir_all(&dir) {
             eprintln!("não foi possível criar {}: {err}", dir.display());
