@@ -1966,6 +1966,7 @@ dependencies = [
  "chess-store",
  "chess-training",
  "chess-uci",
+ "egui-phosphor",
  "egui_tiles",
  "fluent-bundle",
  "png",
@@ -2390,6 +2391,15 @@ dependencies = [
  "smallvec",
  "unicode-segmentation",
  "web-sys",
+]
+
+[[package]]
+name = "egui-phosphor"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f4299551488dddaa8f757727e1eb4ffdaf277ffe6e30b413403468f5ecf4634"
+dependencies = [
+ "egui",
 ]
 
 [[package]]
