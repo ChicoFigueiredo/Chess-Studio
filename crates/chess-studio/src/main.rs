@@ -262,6 +262,18 @@ fn main() {
         if std::env::args().any(|a| a == "--no-coords") {
             app.insert_resource(coordinates::BoardCoordinates(false));
         }
+        // `--theme dark|light`: o Tema da interface na captura (o padrão segue o sistema).
+        match option_value("--theme").as_deref() {
+            Some("dark") => app.insert_resource(ui_theme::Appearance {
+                theme: ui_theme::ThemeMode::Dark,
+                ..default()
+            }),
+            Some("light") => app.insert_resource(ui_theme::Appearance {
+                theme: ui_theme::ThemeMode::Light,
+                ..default()
+            }),
+            _ => &mut app,
+        };
         // `--palette [--palette-query <texto>]`: a Paleta de Ações aberta, para a evidência.
         if std::env::args().any(|a| a == "--palette") {
             let mut palette = palette::PaletteState::default();
