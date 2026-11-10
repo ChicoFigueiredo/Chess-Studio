@@ -30,6 +30,28 @@ use chess_input::CameraView;
 use chess_input::actions::{ActionContext, PresentationId, state};
 use chess_input::controls::Action;
 
+/// O conjunto de Painéis que estava aberto quando "Ocultar todos os Painéis" foi acionada
+/// (#183). `Some` = tudo oculto agora; a mesma Ação o devolve exatamente. Não é Perfil de
+/// interface: o estado "tudo oculto" não vira "Personalizado" (ver `profiles::track_active`).
+#[derive(Resource, Debug, Default, Clone, PartialEq, Eq)]
+pub struct HiddenPanels(Option<Vec<String>>);
+
+impl HiddenPanels {
+    pub fn is_hidden(&self) -> bool {
+        self.0.is_some()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn hide_for_test(&mut self, open: Vec<String>) {
+        self.0 = Some(open);
+    }
+
+    /// Esquece o conjunto guardado (o usuário mexeu nos Painéis ou trocou de Perfil).
+    pub fn clear(&mut self) {
+        self.0 = None;
+    }
+}
+
 /// Pedido para executar uma Ação (atalho, Ribbon, Paleta…).
 #[derive(Message, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ActionRequested(pub Action);
@@ -39,6 +61,7 @@ pub struct ActionsPlugin;
 impl Plugin for ActionsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<crate::ui_theme::Appearance>()
+            .init_resource::<HiddenPanels>()
             .add_message::<ActionRequested>()
             .add_systems(
                 Update,
@@ -92,6 +115,7 @@ pub struct ActionEnv<'w> {
     hover: ResMut<'w, HoverHighlight>,
     analysis: ResMut<'w, Analysis>,
     dock: ResMut<'w, Dock>,
+    hidden: ResMut<'w, HiddenPanels>,
     controls_ui: ResMut<'w, ControlsUi>,
     options_ui: ResMut<'w, crate::options::OptionsUi>,
     training: Res<'w, crate::training_ui::TrainingUi>,
@@ -147,6 +171,7 @@ impl ActionEnv<'_> {
             visible_panels,
             has_docked_panel: self.dock.layout.active_docked_panel().is_some(),
             has_floating_panel: !self.dock.layout.floating.is_empty(),
+            panels_hidden: self.hidden.is_hidden(),
         }
     }
 
@@ -213,7 +238,11 @@ impl ActionEnv<'_> {
                     self.dock.layout.dock_back(&id);
                 }
             }
-            Action::ResetLayout => self.dock.reset(),
+            Action::ResetLayout => {
+                self.hidden.clear();
+                self.dock.reset();
+            }
+            Action::HideAllPanels => self.toggle_hide_all(),
             Action::UiZoomIn => self.appearance.scale = self.appearance.scale.zoom_in(),
             Action::UiZoomOut => self.appearance.scale = self.appearance.scale.zoom_out(),
             other => match other.panel() {
@@ -256,7 +285,34 @@ impl ActionEnv<'_> {
         self.rig.view = Some(view);
     }
 
+    /// "Ocultar todos os Painéis": guarda quais estavam visíveis (encaixados e flutuantes) e
+    /// oculta todos; de novo, devolve exatamente esses. Só a visibilidade muda: abas, divisões
+    /// e janelas flutuantes ficam como estão.
+    fn toggle_hide_all(&mut self) {
+        let layout = &mut self.dock.layout;
+        match self.hidden.0.take() {
+            Some(open) => {
+                for id in layout.pane_ids() {
+                    layout.set_visible(&id, open.contains(&id));
+                }
+            }
+            None => {
+                let open: Vec<String> = layout
+                    .pane_ids()
+                    .into_iter()
+                    .filter(|id| layout.is_visible(id))
+                    .collect();
+                for id in layout.pane_ids() {
+                    layout.set_visible(&id, false);
+                }
+                self.hidden.0 = Some(open);
+            }
+        }
+    }
+
     fn toggle_panel(&mut self, id: &str) {
+        // Mexer num Painel encerra o "tudo oculto": vale o que o usuário acabou de escolher.
+        self.hidden.clear();
         let visible = self.dock.layout.is_visible(id);
         self.dock.layout.set_visible(id, !visible);
         if !visible {
@@ -286,6 +342,7 @@ pub(crate) fn test_app() -> App {
         .init_resource::<crate::board2d::BoardFlip>()
         .init_resource::<Analysis>()
         .init_resource::<Dock>()
+        .init_resource::<HiddenPanels>()
         .init_resource::<crate::training_ui::TrainingUi>()
         .init_resource::<crate::palette::PaletteState>()
         .add_message::<ActionRequested>()
@@ -307,6 +364,7 @@ pub(crate) fn press(app: &mut App, key: KeyCode) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::ecs::system::RunSystemOnce;
 
     #[test]
     fn dec_51_keys_reach_their_actions_through_one_path() {
@@ -502,6 +560,123 @@ mod tests {
                 );
             }
         }
+    }
+
+    fn visible_set(app: &App) -> Vec<String> {
+        let layout = &app.world().resource::<Dock>().layout;
+        let mut v: Vec<String> = layout
+            .pane_ids()
+            .into_iter()
+            .filter(|id| layout.is_visible(id))
+            .collect();
+        v.sort();
+        v
+    }
+
+    fn request(app: &mut App, action: Action) {
+        app.world_mut().write_message(ActionRequested(action));
+        app.update();
+    }
+
+    #[test]
+    fn hiding_all_panels_and_doing_it_again_restores_the_exact_set_including_floating() {
+        use crate::dock::ids;
+        let mut app = test_app();
+        {
+            let mut dock = app.world_mut().resource_mut::<Dock>();
+            for id in dock.layout.pane_ids() {
+                dock.layout.set_visible(&id, false);
+            }
+            for id in [ids::NOTATION, ids::CLOCK, ids::BOARD2D] {
+                dock.layout.set_visible(id, true);
+            }
+            assert!(dock.float(ids::BOARD2D));
+        }
+        let before = visible_set(&app);
+        assert_eq!(before.len(), 3);
+        assert!(
+            app.world()
+                .resource::<Dock>()
+                .layout
+                .is_floating(ids::BOARD2D)
+        );
+
+        request(&mut app, Action::HideAllPanels);
+        assert!(
+            visible_set(&app).is_empty(),
+            "tudo oculto, flutuantes também"
+        );
+        assert!(!app.world().resource::<Dock>().layout.any_visible());
+        // O Painel flutuante continua flutuante (só oculto).
+        assert!(
+            app.world()
+                .resource::<Dock>()
+                .layout
+                .is_floating(ids::BOARD2D)
+        );
+        assert!(app.world().resource::<HiddenPanels>().is_hidden());
+
+        request(&mut app, Action::HideAllPanels);
+        assert_eq!(visible_set(&app), before);
+        assert!(
+            app.world()
+                .resource::<Dock>()
+                .layout
+                .is_floating(ids::BOARD2D)
+        );
+        assert!(!app.world().resource::<HiddenPanels>().is_hidden());
+    }
+
+    #[test]
+    fn ctrl_shift_f12_hides_and_restores_the_panels() {
+        let mut app = test_app();
+        let before = visible_set(&app);
+        assert!(!before.is_empty());
+        {
+            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            keys.press(KeyCode::ControlLeft);
+            keys.press(KeyCode::ShiftLeft);
+        }
+        press(&mut app, KeyCode::F12);
+        assert!(visible_set(&app).is_empty());
+        press(&mut app, KeyCode::F12);
+        assert_eq!(visible_set(&app), before);
+    }
+
+    #[test]
+    fn opening_a_panel_while_all_are_hidden_ends_the_hidden_state_and_keeps_the_rest_hidden() {
+        use crate::dock::ids;
+        let mut app = test_app();
+        request(&mut app, Action::HideAllPanels);
+        request(&mut app, Action::PanelNotation);
+        assert_eq!(visible_set(&app), vec![ids::NOTATION.to_owned()]);
+        assert!(!app.world().resource::<HiddenPanels>().is_hidden());
+        // Outra vez "ocultar": agora esconde só o que está aberto, e restaura isso.
+        request(&mut app, Action::HideAllPanels);
+        request(&mut app, Action::HideAllPanels);
+        assert_eq!(visible_set(&app), vec![ids::NOTATION.to_owned()]);
+    }
+
+    #[test]
+    fn the_checkbox_state_follows_the_dock_and_the_hidden_toggle_is_checked_while_hidden() {
+        use crate::dock::ids;
+        let mut app = test_app();
+        app.world_mut()
+            .resource_mut::<Dock>()
+            .layout
+            .set_visible(ids::NOTATION, true);
+        let ctx = |app: &mut App| {
+            app.world_mut()
+                .run_system_once(|env: ActionEnv| env.context())
+                .unwrap()
+        };
+        let c = ctx(&mut app);
+        assert_eq!(state(Action::PanelNotation, &c).checked, Some(true));
+        assert_eq!(state(Action::HideAllPanels, &c).checked, Some(false));
+        request(&mut app, Action::HideAllPanels);
+        let c = ctx(&mut app);
+        assert_eq!(state(Action::PanelNotation, &c).checked, Some(false));
+        assert_eq!(state(Action::HideAllPanels, &c).checked, Some(true));
     }
 
     #[test]

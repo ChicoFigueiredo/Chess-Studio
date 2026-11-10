@@ -62,7 +62,10 @@ fn keytips_are_unique_within_a_tab_and_present_on_ribbon_actions() {
                 m.keytip
             );
         }
-        assert!(!seen.is_empty(), "aba {tab:?} vazia");
+        // Biblioteca e Treino só tinham botões de Painel, que agora moram em Exibir (#183):
+        // ficam sem Ações até ganharem as suas, e o Ribbon não mostra aba vazia.
+        let may_be_empty = matches!(tab, RibbonTab::Library | RibbonTab::Training);
+        assert!(may_be_empty || !seen.is_empty(), "aba {tab:?} vazia");
     }
 }
 
@@ -434,4 +437,68 @@ fn collapsing_the_ribbon_needs_the_ribbon_on_screen() {
     let s = state(Action::ToggleRibbonCollapse, &ctx);
     assert!(s.is_enabled());
     assert_eq!(s.checked, Some(true));
+}
+
+// --- #183: Exibir > Painéis ---
+
+#[test]
+fn every_panel_action_lives_in_the_view_tab_panels_group_and_nowhere_else() {
+    let panels: Vec<Action> = Action::ALL
+        .into_iter()
+        .filter(|a| a.panel().is_some())
+        .collect();
+    assert!(panels.len() >= 14);
+    for action in panels {
+        let m = meta(action);
+        assert_eq!(m.tab, Some(RibbonTab::View), "{action:?}");
+        assert_eq!(m.group, Some("ribbon-group-panels"), "{action:?}");
+        assert_eq!(m.kind, ActionKind::Toggle, "{action:?}");
+    }
+    // Só Painéis moram no grupo Painéis.
+    for action in Action::ALL {
+        if meta(action).group == Some("ribbon-group-panels") {
+            assert!(action.panel().is_some(), "{action:?} não é Painel");
+        }
+    }
+}
+
+#[test]
+fn panel_checkboxes_reflect_which_panels_are_visible() {
+    let ctx = ActionContext {
+        visible_panels: ["Notation", "Clock"]
+            .into_iter()
+            .map(String::from)
+            .collect(),
+        ..assisted()
+    };
+    for action in Action::ALL {
+        let Some((id, _)) = action.panel() else {
+            continue;
+        };
+        assert_eq!(
+            state(action, &ctx).checked,
+            Some(id == "Notation" || id == "Clock"),
+            "{action:?}"
+        );
+    }
+}
+
+#[test]
+fn hide_all_panels_is_a_view_toggle_with_ctrl_shift_f12() {
+    let m = meta(Action::HideAllPanels);
+    assert_eq!(m.tab, Some(RibbonTab::View));
+    assert_eq!(m.kind, ActionKind::Toggle);
+    let map = ControlMap::default();
+    let triggers = map.triggers(Action::HideAllPanels);
+    assert_eq!(triggers.len(), 1);
+    assert_eq!(triggers[0].to_string(), "Ctrl+Shift+Key:F12");
+    assert!(Action::HideAllPanels.fires_while_typing());
+    let off = state(Action::HideAllPanels, &assisted());
+    assert!(off.is_enabled());
+    assert_eq!(off.checked, Some(false));
+    let on = ActionContext {
+        panels_hidden: true,
+        ..assisted()
+    };
+    assert_eq!(state(Action::HideAllPanels, &on).checked, Some(true));
 }

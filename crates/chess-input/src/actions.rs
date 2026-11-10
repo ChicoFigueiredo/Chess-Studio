@@ -153,28 +153,8 @@ pub fn meta(action: Action) -> ActionMeta {
             "engine",
             "A"
         ),
-        A::PanelAnalysis => item!(
-            "panel-analysis",
-            "chart-bar",
-            Toggle,
-            Analysis,
-            "panels",
-            "N"
-        ),
-        A::PanelStudy => item!("panel-study", "student", Toggle, Analysis, "panels", "E"),
-        A::PanelEngines => item!("panel-engines", "cpu", Toggle, Analysis, "panels", "M"),
-        // Biblioteca.
-        A::PanelLibrary => item!("panel-library", "books", Toggle, Library, "panels", "B"),
-        A::PanelOpenings => item!(
-            "panel-openings",
-            "tree-structure",
-            Toggle,
-            Library,
-            "panels",
-            "A"
-        ),
-        // Treino.
-        A::PanelTraining => item!("panel-training", "barbell", Toggle, Training, "panels", "T"),
+        // Os Painéis (Análise, Estudo, Engines, Biblioteca, Aberturas, Treino…) não repetem
+        // botões nas abas de domínio: moram só no grupo Painéis da aba Exibir (#183).
         // Exibir: Apresentação.
         A::PresentProfessional => item!(
             "present-professional",
@@ -281,6 +261,19 @@ pub fn meta(action: Action) -> ActionMeta {
             "panels",
             "N2"
         ),
+        A::PanelAnalysis => item!("panel-analysis", "chart-bar", Toggle, View, "panels", "NY"),
+        A::PanelStudy => item!("panel-study", "student", Toggle, View, "panels", "NE"),
+        A::PanelEngines => item!("panel-engines", "cpu", Toggle, View, "panels", "NM"),
+        A::PanelLibrary => item!("panel-library", "books", Toggle, View, "panels", "NL"),
+        A::PanelOpenings => item!(
+            "panel-openings",
+            "tree-structure",
+            Toggle,
+            View,
+            "panels",
+            "NO"
+        ),
+        A::PanelTraining => item!("panel-training", "barbell", Toggle, View, "panels", "NT"),
         // Exibir: janelas dos Painéis.
         A::FloatPanel => item!(
             "float-panel",
@@ -300,6 +293,14 @@ pub fn meta(action: Action) -> ActionMeta {
             "JD"
         ),
         A::ResetLayout => item!("reset-layout", "layout", Command, View, "windows", "JR"),
+        A::HideAllPanels => item!(
+            "hide-all-panels",
+            "eye-slash",
+            Toggle,
+            View,
+            "windows",
+            "JH"
+        ),
         // Exibir: interface.
         A::OpenPalette => item!("open-palette", "command", Command, View, "interface", "IP"),
         A::UiZoomIn => item!(
@@ -375,6 +376,8 @@ pub struct ActionContext {
     pub visible_panels: BTreeSet<String>,
     pub has_docked_panel: bool,
     pub has_floating_panel: bool,
+    /// "Ocultar todos os Painéis" está ativo (há um conjunto guardado para restaurar).
+    pub panels_hidden: bool,
 }
 
 /// Estado de uma Ação num dado [`ActionContext`].
@@ -405,6 +408,8 @@ impl Action {
             Action::Cancel
                 | Action::ToggleFullscreen
                 | Action::ToggleFocus
+                // Ctrl+Shift+F12 também não digita.
+                | Action::HideAllPanels
                 // Ctrl+, não digita nada: vale também de dentro da Paleta (campo de busca).
                 | Action::OpenOptions
         )
@@ -467,6 +472,7 @@ fn checked(action: Action, ctx: &ActionContext) -> Option<bool> {
         A::PresentTechnical => ctx.presentation == PresentationId::Technical2d,
         A::ToggleFullscreen => ctx.fullscreen,
         A::ToggleFocus => ctx.focus,
+        A::HideAllPanels => ctx.panels_hidden,
         A::ToggleHud => ctx.hud_enabled,
         A::ToggleCoordinates => ctx.coordinates,
         A::ToggleHoverHighlight => ctx.hover_highlight,

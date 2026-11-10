@@ -114,7 +114,7 @@ Conjunto nomeado de Auxílios visuais ligados e desligados, como Jogo físico (n
 _Evitar_: preset de ajuda, nível de dificuldade
 
 **Perfil de interface** (_en_: `InterfaceProfile`):
-Conjunto nomeado de Apresentação, layout do dock (Painéis visíveis, abas, larguras), Painéis flutuantes e destacados com suas posições, estado do Ribbon (aba, modo simples ou recolhido), Perfil de auxílios, modo Foco e Vista da câmera. De fábrica: Jogo físico, Treinamento assistido, Estudo e análise, Competição e Mínimo; os outros são salvos pelo usuário. "Personalizado" é o estado atual quando não coincide com nenhum. Trocar de perfil nunca altera a Partida nem o Tema. Não confundir com Perfil de auxílios (só os Auxílios) nem com Perfil de treino.
+Conjunto nomeado de Apresentação, layout do dock (Painéis visíveis, abas, larguras), Painéis flutuantes e destacados com suas posições, estado do Ribbon (aba, modo simples ou recolhido), Perfil de auxílios, modo Foco e Vista da câmera. De fábrica: Jogo físico, Treinamento assistido, Estudo e análise, Competição e Mínimo; os outros são salvos pelo usuário. "Personalizado" é o estado atual quando não coincide com nenhum. Uma instalação nova ou um Perfil local novo abre em Jogo físico ("tabuleiro primeiro"). Trocar de perfil nunca altera a Partida nem o Tema. Não confundir com Perfil de auxílios (só os Auxílios) nem com Perfil de treino.
 _Evitar_: tema, workspace, modo
 
 **Perfil local** (_en_: `LocalProfiles`):
@@ -146,7 +146,7 @@ Sobreposição virtual de treino ou análise presa às casas e peças; não envo
 _Evitar_: realidade aumentada
 
 **Painel** (_en_: `Panel`):
-Bloco da interface com um assunto só (Relógio, Notação, Análise, Aberturas, Súmula…), que pode estar encaixado no dock, flutuante ou destacado. A configuração do Painel vai junto quando ele muda de lugar.
+Bloco da interface com um assunto só (Relógio, Notação, Análise, Aberturas, Súmula…), que pode estar encaixado no dock, flutuante ou destacado. A configuração do Painel vai junto quando ele muda de lugar. Cada Painel tem uma caixa de seleção no grupo Painéis da aba Exibir; a Ação "Ocultar todos os Painéis" (Ctrl+Shift+F12) esconde todos e, acionada de novo, devolve exatamente os que estavam abertos, sem tornar o Perfil de interface "Personalizado".
 _Evitar_: quadro, card, gadget, widget
 
 **Painel flutuante** (_en_: `Floating`):

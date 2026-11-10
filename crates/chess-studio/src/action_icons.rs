@@ -32,6 +32,7 @@ pub fn glyph(name: &str) -> &'static str {
         "cursor" => icon::CURSOR,
         "cursor-click" => icon::CURSOR_CLICK,
         "eye" => icon::EYE,
+        "eye-slash" => icon::EYE_SLASH,
         "file-plus" => icon::FILE_PLUS,
         "flag" => icon::FLAG,
         "frame-corners" => icon::FRAME_CORNERS,

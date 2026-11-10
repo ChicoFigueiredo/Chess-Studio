@@ -326,7 +326,7 @@ const POINTER_ACTIONS: [Action; 5] = [
     Action::Pan,
     Action::Zoom,
 ];
-const KEY_ACTIONS: [Action; 21] = [
+const KEY_ACTIONS: [Action; 22] = [
     Action::Cancel,
     Action::ClockPress,
     Action::ViewTop,
@@ -337,6 +337,7 @@ const KEY_ACTIONS: [Action; 21] = [
     Action::CyclePresentation,
     Action::ToggleFullscreen,
     Action::ToggleFocus,
+    Action::HideAllPanels,
     Action::ToggleHud,
     Action::ToggleCoordinates,
     // Ações de menu com atalho de fábrica (DS-14).

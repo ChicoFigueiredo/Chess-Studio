@@ -16,7 +16,9 @@ use crate::hover::HoverHighlight;
 use crate::hud::HudSettings;
 use crate::play::PlaySet;
 use crate::presentation::{GraphicsQuality, Presentation, UltraEffects};
-use crate::profiles::{InterfaceProfiles, ProfilesState, RibbonSetup};
+use crate::profiles::{
+    FIRST_RUN_PROFILE, InterfaceProfiles, InterfaceState, ProfileKey, ProfilesState, RibbonSetup,
+};
 use crate::session::Session;
 use crate::training_ui::TrainingUi;
 use crate::ui_theme::{Appearance, Density, ThemeMode, UiScale};
@@ -116,6 +118,8 @@ pub struct ProfileData {
     pub interface: ProfilesState,
     pub controls: ControlMap,
     pub notes: BTreeMap<usize, String>,
+    /// Ribbon do perfil recém-criado ("tabuleiro primeiro"); `None` num perfil que já existia.
+    pub ribbon: Option<RibbonSetup>,
 }
 
 /// Resultado de abrir o app: a Partida a jogar e se ela veio do banco.
@@ -243,14 +247,38 @@ impl Persistence {
     /// Carrega o perfil em uso: preferências, Partida (retomada em Pausa, ou nova),
     /// layout, Perfis de interface, controles e Anotações.
     pub fn open_profile(&mut self) -> ProfileData {
-        let prefs = self.load_prefs();
+        let fresh = self.is_first_run();
+        let mut prefs = self.load_prefs();
         let mut restored = self.restore();
         restored.session.set_move_method(prefs.move_method);
         self.saved = Some(prefs);
-        let layout = self.load_layout();
-        let interface = self.load_profiles();
+        let mut layout = self.load_layout();
+        let mut interface = self.load_profiles();
         let controls = self.load_controls();
         let notes = self.load_notes();
+        let mut ribbon = None;
+        if fresh {
+            // Instalação nova ou Perfil local novo: "tabuleiro primeiro", no Perfil de
+            // interface de fábrica Jogo físico (#183). O que muda em relação ao que foi lido
+            // (padrões) é gravado pelos `persist_*` logo no primeiro quadro.
+            let mut state = InterfaceState {
+                presentation: prefs.presentation,
+                dock: layout,
+                aids: prefs.aids,
+                focus: prefs.view.focus,
+                ribbon: Some(RibbonSetup::default()),
+            };
+            FIRST_RUN_PROFILE.profile().apply(&mut state);
+            prefs.presentation = state.presentation;
+            prefs.aids = state.aids;
+            prefs.view.focus = state.focus;
+            layout = state.dock;
+            ribbon = state.ribbon;
+            interface.active = ProfileKey::Factory(FIRST_RUN_PROFILE);
+            if let Some(setup) = &ribbon {
+                self.sync_ribbon(setup);
+            }
+        }
         ProfileData {
             prefs,
             restored,
@@ -258,7 +286,21 @@ impl Persistence {
             interface,
             controls,
             notes,
+            ribbon,
         }
+    }
+
+    /// Nada de interface foi gravado ainda neste perfil local (nem layout, nem Perfil de
+    /// interface): é uma instalação nova ou um Perfil local recém-criado.
+    fn is_first_run(&self) -> bool {
+        let stored = |key: &str| {
+            self.store
+                .get_pref(self.profile, key)
+                .ok()
+                .flatten()
+                .is_some()
+        };
+        !stored(KEY_INTERFACE_PROFILES) && !stored(KEY_DOCK_LAYOUT)
     }
 
     /// Troca o perfil local em uso: grava o que falta da Partida atual (`current`), fecha-a
@@ -856,6 +898,7 @@ impl Plugin for PersistencePlugin {
             interface: profiles,
             controls,
             notes,
+            ribbon: _,
         } = persistence.open_profile();
         if restored.resumed {
             info!(
@@ -1645,10 +1688,13 @@ mod tests {
         let ana = p.create_profile("Ana").unwrap();
         let ana_data = p.switch_profile(ana, Some(&data.restored.session)).unwrap();
         assert_eq!(p.profile(), ana);
+        // Perfil novo: padrões, menos o que o Jogo físico muda (#183).
         assert_eq!(
             ana_data.prefs,
-            SavedPrefs::default(),
-            "perfil novo: padrões"
+            SavedPrefs {
+                aids: crate::aids::AidSettings::physical(),
+                ..SavedPrefs::default()
+            },
         );
         assert!(ana_data.controls.is_default());
         assert!(!ana_data.restored.resumed, "Partida própria, nova");
@@ -1663,6 +1709,73 @@ mod tests {
         assert!(back.restored.resumed);
         assert_eq!(back.restored.session.snapshot().history.len(), 1);
         assert_eq!(p.store.active_profile().unwrap(), first);
+    }
+
+    fn visible_panels(layout: &crate::dock::DockLayout) -> Vec<String> {
+        let mut v: Vec<String> = layout
+            .pane_ids()
+            .into_iter()
+            .filter(|id| layout.is_visible(id))
+            .collect();
+        v.sort();
+        v
+    }
+
+    /// #183: instalação nova e Perfil local novo abrem em Jogo físico ("tabuleiro primeiro").
+    #[test]
+    fn a_new_install_and_a_new_local_profile_start_in_the_physical_game_profile() {
+        use crate::dock::ids;
+        use crate::profiles::{FactoryProfile, ProfileKey, RibbonLayout};
+        let check = |data: &ProfileData| {
+            assert_eq!(
+                data.interface.active,
+                ProfileKey::Factory(FactoryProfile::PhysicalGame)
+            );
+            assert_eq!(
+                visible_panels(&data.layout),
+                vec![ids::CLOCK.to_owned(), ids::NOTATION.to_owned()]
+            );
+            assert_eq!(data.prefs.aids, crate::aids::AidSettings::physical());
+            let ribbon = data.ribbon.as_ref().expect("Ribbon do perfil novo");
+            assert_eq!(
+                (ribbon.layout, ribbon.collapsed),
+                (RibbonLayout::Simple, false)
+            );
+        };
+        let mut p = new_persistence();
+        let first = p.profile();
+        let data = p.open_profile();
+        check(&data);
+        // Como o app faz no primeiro quadro: grava o que o perfil aplicou.
+        p.sync_layout(&data.layout);
+        p.sync_profiles(&data.interface);
+        // O Ribbon já fica gravado para o `RibbonPlugin` ler na partida.
+        assert_eq!(
+            p.load_ribbon().map(|r| r.layout),
+            Some(RibbonLayout::Simple)
+        );
+
+        let ana = p.create_profile("Ana").unwrap();
+        let ana_data = p.switch_profile(ana, Some(&data.restored.session)).unwrap();
+        check(&ana_data);
+
+        // Gravado o estado, reabrir não reaplica o perfil de fábrica por cima.
+        let mut custom = ana_data.layout.clone();
+        custom.set_visible(ids::CAPTURED, true);
+        p.sync_layout(&custom);
+        p.sync_profiles(&ProfilesState {
+            active: ProfileKey::Custom,
+            user: Vec::new(),
+        });
+        let back = p.switch_profile(first, None).unwrap();
+        assert!(
+            back.ribbon.is_none(),
+            "o primeiro perfil já tinha interface gravada"
+        );
+        let again = p.switch_profile(ana, None).unwrap();
+        assert!(again.ribbon.is_none());
+        assert_eq!(again.interface.active, ProfileKey::Custom);
+        assert!(again.layout.is_visible(ids::CAPTURED));
     }
 
     #[test]

@@ -62,9 +62,14 @@ impl RibbonView {
     }
 }
 
-/// As abas visíveis, na ordem; a da Súmula só com ela aberta.
+/// As abas visíveis, na ordem; a da Súmula só com ela aberta. Uma aba sem nenhuma Ação (a
+/// Biblioteca e o Treino, depois que os Painéis foram para Exibir, #183) não aparece.
 pub fn visible_tabs(scoresheet_open: bool) -> Vec<RibbonView> {
-    let mut tabs: Vec<_> = RibbonTab::ALL.into_iter().map(RibbonView::Tab).collect();
+    let mut tabs: Vec<_> = RibbonTab::ALL
+        .into_iter()
+        .map(RibbonView::Tab)
+        .filter(|v| v.is_file() || !groups(*v).is_empty())
+        .collect();
     if scoresheet_open {
         tabs.push(RibbonView::Scoresheet);
     }
@@ -105,6 +110,10 @@ pub fn groups(view: RibbonView) -> Vec<Group> {
                 actions: vec![action],
             }),
         }
+    }
+    // Em Exibir, os Painéis abrem a aba (como o "Mostrar" do Word): são o que mais se usa ali.
+    if let Some(i) = out.iter().position(|g| g.label == "ribbon-group-panels") {
+        out[..=i].rotate_right(1);
     }
     out
 }
@@ -338,8 +347,39 @@ mod tests {
     }
 
     #[test]
+    fn view_tab_has_one_panels_group_with_every_panel_and_other_tabs_have_none() {
+        let view = groups(RibbonView::Tab(RibbonTab::View));
+        let panels = view
+            .iter()
+            .find(|g| g.label == "ribbon-group-panels")
+            .expect("grupo Painéis em Exibir");
+        assert_eq!(view[0].label, "ribbon-group-panels", "Painéis abre a aba");
+        for action in Action::ALL {
+            if action.panel().is_some() {
+                assert!(panels.actions.contains(&action), "{action:?}");
+            }
+        }
+        for tab in RibbonTab::ALL {
+            if tab == RibbonTab::View {
+                continue;
+            }
+            for action in actions_of(RibbonView::Tab(tab)) {
+                assert!(action.panel().is_none(), "{action:?} repetido em {tab:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn tabs_without_actions_are_not_shown() {
+        let tabs = visible_tabs(false);
+        assert!(!tabs.contains(&RibbonView::Tab(RibbonTab::Library)));
+        assert!(!tabs.contains(&RibbonView::Tab(RibbonTab::Training)));
+        assert!(tabs.contains(&RibbonView::Tab(RibbonTab::View)));
+    }
+
+    #[test]
     fn the_scoresheet_tab_only_exists_with_the_panel_open() {
-        assert_eq!(visible_tabs(false).len(), 6);
+        assert_eq!(visible_tabs(false).len(), 4);
         assert_eq!(visible_tabs(true).last(), Some(&RibbonView::Scoresheet));
         assert_eq!(
             actions_of(RibbonView::Scoresheet),

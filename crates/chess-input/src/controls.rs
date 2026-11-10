@@ -84,6 +84,8 @@ pub enum Action {
     DockPanel,
     DetachPanel,
     ResetLayout,
+    /// Oculta todos os Painéis (encaixados e flutuantes) e, de novo, devolve os que estavam abertos.
+    HideAllPanels,
     OpenPalette,
     ToggleRibbonCollapse,
     /// Aumenta a Escala da interface (Ctrl+=), até 200%.
@@ -93,7 +95,7 @@ pub enum Action {
 }
 
 impl Action {
-    pub const ALL: [Action; 55] = [
+    pub const ALL: [Action; 56] = [
         Action::Select,
         Action::Adjust,
         Action::Orbit,
@@ -145,6 +147,7 @@ impl Action {
         Action::DockPanel,
         Action::DetachPanel,
         Action::ResetLayout,
+        Action::HideAllPanels,
         Action::OpenPalette,
         Action::ToggleRibbonCollapse,
         Action::UiZoomIn,
@@ -205,6 +208,7 @@ impl Action {
             Action::DockPanel => "dock-panel",
             Action::DetachPanel => "detach-panel",
             Action::ResetLayout => "reset-layout",
+            Action::HideAllPanels => "hide-all-panels",
             Action::OpenPalette => "open-palette",
             Action::ToggleRibbonCollapse => "toggle-ribbon-collapse",
             Action::UiZoomIn => "ui-zoom-in",
@@ -313,6 +317,11 @@ impl ModSet {
     };
     pub const SHIFT: ModSet = ModSet {
         ctrl: false,
+        shift: true,
+        alt: false,
+    };
+    pub const CTRL_SHIFT: ModSet = ModSet {
+        ctrl: true,
         shift: true,
         alt: false,
     };
@@ -511,6 +520,7 @@ fn defaults_for(action: Action) -> Vec<Trigger> {
         Action::CyclePresentation => vec![key("Tab")],
         Action::ToggleFullscreen => vec![key("F11")],
         Action::ToggleFocus => vec![key("F10")],
+        Action::HideAllPanels => vec![key("F12").with_mods(ModSet::CTRL_SHIFT)],
         Action::ToggleHud => vec![key("KeyH")],
         Action::ToggleCoordinates => vec![key("KeyC")],
         // Ações de menu (DS-14): só algumas têm atalho de fábrica; o resto se opera pelo
