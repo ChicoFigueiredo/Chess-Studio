@@ -45,6 +45,7 @@ mod new_game;
 mod notation;
 mod nova_ui;
 mod openings;
+mod options;
 mod palette;
 mod paths;
 mod persistence;
@@ -213,6 +214,7 @@ fn main() {
     app.add_plugins(openings::OpeningsPlugin);
     app.add_plugins(scoresheet::ScoresheetPlugin);
     app.add_plugins(ui_theme::UiThemePlugin);
+    app.add_plugins(options::OptionsPlugin);
     // A Paleta de Ações (Ctrl+K) vale nos dois modos; a barra de status é da interface nova.
     app.add_plugins(palette::PalettePlugin);
     if nova_ui::enabled() {

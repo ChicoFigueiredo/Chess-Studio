@@ -88,6 +88,7 @@ pub struct ActionEnv<'w> {
     analysis: ResMut<'w, Analysis>,
     dock: ResMut<'w, Dock>,
     controls_ui: ResMut<'w, ControlsUi>,
+    options_ui: ResMut<'w, crate::options::OptionsUi>,
     training: Res<'w, crate::training_ui::TrainingUi>,
     board2d: Option<ResMut<'w, crate::board2d_panel::Board2dPanel>>,
     appearance: ResMut<'w, crate::ui_theme::Appearance>,
@@ -154,6 +155,11 @@ impl ActionEnv<'_> {
                 self.dialog.open_from(&config, &self.aids);
             }
             Action::OpenControls => self.controls_ui.open = true,
+            Action::OpenOptions => {
+                self.options_ui.open = true;
+                // Vinda da Paleta: ela fecha, o diálogo é modal.
+                self.palette.close();
+            }
             Action::OpenPalette => self.palette.toggle(),
             Action::Undo => self.session.undo(),
             Action::Redo => self.session.command(Command::Redo),
@@ -243,6 +249,7 @@ pub(crate) fn test_app() -> App {
     app.init_resource::<ButtonInput<KeyCode>>()
         .init_resource::<Controls>()
         .init_resource::<ControlsUi>()
+        .init_resource::<crate::options::OptionsUi>()
         .init_resource::<Session>()
         .init_resource::<NewGameDialog>()
         .init_resource::<crate::aids::AidSettings>()

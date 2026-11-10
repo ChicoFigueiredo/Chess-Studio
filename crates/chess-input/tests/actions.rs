@@ -360,11 +360,7 @@ fn float_and_dock_depend_on_the_panels() {
 
 #[test]
 fn surfaces_that_do_not_exist_yet_are_disabled_with_a_reason() {
-    for a in [
-        Action::DetachPanel,
-        Action::OpenOptions,
-        Action::ToggleRibbonCollapse,
-    ] {
+    for a in [Action::DetachPanel, Action::ToggleRibbonCollapse] {
         let ctx = ActionContext {
             has_docked_panel: true,
             ..assisted()
@@ -381,6 +377,13 @@ fn surfaces_that_do_not_exist_yet_are_disabled_with_a_reason() {
 fn the_palette_action_is_enabled() {
     for ctx in [assisted(), fide(), ActionContext::default()] {
         assert!(state(Action::OpenPalette, &ctx).is_enabled());
+    }
+}
+
+#[test]
+fn open_options_is_enabled_in_every_context() {
+    for ctx in [assisted(), fide(), ActionContext::default()] {
+        assert!(state(Action::OpenOptions, &ctx).is_enabled());
     }
 }
 
