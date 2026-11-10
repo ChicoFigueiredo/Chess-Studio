@@ -675,6 +675,16 @@ impl Dock {
         }
     }
 
+    /// Registra que o arrasto do Painel saiu da janela em `at` (e a evidência `--detach-demo drag`).
+    pub(crate) fn request_exit(&mut self, panel: PanelId, at: egui::Pos2) {
+        self.exit_request = Some(ExitRequest {
+            panel,
+            at,
+            size: crate::detached::DEFAULT_WINDOW_SIZE,
+            ppp: 1.0,
+        });
+    }
+
     pub(crate) fn take_exit_request(&mut self) -> Option<ExitRequest> {
         self.exit_request.take()
     }
