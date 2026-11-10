@@ -154,12 +154,12 @@ Painel em janela própria *dentro* da janela principal, sobre o tabuleiro. Açã
 _Evitar_: janela interna, popup
 
 **Painel destacado** (_en_: `Detached`):
-Painel, ou um grupo de abas inteiro, numa janela do sistema operacional separada da principal, que pode ir para outro monitor; dentro dela as abas se reorganizam como no dock. Ação: Destacar; Encaixar devolve ao dock.
+Painel, ou um grupo de abas inteiro, numa janela do sistema operacional separada da principal, que pode ir para outro monitor; dentro dela as abas se reorganizam como no dock. Nasce pela Ação Destacar ou ao arrastar um Painel flutuante para fora da janela principal; Encaixar devolve ao dock.
 _Evitar_: janela externa, pop-out
 
-**Conjunto de Painéis** (_en_: `PanelSet`):
-Grupo nomeado de Painéis que se ligam e desligam juntos pela aba Exibir (ex.: Análise = Análise + Engines + Aberturas), sem mudar Apresentação, Ribbon nem Auxílios. Diferente do Perfil de interface, que troca tudo.
-_Evitar_: workspace, layout, preset
+**Layout de Tela** (_en_: `ScreenLayout`):
+Disposição nomeada de Painéis abertos (de fábrica, como Partida, Análise, Estudo e Treino, ou gravada pelo usuário), escolhida numa lista na aba Exibir; não muda Apresentação, Ribbon nem Auxílios. Diferente do Perfil de interface, que troca tudo.
+_Evitar_: conjunto de painéis, workspace, preset
 
 **Ribbon** (_en_: `Ribbon`):
 Menu superior em abas com grupos de Ações, no estilo Office; pode estar no modo clássico, no modo simples (uma linha) ou recolhido. A aba Arquivo abre os bastidores: Partidas, Perfis e Opções.
