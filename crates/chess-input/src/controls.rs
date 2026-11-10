@@ -86,10 +86,14 @@ pub enum Action {
     ResetLayout,
     OpenPalette,
     ToggleRibbonCollapse,
+    /// Aumenta a Escala da interface (Ctrl+=), até 200%.
+    UiZoomIn,
+    /// Diminui a Escala da interface (Ctrl+-), até 80%.
+    UiZoomOut,
 }
 
 impl Action {
-    pub const ALL: [Action; 53] = [
+    pub const ALL: [Action; 55] = [
         Action::Select,
         Action::Adjust,
         Action::Orbit,
@@ -143,6 +147,8 @@ impl Action {
         Action::ResetLayout,
         Action::OpenPalette,
         Action::ToggleRibbonCollapse,
+        Action::UiZoomIn,
+        Action::UiZoomOut,
     ];
 
     /// Identificador estável (gravado no banco; nunca muda).
@@ -201,6 +207,8 @@ impl Action {
             Action::ResetLayout => "reset-layout",
             Action::OpenPalette => "open-palette",
             Action::ToggleRibbonCollapse => "toggle-ribbon-collapse",
+            Action::UiZoomIn => "ui-zoom-in",
+            Action::UiZoomOut => "ui-zoom-out",
         }
     }
 
@@ -514,6 +522,16 @@ fn defaults_for(action: Action) -> Vec<Trigger> {
         Action::OpenPalette => vec![key("KeyK").with_mods(ModSet::CTRL)],
         Action::ToggleRibbonCollapse => vec![key("F1").with_mods(ModSet::CTRL)],
         Action::FlipBoard => vec![key("KeyF")],
+        // Escala da interface (DS-13): Ctrl+= e Ctrl+- (também no teclado numérico). Segurar
+        // Shift junto continua valendo, para os layouts em que o "+" é Shift+=.
+        Action::UiZoomIn => vec![
+            key("Equal").with_mods(ModSet::CTRL),
+            key("NumpadAdd").with_mods(ModSet::CTRL),
+        ],
+        Action::UiZoomOut => vec![
+            key("Minus").with_mods(ModSet::CTRL),
+            key("NumpadSubtract").with_mods(ModSet::CTRL),
+        ],
         _ => Vec::new(),
     }
 }

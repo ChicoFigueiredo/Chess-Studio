@@ -53,7 +53,7 @@ pub struct ApplyState {
 /// Instala fontes e estilos e aplica a Escala. Roda antes de qualquer painel, no passe do egui.
 pub fn apply_appearance(
     mut contexts: EguiContexts,
-    mut appearance: ResMut<Appearance>,
+    appearance: Res<Appearance>,
     windows: Query<&Window, With<PrimaryWindow>>,
     mut state: Local<ApplyState>,
 ) -> Result {
@@ -61,26 +61,13 @@ pub fn apply_appearance(
     if !state.fonts_requested {
         // As fontes só valem no passe seguinte; os estilos que as usam esperam por ele.
         ctx.set_fonts(fonts::definitions());
-        // A Escala é nossa (Ctrl+= e Ctrl+-, em degraus); o atalho de zoom do egui sai.
+        // A Escala é nossa (Ações UiZoomIn e UiZoomOut, em degraus); o atalho de zoom do egui sai.
         ctx.options_mut(|o| o.zoom_with_keyboard = false);
         state.fonts_requested = true;
         return Ok(());
     }
     widgets::mark_fonts_ready(ctx);
     widgets::track_keyboard_focus(ctx);
-
-    // Ctrl+= aumenta, Ctrl+- diminui.
-    let (zoom_in, zoom_out) = ctx.input_mut(|i| {
-        let cmd = egui::Modifiers::COMMAND;
-        let up = i.consume_key(cmd, egui::Key::Equals) | i.consume_key(cmd, egui::Key::Plus);
-        let down = i.consume_key(cmd, egui::Key::Minus);
-        (up, down)
-    });
-    if zoom_in {
-        appearance.scale = appearance.scale.zoom_in();
-    } else if zoom_out {
-        appearance.scale = appearance.scale.zoom_out();
-    }
 
     let theme = resolve_theme(appearance.theme, system_dark(windows.single().ok()));
     if state.applied != Some((theme, appearance.density)) {

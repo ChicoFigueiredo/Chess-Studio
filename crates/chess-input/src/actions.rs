@@ -302,6 +302,22 @@ pub fn meta(action: Action) -> ActionMeta {
         A::ResetLayout => item!("reset-layout", "layout", Command, View, "windows", "JR"),
         // Exibir: interface.
         A::OpenPalette => item!("open-palette", "command", Command, View, "interface", "IP"),
+        A::UiZoomIn => item!(
+            "ui-zoom-in",
+            "magnifying-glass-plus",
+            Command,
+            View,
+            "interface",
+            "IA"
+        ),
+        A::UiZoomOut => item!(
+            "ui-zoom-out",
+            "magnifying-glass-minus",
+            Command,
+            View,
+            "interface",
+            "ID"
+        ),
         A::ToggleRibbonCollapse => item!(
             "toggle-ribbon-collapse",
             "caret-line-up",

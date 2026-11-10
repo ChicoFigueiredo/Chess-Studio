@@ -38,14 +38,16 @@ pub struct ActionsPlugin;
 
 impl Plugin for ActionsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_message::<ActionRequested>().add_systems(
-            Update,
-            (dispatch_shortcuts, perform_actions)
-                .chain()
-                .after(crate::controls::capture_input)
-                .before(crate::camera::CameraSet)
-                .before(crate::play::PlaySet),
-        );
+        app.init_resource::<crate::ui_theme::Appearance>()
+            .add_message::<ActionRequested>()
+            .add_systems(
+                Update,
+                (dispatch_shortcuts, perform_actions)
+                    .chain()
+                    .after(crate::controls::capture_input)
+                    .before(crate::camera::CameraSet)
+                    .before(crate::play::PlaySet),
+            );
     }
 }
 
@@ -88,6 +90,7 @@ pub struct ActionEnv<'w> {
     controls_ui: ResMut<'w, ControlsUi>,
     training: Res<'w, crate::training_ui::TrainingUi>,
     board2d: Option<ResMut<'w, crate::board2d_panel::Board2dPanel>>,
+    appearance: ResMut<'w, crate::ui_theme::Appearance>,
 }
 
 fn presentation_id(p: Presentation) -> PresentationId {
@@ -199,6 +202,8 @@ impl ActionEnv<'_> {
                 }
             }
             Action::ResetLayout => self.dock.reset(),
+            Action::UiZoomIn => self.appearance.scale = self.appearance.scale.zoom_in(),
+            Action::UiZoomOut => self.appearance.scale = self.appearance.scale.zoom_out(),
             other => match other.panel() {
                 Some((id, _)) => self.toggle_panel(id),
                 // Gestos, ClockPress/Cancel (consumidos por `clock` e `play`) e superfícies
@@ -245,6 +250,7 @@ pub(crate) fn test_app() -> App {
         .init_resource::<HudSettings>()
         .init_resource::<BoardCoordinates>()
         .init_resource::<HoverHighlight>()
+        .init_resource::<crate::ui_theme::Appearance>()
         .init_resource::<Analysis>()
         .init_resource::<Dock>()
         .init_resource::<crate::training_ui::TrainingUi>()
