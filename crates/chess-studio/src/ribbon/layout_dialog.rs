@@ -46,6 +46,27 @@ fn close(ctx: &egui::Context) {
     });
 }
 
+/// Evidência (`--screenshot <dir> --layout-dialog <nome>`): abre o diálogo com o nome digitado.
+fn capture_open(ctx: &egui::Context) {
+    let once = Id::new("chess-studio/screen-layouts/dialog-capture");
+    if ctx.data(|d| d.get_temp::<bool>(once)).unwrap_or(false) {
+        return;
+    }
+    ctx.data_mut(|d| d.insert_temp(once, true));
+    if let Some(name) = crate::capture::option_value("--layout-dialog") {
+        open(ctx);
+        ctx.data_mut(|d| {
+            d.insert_temp(
+                state_id(),
+                DialogState {
+                    name,
+                    ..DialogState::default()
+                },
+            )
+        });
+    }
+}
+
 /// Desenha o diálogo se estiver aberto e devolve os pedidos feitos neste quadro.
 pub fn show(
     ctx: &egui::Context,
@@ -53,6 +74,7 @@ pub fn show(
     layouts: &ScreenLayouts,
     out: &mut Vec<ScreenLayoutRequested>,
 ) {
+    capture_open(ctx);
     if !is_open(ctx) {
         return;
     }

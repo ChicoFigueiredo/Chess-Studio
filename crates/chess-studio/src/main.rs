@@ -119,7 +119,7 @@ fn capture_script() -> capture::CaptureScript {
 /// A captura mostra o invólucro da interface: `--panel`, `--profile` ou qualquer opção que só
 /// faz sentido com ele (Ribbon, KeyTips, bastidores, Opções, Paleta, barra de avaliação).
 fn shell_requested() -> bool {
-    const FLAGS: [&str; 8] = [
+    const FLAGS: [&str; 9] = [
         "--panel",
         "--keytips",
         "--backstage",
@@ -128,6 +128,7 @@ fn shell_requested() -> bool {
         "--ribbon",
         "--ribbon-tab",
         "--eval-demo",
+        "--layout-dialog",
     ];
     std::env::args().any(|a| FLAGS.contains(&a.as_str())) || option_value("--profile").is_some()
 }
