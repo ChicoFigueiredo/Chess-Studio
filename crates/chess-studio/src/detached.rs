@@ -2,7 +2,8 @@
 //! Painel só, que é um grupo de uma aba) vai para uma janela do SO, que pode ir para o
 //! 2º monitor. A janela guarda a própria árvore `egui_tiles`: as abas se reorganizam e se
 //! dividem lá dentro. "Encaixar" e "Encaixar grupo" são Ações explícitas: não existe arrasto
-//! entre janelas do SO (ADR-0005).
+//! entre janelas do SO (ADR-0005); criar a janela arrastando um Painel para fora da janela
+//! principal é permitido (#195).
 //!
 //! Este módulo tem três partes:
 //! 1. o estado puro ([`DetachedWindow`] e as transições em `DockLayout`), testado sem Bevy;
@@ -19,7 +20,9 @@ use bevy::camera::visibility::RenderLayers;
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::ecs::schedule::ScheduleLabel;
 use bevy::prelude::*;
-use bevy::window::{Monitor, PrimaryWindow, WindowCloseRequested, WindowPosition, WindowRef};
+use bevy::window::{
+    CursorLeft, Monitor, PrimaryWindow, WindowCloseRequested, WindowPosition, WindowRef,
+};
 use bevy_egui::{EguiContext, EguiSchedule, egui};
 use egui_tiles::{Container, Tile, TileId, Tiles, Tree};
 use serde::{Deserialize, Serialize};
@@ -453,6 +456,75 @@ impl MonitorRect {
     }
 }
 
+/// Folga, em pontos, para considerar que a soltura "encostou" na borda da janela principal.
+const EDGE_TOUCH: f32 = 2.0;
+
+/// Arrastar um Painel para fora (#195): o ponto, dentro da janela principal, por onde o
+/// arrasto saiu, ou `None` se o Painel ainda está dentro. Sai quando o ponteiro está fora
+/// de `screen` (ou sumiu, `pointer == None`), quando o Bevy avisou `CursorLeft`
+/// (`cursor_left`), ou quando é solto (`released`) encostado na borda. `last` é a última
+/// posição conhecida dentro da janela; `protected` marca a soltura em alvos de encaixe
+/// junto da borda (dock, faixa de Painéis), que não contam como sair.
+pub fn drag_exit_point(
+    pointer: Option<egui::Pos2>,
+    last: Option<egui::Pos2>,
+    screen: egui::Rect,
+    cursor_left: bool,
+    released: bool,
+    protected: bool,
+) -> Option<egui::Pos2> {
+    let clamp = |p: egui::Pos2| screen.clamp(p);
+    let outside = cursor_left || pointer.is_none_or(|p| !screen.contains(p));
+    if outside {
+        return pointer.or(last).map(clamp);
+    }
+    let p = pointer?;
+    let touching = p.x - screen.min.x <= EDGE_TOUCH
+        || screen.max.x - p.x <= EDGE_TOUCH
+        || p.y - screen.min.y <= EDGE_TOUCH
+        || screen.max.y - p.y <= EDGE_TOUCH;
+    (released && !protected && touching).then_some(p)
+}
+
+/// Posição (pixels físicos da área de trabalho) da janela destacada nascida ao arrastar:
+/// a barra de título sob o ponto de saída (`exit`, em pontos da janela principal em
+/// `main_pos`, com `ppp` pixels por ponto), trazida para dentro do monitor do ponteiro (ou
+/// do primeiro, se ele estiver fora de todos). `size` é o tamanho lógico da janela.
+pub fn exit_window_pos(
+    main_pos: [i32; 2],
+    exit: egui::Pos2,
+    ppp: f32,
+    size: [f32; 2],
+    monitors: &[MonitorRect],
+) -> [i32; 2] {
+    let ppp = if ppp.is_finite() && ppp > 0.0 {
+        ppp
+    } else {
+        1.0
+    };
+    let pointer = [
+        main_pos[0].saturating_add((exit.x * ppp).round() as i32),
+        main_pos[1].saturating_add((exit.y * ppp).round() as i32),
+    ];
+    let wanted = [
+        pointer[0].saturating_sub((size[0] * ppp * 0.5).round() as i32),
+        pointer[1].saturating_sub((16.0 * ppp).round() as i32),
+    ];
+    let Some(monitor) = monitors
+        .iter()
+        .find(|m| m.contains(pointer))
+        .or_else(|| monitors.first())
+    else {
+        return wanted;
+    };
+    let axis = |i: usize, extent: f32| {
+        let lo = i64::from(monitor.pos[i]);
+        let hi = (lo + i64::from(monitor.size[i]) - (extent * ppp).round() as i64).max(lo);
+        i64::from(wanted[i]).clamp(lo, hi) as i32
+    };
+    [axis(0, size[0]), axis(1, size[1])]
+}
+
 /// A "alça" da janela (um pedaço da barra de título) que precisa estar num monitor para o
 /// usuário conseguir alcançá-la.
 fn handle_of(pos: [i32; 2]) -> [i32; 2] {
@@ -542,11 +614,57 @@ impl Plugin for DetachedPlugin {
             Update,
             (
                 restore_on_open,
+                note_cursor_left,
+                open_dragged_out_window,
                 handle_close_requests,
                 sync_windows,
                 track_window_geometry,
             )
                 .chain(),
+        );
+    }
+}
+
+/// O Bevy avisou que o cursor saiu da janela principal: se há um arrasto de Painel em curso,
+/// ele vira janela destacada (#195).
+fn note_cursor_left(
+    mut left: MessageReader<CursorLeft>,
+    primary: Query<(), With<PrimaryWindow>>,
+    mut dock: ResMut<Dock>,
+) {
+    for event in left.read() {
+        if primary.get(event.window).is_ok() {
+            dock.note_cursor_left();
+        }
+    }
+}
+
+/// Abre a janela destacada do Painel arrastado para fora da janela principal, na posição
+/// por onde ele saiu (#195).
+fn open_dragged_out_window(
+    mut dock: ResMut<Dock>,
+    primary: Query<&Window, With<PrimaryWindow>>,
+    monitors: Query<&Monitor>,
+) {
+    let Some(request) = dock.take_exit_request() else {
+        return;
+    };
+    let Some(window) = dock
+        .layout
+        .detach_panel_to_window(&request.panel.0, request.size)
+    else {
+        return;
+    };
+    let rects = monitors_of(&monitors);
+    if let Ok(main) = primary.single()
+        && let WindowPosition::At(p) = main.position
+    {
+        let pos = exit_window_pos([p.x, p.y], request.at, request.ppp, request.size, &rects);
+        dock.layout.set_window_rect(
+            window,
+            Some(pos),
+            request.size,
+            monitor_index_at(pos, &rects),
         );
     }
 }
@@ -1235,5 +1353,99 @@ mod tests {
             layout.windows[0].size,
             [DEFAULT_WINDOW_SIZE[0], MIN_WINDOW_SIZE[1]]
         );
+    }
+
+    fn win() -> egui::Rect {
+        egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1280.0, 720.0))
+    }
+
+    #[test]
+    fn a_drag_inside_the_window_does_not_exit() {
+        let p = Some(egui::pos2(600.0, 300.0));
+        assert_eq!(drag_exit_point(p, p, win(), false, false, false), None);
+        assert_eq!(drag_exit_point(p, p, win(), false, true, false), None);
+    }
+
+    #[test]
+    fn the_pointer_outside_the_window_exits_where_it_left() {
+        let out = Some(egui::pos2(1400.0, 300.0));
+        assert_eq!(
+            drag_exit_point(out, None, win(), false, false, false),
+            Some(egui::pos2(1280.0, 300.0)),
+            "ponto de saída preso à borda"
+        );
+        // Ponteiro sumiu: vale a última posição conhecida.
+        let last = Some(egui::pos2(1270.0, 40.0));
+        assert_eq!(
+            drag_exit_point(None, last, win(), false, false, false),
+            last
+        );
+        assert_eq!(
+            drag_exit_point(None, None, win(), false, false, false),
+            None
+        );
+    }
+
+    #[test]
+    fn cursor_left_exits_even_with_a_stale_position_inside() {
+        let p = Some(egui::pos2(1275.0, 300.0));
+        assert_eq!(drag_exit_point(p, p, win(), true, false, false), p);
+    }
+
+    #[test]
+    fn releasing_touching_the_edge_exits_unless_it_is_a_dock_target() {
+        let edge = Some(egui::pos2(1.0, 300.0));
+        assert_eq!(drag_exit_point(edge, edge, win(), false, true, false), edge);
+        assert_eq!(
+            drag_exit_point(edge, edge, win(), false, false, false),
+            None
+        );
+        assert_eq!(drag_exit_point(edge, edge, win(), false, true, true), None);
+        let near = Some(egui::pos2(20.0, 300.0));
+        assert_eq!(drag_exit_point(near, near, win(), false, true, false), None);
+    }
+
+    #[test]
+    fn the_new_window_sits_with_its_title_bar_under_the_exit_point() {
+        // Janela principal em (100, 50); saiu pela direita em x=1280, y=300; janela 400 de largura.
+        let pos = exit_window_pos(
+            [100, 50],
+            egui::pos2(1280.0, 300.0),
+            1.0,
+            [400.0, 500.0],
+            &[],
+        );
+        assert_eq!(pos, [100 + 1280 - 200, 50 + 300 - 16]);
+        // Em tela com escala 2, tudo em pixels físicos.
+        let pos = exit_window_pos([0, 0], egui::pos2(100.0, 100.0), 2.0, [400.0, 500.0], &[]);
+        assert_eq!(pos, [200 - 400, 200 - 32]);
+    }
+
+    #[test]
+    fn the_new_window_is_clamped_to_the_monitor_of_the_pointer() {
+        let monitors = two_monitors();
+        // Saiu pela direita do monitor 0 (1920 de largura) perto do canto: a janela cabe no
+        // monitor 1? O ponteiro absoluto 1900 ainda está no monitor 0.
+        let pos = exit_window_pos(
+            [0, 0],
+            egui::pos2(1900.0, 1000.0),
+            1.0,
+            [420.0, 520.0],
+            &monitors,
+        );
+        let m = monitors[0];
+        assert!(pos[0] + 420 <= m.pos[0] + m.size[0] as i32);
+        assert!(pos[1] + 520 <= m.pos[1] + m.size[1] as i32);
+        assert!(pos[0] >= m.pos[0] && pos[1] >= m.pos[1]);
+        assert!(reachable(pos, &monitors));
+        // Saiu para além de todos os monitores: cai no primeiro.
+        let far = exit_window_pos(
+            [0, 0],
+            egui::pos2(9000.0, 9000.0),
+            1.0,
+            [420.0, 520.0],
+            &monitors,
+        );
+        assert!(reachable(far, &monitors));
     }
 }
