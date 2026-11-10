@@ -167,7 +167,7 @@ pub fn ui(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session, hidden: bool) {
         .auto_shrink([false, false])
         .show(ui, |ui| {
             // NotationList: três colunas (número, brancas, pretas).
-            egui::Grid::new("notation-grid")
+            egui::Grid::new("notation_grid")
                 .num_columns(3)
                 .spacing([4.0, 2.0])
                 .show(ui, |ui| {
