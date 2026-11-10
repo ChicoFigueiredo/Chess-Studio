@@ -29,8 +29,8 @@ use crate::presentation::{GpuSupport, GraphicsQuality, UltraEffects};
 use crate::profiles::InterfaceProfiles;
 use crate::session::Session;
 use crate::ui_theme::{
-    Appearance, ButtonVariant, CsButton, Density, ThemeMode, UiScale, cs_button, cs_dropdown,
-    cs_radio_value, cs_slider, cs_switch, palette, strong,
+    Appearance, ButtonVariant, Density, Palette, ThemeKind, ThemeMode, UiScale, cs_button,
+    cs_dropdown, cs_radio_value, cs_slider, cs_switch, icon_job, palette, strong,
 };
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
@@ -59,6 +59,18 @@ impl Category {
         Category::Controls,
         Category::Profile,
     ];
+
+    pub fn icon(self) -> &'static str {
+        use egui_phosphor::regular as i;
+        match self {
+            Category::Appearance => i::PAINT_BRUSH,
+            Category::Board => i::SQUARES_FOUR,
+            Category::Aids => i::LIGHTBULB,
+            Category::Engines => i::CPU,
+            Category::Controls => i::KEYBOARD,
+            Category::Profile => i::USER,
+        }
+    }
 
     pub fn key(self) -> &'static str {
         match self {
@@ -401,6 +413,9 @@ fn move_method_key(method: MoveMethod) -> &'static str {
     }
 }
 
+const HEADER_HEIGHT: f32 = 60.0;
+const FOOTER_HEIGHT: f32 = 56.0;
+
 fn options_dialog(
     mut contexts: EguiContexts,
     i18n: Res<I18n>,
@@ -411,58 +426,162 @@ fn options_dialog(
         return Ok(());
     }
     let ctx = contexts.ctx_mut()?;
+    let p = Palette::of(ThemeKind::from_dark_mode(
+        ctx.global_style().visuals.dark_mode,
+    ));
     let screen = ctx.content_rect();
-    let width = (screen.width() - 32.0).clamp(320.0, 860.0);
-    let height = (screen.height() - 64.0).clamp(240.0, 580.0);
-    let narrow = width < 560.0;
-    let response = egui::Modal::new(egui::Id::new("options-dialog")).show(ctx, |ui| {
-        ui.set_width(width);
-        ui.set_height(height);
-        ui.horizontal_top(|ui| {
-            ui.allocate_ui_with_layout(
-                egui::vec2(if narrow { 110.0 } else { 170.0 }, height),
-                egui::Layout::top_down(egui::Align::Min),
-                |ui| {
-                    ui.label(strong(ui.ctx(), i18n.t("options-title")));
-                    ui.add_space(8.0);
-                    for category in Category::ALL {
-                        let selected = state.category == category;
-                        let label = i18n.t(category.key());
-                        let button = CsButton::new(&label)
-                            .variant(ButtonVariant::Subtle)
-                            .toggled(selected);
-                        if ui.add(button).clicked() {
-                            state.category = category;
-                        }
-                    }
-                },
-            );
-            ui.separator();
-            ui.vertical(|ui| {
-                let body_height = height - 56.0;
-                egui::ScrollArea::vertical()
-                    .max_height(body_height)
-                    .min_scrolled_height(body_height)
-                    .auto_shrink([false, false])
+    let width = (screen.width() - 32.0).clamp(320.0, 760.0);
+    let height = (screen.height() - 64.0).clamp(240.0, 560.0);
+    let nav_width = if width < 560.0 { 120.0 } else { 200.0 };
+    let body_height = height - HEADER_HEIGHT - FOOTER_HEIGHT;
+    let frame = egui::Frame::new()
+        .fill(p.surface_1)
+        .stroke(egui::Stroke::new(1.0, p.border))
+        .corner_radius(8)
+        .inner_margin(0);
+    let response = egui::Modal::new(egui::Id::new("options-dialog"))
+        .backdrop_color(p.scrim)
+        .frame(frame)
+        .show(ctx, |ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+            ui.set_width(width);
+            // Cabeçalho: ícone de engrenagem e título (estilo `title`, 20/28).
+            egui::Frame::new()
+                .inner_margin(egui::Margin::symmetric(24, 16))
+                .show(ui, |ui| {
+                    ui.set_width(width - 48.0);
+                    ui.set_height(HEADER_HEIGHT - 32.0);
+                    let font = crate::ui_theme::strong_font(ui.ctx(), 20.0);
+                    let title = icon_job(
+                        ui.ctx(),
+                        Some(egui_phosphor::regular::GEAR),
+                        &i18n.t("options-title"),
+                        font,
+                        p.ink,
+                    );
+                    ui.label(title);
+                });
+            let (line, _) = ui.allocate_exact_size(egui::vec2(width, 1.0), egui::Sense::hover());
+            ui.painter().rect_filled(line, 0.0, p.border);
+            ui.horizontal_top(|ui| {
+                // Navegação por categorias: coluna `surface-2` com borda à direita.
+                egui::Frame::new()
+                    .fill(p.surface_2)
+                    .inner_margin(egui::Margin::same(8))
                     .show(ui, |ui| {
-                        let category = state.category;
-                        category_ui(ui, &i18n, category, &mut env, &mut state);
+                        ui.set_width(nav_width - 16.0);
+                        ui.set_height(body_height - 16.0);
+                        ui.vertical(|ui| {
+                            ui.spacing_mut().item_spacing.y = 2.0;
+                            for category in Category::ALL {
+                                let selected = state.category == category;
+                                if nav_item(
+                                    ui,
+                                    p,
+                                    category.icon(),
+                                    &i18n.t(category.key()),
+                                    selected,
+                                )
+                                .clicked()
+                                {
+                                    state.category = category;
+                                }
+                            }
+                        });
                     });
-                ui.separator();
-                footer(ui, &i18n, &mut state, &mut env);
+                let (line, _) =
+                    ui.allocate_exact_size(egui::vec2(1.0, body_height), egui::Sense::hover());
+                ui.painter().rect_filled(line, 0.0, p.border);
+                // Conteúdo: padding de 24 e espaço à direita para a barra de rolagem.
+                egui::Frame::new()
+                    .inner_margin(egui::Margin {
+                        left: 24,
+                        right: 8,
+                        top: 8,
+                        bottom: 8,
+                    })
+                    .show(ui, |ui| {
+                        let content_width = width - nav_width - 1.0 - 32.0;
+                        ui.set_width(content_width);
+                        ui.spacing_mut().item_spacing = egui::vec2(8.0, 4.0);
+                        ui.vertical(|ui| {
+                            egui::ScrollArea::vertical()
+                                .max_height(body_height - 16.0)
+                                .min_scrolled_height(body_height - 16.0)
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    // Margem direita: nada encosta na barra de rolagem.
+                                    egui::Frame::new()
+                                        .inner_margin(egui::Margin {
+                                            right: 16,
+                                            ..egui::Margin::ZERO
+                                        })
+                                        .show(ui, |ui| {
+                                            let category = state.category;
+                                            category_ui(ui, &i18n, category, &mut env, &mut state);
+                                        });
+                                });
+                        });
+                    });
             });
+            // Rodapé: barra `surface-2` com borda no topo e os botões à direita.
+            egui::Frame::new()
+                .fill(p.surface_2)
+                .stroke(egui::Stroke::new(1.0, p.border))
+                .corner_radius(egui::CornerRadius {
+                    nw: 0,
+                    ne: 0,
+                    sw: 8,
+                    se: 8,
+                })
+                .inner_margin(egui::Margin::symmetric(24, 12))
+                .show(ui, |ui| {
+                    ui.set_width(width - 48.0);
+                    ui.set_height(FOOTER_HEIGHT - 24.0);
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    footer(ui, &i18n, &mut state, &mut env);
+                });
         });
-    });
     if response.should_close() {
         state.close();
     }
     Ok(())
 }
 
+/// Item de menu da navegação: 32 px, ícone e rótulo; hover em `surface-3`, selecionado em
+/// `accent-subtle` com texto `accent-ink`.
+fn nav_item(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    icon: &str,
+    label: &str,
+    selected: bool,
+) -> egui::Response {
+    let size = egui::vec2(ui.available_width(), 32.0);
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    let (fill, ink) = if selected {
+        (p.accent_subtle, p.accent_ink)
+    } else if response.hovered() {
+        (p.surface_3, p.ink)
+    } else {
+        (egui::Color32::TRANSPARENT, p.ink)
+    };
+    ui.painter().rect_filled(rect, 6.0, fill);
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let job = icon_job(ui.ctx(), Some(icon), label, font, ink);
+    let galley = ui.painter().layout_job(job);
+    let pos = egui::pos2(rect.left() + 10.0, rect.center().y - galley.size().y / 2.0);
+    ui.painter().galley(pos, galley, ink);
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::WidgetType::Button, true, selected, label)
+    });
+    response
+}
+
 fn footer(ui: &mut egui::Ui, i18n: &I18n, state: &mut OptionsUi, env: &mut OptionsEnv) {
-    ui.horizontal_wrapped(|ui| {
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         if state.is_confirming_reset() {
-            ui.label(i18n.t("options-restore-confirm"));
+            // Da direita para a esquerda: Restaurar (perigo), Cancelar e a pergunta.
             if cs_button(ui, &i18n.t("options-restore-yes"), ButtonVariant::Danger).clicked() {
                 state.confirm_reset(env);
             }
@@ -475,12 +594,13 @@ fn footer(ui: &mut egui::Ui, i18n: &I18n, state: &mut OptionsUi, env: &mut Optio
             {
                 state.cancel_reset();
             }
+            ui.add(egui::Label::new(i18n.t("options-restore-confirm")).truncate());
         } else {
-            if cs_button(ui, &i18n.t("options-restore"), ButtonVariant::Secondary).clicked() {
-                state.ask_reset();
-            }
             if cs_button(ui, &i18n.t("options-close"), ButtonVariant::Primary).clicked() {
                 state.close();
+            }
+            if cs_button(ui, &i18n.t("options-restore"), ButtonVariant::Secondary).clicked() {
+                state.ask_reset();
             }
         }
     });

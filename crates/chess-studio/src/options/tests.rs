@@ -345,3 +345,18 @@ fn ctrl_comma_opens_the_dialog() {
     press(&mut app, KeyCode::Comma);
     assert!(app.world().resource::<OptionsUi>().open);
 }
+
+#[test]
+fn opening_options_from_the_palette_closes_it_and_the_chord_fires_while_typing() {
+    assert!(chess_input::controls::Action::OpenOptions.fires_while_typing());
+    let mut app = options_app();
+    app.world_mut()
+        .resource_mut::<crate::palette::PaletteState>()
+        .open();
+    app.world_mut()
+        .resource_mut::<Messages<ActionRequested>>()
+        .write(ActionRequested(chess_input::controls::Action::OpenOptions));
+    app.update();
+    assert!(app.world().resource::<OptionsUi>().open);
+    assert!(!app.world().resource::<crate::palette::PaletteState>().open);
+}

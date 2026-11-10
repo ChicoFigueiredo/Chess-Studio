@@ -13,6 +13,7 @@ const PT_BR: &[(&str, &str)] = &[
         include_str!("../assets/i18n/pt-BR/actions.ftl"),
     ),
     ("app.ftl", include_str!("../assets/i18n/pt-BR/app.ftl")),
+    ("shell.ftl", include_str!("../assets/i18n/pt-BR/shell.ftl")),
     ("dock.ftl", include_str!("../assets/i18n/pt-BR/dock.ftl")),
     (
         "profiles.ftl",
@@ -235,7 +236,10 @@ mod tests {
         let mut checked = 0;
         for entry in std::fs::read_dir(dir).unwrap() {
             let path = entry.unwrap().path();
-            if path.extension().is_none_or(|e| e != "rs") {
+            // `action_icons.rs` guarda nomes de ícones Phosphor, que não são ids Fluent.
+            if path.extension().is_none_or(|e| e != "rs")
+                || path.file_name().is_some_and(|n| n == "action_icons.rs")
+            {
                 continue;
             }
             let text = std::fs::read_to_string(&path).unwrap();

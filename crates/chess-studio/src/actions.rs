@@ -92,6 +92,7 @@ pub struct ActionEnv<'w> {
     training: Res<'w, crate::training_ui::TrainingUi>,
     board2d: Option<ResMut<'w, crate::board2d_panel::Board2dPanel>>,
     appearance: ResMut<'w, crate::ui_theme::Appearance>,
+    pub(crate) palette: ResMut<'w, crate::palette::PaletteState>,
 }
 
 fn presentation_id(p: Presentation) -> PresentationId {
@@ -154,7 +155,12 @@ impl ActionEnv<'_> {
                 self.dialog.open_from(&config, &self.aids);
             }
             Action::OpenControls => self.controls_ui.open = true,
-            Action::OpenOptions => self.options_ui.open = true,
+            Action::OpenOptions => {
+                self.options_ui.open = true;
+                // Vinda da Paleta: ela fecha, o diálogo é modal.
+                self.palette.close();
+            }
+            Action::OpenPalette => self.palette.toggle(),
             Action::Undo => self.session.undo(),
             Action::Redo => self.session.command(Command::Redo),
             Action::Resign => self.session.resign_side_to_move(),
@@ -257,6 +263,7 @@ pub(crate) fn test_app() -> App {
         .init_resource::<Analysis>()
         .init_resource::<Dock>()
         .init_resource::<crate::training_ui::TrainingUi>()
+        .init_resource::<crate::palette::PaletteState>()
         .add_message::<ActionRequested>()
         .add_systems(Update, (dispatch_shortcuts, perform_actions).chain());
     app
