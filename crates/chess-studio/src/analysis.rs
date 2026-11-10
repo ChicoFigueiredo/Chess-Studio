@@ -350,7 +350,6 @@ impl Analysis {
         self.enabled
     }
 
-    #[cfg(test)]
     pub fn status(&self) -> &Status {
         &self.status
     }

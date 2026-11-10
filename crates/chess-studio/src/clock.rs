@@ -725,6 +725,89 @@ pub fn control_text(base_ms: u64, increment_ms: u64) -> String {
     }
 }
 
+/// Tempo restante em que o relógio passa a avisar (ChessClock: tempo baixo em `warning`).
+pub const LOW_TIME_MS: u64 = 30_000;
+
+/// Como o valor do relógio é pintado. O valor fica sempre visível: a cor só reforça.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClockTone {
+    Normal,
+    /// Tempo baixo (30 s ou menos): `warning`.
+    Low,
+    /// Bandeira caída: `danger`.
+    Flag,
+}
+
+pub fn clock_tone(ms: u64) -> ClockTone {
+    match ms {
+        0 => ClockTone::Flag,
+        1..=LOW_TIME_MS => ClockTone::Low,
+        _ => ClockTone::Normal,
+    }
+}
+
+/// Um lado do relógio (ChessClock): nome e tempo em 32px com números tabulares (fonte
+/// monoespaçada). O lado que joga ganha o contorno `accent` e um traço à esquerda.
+fn clock_card(
+    ui: &mut egui::Ui,
+    p: &crate::ui_theme::Palette,
+    name: &str,
+    time: &str,
+    running: bool,
+    tone: ClockTone,
+) {
+    let stroke = if running {
+        egui::Stroke::new(2.0, p.accent)
+    } else {
+        egui::Stroke::new(1.0, p.border)
+    };
+    let digits = match tone {
+        ClockTone::Normal if running => p.ink,
+        ClockTone::Normal => p.ink_muted,
+        ClockTone::Low => p.warning,
+        ClockTone::Flag => p.danger,
+    };
+    let corner = crate::panel_chrome::radius("radius-m");
+    let response = egui::Frame::NONE
+        .fill(p.surface_2)
+        .stroke(stroke)
+        .corner_radius(corner)
+        .inner_margin(egui::Margin::symmetric(12, 8))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                let label = egui::RichText::new(name).size(14.0).color(if running {
+                    p.ink
+                } else {
+                    p.ink_muted
+                });
+                ui.label(label);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(
+                        egui::RichText::new(time)
+                            .font(egui::FontId::new(32.0, egui::FontFamily::Monospace))
+                            .color(digits),
+                    );
+                });
+            });
+        })
+        .response;
+    if running {
+        let rect = response.rect;
+        let strip = egui::Rect::from_min_size(rect.min, egui::vec2(4.0, rect.height()));
+        ui.painter().rect_filled(
+            strip,
+            egui::CornerRadius {
+                nw: corner.nw,
+                sw: corner.sw,
+                ne: 0,
+                se: 0,
+            },
+            p.accent,
+        );
+    }
+}
+
 fn clock_panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
     let Some(mut session) = world.get_resource_mut::<Session>() else {
         return;
@@ -736,29 +819,17 @@ fn clock_panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
     let user = session.user_side();
     let snapshot = session.snapshot().clone();
     let mut press = false;
+    let p = crate::panel_chrome::palette_of(ui.visuals());
     for slot in 0..2 {
         let side = side_of_slot(user, slot);
         let ms = reading.remaining(side);
         let running = reading.running == Some(side) && !reading.paused;
-        let color = if ms == 0 {
-            egui::Color32::from_rgb(255, 60, 40)
-        } else if running {
-            egui::Color32::from_rgb(255, 189, 36)
-        } else {
-            egui::Color32::from_rgb(160, 118, 30)
-        };
-        ui.horizontal(|ui| {
-            ui.label(i18n.t(match side {
-                Side::White => "clock-white",
-                Side::Black => "clock-black",
-            }));
-            ui.label(
-                egui::RichText::new(clock_text(ms))
-                    .monospace()
-                    .size(34.0)
-                    .color(color),
-            );
+        let name = i18n.t(match side {
+            Side::White => "clock-white",
+            Side::Black => "clock-black",
         });
+        clock_card(ui, p, &name, &clock_text(ms), running, clock_tone(ms));
+        ui.add_space(crate::panel_chrome::token("space-2", 8.0));
     }
     if let Some(time) = session.config().time {
         ui.small(i18n.t_with(
@@ -773,7 +844,7 @@ fn clock_panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
         }));
     }
     if reading.paused {
-        ui.colored_label(egui::Color32::LIGHT_YELLOW, i18n.t("clock-paused"));
+        ui.colored_label(p.warning, i18n.t("clock-paused"));
     }
     if session.is_competitive() {
         ui.small(i18n.t_with(
@@ -786,9 +857,10 @@ fn clock_panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
     }
     let enabled = session.can_press_clock(snapshot.side_to_move);
     if ui
-        .add_enabled(
-            enabled,
-            egui::Button::new(i18n.t("clock-press")).min_size(egui::vec2(200.0, 40.0)),
+        .add(
+            crate::ui_theme::CsButton::new(&i18n.t("clock-press"))
+                .variant(crate::ui_theme::ButtonVariant::Primary)
+                .enabled(enabled),
         )
         .clicked()
     {
@@ -811,6 +883,11 @@ mod tests {
         assert_eq!(clock_text(61_000), "01:01");
         assert_eq!(clock_text(1), "00:01", "1 ms ainda é o último segundo");
         assert_eq!(clock_text(0), "00:00");
+        assert_eq!(clock_tone(5 * 60_000), ClockTone::Normal);
+        assert_eq!(clock_tone(LOW_TIME_MS + 1), ClockTone::Normal);
+        assert_eq!(clock_tone(LOW_TIME_MS), ClockTone::Low);
+        assert_eq!(clock_tone(1), ClockTone::Low);
+        assert_eq!(clock_tone(0), ClockTone::Flag);
     }
 
     #[test]
