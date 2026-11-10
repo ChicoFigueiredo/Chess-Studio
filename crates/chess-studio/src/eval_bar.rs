@@ -6,9 +6,10 @@
 
 use crate::analysis::{Analysis, Status};
 use crate::board2d_panel::{Orientation, orientation_for};
-use crate::camera::CameraRig;
+use crate::camera::{CameraRig, MainCamera};
 use crate::dock::Dock;
 use crate::presentation::Presentation;
+use crate::presentation::TechnicalCamera;
 use crate::ui_theme::{Palette, ThemeKind, Tokens, strong_font};
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
@@ -91,6 +92,73 @@ pub fn demo_score(arg: &str) -> Option<Score> {
         .then(|| Score::Cp((pawns * 100.0).round().clamp(-100_000.0, 100_000.0) as i32))
 }
 
+/// Retângulo da barra colada ao tabuleiro: à esquerda da caixa `bbox` (o tabuleiro projetado
+/// na tela), com `gap` de folga, da altura dela (o rótulo cabe no pé), sempre dentro de `area`.
+pub fn glued_bar_rect(
+    bbox: egui::Rect,
+    area: egui::Rect,
+    width: f32,
+    label_h: f32,
+    gap: f32,
+) -> egui::Rect {
+    let x = (bbox.min.x - gap - width).clamp(area.min.x, (area.max.x - width).max(area.min.x));
+    let top = bbox.min.y.clamp(area.min.y, area.max.y);
+    let bottom = (bbox.max.y - label_h).clamp(area.min.y, (area.max.y - label_h).max(area.min.y));
+    let bottom = bottom.max(top + 32.0);
+    egui::Rect::from_min_max(egui::pos2(x, top), egui::pos2(x + width, bottom))
+}
+
+/// As câmeras do tabuleiro (3D e 2D técnico); só a ativa conta.
+type BoardCameras<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static Camera,
+        &'static GlobalTransform,
+        Has<TechnicalCamera>,
+    ),
+    Or<(With<MainCamera>, With<TechnicalCamera>)>,
+>;
+
+/// Meia-largura da moldura do tabuleiro (igual à de `framing`).
+const FRAME_HALF: f32 = chess_input::BOARD_SIZE / 2.0 + 0.6;
+
+/// Caixa, em pontos do egui, do tabuleiro (moldura) visto pela câmera ativa. Sem alocação.
+fn projected_board(
+    cameras: &BoardCameras<'_, '_>,
+    scale_factor: f32,
+    ppp: f32,
+) -> Option<egui::Rect> {
+    let (camera, transform, technical) = cameras.iter().find(|(c, _, _)| c.is_active)?;
+    let offset = camera
+        .viewport
+        .as_ref()
+        .map_or(Vec2::ZERO, |v| v.physical_position.as_vec2());
+    let mut bbox: Option<egui::Rect> = None;
+    // 3D: a moldura no plano XZ. 2D técnico: o tabuleiro no plano XY, com a faixa das
+    // coordenadas (números à esquerda) incluída para a barra não cobri-las.
+    let half = if technical {
+        (chess_input::BOARD_SIZE / 2.0 + 0.7) * crate::board2d::UNIT
+    } else {
+        FRAME_HALF
+    };
+    for (x, z) in [(-half, -half), (half, -half), (half, half), (-half, half)] {
+        let world = if technical {
+            Vec3::new(x, z, 0.0)
+        } else {
+            Vec3::new(x, 0.0, z)
+        };
+        let at = camera.world_to_viewport(transform, world).ok()?;
+        let point = (at * scale_factor + offset) / ppp;
+        let point = egui::pos2(point.x, point.y);
+        bbox = Some(match bbox {
+            Some(b) => b.union(egui::Rect::from_min_max(point, point)),
+            None => egui::Rect::from_min_max(point, point),
+        });
+    }
+    bbox
+}
+
 pub struct EvalBarPlugin;
 
 impl Plugin for EvalBarPlugin {
@@ -119,6 +187,8 @@ fn eval_bar_ui(
     view: Option<Res<crate::focus::ViewState>>,
     capture: Option<Res<crate::capture::CaptureMode>>,
     mut demo: Local<Option<Option<Score>>>,
+    cameras: BoardCameras,
+    window: Option<Single<&Window, With<bevy::window::PrimaryWindow>>>,
     mut cache: Local<Cached>,
 ) -> Result {
     let forced = *demo.get_or_insert_with(|| {
@@ -158,12 +228,17 @@ fn eval_bar_ui(
     let radius = tokens.length("radius-s").unwrap_or(4.0) as u8;
     let font = strong_font(ctx, 12.0);
     let label_h = 20.0;
-    let bar = bar_rect(area, width, label_h);
+    let gap = tokens.length("space-2").unwrap_or(8.0);
+    let scale_factor = window.map_or(1.0, |w| w.scale_factor());
+    let bar = match projected_board(&cameras, scale_factor, ctx.pixels_per_point()) {
+        Some(bbox) => glued_bar_rect(bbox, area, width, label_h, gap),
+        None => bar_rect(area, width, label_h),
+    };
     let (white_h, from_bottom) = white_extent(eval_fill(score), bar.height(), orientation);
     let label = cache.label.as_str();
     // Sem interação: o ponteiro continua do tabuleiro (órbita, picking).
     egui::Area::new(egui::Id::new("chess-studio-eval-bar"))
-        .order(egui::Order::Background)
+        .order(egui::Order::Foreground)
         .fixed_pos(bar.min)
         .interactable(false)
         .show(ctx, |ui| {
@@ -279,6 +354,27 @@ mod tests {
         assert_eq!((h, bottom), (150.0, true));
         let (h, bottom) = white_extent(0.75, 200.0, Orientation::BlackBottom);
         assert_eq!((h, bottom), (150.0, false));
+    }
+
+    #[test]
+    fn the_bar_is_glued_to_the_left_of_the_projected_board() {
+        let area = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1600.0, 1000.0));
+        let bbox = egui::Rect::from_min_max(egui::pos2(400.0, 200.0), egui::pos2(1200.0, 900.0));
+        let bar = glued_bar_rect(bbox, area, 16.0, 20.0, 8.0);
+        assert_eq!(bar.max.x + 8.0, bbox.min.x);
+        assert_eq!(bar.width(), 16.0);
+        assert_eq!(bar.min.y, 200.0);
+        assert_eq!(bar.max.y + 20.0, 900.0);
+        assert!(area.contains_rect(bar));
+    }
+
+    #[test]
+    fn a_board_against_the_edge_keeps_the_bar_inside_the_area() {
+        let area = egui::Rect::from_min_max(egui::pos2(0.0, 40.0), egui::pos2(1000.0, 700.0));
+        let bbox = egui::Rect::from_min_max(egui::pos2(5.0, -50.0), egui::pos2(900.0, 800.0));
+        let bar = glued_bar_rect(bbox, area, 16.0, 20.0, 8.0);
+        assert!(area.contains_rect(bar), "{bar:?}");
+        assert!(bar.height() >= 32.0);
     }
 
     #[test]
