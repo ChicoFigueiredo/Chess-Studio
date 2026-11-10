@@ -96,6 +96,7 @@ pub enum OptionId {
     Effects,
     Coordinates,
     Hover,
+    CapturedPieces,
     MoveMethod,
     CameraView,
     AlwaysQueen,
@@ -121,7 +122,7 @@ pub enum OptionId {
 impl OptionId {
     /// Todas as linhas do diálogo (conferidas pelos testes do inventário).
     #[cfg(test)]
-    pub const ALL: [OptionId; 28] = [
+    pub const ALL: [OptionId; 29] = [
         OptionId::Theme,
         OptionId::Density,
         OptionId::Scale,
@@ -130,6 +131,7 @@ impl OptionId {
         OptionId::Effects,
         OptionId::Coordinates,
         OptionId::Hover,
+        OptionId::CapturedPieces,
         OptionId::MoveMethod,
         OptionId::CameraView,
         OptionId::AlwaysQueen,
@@ -157,7 +159,9 @@ impl OptionId {
         use OptionId::*;
         match self {
             Theme | Density | Scale | InterfaceProfile | Quality | Effects => Category::Appearance,
-            Coordinates | Hover | MoveMethod | CameraView | AlwaysQueen => Category::Board,
+            Coordinates | Hover | CapturedPieces | MoveMethod | CameraView | AlwaysQueen => {
+                Category::Board
+            }
             AidProfile | AidDestinations | AidGhosts | AidSelected | AidLastMove | AidCheck
             | AidExplanation | HudEnabled | HudProfile => Category::Aids,
             EngineManager | EngineWizard | EngineElo | EngineSide => Category::Engines,
@@ -178,6 +182,7 @@ impl OptionId {
             Effects => ("opt-effects", "opt-effects-hint"),
             Coordinates => ("opt-coordinates", "opt-coordinates-hint"),
             Hover => ("opt-hover", "opt-hover-hint"),
+            CapturedPieces => ("opt-captured-pieces", "opt-captured-pieces-hint"),
             MoveMethod => ("opt-move-method", "opt-move-method-hint"),
             CameraView => ("opt-default-view", "opt-default-view-hint"),
             AlwaysQueen => ("opt-always-queen", "opt-always-queen-hint"),
@@ -212,6 +217,7 @@ pub enum OptionChange {
     Effects(bool),
     Coordinates(bool),
     Hover(bool),
+    CapturedStyle(crate::captured::CapturedStyle),
     MoveMethod(MoveMethod),
     CameraView(CameraView),
     AlwaysQueen(bool),
@@ -230,6 +236,7 @@ pub struct OptionsEnv<'w> {
     support: Res<'w, GpuSupport>,
     coordinates: ResMut<'w, BoardCoordinates>,
     hover: ResMut<'w, HoverHighlight>,
+    captured: ResMut<'w, crate::captured::CapturedStyle>,
     aids: ResMut<'w, AidSettings>,
     hud: ResMut<'w, HudSettings>,
     session: ResMut<'w, Session>,
@@ -274,6 +281,7 @@ impl OptionsEnv<'_> {
             OptionChange::Effects(v) => set!(self.effects.0, v),
             OptionChange::Coordinates(v) => set!(self.coordinates.0, v),
             OptionChange::Hover(v) => set!(self.hover.0, v),
+            OptionChange::CapturedStyle(v) => set!(*self.captured, v),
             OptionChange::MoveMethod(v) => {
                 if self.session.move_method() != v {
                     self.session.set_move_method(v);
@@ -316,6 +324,7 @@ impl OptionsEnv<'_> {
             OptionChange::Effects(UltraEffects::default().0),
             OptionChange::Coordinates(BoardCoordinates::default().0),
             OptionChange::Hover(HoverHighlight::default().0),
+            OptionChange::CapturedStyle(crate::captured::CapturedStyle::default()),
             OptionChange::MoveMethod(MoveMethod::default()),
             OptionChange::CameraView(CameraView::Standard),
             OptionChange::AlwaysQueen(false),
@@ -758,6 +767,14 @@ fn board(ui: &mut egui::Ui, i18n: &I18n, env: &mut OptionsEnv) {
     let hover = env.hover.0;
     if let Some(v) = switch_row(ui, i18n, OptionId::Hover, hover, true) {
         env.apply(OptionChange::Hover(v));
+    }
+    let pieces = env.captured.is_pieces();
+    if let Some(v) = switch_row(ui, i18n, OptionId::CapturedPieces, pieces, true) {
+        env.apply(OptionChange::CapturedStyle(if v {
+            crate::captured::CapturedStyle::Pieces
+        } else {
+            crate::captured::CapturedStyle::Text
+        }));
     }
     let methods: Vec<_> = [MoveMethod::Both, MoveMethod::TwoTaps, MoveMethod::Drag]
         .into_iter()

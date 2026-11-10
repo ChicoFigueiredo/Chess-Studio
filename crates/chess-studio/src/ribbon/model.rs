@@ -81,6 +81,9 @@ pub struct Group {
 /// Rótulo do grupo "Conjuntos" da aba Exibir (sem Ações: ver [`groups`]).
 pub const SETS_GROUP: &str = "ribbon-group-sets";
 
+/// Rótulo do grupo "Nova Partida" da aba Início.
+pub const NEW_GAME_GROUP: &str = "ribbon-group-new-game";
+
 /// Os grupos de uma aba, montados só a partir de `meta()`. A primeira Ação do grupo é o botão
 /// grande do modo clássico. A aba Arquivo não tem corpo: abre os bastidores.
 pub fn groups(view: RibbonView) -> Vec<Group> {
@@ -108,6 +111,11 @@ pub fn groups(view: RibbonView) -> Vec<Group> {
                 actions: vec![action],
             }),
         }
+    }
+    // Em Início, "Nova Partida" é sempre o primeiro grupo (#193), onde quer que suas Ações
+    // apareçam na lista única.
+    if let Some(i) = out.iter().position(|g| g.label == NEW_GAME_GROUP) {
+        out[..=i].rotate_right(1);
     }
     // Em Exibir, os Painéis abrem a aba (como o "Mostrar" do Word): são o que mais se usa ali.
     if let Some(i) = out.iter().position(|g| g.label == "ribbon-group-panels") {
@@ -334,6 +342,14 @@ mod tests {
             .find(|g| g.label == "ribbon-group-game")
             .unwrap();
         assert_eq!(game.actions[0], Action::Undo);
+    }
+
+    #[test]
+    fn the_home_tab_starts_with_the_new_game_group_led_by_the_dialog() {
+        let home = groups(RibbonView::Tab(RibbonTab::Home));
+        assert_eq!(home[0].label, NEW_GAME_GROUP);
+        assert_eq!(home[0].actions[0], Action::NewGame, "o botão grande");
+        assert!(home.len() > 1);
     }
 
     #[test]

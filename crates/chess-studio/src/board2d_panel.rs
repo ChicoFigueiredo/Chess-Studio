@@ -228,7 +228,7 @@ fn glyph_char(piece: Piece) -> char {
     crate::layout::glyph(piece)
 }
 
-fn paint_piece(
+pub(crate) fn paint_piece(
     painter: &egui::Painter,
     rect: Rect,
     side: Side,

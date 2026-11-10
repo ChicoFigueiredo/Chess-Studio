@@ -1,6 +1,7 @@
 use super::inventory::{Destination, INVENTORY};
 use super::*;
 use crate::actions::{ActionRequested, press, test_app};
+use crate::captured::CapturedStyle;
 use bevy::ecs::system::RunSystemOnce;
 
 /// App mínimo com todos os recursos que o diálogo edita.
@@ -8,6 +9,7 @@ fn options_app() -> App {
     let mut app = test_app();
     app.init_resource::<GraphicsQuality>()
         .init_resource::<UltraEffects>()
+        .init_resource::<CapturedStyle>()
         .init_resource::<GpuSupport>()
         .init_resource::<EngineUi>()
         .init_resource::<HudSettings>()
@@ -201,6 +203,13 @@ fn a_dialog_change_updates_the_same_resource_the_old_control_did() {
     apply(&mut app, OptionChange::Hover(false));
     assert!(!app.world().resource::<BoardCoordinates>().0);
     assert!(!app.world().resource::<HoverHighlight>().0);
+
+    assert!(app.world().resource::<CapturedStyle>().is_pieces());
+    apply(&mut app, OptionChange::CapturedStyle(CapturedStyle::Text));
+    assert_eq!(
+        *app.world().resource::<CapturedStyle>(),
+        CapturedStyle::Text
+    );
 
     apply(&mut app, OptionChange::MoveMethod(MoveMethod::Drag));
     assert_eq!(

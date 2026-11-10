@@ -61,6 +61,7 @@ const KEY_ULTRA_EFFECTS: &str = "ultra_effects";
 const KEY_COORDINATES: &str = "board_coordinates";
 /// Realce ao passar o mouse (C15): afordância de interface, fora dos Auxílios.
 const KEY_HOVER_HIGHLIGHT: &str = "hover_highlight";
+const KEY_CAPTURED_PIECES: &str = "captured_pieces";
 /// Aparência da interface (DS-1): Tema, Densidade e Escala, do Perfil local.
 const KEY_UI_THEME: &str = "ui_theme";
 const KEY_UI_DENSITY: &str = "ui_density";
@@ -88,6 +89,7 @@ pub struct SavedPrefs {
     pub coordinates: BoardCoordinates,
     /// Realce da peça sob o cursor (ligado por padrão; não é Auxílio).
     pub hover_highlight: HoverHighlight,
+    pub captured_style: crate::captured::CapturedStyle,
     /// Tema, Densidade e Escala da interface.
     pub appearance: Appearance,
 }
@@ -106,6 +108,7 @@ impl Default for SavedPrefs {
             ultra_effects: UltraEffects::default(),
             coordinates: BoardCoordinates::default(),
             hover_highlight: HoverHighlight::default(),
+            captured_style: crate::captured::CapturedStyle::default(),
             appearance: Appearance::default(),
         }
     }
@@ -428,6 +431,22 @@ impl Persistence {
         self.current
     }
 
+    /// A última Partida não terminada **que não é a da tela** e já tem Lances (a "Retomar" do
+    /// grupo Nova Partida, #193). Uma Partida recém-criada e intocada não conta.
+    pub(crate) fn resumable_game(&self) -> Option<GameId> {
+        let query = chess_store::GameQuery {
+            only_unfinished: true,
+            profile: Some(self.profile),
+            limit: Some(20),
+        };
+        self.store
+            .list_games(&query)
+            .ok()?
+            .into_iter()
+            .find(|g| Some(g.id) != self.current && !g.finished && g.event_count > 0)
+            .map(|g| g.id)
+    }
+
     /// Abre uma Partida do banco (Biblioteca, #49) como a Partida atual: encerra a sessão da
     /// atual (ela continua no banco, retomável), reabre `id` **pausada** e passa a gravar nela.
     /// Depois de `Session::open_game(game)` chame [`Persistence::track`], senão a persistência
@@ -576,6 +595,14 @@ impl Persistence {
                     .and_then(|v| v.as_bool())
                     .unwrap_or(defaults.hover_highlight.0),
             ),
+            captured_style: if get(KEY_CAPTURED_PIECES)
+                .and_then(|v| v.as_bool())
+                .unwrap_or(defaults.captured_style.is_pieces())
+            {
+                crate::captured::CapturedStyle::Pieces
+            } else {
+                crate::captured::CapturedStyle::Text
+            },
             appearance: Appearance {
                 theme: from_debug_id(&ThemeMode::ALL, get(KEY_UI_THEME))
                     .unwrap_or(defaults.appearance.theme),
@@ -886,6 +913,9 @@ impl Persistence {
         if before.hover_highlight != now.hover_highlight {
             writes.push((KEY_HOVER_HIGHLIGHT, json!(now.hover_highlight.0)));
         }
+        if before.captured_style != now.captured_style {
+            writes.push((KEY_CAPTURED_PIECES, json!(now.captured_style.is_pieces())));
+        }
         if before.appearance.theme != now.appearance.theme {
             writes.push((KEY_UI_THEME, debug_id(&now.appearance.theme)));
         }
@@ -997,6 +1027,7 @@ impl Plugin for PersistencePlugin {
             .insert_resource(prefs.ultra_effects)
             .insert_resource(prefs.coordinates)
             .insert_resource(prefs.hover_highlight)
+            .insert_resource(prefs.captured_style)
             .insert_resource(prefs.appearance)
             .insert_resource(crate::controls::Controls::with_map(controls))
             .insert_resource(local_profiles)
@@ -1061,6 +1092,7 @@ fn persist_prefs(
     ultra_effects: Res<UltraEffects>,
     coordinates: Res<BoardCoordinates>,
     hover_highlight: Res<HoverHighlight>,
+    captured_style: Res<crate::captured::CapturedStyle>,
     appearance: Res<Appearance>,
     engine_ui: Res<EngineUi>,
     view: Res<ViewState>,
@@ -1079,6 +1111,7 @@ fn persist_prefs(
             ultra_effects: *ultra_effects,
             coordinates: *coordinates,
             hover_highlight: *hover_highlight,
+            captured_style: *captured_style,
             appearance: *appearance,
         });
     }
@@ -1474,6 +1507,26 @@ mod tests {
     }
 
     #[test]
+    fn resuming_offers_the_other_unfinished_game_with_moves_but_never_the_one_on_screen() {
+        let mut p = new_persistence();
+        let mut session = p.restore().session;
+        p.sync(&session);
+        assert_eq!(p.resumable_game(), None, "só a Partida da tela, sem Lances");
+        play(&mut session, "e2", "e4");
+        p.sync(&session);
+        assert_eq!(p.resumable_game(), None, "a da tela nunca é oferecida");
+        let first = p.current_game().unwrap();
+        session.new_game();
+        p.sync(&session);
+        assert_eq!(p.resumable_game(), Some(first), "a anterior, não terminada");
+        // Abrir a anterior troca quem é "a da tela": a nova, vazia, não é oferecida.
+        let game = p.switch_to_game(first).unwrap();
+        session.open_game(game);
+        p.track(&session);
+        assert_eq!(p.resumable_game(), None);
+    }
+
+    #[test]
     fn invalid_fen_changes_nothing_in_session_or_database() {
         // DB-02: erro sem corromper nada.
         let mut p = new_persistence();
@@ -1524,6 +1577,7 @@ mod tests {
             ultra_effects: UltraEffects(false),
             coordinates: BoardCoordinates(false),
             hover_highlight: HoverHighlight(false),
+            captured_style: crate::captured::CapturedStyle::Text,
             appearance: Appearance {
                 theme: ThemeMode::Light,
                 density: Density::Compact,
@@ -1550,6 +1604,20 @@ mod tests {
             .set_pref(p2.profile, KEY_COORDINATES, &json!("lixo"))
             .unwrap();
         assert!(p2.load_prefs().coordinates.0);
+    }
+
+    /// #193: as capturadas vêm como figuras; trocar para texto sobrevive ao reabrir.
+    #[test]
+    fn captured_style_defaults_to_pieces_and_persists_the_text_choice() {
+        use crate::captured::CapturedStyle;
+        let mut p = new_persistence();
+        assert_eq!(p.load_prefs().captured_style, CapturedStyle::Pieces);
+        p.sync_prefs(SavedPrefs {
+            captured_style: CapturedStyle::Text,
+            ..SavedPrefs::default()
+        });
+        let p2 = Persistence::new(p.into_store());
+        assert_eq!(p2.load_prefs().captured_style, CapturedStyle::Text);
     }
 
     /// DS-1: Tema, Densidade e Escala voltam ao reabrir; valor ilegível ou fora da faixa é corrigido.
