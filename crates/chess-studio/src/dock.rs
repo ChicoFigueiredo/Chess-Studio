@@ -613,6 +613,33 @@ pub struct Dock {
     float_checked: std::collections::HashSet<String>,
     /// Painel flutuante cujo cabeçalho virou arrasto de aba sobre o dock (#184).
     float_drag: Option<FloatDrag>,
+    /// Arrasto de Painel em curso na janela principal, para detectar a saída dela (#195).
+    drag_track: Option<DragTrack>,
+    /// O Bevy avisou `CursorLeft` da janela principal neste quadro.
+    cursor_left: bool,
+    /// Painel que saiu da janela principal arrastado: vira janela destacada (#195).
+    exit_request: Option<ExitRequest>,
+}
+
+/// Arrasto de um Painel (cabeçalho flutuante ou aba) que ainda pode sair da janela.
+#[derive(Clone, Debug, PartialEq)]
+struct DragTrack {
+    panel: PanelId,
+    /// Tamanho da janela destacada que nascer.
+    size: [f32; 2],
+    /// Última posição do ponteiro dentro da janela.
+    last: Option<egui::Pos2>,
+}
+
+/// Pedido de janela destacada por um arrasto para fora (#195): o Bevy abre a janela do SO.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ExitRequest {
+    pub panel: PanelId,
+    /// Ponto de saída, em pontos da janela principal.
+    pub at: egui::Pos2,
+    pub size: [f32; 2],
+    /// Pixels por ponto no momento da saída.
+    pub ppp: f32,
 }
 
 impl Default for Dock {
@@ -635,7 +662,21 @@ impl Dock {
             floating_rects: Vec::new(),
             float_checked: std::collections::HashSet::new(),
             float_drag: None,
+            drag_track: None,
+            cursor_left: false,
+            exit_request: None,
         }
+    }
+
+    /// O cursor saiu da janela principal (Bevy `CursorLeft`); só conta durante um arrasto.
+    pub(crate) fn note_cursor_left(&mut self) {
+        if self.drag_track.is_some() {
+            self.cursor_left = true;
+        }
+    }
+
+    pub(crate) fn take_exit_request(&mut self) -> Option<ExitRequest> {
+        self.exit_request.take()
     }
 
     /// Põe o painel numa janela flutuante, em cascata a partir do canto superior esquerdo
@@ -764,6 +805,8 @@ pub(crate) struct DockBehavior<'a> {
     pub(crate) window: Option<u32>,
     /// Tamanho da janela que nasce se a aba for solta fora do dock.
     float_size: [f32; 2],
+    /// Aba do dock em arrasto neste quadro (preenchido por `draw_dock`).
+    tab_drag: Option<PanelId>,
 }
 
 impl<'a> DockBehavior<'a> {
@@ -775,6 +818,7 @@ impl<'a> DockBehavior<'a> {
             actions: Vec::new(),
             window: None,
             float_size: DEFAULT_FLOAT_SIZE,
+            tab_drag: None,
         }
     }
 
@@ -851,7 +895,8 @@ impl Behavior<PanelId> for DockBehavior<'_> {
             _ => None,
         };
         let title = self.tab_title_for_tile(tiles, tile_id).text().to_owned();
-        let response = panel_chrome::tab_button(
+        let close_tip = self.i18n.t("dock-close");
+        let (response, closed) = panel_chrome::tab_button_closable(
             ui,
             id,
             pane.as_ref().map(|p| panel_icon(&p.0)),
@@ -859,8 +904,11 @@ impl Behavior<PanelId> for DockBehavior<'_> {
             state.active,
             state.is_being_dragged,
             egui::Sense::click_and_drag(),
+            Some(&close_tip),
         );
-        if response.double_clicked()
+        if closed && let Some(pane) = pane.clone() {
+            self.actions.push(DockAction::Close(pane));
+        } else if response.double_clicked()
             && let Some(pane) = pane
         {
             self.actions.push(DockAction::Toggle(pane));
@@ -1008,6 +1056,7 @@ fn draw_dock(
                 layout.tree.ui(behavior, ui);
             });
             if let Some(pane) = dragged {
+                behavior.tab_drag = Some(pane.clone());
                 let pointer = ctx.input(|i| i.pointer.latest_pos());
                 if panel_chrome::dropped_outside(pointer, rect)
                     && let Some(pointer) = pointer
@@ -1235,6 +1284,80 @@ pub(crate) fn dock_ui(world: &mut World) {
     });
 }
 
+/// Painel arrastado (cabeçalho flutuante ou aba) que sai da janela principal vira janela
+/// destacada (#195): registra o pedido para o Bevy abrir a janela do SO onde ele saiu e
+/// cancela o resto do arrasto (flutuar, encaixar).
+fn track_drag_exit(
+    ctx: &egui::Context,
+    dock: &mut Dock,
+    behavior: &mut DockBehavior<'_>,
+    screen: egui::Rect,
+    placed_width: f32,
+    header_panel: Option<PanelId>,
+) {
+    let tab_panel = behavior.tab_drag.take();
+    let (pointer, down, released) = ctx.input(|i| {
+        (
+            i.pointer.latest_pos(),
+            i.pointer.any_down(),
+            i.pointer.any_released(),
+        )
+    });
+    let cursor_left = std::mem::take(&mut dock.cursor_left);
+    let dragging = header_panel
+        .map(|p| {
+            let size = dock
+                .layout
+                .floating
+                .iter()
+                .find(|f| f.id == p)
+                .map_or(DEFAULT_FLOAT_SIZE, |f| f.size);
+            (p, size)
+        })
+        .or_else(|| tab_panel.map(|p| (p, crate::detached::DEFAULT_WINDOW_SIZE)));
+    if let Some((panel, size)) = dragging {
+        let last = pointer.or(dock.drag_track.as_ref().and_then(|t| t.last));
+        dock.drag_track = Some(DragTrack { panel, size, last });
+    }
+    let Some(track) = dock.drag_track.clone() else {
+        return;
+    };
+    if !down && !released {
+        dock.drag_track = None;
+        return;
+    }
+    let window = ctx.content_rect();
+    let region = egui::Rect::from_min_max(
+        egui::pos2(window.max.x - placed_width, screen.min.y),
+        window.max,
+    );
+    let protected = pointer.is_some_and(|p| {
+        region.contains(p)
+            || crate::panel_stripe::drop_on_stripe(Some(p), crate::panel_stripe::drop_zone(ctx))
+    });
+    if let Some(at) = crate::detached::drag_exit_point(
+        pointer,
+        track.last,
+        window,
+        cursor_left,
+        released,
+        protected,
+    ) {
+        dock.drag_track = None;
+        dock.exit_request = Some(ExitRequest {
+            panel: track.panel.clone(),
+            at,
+            size: track.size,
+            ppp: ctx.pixels_per_point(),
+        });
+        behavior.actions.retain(|a| {
+            !matches!(a, DockAction::FloatAt(p, _) | DockAction::BeginTileDrag(p) | DockAction::DockBack(p)
+                if *p == track.panel)
+        });
+        ctx.stop_dragging();
+    }
+}
+
 /// Um quadro do dock e das janelas flutuantes: desenha, aplica as ações e atualiza as
 /// áreas do tabuleiro. Separado de [`dock_ui`] para os testes dirigirem o mesmo caminho.
 fn frame_dock(
@@ -1273,6 +1396,14 @@ fn frame_dock(
         &mut dock.float_checked,
     );
     dock.floating_rects = floating_rects;
+    track_drag_exit(
+        ctx,
+        dock,
+        behavior,
+        screen,
+        placed_width,
+        header_drag.as_ref().map(|d| d.panel.clone()),
+    );
     if let Some(drag) = header_drag
         && dock.float_drag.is_none()
         && (!overlay || dock.overlay_open)
@@ -2233,5 +2364,72 @@ mod tests {
         assert!(!rig.dock.layout.is_floating(&first));
         assert!(rig.dock.layout.any_visible(), "o dock voltou");
         assert!(rig.dock.layout.tile_of(&first).is_some());
+    }
+
+    #[test]
+    fn dragging_a_floating_header_out_of_the_window_asks_for_a_detached_window() {
+        let mut rig = FloatRig::new(dock_with_study_floating());
+        rig.frame(None, None);
+        rig.drag_header_to(HEADER_GRAB, egui::pos2(500.0, 400.0));
+        assert!(rig.dock.exit_request.is_none(), "dentro da janela");
+        rig.frame(Some(egui::pos2(1290.0, 380.0)), None);
+        let request = rig.dock.exit_request.clone().expect("saiu da janela");
+        assert_eq!(request.panel.0, ids::STUDY);
+        assert_eq!(request.size, [300.0, 200.0], "mesmo tamanho");
+        assert_eq!(request.at, egui::pos2(1280.0, 380.0));
+    }
+
+    #[test]
+    fn the_cursor_left_event_during_a_drag_asks_for_a_detached_window() {
+        let mut rig = FloatRig::new(dock_with_study_floating());
+        rig.frame(None, None);
+        rig.drag_header_to(HEADER_GRAB, egui::pos2(500.0, 400.0));
+        rig.dock.note_cursor_left();
+        rig.frame(Some(egui::pos2(500.0, 400.0)), None);
+        assert!(rig.dock.exit_request.is_some());
+        // Sem arrasto, o aviso não conta.
+        let mut idle = FloatRig::new(dock_with_study_floating());
+        idle.frame(None, None);
+        idle.dock.note_cursor_left();
+        idle.frame(Some(egui::pos2(500.0, 400.0)), None);
+        assert!(idle.dock.exit_request.is_none());
+    }
+
+    #[test]
+    fn releasing_a_floating_header_on_the_left_edge_asks_for_a_detached_window() {
+        let mut rig = FloatRig::new(dock_with_study_floating());
+        rig.frame(None, None);
+        rig.drag_header_to(HEADER_GRAB, egui::pos2(300.0, 300.0));
+        let edge = egui::pos2(1.0, 300.0);
+        rig.drag_header_to_dock_target(edge);
+        assert!(rig.dock.exit_request.is_none(), "ainda segurando");
+        rig.release_at(edge);
+        assert!(rig.dock.exit_request.is_some());
+        assert!(
+            rig.dock.layout.is_floating(ids::STUDY),
+            "o Bevy é que abre a janela"
+        );
+    }
+
+    #[test]
+    fn an_ordinary_drop_never_asks_for_a_detached_window() {
+        let mut rig = FloatRig::new(dock_with_study_floating());
+        rig.frame(None, None);
+        rig.drag_header_to(HEADER_GRAB, egui::pos2(500.0, 400.0));
+        rig.release_at(egui::pos2(500.0, 400.0));
+        assert!(rig.dock.exit_request.is_none());
+        assert!(rig.dock.layout.is_floating(ids::STUDY));
+        // Soltar no dock, mesmo encostado na borda direita, encaixa.
+        let mut rig = FloatRig::new(dock_with_study_floating());
+        rig.frame(None, None);
+        rig.drag_header_to(HEADER_GRAB, egui::pos2(1100.0, 300.0));
+        let aids = group_of(&rig.dock.layout, ids::AIDS).unwrap();
+        let target = rig.dock.layout.tree.tiles.rect(aids).unwrap().center();
+        rig.drag_header_to_dock_target(target);
+        let edge = egui::pos2(1279.0, target.y);
+        rig.drag_header_to_dock_target(edge);
+        rig.release_at(edge);
+        assert!(rig.dock.exit_request.is_none());
+        assert!(rig.dock.layout.floating.is_empty());
     }
 }

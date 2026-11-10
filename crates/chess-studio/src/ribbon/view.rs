@@ -8,7 +8,8 @@
 
 use super::icons::glyph;
 use super::model::{
-    Group, KeyTipLevel, RibbonView, SETS_GROUP, groups, split_overflow, visible_tabs,
+    Group, KeyTipLevel, RibbonView, SETS_GROUP, board_tab_visible, groups, split_overflow,
+    visible_tabs_for,
 };
 use super::{RibbonActionContext, RibbonMode, RibbonState, set_top_inset};
 use crate::actions::ActionRequested;
@@ -803,7 +804,7 @@ fn tab_button(ui: &mut Ui, env: &Env<'_>, view: RibbonView, active: bool) -> (Re
         .layout_no_wrap(label, font, Color32::PLACEHOLDER);
     let (rect, response) =
         ui.allocate_exact_size(vec2(galley.size().x + 28.0, TABS_H), Sense::click());
-    let contextual = view == RibbonView::Scoresheet;
+    let contextual = matches!(view, RibbonView::Scoresheet | RibbonView::Board);
     let (fill, text) = if view.is_file() {
         (
             if response.hovered() {
@@ -885,7 +886,7 @@ pub(super) fn ribbon_ui(
     let width = screen.width();
     let p = palette_of(&ctx);
     let scoresheet_open = context.0.visible_panels.contains("Scoresheet");
-    let tabs = visible_tabs(scoresheet_open);
+    let tabs = visible_tabs_for(scoresheet_open, board_tab_visible(context.0.presentation));
     // A aba contextual some quando o Painel fecha.
     if !tabs.contains(&ribbon.active) {
         ribbon.active = tabs[1];

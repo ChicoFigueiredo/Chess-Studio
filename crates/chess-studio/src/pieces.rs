@@ -319,6 +319,46 @@ fn spawn_piece_3d(
         .id()
 }
 
+/// Peça só de exibição (Peças tomadas, #194): mesmas malhas e materiais do molde, sem
+/// `Piece3d` nem casa, então a seleção e o picking nunca a veem. `at` é local ao pai.
+pub(crate) fn spawn_display_piece(
+    parent: &mut ChildSpawnerCommands,
+    templates: &PieceTemplates,
+    wood: Option<&PieceWood>,
+    side: Side,
+    piece: Piece,
+    at: Vec3,
+    scale: f32,
+) {
+    let facing = if side == Side::White {
+        std::f32::consts::PI
+    } else {
+        0.0
+    };
+    let parts = templates
+        .by_kind
+        .get(&(side, piece))
+        .cloned()
+        .unwrap_or_default();
+    parent
+        .spawn((
+            Name::new("captured_piece"),
+            Transform::from_translation(at)
+                .with_rotation(Quat::from_rotation_y(facing))
+                .with_scale(Vec3::splat(PIECE_SCALE * scale)),
+            Visibility::default(),
+        ))
+        .with_children(|piece_root| {
+            for part in parts {
+                piece_root.spawn((
+                    Mesh3d(part.mesh),
+                    MeshMaterial3d(wood.map_or(part.material, |w| w.for_side(side))),
+                    part.transform,
+                ));
+            }
+        });
+}
+
 /// Cores (preenchimento, contorno) do glifo de cada lado; o painel "Tabuleiro 2D" usa as
 /// mesmas para ficar idêntico ao 2D técnico.
 pub(crate) fn glyph_colors(side: Side) -> (Color, Color) {

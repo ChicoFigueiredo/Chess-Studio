@@ -48,6 +48,10 @@ pub enum Action {
     ToggleHud,
     /// Mostra e oculta as coordenadas a–h / 1–8 nas bordas do tabuleiro.
     ToggleCoordinates,
+    /// Mostra e esconde o relógio físico 3D sobre a mesa (aba Tabuleiro, #194).
+    ToggleTableClock,
+    /// Mostra e esconde as peças tomadas em 3D ao lado do tabuleiro (aba Tabuleiro, #194).
+    ToggleTableCaptured,
     // --- Ações de menu (DS-14): a lista única do Ribbon, da Barra de Acesso Rápido, dos
     // KeyTips e da Paleta de Ações. Metadados em `crate::actions`.
     NewGame,
@@ -110,7 +114,7 @@ pub enum Action {
 }
 
 impl Action {
-    pub const ALL: [Action; 64] = [
+    pub const ALL: [Action; 66] = [
         Action::Select,
         Action::Adjust,
         Action::Orbit,
@@ -128,6 +132,8 @@ impl Action {
         Action::ToggleFocus,
         Action::ToggleHud,
         Action::ToggleCoordinates,
+        Action::ToggleTableClock,
+        Action::ToggleTableCaptured,
         Action::NewGame,
         Action::NewGameVsEngine,
         Action::NewGameTwoPlayers,
@@ -214,6 +220,8 @@ impl Action {
             Action::PresentImmersive => "present-immersive",
             Action::PresentTechnical => "present-technical",
             Action::FrameBoard => "frame-board",
+            Action::ToggleTableClock => "toggle-table-clock",
+            Action::ToggleTableCaptured => "toggle-table-captured",
             Action::ToggleHoverHighlight => "toggle-hover-highlight",
             Action::ToggleAnalysis => "toggle-analysis",
             Action::PanelNotation => "panel-notation",

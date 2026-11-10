@@ -11,6 +11,9 @@ pub enum RibbonView {
     Tab(RibbonTab),
     /// Aparece só enquanto o Painel Súmula está aberto (DS-02).
     Scoresheet,
+    /// Aparece só nas Apresentações 3D (profissional e Mesa imersiva): Relógio, Peças tomadas,
+    /// Coordenadas e Análise (#194).
+    Board,
 }
 
 impl RibbonView {
@@ -19,6 +22,7 @@ impl RibbonView {
         match self {
             RibbonView::Tab(tab) => tab.label(),
             RibbonView::Scoresheet => "ribbon-tab-scoresheet",
+            RibbonView::Board => "ribbon-tab-board",
         }
     }
 
@@ -32,6 +36,7 @@ impl RibbonView {
             RibbonView::Tab(RibbonTab::Training) => "training",
             RibbonView::Tab(RibbonTab::View) => "view",
             RibbonView::Scoresheet => "scoresheet",
+            RibbonView::Board => "board",
         }
     }
 
@@ -40,7 +45,7 @@ impl RibbonView {
         RibbonTab::ALL
             .into_iter()
             .map(RibbonView::Tab)
-            .chain([RibbonView::Scoresheet])
+            .chain([RibbonView::Scoresheet, RibbonView::Board])
             .find(|v| v.id() == id)
     }
 
@@ -58,13 +63,31 @@ impl RibbonView {
             RibbonView::Tab(RibbonTab::Training) => "T",
             RibbonView::Tab(RibbonTab::View) => "X",
             RibbonView::Scoresheet => "S",
+            RibbonView::Board => "M",
         }
     }
 }
 
 /// As abas visíveis, na ordem; a da Súmula só com ela aberta.
 pub fn visible_tabs(scoresheet_open: bool) -> Vec<RibbonView> {
+    visible_tabs_for(scoresheet_open, false)
+}
+
+/// A aba Tabuleiro só existe nas Apresentações 3D (#194).
+pub fn board_tab_visible(presentation: chess_input::actions::PresentationId) -> bool {
+    use chess_input::actions::PresentationId;
+    matches!(
+        presentation,
+        PresentationId::Professional3d | PresentationId::ImmersiveTable
+    )
+}
+
+/// As abas visíveis com as duas contextuais: Tabuleiro (Apresentação 3D) e Súmula (Painel aberto).
+pub fn visible_tabs_for(scoresheet_open: bool, board_tab: bool) -> Vec<RibbonView> {
     let mut tabs: Vec<_> = RibbonTab::ALL.into_iter().map(RibbonView::Tab).collect();
+    if board_tab {
+        tabs.push(RibbonView::Board);
+    }
     if scoresheet_open {
         tabs.push(RibbonView::Scoresheet);
     }
@@ -93,6 +116,18 @@ pub fn groups(view: RibbonView) -> Vec<Group> {
                 label: "ribbon-group-scoresheet",
                 actions: vec![Action::PanelScoresheet],
             }];
+        }
+        RibbonView::Board => {
+            return vec![
+                Group {
+                    label: "ribbon-group-table",
+                    actions: vec![Action::ToggleTableClock, Action::ToggleTableCaptured],
+                },
+                Group {
+                    label: "ribbon-group-board",
+                    actions: vec![Action::ToggleCoordinates, Action::ToggleAnalysis],
+                },
+            ];
         }
         RibbonView::Tab(RibbonTab::File) => return Vec::new(),
         RibbonView::Tab(tab) => tab,
@@ -403,8 +438,29 @@ mod tests {
     }
 
     #[test]
+    fn the_board_tab_only_exists_in_the_3d_presentations() {
+        use chess_input::actions::PresentationId as P;
+        assert!(board_tab_visible(P::Professional3d));
+        assert!(board_tab_visible(P::ImmersiveTable));
+        assert!(!board_tab_visible(P::Technical2d));
+        assert!(!visible_tabs_for(false, false).contains(&RibbonView::Board));
+        let tabs = visible_tabs_for(true, true);
+        assert!(tabs.contains(&RibbonView::Board));
+        assert_eq!(tabs.last(), Some(&RibbonView::Scoresheet));
+        assert_eq!(
+            actions_of(RibbonView::Board),
+            [
+                Action::ToggleTableClock,
+                Action::ToggleTableCaptured,
+                Action::ToggleCoordinates,
+                Action::ToggleAnalysis
+            ]
+        );
+    }
+
+    #[test]
     fn tab_keytips_are_unique_and_action_keytips_are_unique_within_a_tab() {
-        let all = visible_tabs(true);
+        let all = visible_tabs_for(true, true);
         let letters: HashSet<_> = all.iter().map(|t| t.keytip()).collect();
         assert_eq!(letters.len(), all.len());
         for view in all {

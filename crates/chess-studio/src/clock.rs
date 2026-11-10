@@ -533,6 +533,7 @@ fn clock_input(
     controls: Res<crate::controls::Controls>,
     egui: Res<EguiWantsInput>,
     presentation: Res<Presentation>,
+    table: Res<crate::table::TableClock>,
     window: Single<&Window, With<bevy::window::PrimaryWindow>>,
     camera: Single<(&Camera, &Transform), With<crate::camera::MainCamera>>,
     button_query: Query<(&ClockButton, &GlobalTransform)>,
@@ -560,6 +561,7 @@ fn clock_input(
     let over_ui = egui.wants_pointer_input() || egui.is_pointer_over_area();
     let mut hover = None;
     if presentation.is_3d()
+        && table.0
         && !over_ui
         && session.snapshot().clock.is_some()
         && let Some((origin, dir)) = cursor_ray(&window, *camera)
@@ -592,6 +594,7 @@ fn clock_input(
 fn update_clock(
     session: Res<Session>,
     ui: Res<ClockUi>,
+    table: Res<crate::table::TableClock>,
     mats: Res<ClockMaterials>,
     mut root: Single<&mut Transform, (With<ClockRoot>, Without<ClockButton>)>,
     mut content: Single<&mut Visibility, With<ClockContent>>,
@@ -625,7 +628,8 @@ fn update_clock(
         **root = want;
     }
     let reading = session.clock_reading();
-    let shown = if reading.is_some() {
+    // Escondido pela aba Tabuleiro: nada do relógio aparece (o enquadramento já o ignora).
+    let shown = if reading.is_some() && table.0 {
         Visibility::Inherited
     } else {
         Visibility::Hidden
