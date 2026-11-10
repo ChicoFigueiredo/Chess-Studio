@@ -159,8 +159,11 @@ pub fn usable_rect(ctx: &egui::Context) -> egui::Rect {
     let mut rect = ctx.viewport_rect();
     let top = top_inset(ctx).min(rect.height() * 0.5);
     let bottom = crate::status_bar::bottom_inset(ctx).min(rect.height() * 0.25);
+    // A faixa de Painéis (#185) reserva a borda direita.
+    let right = crate::panel_stripe::right_inset(ctx).min(rect.width() * 0.25);
     rect.min.y += top;
     rect.max.y -= bottom;
+    rect.max.x -= right;
     rect
 }
 
