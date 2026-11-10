@@ -293,22 +293,44 @@ fn classic_group(ui: &mut Ui, env: &mut Env<'_>, group: &Group) {
     });
 }
 
-fn classic_body(ui: &mut Ui, env: &mut Env<'_>, view: RibbonView) {
+/// Largura estimada de um grupo clássico: botão grande mais as colunas de pequenos.
+fn classic_group_width(ui: &Ui, env: &Env<'_>, group: &Group) -> f32 {
+    let big = meta(group.actions[0]);
+    let mut width = small_width(ui, None, &env.i18n.t(big.label)).max(52.0);
+    for chunk in group.actions[1..].chunks(3) {
+        let column = chunk
+            .iter()
+            .map(|a| {
+                let m = meta(*a);
+                small_width(ui, glyph(m.icon), &env.i18n.t(m.label))
+            })
+            .fold(0.0, f32::max);
+        width += 2.0 + column;
+    }
+    width
+}
+
+fn classic_body(ui: &mut Ui, env: &mut Env<'_>, view: RibbonView, available: f32) {
     let p = palette(ui);
     let groups = groups(view);
-    egui::ScrollArea::horizontal()
-        .id_salt(("ribbon-classic", format!("{view:?}")))
-        .auto_shrink([false, true])
-        .show(ui, |ui| {
-            ui.horizontal_top(|ui| {
-                for (i, group) in groups.iter().enumerate() {
-                    if i > 0 {
-                        separator(ui, p, CLASSIC_H - 20.0);
-                    }
-                    classic_group(ui, env, group);
-                }
-            });
-        });
+    let widths: Vec<f32> = groups
+        .iter()
+        .map(|g| classic_group_width(ui, env, g))
+        .collect();
+    // Entre dois grupos: 4 + 1 + 4 do separador mais o espaço entre itens.
+    let split = split_overflow(&widths, 11.0, available, 32.0);
+    ui.horizontal_top(|ui| {
+        for (i, group) in groups.iter().take(split.visible).enumerate() {
+            if i > 0 {
+                separator(ui, p, CLASSIC_H - 20.0);
+            }
+            classic_group(ui, env, group);
+        }
+        if split.has_overflow() {
+            separator(ui, p, CLASSIC_H - 20.0);
+            overflow_menu(ui, env, p, &groups, &split.overflow);
+        }
+    });
 }
 
 // --- Corpo simples ---
@@ -323,6 +345,50 @@ fn group_width(ui: &Ui, env: &Env<'_>, group: &Group) -> f32 {
         })
         .sum();
     items + 2.0 * group.actions.len().saturating_sub(1) as f32
+}
+
+/// Botão "⋯" com os grupos que não cabem na linha.
+fn overflow_menu(
+    ui: &mut Ui,
+    env: &mut Env<'_>,
+    p: &Palette,
+    groups: &[Group],
+    overflow: &[usize],
+) {
+    let more = icon_button(
+        ui,
+        env.i18n,
+        "dots-three",
+        "ribbon-more",
+        "ribbon-more-desc",
+        false,
+    );
+    egui::Popup::menu(&more).show(|ui| {
+        ui.set_min_width(200.0);
+        for &index in overflow {
+            let group = &groups[index];
+            ui.label(
+                egui::RichText::new(env.i18n.t(group.label))
+                    .small()
+                    .color(p.ink_muted),
+            );
+            let width = group
+                .actions
+                .iter()
+                .map(|a| {
+                    let m = meta(*a);
+                    small_width(ui, glyph(m.icon), &env.i18n.t(m.label))
+                })
+                .fold(200.0, f32::max);
+            for action in &group.actions {
+                let extra = Extra {
+                    min_width: width,
+                    ..Extra::default()
+                };
+                action_button(ui, env, *action, Form::Small, extra);
+            }
+        }
+    });
 }
 
 fn simple_body(ui: &mut Ui, env: &mut Env<'_>, view: RibbonView, available: f32) {
@@ -343,40 +409,7 @@ fn simple_body(ui: &mut Ui, env: &mut Env<'_>, view: RibbonView, available: f32)
         }
         if split.has_overflow() {
             separator(ui, p, 24.0);
-            let more = icon_button(
-                ui,
-                env.i18n,
-                "dots-three",
-                "ribbon-more",
-                "ribbon-more-desc",
-                false,
-            );
-            egui::Popup::menu(&more).show(|ui| {
-                ui.set_min_width(200.0);
-                for &index in &split.overflow {
-                    let group = &groups[index];
-                    ui.label(
-                        egui::RichText::new(env.i18n.t(group.label))
-                            .small()
-                            .color(p.ink_muted),
-                    );
-                    let width = group
-                        .actions
-                        .iter()
-                        .map(|a| {
-                            let m = meta(*a);
-                            small_width(ui, glyph(m.icon), &env.i18n.t(m.label))
-                        })
-                        .fold(200.0, f32::max);
-                    for action in &group.actions {
-                        let extra = Extra {
-                            min_width: width,
-                            ..Extra::default()
-                        };
-                        action_button(ui, env, *action, Form::Small, extra);
-                    }
-                }
-            });
+            overflow_menu(ui, env, p, &groups, &split.overflow);
         }
     });
 }
@@ -386,7 +419,7 @@ fn body(ui: &mut Ui, env: &mut Env<'_>, view: RibbonView, mode: RibbonMode, widt
     match mode {
         RibbonMode::Classic => {
             ui.set_min_height(CLASSIC_H - 8.0);
-            classic_body(ui, env, view);
+            classic_body(ui, env, view, width - 24.0);
         }
         RibbonMode::Simple => {
             ui.set_min_height(SIMPLE_H - 8.0);

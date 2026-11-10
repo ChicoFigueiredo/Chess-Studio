@@ -126,6 +126,7 @@ struct Extras<'w> {
     training: Res<'w, crate::training_ui::TrainingUi>,
     scoresheet: Option<Res<'w, crate::scoresheet::ScoresheetUi>>,
     coordinates: ResMut<'w, crate::coordinates::BoardCoordinates>,
+    options: ResMut<'w, crate::options::OptionsUi>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -222,6 +223,9 @@ fn info_panel(
                 );
                 ui.separator();
                 crate::controls::controls_section(ui, &i18n, &mut extras.controls_ui);
+                if ui.button(i18n.t("options-open-button")).clicked() {
+                    extras.options.open = true;
+                }
                 if compact {
                     return;
                 }

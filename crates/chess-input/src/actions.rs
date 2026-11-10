@@ -402,7 +402,11 @@ impl Action {
     pub fn fires_while_typing(self) -> bool {
         matches!(
             self,
-            Action::Cancel | Action::ToggleFullscreen | Action::ToggleFocus
+            Action::Cancel
+                | Action::ToggleFullscreen
+                | Action::ToggleFocus
+                // Ctrl+, não digita nada: vale também de dentro da Paleta (campo de busca).
+                | Action::OpenOptions
         )
     }
 
@@ -508,7 +512,7 @@ fn disabled_reason(action: Action, ctx: &ActionContext) -> Option<&'static str> 
         A::DockPanel if !ctx.has_floating_panel => Some("reason-no-floating-panel"),
         // Superfícies que os tickets seguintes da DS-0x entregam.
         A::ToggleRibbonCollapse if ctx.ribbon_visible => None,
-        A::DetachPanel | A::OpenOptions | A::ToggleRibbonCollapse => Some("reason-coming-soon"),
+        A::DetachPanel | A::ToggleRibbonCollapse => Some("reason-coming-soon"),
         _ => None,
     }
 }

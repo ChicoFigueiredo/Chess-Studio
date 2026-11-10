@@ -170,6 +170,16 @@ impl EngineUi {
         self.user_side
     }
 
+    /// Lado do usuário contra a Engine (Opções > Engines).
+    pub fn set_user_side(&mut self, side: Side) {
+        self.user_side = side;
+    }
+
+    /// Elo da Engine adversária, dentro de `MIN_ELO..=MAX_ELO` (Opções > Engines).
+    pub fn set_elo(&mut self, elo: u32) {
+        self.elo = elo.clamp(MIN_ELO, MAX_ELO);
+    }
+
     pub fn elo(&self) -> u32 {
         self.elo
     }

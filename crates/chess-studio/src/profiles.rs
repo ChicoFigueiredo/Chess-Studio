@@ -470,10 +470,11 @@ pub fn profiles_section(
         }
     });
     ui.horizontal(|ui| {
-        ui.add(
-            egui::TextEdit::singleline(&mut profiles.new_name)
-                .hint_text(i18n.t("iprofile-name-hint"))
-                .desired_width(120.0),
+        crate::ui_theme::cs_text_field(
+            ui,
+            &mut profiles.new_name,
+            &i18n.t("iprofile-name-hint"),
+            None,
         );
         if ui.button(i18n.t("iprofile-save")).clicked() {
             profiles.request = Some(ProfileRequest::SaveCurrent(profiles.new_name.clone()));
