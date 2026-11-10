@@ -742,7 +742,14 @@ impl<'a> DockBehavior<'a> {
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .id_salt(("dockpane", &id.0))
-                .show(ui, |ui| (def.ui)(ui, self.i18n, self.world));
+                .show(ui, |ui| {
+                    // Padding de Painel do design system: `space-4` (Confortável) ou `space-3`
+                    // (Compacta), que o tema guarda em `window_margin`.
+                    let margin = ui.spacing().window_margin;
+                    egui::Frame::NONE
+                        .inner_margin(margin)
+                        .show(ui, |ui| (def.ui)(ui, self.i18n, self.world));
+                });
         } else {
             ui.weak(self.i18n.t("dock-unavailable-competitive"));
         }
@@ -834,6 +841,19 @@ impl Behavior<PanelId> for DockBehavior<'_> {
 
     fn tab_bar_color(&self, visuals: &egui::Visuals) -> egui::Color32 {
         palette_of(visuals).surface_2
+    }
+
+    /// Divisória de 1px `border` entre grupos; `accent` ao apontar ou arrastar.
+    fn resize_stroke(
+        &self,
+        style: &egui::Style,
+        resize_state: egui_tiles::ResizeState,
+    ) -> egui::Stroke {
+        let p = palette_of(&style.visuals);
+        match resize_state {
+            egui_tiles::ResizeState::Idle => egui::Stroke::new(1.0, p.border),
+            _ => egui::Stroke::new(2.0, p.accent),
+        }
     }
 
     fn tab_bar_hline_stroke(&self, visuals: &egui::Visuals) -> egui::Stroke {
@@ -1043,9 +1063,7 @@ fn draw_floating(
                     &panel.id,
                     &title,
                 );
-                egui::Frame::NONE
-                    .inner_margin(egui::Margin::same(8))
-                    .show(ui, |ui| behavior.panel_body(ui, &panel.id));
+                behavior.panel_body(ui, &panel.id);
             });
         if let Some(shown) = shown {
             let rect = shown.response.rect;
