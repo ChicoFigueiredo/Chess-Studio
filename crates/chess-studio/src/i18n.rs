@@ -8,6 +8,10 @@ use fluent_bundle::{FluentArgs, FluentResource, FluentValue};
 use unic_langid::LanguageIdentifier;
 
 const PT_BR: &[(&str, &str)] = &[
+    (
+        "actions.ftl",
+        include_str!("../assets/i18n/pt-BR/actions.ftl"),
+    ),
     ("app.ftl", include_str!("../assets/i18n/pt-BR/app.ftl")),
     ("dock.ftl", include_str!("../assets/i18n/pt-BR/dock.ftl")),
     (

@@ -11,6 +11,7 @@ use crate::picking::HoveredSquare;
 use crate::presentation::{GpuSupport, GraphicsQuality, Presentation, UltraEffects};
 use crate::session::Session;
 use bevy::camera::visibility::RenderLayers;
+use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::prelude::*;
 use bevy_egui::{
     EguiContexts, EguiGlobalSettings, EguiPrimaryContextPass, PrimaryEguiContext, egui,
@@ -42,6 +43,8 @@ pub(crate) fn spawn_ui_camera(mut commands: Commands, mut settings: ResMut<EguiG
     commands.spawn((
         Camera2d,
         PrimaryEguiContext,
+        // Sem tonemapping: ver `board2d::spawn_camera` (issue #156).
+        Tonemapping::None,
         RenderLayers::layer(31),
         Camera {
             order: 100,

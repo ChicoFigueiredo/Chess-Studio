@@ -5,6 +5,7 @@
 //! `snapshot()`. `--screenshot <dir>` gera as capturas de evidência e encerra (com
 //! `--moves`, `--select`, `--panel`, `--aids physical|training|ghosts` e `--review <n>` opcionais); `--benchmark` liga o modo benchmark.
 
+mod actions;
 mod aids;
 mod aids_panel;
 mod analysis;
@@ -198,6 +199,7 @@ fn main() {
         controls::ControlsPlugin,
         local_profiles::LocalProfilesPlugin,
     ));
+    app.add_plugins(actions::ActionsPlugin);
     app.add_plugins((hud::HudPlugin, hud_draw::HudDrawPlugin));
     app.add_plugins(board2d_panel::Board2dPanelPlugin);
     app.add_plugins(coordinates::CoordinatesPlugin);

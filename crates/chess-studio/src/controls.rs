@@ -45,14 +45,16 @@ impl Controls {
         self.capturing
     }
 
-    /// A tecla de `action` acabou de ser apertada? (Falso durante a captura.)
-    pub fn key_just_pressed(&self, action: Action, keys: &ButtonInput<KeyCode>) -> bool {
+    /// As Ações cujo atalho de teclado acabou de ser apertado, na ordem das teclas. Vazio
+    /// durante a captura. É por aqui que o atalho vira `ActionRequested` (`actions`).
+    pub fn pressed_actions(&self, keys: &ButtonInput<KeyCode>) -> Vec<Action> {
         if self.capturing {
-            return false;
+            return Vec::new();
         }
         let held = held_mods(keys);
         keys.get_just_pressed()
-            .any(|key| self.map.resolve(&key_input(*key), held) == Some(action))
+            .filter_map(|key| self.map.resolve(&key_input(*key), held))
+            .collect()
     }
 
     /// Algum botão que seleciona (padrão: o esquerdo) acabou de ser apertado?
@@ -250,7 +252,7 @@ fn apply(
 /// Lê o próximo atalho que o usuário faz, enquanto a tela "Controles" espera um. Roda antes
 /// de tudo que usa a entrada; durante a captura `Controls::is_capturing` silencia o resto.
 #[allow(clippy::too_many_arguments)]
-fn capture_input(
+pub(crate) fn capture_input(
     mut ui: ResMut<ControlsUi>,
     mut controls: ResMut<Controls>,
     keys: Res<ButtonInput<KeyCode>>,
@@ -324,7 +326,7 @@ const POINTER_ACTIONS: [Action; 5] = [
     Action::Pan,
     Action::Zoom,
 ];
-const KEY_ACTIONS: [Action; 12] = [
+const KEY_ACTIONS: [Action; 19] = [
     Action::Cancel,
     Action::ClockPress,
     Action::ViewTop,
@@ -337,10 +339,24 @@ const KEY_ACTIONS: [Action; 12] = [
     Action::ToggleFocus,
     Action::ToggleHud,
     Action::ToggleCoordinates,
+    // Ações de menu com atalho de fábrica (DS-14).
+    Action::NewGame,
+    Action::Undo,
+    Action::Redo,
+    Action::FlipBoard,
+    Action::OpenOptions,
+    Action::OpenPalette,
+    Action::ToggleRibbonCollapse,
 ];
 
+/// A Ação tem linha na tela "Controles".
+#[cfg(test)]
+pub(crate) fn listed_on_controls_screen(action: Action) -> bool {
+    POINTER_ACTIONS.contains(&action) || KEY_ACTIONS.contains(&action)
+}
+
 pub fn action_label(i18n: &I18n, action: Action) -> String {
-    i18n.t(&format!("ctl-action-{}", action.id()))
+    i18n.t(chess_input::actions::meta(action).label)
 }
 
 /// Linhas de ajuda da janela principal, montadas do mapa atual (seguem o remapeamento).
@@ -572,6 +588,10 @@ fn status_area(ui: &mut egui::Ui, i18n: &I18n, map: &mut ControlMap, state: &mut
 mod tests {
     use super::*;
 
+    fn fired(controls: &Controls, action: Action, keys: &ButtonInput<KeyCode>) -> bool {
+        controls.pressed_actions(keys).contains(&action)
+    }
+
     fn keys_with(pressed: &[KeyCode], just: &[KeyCode]) -> ButtonInput<KeyCode> {
         let mut keys = ButtonInput::<KeyCode>::default();
         for k in pressed.iter().chain(just) {
@@ -597,10 +617,10 @@ mod tests {
     fn default_controls_react_to_the_dec_51_keys() {
         let controls = Controls::default();
         let keys = keys_with(&[], &[KeyCode::Digit2]);
-        assert!(controls.key_just_pressed(Action::ViewOblique, &keys));
-        assert!(!controls.key_just_pressed(Action::ViewTop, &keys));
+        assert!(fired(&controls, Action::ViewOblique, &keys));
+        assert!(!fired(&controls, Action::ViewTop, &keys));
         let keys = keys_with(&[], &[KeyCode::F11]);
-        assert!(controls.key_just_pressed(Action::ToggleFullscreen, &keys));
+        assert!(fired(&controls, Action::ToggleFullscreen, &keys));
     }
 
     #[test]
@@ -613,12 +633,16 @@ mod tests {
         )
         .unwrap();
         let controls = Controls::with_map(map);
-        assert!(
-            !controls.key_just_pressed(Action::CyclePresentation, &keys_with(&[], &[KeyCode::Tab]))
-        );
-        assert!(
-            controls.key_just_pressed(Action::CyclePresentation, &keys_with(&[], &[KeyCode::KeyP]))
-        );
+        assert!(!fired(
+            &controls,
+            Action::CyclePresentation,
+            &keys_with(&[], &[KeyCode::Tab])
+        ));
+        assert!(fired(
+            &controls,
+            Action::CyclePresentation,
+            &keys_with(&[], &[KeyCode::KeyP])
+        ));
     }
 
     #[test]
@@ -652,7 +676,11 @@ mod tests {
             capturing: true,
             ..Controls::default()
         };
-        assert!(!controls.key_just_pressed(Action::Cancel, &keys_with(&[], &[KeyCode::Escape])));
+        assert!(!fired(
+            &controls,
+            Action::Cancel,
+            &keys_with(&[], &[KeyCode::Escape])
+        ));
         assert_eq!(
             controls.mouse_action(MouseButton::Left, &keys_with(&[], &[])),
             None

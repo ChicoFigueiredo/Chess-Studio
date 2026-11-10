@@ -4,6 +4,7 @@
 //!
 //! Nada aqui depende do Bevy: só `glam` (o mesmo tipo de vetor que o Bevy reexporta).
 
+pub mod actions;
 pub mod arrow;
 pub mod board;
 pub mod controls;
