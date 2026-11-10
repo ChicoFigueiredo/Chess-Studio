@@ -8,6 +8,7 @@
 
 mod backstage;
 mod icons;
+mod layout_dialog;
 pub mod model;
 mod view;
 

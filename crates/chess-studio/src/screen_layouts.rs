@@ -1,17 +1,17 @@
-//! Conjuntos de Painéis (#186): grupos nomeados de Painéis que se ligam e desligam juntos pela
-//! aba Exibir e pela Paleta ("Abrir Conjunto: <nome>"). Quatro vêm de fábrica (Partida,
+//! Layouts de Tela (#186): grupos nomeados de Painéis que se ligam e desligam juntos pela
+//! aba Exibir e pela Paleta ("Aplicar Layout: <nome>"). Quatro vêm de fábrica (Partida,
 //! Análise, Estudo, Treino); o usuário salva os seus a partir dos Painéis abertos, por Perfil
 //! local.
 //!
-//! Não é Perfil de interface: aplicar um Conjunto só liga e desliga Painéis (e junta os que
+//! Não é Perfil de interface: aplicar um Layout só liga e desliga Painéis (e junta os que
 //! abrem em abas no dock). Partida, Apresentação, Ribbon e Auxílios não são tocados; o Perfil
 //! de interface pode virar "Personalizado", o que é esperado (ver `profiles::track_active`).
 //!
-//! * **Abrir** (clique): os Painéis do Conjunto entram como abas no dock, sem fechar os outros.
-//! * **Mostrar só** (Shift+clique): só os Painéis do Conjunto ficam visíveis.
+//! * **Abrir** (clique): os Painéis do Layout entram como abas no dock, sem fechar os outros.
+//! * **Mostrar só** (Shift+clique): só os Painéis do Layout ficam visíveis.
 //!
 //! Com "Ocultar todos os Painéis" ativo, o estado termina antes: os Painéis guardados voltam
-//! e então o Conjunto é aplicado.
+//! e então o Layout é aplicado.
 
 use crate::actions::HiddenPanels;
 use crate::dock::{Dock, DockLayout, PanelRegistry, ids};
@@ -19,15 +19,15 @@ use crate::session::Session;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-/// Comprimento máximo do nome de um Conjunto salvo.
+/// Comprimento máximo do nome de um Layout salvo.
 pub const MAX_NAME_LEN: usize = 40;
 
 /// Id do Painel Engines (gerenciador de Engines; `dock::ids` ainda não o nomeia).
 const ENGINES: &str = "Engines";
 
-/// Um Conjunto de fábrica.
+/// Um Layout de fábrica.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FactorySet {
+pub struct FactoryLayout {
     /// Id estável, em inglês.
     pub id: &'static str,
     /// Chave i18n do nome.
@@ -35,81 +35,101 @@ pub struct FactorySet {
     pub panels: &'static [&'static str],
 }
 
-/// Os Conjuntos de fábrica, na ordem em que aparecem.
-pub const FACTORY: [FactorySet; 4] = [
-    FactorySet {
+/// Os Layouts de fábrica, na ordem em que aparecem.
+pub const FACTORY: [FactoryLayout; 4] = [
+    FactoryLayout {
         id: "match",
-        label_key: "panel-set-match",
+        label_key: "screen-layout-match",
         panels: &[ids::CLOCK, ids::NOTATION, ids::CAPTURED],
     },
-    FactorySet {
+    FactoryLayout {
         id: "analysis",
-        label_key: "panel-set-analysis",
+        label_key: "screen-layout-analysis",
         panels: &[ids::ANALYSIS, ENGINES, ids::OPENINGS],
     },
-    FactorySet {
+    FactoryLayout {
         id: "study",
-        label_key: "panel-set-study",
+        label_key: "screen-layout-study",
         panels: &[ids::NOTATION, ids::STUDY, ids::BOARD2D, ids::LIBRARY],
     },
-    FactorySet {
+    FactoryLayout {
         id: "training",
-        label_key: "panel-set-training",
+        label_key: "screen-layout-training",
         panels: &[ids::TRAINING, ids::AIDS, ids::NOTATION],
     },
 ];
 
-/// Um Conjunto salvo pelo usuário.
+/// Um Layout salvo pelo usuário.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SavedSet {
+pub struct SavedLayout {
     pub name: String,
     pub panels: Vec<String>,
 }
 
-/// Qual Conjunto: de fábrica (pelo id) ou salvo (pelo nome).
+/// Qual Layout: de fábrica (pelo id) ou salvo (pelo nome).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SetRef {
+pub enum LayoutRef {
     Factory(&'static str),
     Saved(String),
 }
 
 /// Por que um pedido de salvar ou renomear foi recusado.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SetError {
+pub enum LayoutError {
     EmptyName,
     TooLong,
-    /// O nome já é de outro Conjunto (de fábrica ou salvo).
+    /// O nome já é de outro Layout (de fábrica ou salvo).
     NameTaken,
     /// Nenhum Painel aberto para salvar.
     NoPanels,
 }
 
-impl SetError {
+impl LayoutError {
     /// Chave i18n da mensagem.
     pub fn key(self) -> &'static str {
         match self {
-            SetError::EmptyName => "panel-set-error-empty",
-            SetError::TooLong => "panel-set-error-long",
-            SetError::NameTaken => "panel-set-error-taken",
-            SetError::NoPanels => "panel-set-error-no-panels",
+            LayoutError::EmptyName => "screen-layout-error-empty",
+            LayoutError::TooLong => "screen-layout-error-long",
+            LayoutError::NameTaken => "screen-layout-error-taken",
+            LayoutError::NoPanels => "screen-layout-error-no-panels",
         }
     }
 }
 
-/// Como aplicar um Conjunto.
+/// O que o diálogo "Salvar layout…" mostra para o nome digitado.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SaveCheck {
+    /// Nome livre: cria um Layout novo.
+    New,
+    /// Já existe um salvo com esse nome: salvar o substitui (o diálogo avisa).
+    Replaces,
+    Invalid(LayoutError),
+}
+
+/// Pedido de aplicar um Layout escolhido na lista: abre os Painéis dele ou, com "só este
+/// layout" (ou Shift na escolha), mostra só eles.
+pub fn choose(layout: LayoutRef, only: bool) -> ScreenLayoutRequested {
+    if only {
+        ScreenLayoutRequested::ShowOnly(layout)
+    } else {
+        ScreenLayoutRequested::Open(layout)
+    }
+}
+
+/// Como aplicar um Layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApplyMode {
-    /// Abre os Painéis do Conjunto, sem fechar os outros.
+    /// Abre os Painéis do Layout, sem fechar os outros.
     Open,
-    /// Só os Painéis do Conjunto ficam visíveis.
+    /// Só os Painéis do Layout ficam visíveis.
     ShowOnly,
 }
 
 /// Pedido da interface (aba Exibir, Paleta) atendido por [`handle_requests`].
 #[derive(Message, Debug, Clone, PartialEq, Eq)]
-pub enum PanelSetRequested {
-    Open(SetRef),
-    ShowOnly(SetRef),
+pub enum ScreenLayoutRequested {
+    Open(LayoutRef),
+    ShowOnly(LayoutRef),
     /// Salva os Painéis abertos agora com este nome (substitui um salvo de mesmo nome).
     SaveCurrent(String),
     Rename {
@@ -119,21 +139,21 @@ pub enum PanelSetRequested {
     Delete(String),
 }
 
-/// Os Conjuntos salvos do Perfil local e a última recusa.
+/// Os Layouts salvos do Perfil local e a última recusa.
 #[derive(Resource, Debug, Default, Clone, PartialEq, Eq)]
-pub struct PanelSets {
-    saved: Vec<SavedSet>,
+pub struct ScreenLayouts {
+    saved: Vec<SavedLayout>,
     /// Última recusa (mostrada no menu até o próximo pedido).
-    pub error: Option<SetError>,
+    pub error: Option<LayoutError>,
 }
 
 fn normalize(name: &str) -> String {
     name.trim().to_lowercase()
 }
 
-impl PanelSets {
+impl ScreenLayouts {
     /// Reconstrói do gravado (descarta entradas sem nome ou sem Painéis).
-    pub fn from_saved(saved: Vec<SavedSet>) -> Self {
+    pub fn from_saved(saved: Vec<SavedLayout>) -> Self {
         Self {
             saved: saved
                 .into_iter()
@@ -143,18 +163,18 @@ impl PanelSets {
         }
     }
 
-    pub fn saved(&self) -> &[SavedSet] {
+    pub fn saved(&self) -> &[SavedLayout] {
         &self.saved
     }
 
-    /// Os Painéis de um Conjunto, se ele existe.
-    pub fn panels_of(&self, set: &SetRef) -> Option<Vec<String>> {
+    /// Os Painéis de um Layout, se ele existe.
+    pub fn panels_of(&self, set: &LayoutRef) -> Option<Vec<String>> {
         match set {
-            SetRef::Factory(id) => FACTORY
+            LayoutRef::Factory(id) => FACTORY
                 .iter()
                 .find(|f| f.id == *id)
                 .map(|f| f.panels.iter().map(|p| (*p).to_owned()).collect()),
-            SetRef::Saved(name) => self
+            LayoutRef::Saved(name) => self
                 .saved
                 .iter()
                 .find(|s| s.name == *name)
@@ -162,13 +182,52 @@ impl PanelSets {
         }
     }
 
-    fn check_name(&self, name: &str, except: Option<&str>) -> Result<String, SetError> {
+    /// As opções da lista suspensa: os de fábrica (rótulo por `label`, que recebe a chave
+    /// i18n) e depois os salvos, na ordem em que foram salvos.
+    pub fn combo_options(&self, label: impl Fn(&str) -> String) -> Vec<(LayoutRef, String)> {
+        let mut out: Vec<(LayoutRef, String)> = FACTORY
+            .iter()
+            .map(|f| (LayoutRef::Factory(f.id), label(f.label_key)))
+            .collect();
+        out.extend(
+            self.saved
+                .iter()
+                .map(|s| (LayoutRef::Saved(s.name.clone()), s.name.clone())),
+        );
+        out
+    }
+
+    /// O que salvar com `name` faria, sem salvar: serve ao aviso do diálogo.
+    pub fn check_save(&self, name: &str) -> SaveCheck {
+        let trimmed = name.trim();
+        match self
+            .saved
+            .iter()
+            .find(|s| normalize(&s.name) == normalize(trimmed))
+        {
+            Some(existing) => match self.check_name(trimmed, Some(&existing.name)) {
+                Ok(_) => SaveCheck::Replaces,
+                Err(e) => SaveCheck::Invalid(e),
+            },
+            None => match self.check_name(trimmed, None) {
+                Ok(_) => SaveCheck::New,
+                Err(e) => SaveCheck::Invalid(e),
+            },
+        }
+    }
+
+    /// Se renomear `from` para `to` seria aceito.
+    pub fn check_rename(&self, from: &str, to: &str) -> Result<(), LayoutError> {
+        self.check_name(to, Some(from)).map(|_| ())
+    }
+
+    fn check_name(&self, name: &str, except: Option<&str>) -> Result<String, LayoutError> {
         let name = name.trim();
         if name.is_empty() {
-            return Err(SetError::EmptyName);
+            return Err(LayoutError::EmptyName);
         }
         if name.chars().count() > MAX_NAME_LEN {
-            return Err(SetError::TooLong);
+            return Err(LayoutError::TooLong);
         }
         Ok(name.to_owned()).and_then(|n| {
             let key = normalize(&n);
@@ -178,7 +237,7 @@ impl PanelSets {
                 .iter()
                 .any(|s| normalize(&s.name) == key && Some(s.name.as_str()) != except);
             if factory_clash || saved_clash {
-                Err(SetError::NameTaken)
+                Err(LayoutError::NameTaken)
             } else {
                 Ok(n)
             }
@@ -186,10 +245,10 @@ impl PanelSets {
     }
 
     /// Salva `panels` com `name`. Um nome já salvo é substituído; o de um de fábrica é recusado.
-    pub fn save(&mut self, name: &str, panels: Vec<String>) -> Result<(), SetError> {
+    pub fn save(&mut self, name: &str, panels: Vec<String>) -> Result<(), LayoutError> {
         let trimmed = name.trim();
         if panels.is_empty() {
-            return Err(SetError::NoPanels);
+            return Err(LayoutError::NoPanels);
         }
         let existing = self
             .saved
@@ -203,13 +262,13 @@ impl PanelSets {
             None => self.check_name(trimmed, None)?,
         };
         match existing {
-            Some(i) => self.saved[i] = SavedSet { name, panels },
-            None => self.saved.push(SavedSet { name, panels }),
+            Some(i) => self.saved[i] = SavedLayout { name, panels },
+            None => self.saved.push(SavedLayout { name, panels }),
         }
         Ok(())
     }
 
-    pub fn rename(&mut self, from: &str, to: &str) -> Result<(), SetError> {
+    pub fn rename(&mut self, from: &str, to: &str) -> Result<(), LayoutError> {
         let Some(i) = self.saved.iter().position(|s| s.name == from) else {
             return Ok(());
         };
@@ -224,8 +283,8 @@ impl PanelSets {
 }
 
 /// Nome de fábrica em pt-BR (para a checagem de colisão com os salvos, sem depender do
-/// `I18n`): os mesmos textos de `panel-set-*` em `ribbon.ftl`.
-fn factory_name(set: &FactorySet) -> &'static str {
+/// `I18n`): os mesmos textos de `screen-layout-*` em `ribbon.ftl`.
+fn factory_name(set: &FactoryLayout) -> &'static str {
     match set.id {
         "match" => "Partida",
         "analysis" => "Análise",
@@ -279,7 +338,7 @@ pub fn apply(
             }
         }
     }
-    // O grupo de abas âncora: o de um Painel do Conjunto já visível e encaixado; senão, o do
+    // O grupo de abas âncora: o de um Painel do Layout já visível e encaixado; senão, o do
     // primeiro encaixado. Os Painéis que acabam de abrir entram nele como abas.
     let docked_ids: Vec<&String> = wanted
         .iter()
@@ -308,21 +367,21 @@ pub fn apply(
     }
 }
 
-pub struct PanelSetsPlugin;
+pub struct ScreenLayoutsPlugin;
 
-impl Plugin for PanelSetsPlugin {
+impl Plugin for ScreenLayoutsPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<PanelSets>()
-            .add_message::<PanelSetRequested>()
+        app.init_resource::<ScreenLayouts>()
+            .add_message::<ScreenLayoutRequested>()
             .add_systems(Update, handle_requests);
     }
 }
 
-/// Atende os pedidos da interface. Só layout e Conjuntos mudam: nem a `Session` (ADR-0001),
+/// Atende os pedidos da interface. Só layout e Layouts mudam: nem a `Session` (ADR-0001),
 /// nem Apresentação, Ribbon ou Auxílios.
 pub fn handle_requests(
-    mut requests: MessageReader<PanelSetRequested>,
-    mut sets: ResMut<PanelSets>,
+    mut requests: MessageReader<ScreenLayoutRequested>,
+    mut sets: ResMut<ScreenLayouts>,
     mut dock: ResMut<Dock>,
     mut hidden: ResMut<HiddenPanels>,
     session: Res<Session>,
@@ -330,8 +389,8 @@ pub fn handle_requests(
 ) {
     for request in requests.read() {
         let outcome = match request {
-            PanelSetRequested::Open(set) | PanelSetRequested::ShowOnly(set) => {
-                let mode = if matches!(request, PanelSetRequested::Open(_)) {
+            ScreenLayoutRequested::Open(set) | ScreenLayoutRequested::ShowOnly(set) => {
+                let mode = if matches!(request, ScreenLayoutRequested::Open(_)) {
                     ApplyMode::Open
                 } else {
                     ApplyMode::ShowOnly
@@ -347,12 +406,12 @@ pub fn handle_requests(
                 }
                 Ok(())
             }
-            PanelSetRequested::SaveCurrent(name) => {
+            ScreenLayoutRequested::SaveCurrent(name) => {
                 let open = open_panels(&dock.layout, &hidden);
                 sets.save(name, open)
             }
-            PanelSetRequested::Rename { from, to } => sets.rename(from, to),
-            PanelSetRequested::Delete(name) => {
+            ScreenLayoutRequested::Rename { from, to } => sets.rename(from, to),
+            ScreenLayoutRequested::Delete(name) => {
                 sets.delete(name);
                 Ok(())
             }
@@ -541,7 +600,7 @@ mod tests {
         assert_eq!(
             visible(&layout),
             open,
-            "os guardados voltaram e o Conjunto abriu"
+            "os guardados voltaram e o Layout abriu"
         );
     }
 
@@ -580,17 +639,20 @@ mod tests {
 
     #[test]
     fn saving_uses_the_open_panels_and_validates_the_name() {
-        let mut sets = PanelSets::default();
-        assert_eq!(sets.save("  ", strings(&["A"])), Err(SetError::EmptyName));
+        let mut sets = ScreenLayouts::default();
+        assert_eq!(
+            sets.save("  ", strings(&["A"])),
+            Err(LayoutError::EmptyName)
+        );
         assert_eq!(
             sets.save(&"x".repeat(41), strings(&["A"])),
-            Err(SetError::TooLong)
+            Err(LayoutError::TooLong)
         );
-        assert_eq!(sets.save("Meu", vec![]), Err(SetError::NoPanels));
+        assert_eq!(sets.save("Meu", vec![]), Err(LayoutError::NoPanels));
         assert_eq!(
             sets.save("análise", strings(&["A"])),
-            Err(SetError::NameTaken),
-            "nome de Conjunto de fábrica"
+            Err(LayoutError::NameTaken),
+            "nome de Layout de fábrica"
         );
         sets.save(" Meu ", strings(&["A", "B"])).unwrap();
         assert_eq!(sets.saved()[0].name, "Meu");
@@ -602,11 +664,11 @@ mod tests {
 
     #[test]
     fn rename_and_delete_only_touch_saved_sets() {
-        let mut sets = PanelSets::default();
+        let mut sets = ScreenLayouts::default();
         sets.save("Um", strings(&["A"])).unwrap();
         sets.save("Dois", strings(&["B"])).unwrap();
-        assert_eq!(sets.rename("Um", "Dois"), Err(SetError::NameTaken));
-        assert_eq!(sets.rename("Um", "Treino"), Err(SetError::NameTaken));
+        assert_eq!(sets.rename("Um", "Dois"), Err(LayoutError::NameTaken));
+        assert_eq!(sets.rename("Um", "Treino"), Err(LayoutError::NameTaken));
         sets.rename("Um", "Primeiro").unwrap();
         // Renomear para o mesmo nome (só caixa) é permitido.
         sets.rename("Primeiro", "primeiro").unwrap();
@@ -619,22 +681,22 @@ mod tests {
 
     #[test]
     fn saved_sets_survive_a_json_round_trip_and_drop_junk() {
-        let mut sets = PanelSets::default();
+        let mut sets = ScreenLayouts::default();
         sets.save("Meu", strings(&["A", "B"])).unwrap();
         let json = serde_json::to_value(sets.saved()).unwrap();
-        let back: Vec<SavedSet> = serde_json::from_value(json).unwrap();
-        assert_eq!(PanelSets::from_saved(back), sets);
+        let back: Vec<SavedLayout> = serde_json::from_value(json).unwrap();
+        assert_eq!(ScreenLayouts::from_saved(back), sets);
         let junk = vec![
-            SavedSet {
+            SavedLayout {
                 name: " ".into(),
                 panels: strings(&["A"]),
             },
-            SavedSet {
+            SavedLayout {
                 name: "Vazio".into(),
                 panels: vec![],
             },
         ];
-        assert!(PanelSets::from_saved(junk).saved().is_empty());
+        assert!(ScreenLayouts::from_saved(junk).saved().is_empty());
     }
 
     #[test]
@@ -650,20 +712,20 @@ mod tests {
         assert!(visible_now.len() > 2);
     }
 
-    // --- Pelo App: o que aplicar um Conjunto nunca toca ---
+    // --- Pelo App: o que aplicar um Layout nunca toca ---
 
     fn app() -> App {
         let mut app = crate::actions::test_app();
         app.insert_resource(registry())
-            .init_resource::<PanelSets>()
-            .add_message::<PanelSetRequested>()
+            .init_resource::<ScreenLayouts>()
+            .add_message::<ScreenLayoutRequested>()
             .add_systems(Update, handle_requests);
         let layout = full_layout();
         app.world_mut().resource_mut::<Dock>().set_layout(layout);
         app
     }
 
-    fn send(app: &mut App, request: PanelSetRequested) {
+    fn send(app: &mut App, request: ScreenLayoutRequested) {
         app.world_mut().write_message(request);
         app.update();
     }
@@ -677,10 +739,13 @@ mod tests {
             *app.world().resource::<crate::aids::AidSettings>(),
         );
         for set in FACTORY {
-            send(&mut app, PanelSetRequested::Open(SetRef::Factory(set.id)));
             send(
                 &mut app,
-                PanelSetRequested::ShowOnly(SetRef::Factory(set.id)),
+                ScreenLayoutRequested::Open(LayoutRef::Factory(set.id)),
+            );
+            send(
+                &mut app,
+                ScreenLayoutRequested::ShowOnly(LayoutRef::Factory(set.id)),
             );
         }
         let after = (
@@ -704,7 +769,7 @@ mod tests {
         let mut app = app();
         send(
             &mut app,
-            PanelSetRequested::ShowOnly(SetRef::Factory("training")),
+            ScreenLayoutRequested::ShowOnly(LayoutRef::Factory("training")),
         );
         let layout = app.world().resource::<Dock>().layout.clone();
         assert_eq!(
@@ -713,16 +778,16 @@ mod tests {
         );
         send(
             &mut app,
-            PanelSetRequested::SaveCurrent("Meu treino".into()),
+            ScreenLayoutRequested::SaveCurrent("Meu treino".into()),
         );
-        assert_eq!(app.world().resource::<PanelSets>().error, None);
+        assert_eq!(app.world().resource::<ScreenLayouts>().error, None);
         send(
             &mut app,
-            PanelSetRequested::ShowOnly(SetRef::Factory("match")),
+            ScreenLayoutRequested::ShowOnly(LayoutRef::Factory("match")),
         );
         send(
             &mut app,
-            PanelSetRequested::ShowOnly(SetRef::Saved("Meu treino".into())),
+            ScreenLayoutRequested::ShowOnly(LayoutRef::Saved("Meu treino".into())),
         );
         let layout = app.world().resource::<Dock>().layout.clone();
         assert_eq!(
@@ -734,14 +799,17 @@ mod tests {
     #[test]
     fn a_refused_request_is_reported_and_cleared_by_the_next_one() {
         let mut app = app();
-        send(&mut app, PanelSetRequested::SaveCurrent("Partida".into()));
-        assert_eq!(
-            app.world().resource::<PanelSets>().error,
-            Some(SetError::NameTaken)
+        send(
+            &mut app,
+            ScreenLayoutRequested::SaveCurrent("Partida".into()),
         );
-        send(&mut app, PanelSetRequested::SaveCurrent("Livre".into()));
-        assert_eq!(app.world().resource::<PanelSets>().error, None);
-        assert_eq!(app.world().resource::<PanelSets>().saved().len(), 1);
+        assert_eq!(
+            app.world().resource::<ScreenLayouts>().error,
+            Some(LayoutError::NameTaken)
+        );
+        send(&mut app, ScreenLayoutRequested::SaveCurrent("Livre".into()));
+        assert_eq!(app.world().resource::<ScreenLayouts>().error, None);
+        assert_eq!(app.world().resource::<ScreenLayouts>().saved().len(), 1);
     }
 
     #[test]
@@ -749,7 +817,7 @@ mod tests {
         let mut app = app();
         send(
             &mut app,
-            PanelSetRequested::ShowOnly(SetRef::Factory("match")),
+            ScreenLayoutRequested::ShowOnly(LayoutRef::Factory("match")),
         );
         // Liga "Ocultar todos" pela Ação.
         let hidden_set = visible(&app.world().resource::<Dock>().layout.clone());
@@ -761,10 +829,89 @@ mod tests {
         for id in ids_all {
             dock.layout.set_visible(&id, false);
         }
-        send(&mut app, PanelSetRequested::SaveCurrent("Oculto".into()));
-        let saved = app.world().resource::<PanelSets>().saved()[0].clone();
+        send(
+            &mut app,
+            ScreenLayoutRequested::SaveCurrent("Oculto".into()),
+        );
+        let saved = app.world().resource::<ScreenLayouts>().saved()[0].clone();
         let mut got = saved.panels;
         got.sort();
         assert_eq!(got, hidden_set);
+    }
+
+    // --- #196: combo e diálogo ---
+
+    #[test]
+    fn choosing_in_the_combo_applies_the_layout_and_only_mode_shows_only_it() {
+        let saved = LayoutRef::Saved("Meu".into());
+        assert_eq!(
+            choose(LayoutRef::Factory("study"), false),
+            ScreenLayoutRequested::Open(LayoutRef::Factory("study"))
+        );
+        assert_eq!(
+            choose(saved.clone(), true),
+            ScreenLayoutRequested::ShowOnly(saved)
+        );
+    }
+
+    #[test]
+    fn combo_options_list_factory_then_saved_layouts() {
+        let mut sets = ScreenLayouts::default();
+        sets.save("Zeta", strings(&["A"])).unwrap();
+        sets.save("Alfa", strings(&["A"])).unwrap();
+        let options = sets.combo_options(|key| format!("t:{key}"));
+        let labels: Vec<&str> = options.iter().map(|(_, l)| l.as_str()).collect();
+        assert_eq!(
+            labels,
+            [
+                "t:screen-layout-match",
+                "t:screen-layout-analysis",
+                "t:screen-layout-study",
+                "t:screen-layout-training",
+                "Zeta",
+                "Alfa"
+            ]
+        );
+        assert_eq!(options[0].0, LayoutRef::Factory("match"));
+        assert_eq!(options[5].0, LayoutRef::Saved("Alfa".into()));
+    }
+
+    #[test]
+    fn the_dialog_tells_new_from_replace_and_rejects_invalid_names() {
+        let mut sets = ScreenLayouts::default();
+        sets.save("Meu", strings(&["A"])).unwrap();
+        assert_eq!(sets.check_save("Outro"), SaveCheck::New);
+        assert_eq!(sets.check_save("  meu "), SaveCheck::Replaces);
+        assert_eq!(
+            sets.check_save(""),
+            SaveCheck::Invalid(LayoutError::EmptyName)
+        );
+        assert_eq!(
+            sets.check_save(&"x".repeat(41)),
+            SaveCheck::Invalid(LayoutError::TooLong)
+        );
+        assert_eq!(
+            sets.check_save("Treino"),
+            SaveCheck::Invalid(LayoutError::NameTaken),
+            "nome de Layout de fábrica não se substitui"
+        );
+    }
+
+    #[test]
+    fn renaming_checks_clashes_but_allows_changing_only_the_case() {
+        let mut sets = ScreenLayouts::default();
+        sets.save("Meu", strings(&["A"])).unwrap();
+        sets.save("Outro", strings(&["B"])).unwrap();
+        assert_eq!(sets.check_rename("Meu", "meu"), Ok(()));
+        assert_eq!(sets.check_rename("Meu", "Novo"), Ok(()));
+        assert_eq!(
+            sets.check_rename("Meu", "outro"),
+            Err(LayoutError::NameTaken)
+        );
+        assert_eq!(
+            sets.check_rename("Meu", "Análise"),
+            Err(LayoutError::NameTaken)
+        );
+        assert_eq!(sets.check_rename("Meu", " "), Err(LayoutError::EmptyName));
     }
 }

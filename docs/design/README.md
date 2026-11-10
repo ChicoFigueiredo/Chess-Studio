@@ -31,6 +31,7 @@ Design system da interface do Chess Studio, um app desktop offline de xadrez em 
 - `info` (azul) é para seleção no tabuleiro e informação, nunca para identidade.
 - Estados usam `success`, `warning` e `danger` **sempre com ícone ou palavra**, nunca só a cor.
 - `board-light`, `board-dark`, `eval-white`, `eval-black` e `last-move` são iguais nos dois Temas: o tabuleiro não muda com o Tema.
+- `border` é só divisória (decorativa); `border-strong` contorna controles; `control-track` pinta o trilho do slider (3:1 sobre `surface-1` a `surface-3`) e vale para qualquer trilho de controle de arrastar. Nunca use `surface-4` como trilho.
 - Os dois Temas, Escuro (primeiro) e Claro, seguem o sistema operacional por padrão. Todos os pares de texto foram conferidos com 4,5:1 (contornos e anel de foco com 3:1) nos dois.
 
 ## Tipografia
