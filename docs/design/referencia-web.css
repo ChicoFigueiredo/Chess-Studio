@@ -1,0 +1,176 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400&display=swap");
+
+/* Base das prévias: emula a janela egui do Chess Studio. */
+body { margin: 0; padding: var(--space-4); font-family: var(--font-sans); font-size: 14px; line-height: 20px; color: var(--ink); background: var(--surface-1); font-feature-settings: "tnum" 0; }
+* { box-sizing: border-box; }
+.cs-ico { flex: none; display: block; }
+.cs-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.cs-col { display: flex; flex-direction: column; gap: var(--space-2); }
+.cs-label { font-size: 12px; line-height: 16px; color: var(--ink-muted); }
+.cs-kbd { font-size: 12px; line-height: 16px; color: var(--ink-muted); }
+.cs-grid-states { display: grid; grid-template-columns: max-content repeat(5, max-content); gap: var(--space-2) var(--space-4); align-items: center; }
+
+/* Botão: primário, secundário, sutil. Estados: repouso, hover, pressionado, desabilitado, foco. */
+.cs-btn { font: inherit; font-weight: 600; height: var(--control-h); padding: 0 var(--space-3); border-radius: var(--radius-m); border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink); display: inline-flex; align-items: center; gap: var(--space-2); cursor: pointer; white-space: nowrap; }
+.cs-btn:hover, .cs-btn.is-hover { background: var(--surface-3); }
+.cs-btn:active, .cs-btn.is-pressed { background: var(--surface-4); }
+.cs-btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.cs-btn-primary:hover, .cs-btn-primary.is-hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.cs-btn-primary:active, .cs-btn-primary.is-pressed { background: var(--accent-pressed); border-color: var(--accent-pressed); }
+.cs-btn-subtle { background: transparent; border-color: transparent; }
+.cs-btn-danger { color: var(--danger); }
+.cs-btn:disabled, .cs-btn.is-disabled { background: var(--surface-2); border-color: var(--border); color: var(--ink-disabled); cursor: default; }
+.cs-btn-subtle:disabled, .cs-btn-subtle.is-disabled { background: transparent; border-color: transparent; }
+.cs-btn:focus-visible, .cs-btn.is-focus, .cs-focusable:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.cs-btn-icon { width: var(--control-h); padding: 0; justify-content: center; }
+.cs-compact .cs-btn { height: var(--control-h-compact); padding: 0 var(--space-2); }
+.cs-compact .cs-btn-icon { width: var(--control-h-compact); padding: 0; }
+
+/* Botão de alternância (ligado = accent-subtle + accent-ink). */
+.cs-toggle[aria-pressed="true"] { background: var(--accent-subtle); border-color: var(--accent); color: var(--accent-ink); }
+
+/* Caixa de seleção, rádio, switch. */
+.cs-check { display: inline-flex; align-items: center; gap: var(--space-2); cursor: pointer; min-height: 24px; }
+.cs-check-box { width: 16px; height: 16px; border: 1px solid var(--border-strong); border-radius: var(--radius-s); background: var(--surface-1); display: grid; place-items: center; color: var(--on-accent); }
+.cs-check.is-on .cs-check-box { background: var(--accent); border-color: var(--accent); }
+.cs-check.is-mixed .cs-check-box { background: var(--accent); border-color: var(--accent); }
+.cs-check.is-mixed .cs-check-box::after { content: ""; width: 8px; height: 2px; background: var(--on-accent); }
+.cs-check.is-hover .cs-check-box { border-color: var(--ink-muted); }
+.cs-check.is-disabled { color: var(--ink-disabled); cursor: default; }
+.cs-check.is-disabled .cs-check-box { border-color: var(--border); background: var(--surface-2); }
+.cs-check.is-focus .cs-check-box { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.cs-radio .cs-check-box { border-radius: 50%; }
+.cs-radio.is-on .cs-check-box { background: var(--surface-1); border: 5px solid var(--accent); }
+.cs-switch-track { width: 36px; height: 20px; border-radius: 10px; border: 1px solid var(--border-strong); background: var(--surface-1); position: relative; }
+.cs-switch-track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%; background: var(--ink-muted); }
+.cs-check.is-on .cs-switch-track { background: var(--accent); border-color: var(--accent); }
+.cs-check.is-on .cs-switch-track::after { left: 19px; background: var(--on-accent); }
+.cs-check.is-disabled .cs-switch-track { border-color: var(--border); }
+.cs-check.is-disabled .cs-switch-track::after { background: var(--ink-disabled); }
+
+/* Campo, Dropdown, slider. */
+.cs-field { height: var(--control-h); min-width: 180px; padding: 0 var(--space-2); border: 1px solid var(--border-strong); border-radius: var(--radius-m); background: var(--surface-2); color: var(--ink); display: inline-flex; align-items: center; gap: var(--space-2); font: inherit; }
+.cs-field.is-focus { outline: 2px solid var(--focus-ring); outline-offset: 1px; border-color: var(--accent); }
+.cs-field.is-disabled { color: var(--ink-disabled); border-color: var(--border); }
+.cs-field.is-error { border-color: var(--danger); }
+.cs-field .cs-placeholder { color: var(--ink-muted); }
+.cs-dropdown { justify-content: space-between; cursor: pointer; }
+.cs-menu { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius-l); box-shadow: var(--shadow-flyout); padding: var(--space-1); min-width: 200px; }
+.cs-menu-item { display: flex; align-items: center; gap: var(--space-2); height: 32px; padding: 0 var(--space-2); border-radius: var(--radius-m); }
+.cs-menu-item.is-hover { background: var(--surface-3); }
+.cs-menu-item.is-selected { background: var(--accent-subtle); color: var(--accent-ink); }
+.cs-menu-item .cs-kbd { margin-left: auto; }
+.cs-menu-sep { height: 1px; background: var(--border); margin: var(--space-1) 0; }
+.cs-slider { width: 220px; height: 20px; position: relative; display: flex; align-items: center; }
+.cs-slider-rail { height: 4px; width: 100%; background: var(--surface-4); border-radius: 2px; }
+.cs-slider-fill { position: absolute; left: 0; height: 4px; background: var(--accent); border-radius: 2px; }
+.cs-slider-thumb { position: absolute; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%; background: var(--surface-1); border: 4px solid var(--accent); }
+
+/* Tooltip. */
+.cs-tooltip { display: inline-flex; flex-direction: column; gap: 2px; max-width: 260px; padding: var(--space-2) var(--space-3); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-l); box-shadow: var(--shadow-flyout); }
+.cs-tooltip b { font-weight: 600; }
+
+/* Ribbon. */
+.cs-shell { background: var(--surface-0); border: 1px solid var(--border); border-radius: var(--radius-l); overflow: hidden; }
+.cs-titlebar { height: 32px; display: flex; align-items: center; gap: var(--space-1); padding: 0 var(--space-2); background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.cs-titlebar .cs-title { margin: 0 auto; font-size: 12px; color: var(--ink-muted); }
+.cs-qat { display: flex; gap: 2px; align-items: center; }
+.cs-qat .cs-btn { height: 24px; width: 24px; padding: 0; justify-content: center; }
+.cs-ribbon { background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.cs-tabs { display: flex; align-items: flex-end; gap: 2px; height: var(--ribbon-tabs-h); padding: 0 var(--space-2); }
+.cs-tab { height: 28px; padding: 0 var(--space-3); display: inline-flex; align-items: center; font-weight: 600; color: var(--ink-muted); border-radius: var(--radius-m) var(--radius-m) 0 0; position: relative; }
+.cs-tab.is-hover { color: var(--ink); background: var(--surface-3); }
+.cs-tab.is-active { color: var(--ink); }
+.cs-tab.is-active::after { content: ""; position: absolute; left: var(--space-3); right: var(--space-3); bottom: 0; height: 3px; border-radius: 2px; background: var(--accent); }
+.cs-tab-file { background: var(--accent); color: var(--on-accent); border-radius: var(--radius-m); height: 24px; margin-bottom: 2px; }
+.cs-tab-context { color: var(--accent-ink); }
+.cs-tabs .cs-spacer { flex: 1; }
+.cs-ribbon-body { display: flex; align-items: stretch; gap: 0; padding: var(--space-1) var(--space-2); border-top: 1px solid var(--border); background: var(--surface-1); }
+.cs-ribbon-classic .cs-ribbon-body { height: var(--ribbon-classic-h); }
+.cs-ribbon-simple .cs-ribbon-body { height: var(--ribbon-simple-h); align-items: center; }
+.cs-group { display: flex; flex-direction: column; padding: 0 var(--space-2); border-right: 1px solid var(--border); }
+.cs-group:last-child { border-right: 0; }
+.cs-group-items { flex: 1; display: flex; gap: var(--space-1); align-items: flex-start; }
+.cs-group-label { font-size: 12px; line-height: 16px; color: var(--ink-muted); text-align: center; }
+.cs-big { width: 64px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: var(--space-1) 2px; border-radius: var(--radius-m); font-size: 12px; line-height: 14px; text-align: center; border: 1px solid transparent; }
+.cs-big.is-hover { background: var(--surface-3); }
+.cs-big[aria-pressed="true"] { background: var(--accent-subtle); color: var(--accent-ink); border-color: var(--accent); }
+.cs-small-stack { display: flex; flex-direction: column; gap: 2px; }
+.cs-small { height: 22px; display: flex; align-items: center; gap: var(--space-1); padding: 0 var(--space-1); border-radius: var(--radius-m); font-size: 12px; white-space: nowrap; }
+.cs-small[aria-pressed="true"] { background: var(--accent-subtle); color: var(--accent-ink); }
+.cs-simple-item { height: 32px; display: inline-flex; align-items: center; gap: var(--space-1); padding: 0 var(--space-2); border-radius: var(--radius-m); white-space: nowrap; }
+.cs-simple-item[aria-pressed="true"] { background: var(--accent-subtle); color: var(--accent-ink); }
+.cs-simple-sep { width: 1px; align-self: stretch; margin: 6px var(--space-1); background: var(--border); }
+
+/* KeyTips. */
+.cs-keytip-host { position: relative; display: inline-flex; }
+.cs-keytip { position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%); min-width: 18px; height: 18px; padding: 0 4px; border-radius: var(--radius-s); background: var(--ink); color: var(--surface-1); font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; box-shadow: var(--shadow-flyout); z-index: 2; }
+
+/* Bastidores (Arquivo). */
+.cs-backstage { display: grid; grid-template-columns: 200px 1fr; min-height: 320px; background: var(--surface-1); }
+.cs-backstage-nav { background: var(--accent); color: var(--on-accent); padding: var(--space-2); display: flex; flex-direction: column; gap: 2px; }
+.cs-backstage-nav a { display: flex; align-items: center; gap: var(--space-2); height: 36px; padding: 0 var(--space-3); border-radius: var(--radius-m); color: inherit; text-decoration: none; font-weight: 600; }
+.cs-backstage-nav a.is-active { background: var(--accent-pressed); }
+.cs-backstage-main { padding: var(--space-6); display: flex; flex-direction: column; gap: var(--space-4); }
+
+/* Painéis, abas do dock, flutuante, guias de encaixe. */
+.cs-panel { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius-m); display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+.cs-panel-tabs { height: var(--panel-header-h); display: flex; align-items: stretch; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.cs-ptab { display: inline-flex; align-items: center; gap: var(--space-1); padding: 0 var(--space-3); font-weight: 600; color: var(--ink-muted); border-right: 1px solid var(--border); white-space: nowrap; }
+.cs-ptab.is-active { background: var(--surface-1); color: var(--ink); box-shadow: inset 0 2px 0 var(--accent); }
+.cs-ptab.is-hover { background: var(--surface-3); color: var(--ink); }
+.cs-panel-tabs .cs-tools { margin-left: auto; display: flex; align-items: center; gap: 2px; padding-right: var(--space-1); }
+.cs-panel-tabs .cs-tools .cs-btn { height: 24px; width: 24px; }
+.cs-panel-body { padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); min-height: 0; }
+.cs-floating { box-shadow: var(--shadow-floating); border-radius: var(--radius-l); border-color: var(--border-strong); }
+.cs-drop-target { border: 2px dashed var(--accent); background: var(--accent-subtle); border-radius: var(--radius-m); }
+.cs-guide { display: grid; grid-template-columns: repeat(3, 32px); grid-template-rows: repeat(3, 32px); gap: 2px; }
+.cs-guide span { border-radius: var(--radius-s); background: var(--surface-2); border: 1px solid var(--border-strong); display: grid; place-items: center; color: var(--ink-muted); }
+.cs-guide span.is-hover { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.cs-guide span.is-empty { visibility: hidden; }
+
+/* Barra de status. */
+.cs-statusbar { height: var(--statusbar-h); display: flex; align-items: center; gap: var(--space-3); padding: 0 var(--space-2); background: var(--surface-2); border-top: 1px solid var(--border); font-size: 12px; line-height: 16px; color: var(--ink-muted); white-space: nowrap; overflow: hidden; }
+.cs-statusbar .cs-sb-item { display: inline-flex; align-items: center; gap: var(--space-1); }
+.cs-statusbar .cs-sb-right { margin-left: auto; display: inline-flex; gap: var(--space-3); }
+.cs-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-muted); }
+.cs-dot.is-ok { background: var(--success); }
+.cs-dot.is-warn { background: var(--warning); }
+
+/* Paleta de Ações e diálogos. */
+.cs-scrim { background: var(--scrim); padding: var(--space-6); border-radius: var(--radius-l); }
+.cs-dialog { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius-xl); box-shadow: var(--shadow-dialog); overflow: hidden; }
+.cs-dialog-head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-4) var(--space-6); font-size: 20px; line-height: 28px; font-weight: 600; }
+.cs-dialog-foot { display: flex; justify-content: flex-end; gap: var(--space-2); padding: var(--space-4) var(--space-6); border-top: 1px solid var(--border); background: var(--surface-2); }
+.cs-palette { max-width: 560px; margin: 0 auto; }
+.cs-palette-input { display: flex; align-items: center; gap: var(--space-2); height: 44px; padding: 0 var(--space-4); border-bottom: 1px solid var(--border); font-size: 16px; }
+.cs-palette-list { padding: var(--space-1); }
+.cs-options { display: grid; grid-template-columns: 180px 1fr; min-height: 300px; }
+.cs-options-nav { border-right: 1px solid var(--border); padding: var(--space-2); display: flex; flex-direction: column; gap: 2px; background: var(--surface-2); }
+.cs-options-main { padding: var(--space-4) var(--space-6); display: flex; flex-direction: column; gap: var(--space-4); }
+.cs-section-title { font-size: 16px; line-height: 22px; font-weight: 600; margin: 0; }
+.cs-setting { display: grid; grid-template-columns: 1fr auto; gap: var(--space-4); align-items: center; }
+.cs-setting .cs-label { display: block; }
+
+/* Xadrez: barra de avaliação, relógio, notação, tabuleiro 2D. */
+.cs-evalbar { width: var(--evalbar-w); border-radius: var(--radius-s); overflow: hidden; display: flex; flex-direction: column; border: 1px solid var(--border-strong); position: relative; }
+.cs-evalbar .cs-eb-black { background: var(--eval-black); }
+.cs-evalbar .cs-eb-white { background: var(--eval-white); flex: 1; }
+.cs-eb-value { font-size: 12px; line-height: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cs-clock { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-radius: var(--radius-m); background: var(--surface-2); border: 1px solid var(--border); }
+.cs-clock-time { font-size: 32px; line-height: 36px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cs-clock.is-running { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.cs-clock.is-low .cs-clock-time { color: var(--warning); }
+.cs-notation { display: grid; grid-template-columns: 32px 1fr 1fr; font-size: 14px; line-height: 24px; font-variant-numeric: tabular-nums; }
+.cs-notation .n { color: var(--ink-muted); }
+.cs-notation .m { padding: 0 var(--space-2); border-radius: var(--radius-s); }
+.cs-notation .m.is-current { background: var(--accent-subtle); color: var(--accent-ink); font-weight: 600; }
+.cs-board2d { display: grid; grid-template-columns: repeat(8, 1fr); aspect-ratio: 1; border: 1px solid var(--border-strong); border-radius: var(--radius-s); overflow: hidden; }
+.cs-board2d i { display: block; background: var(--board-light); }
+.cs-board2d i.d { background: var(--board-dark); }
+.cs-board2d i.lm { box-shadow: inset 0 0 0 100px var(--last-move); }
+.cs-mono { font-family: var(--font-mono); font-size: 12px; line-height: 18px; }
+.cs-chip { display: inline-flex; align-items: center; gap: var(--space-1); height: 20px; padding: 0 var(--space-2); border-radius: 10px; font-size: 12px; font-weight: 600; background: var(--surface-3); color: var(--ink-muted); }
+.cs-chip.is-warn { color: var(--warning); }
+.cs-chip.is-ok { color: var(--success); }
+.cs-chip.is-accent { background: var(--accent-subtle); color: var(--accent-ink); }
