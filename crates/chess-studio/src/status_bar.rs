@@ -1,6 +1,8 @@
 //! Barra de status (DS-4, #163; `docs/design/componentes/StatusBar.md`): Perfil de interface
 //! ativo, Engine e consentimento (ponto colorido **e** palavra), de quem é a vez e o número do
-//! lance, avisos, FPS opcional e Escala. Só aparece com a interface nova (`--nova-ui`).
+//! lance, casa sob o cursor e Vista da câmera, avisos, FPS opcional e Escala. É a única barra da
+//! janela: reserva a faixa inferior (`bottom_inset`), de modo que o 3D e o dock terminam acima
+//! dela. No modo Foco ela some e devolve a faixa.
 //!
 //! Só leitura (ADR-0001): o texto sai de um instantâneo (`status_text`, pura); os cliques viram
 //! pedidos de interface (trocar de Perfil, abrir o Painel Análise).
@@ -15,8 +17,9 @@ use crate::session::Session;
 use crate::ui_theme::{self, Appearance, Palette, ThemeKind, Tokens};
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
-use chess_core::Color as Side;
+use chess_core::{Color as Side, Square};
 use chess_game::ClockReading;
+use chess_input::CameraView;
 use chess_input::controls::Action;
 
 /// Abaixo disto o relógio de quem corre vira aviso.
@@ -50,6 +53,10 @@ pub struct StatusSnapshot {
     /// FPS a mostrar; `None` com a preferência desligada.
     pub fps: Option<f32>,
     pub scale_percent: u16,
+    /// Casa sob o cursor (o painel antigo mostrava "Casa sob o cursor").
+    pub hovered: Option<Square>,
+    /// Vista da câmera; `None` é a câmera livre.
+    pub view: Option<CameraView>,
 }
 
 /// Engine e consentimento: o ponto leva a cor do `tone`; o texto, a palavra.
@@ -66,6 +73,9 @@ pub struct StatusText {
     pub profile: String,
     pub engine: EngineChip,
     pub turn: String,
+    /// "Casa: e4" (vazio fora do tabuleiro) e "Vista: Padrão".
+    pub hover: Option<String>,
+    pub view: String,
     pub warnings: Vec<String>,
     pub fps: Option<String>,
     pub scale: String,
@@ -140,7 +150,22 @@ pub fn status_text(snapshot: &StatusSnapshot, i18n: &I18n) -> StatusText {
             &[("side", &side), ("time", &clock_text(ms))],
         ));
     }
+    let view_name = snapshot.view.map_or_else(
+        || i18n.t("view-free"),
+        |v| {
+            i18n.t(match v {
+                CameraView::Top => "view-top",
+                CameraView::Oblique => "view-oblique",
+                CameraView::Standard => "view-standard",
+                CameraView::Inverted => "view-inverted",
+            })
+        },
+    );
     StatusText {
+        hover: snapshot
+            .hovered
+            .map(|sq| i18n.t_with("statusbar-hover", &[("square", &sq.to_string())])),
+        view: i18n.t_with("view-label", &[("name", &view_name)]),
         profile: i18n.t_with("statusbar-profile", &[("name", &snapshot.profile)]),
         engine,
         turn,
@@ -153,6 +178,18 @@ pub fn status_text(snapshot: &StatusSnapshot, i18n: &I18n) -> StatusText {
             &[("percent", &snapshot.scale_percent.to_string())],
         ),
     }
+}
+
+const INSET_ID: &str = "chess-studio/status-bar/bottom-inset";
+
+/// Altura (em pontos) que a barra de status reserva no pé da janela; 0 sem a barra (Foco).
+pub fn bottom_inset(ctx: &egui::Context) -> f32 {
+    ctx.data(|d| d.get_temp::<f32>(egui::Id::new(INSET_ID)))
+        .unwrap_or(0.0)
+}
+
+pub(crate) fn set_bottom_inset(ctx: &egui::Context, inset: f32) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(INSET_ID), inset));
 }
 
 pub struct StatusBarPlugin;
@@ -179,6 +216,9 @@ fn status_bar(
     mut prefs: ResMut<StatusBarPrefs>,
     mut profiles: ResMut<InterfaceProfiles>,
     mut actions: MessageWriter<ActionRequested>,
+    hovered: Res<crate::picking::HoveredSquare>,
+    rig: Res<crate::camera::CameraRig>,
+    capture: Option<Res<crate::capture::CaptureMode>>,
     mut fps: Local<f32>,
 ) -> Result {
     // Média móvel: o número não pisca a cada quadro.
@@ -191,10 +231,12 @@ fn status_bar(
             *fps * 0.95 + now * 0.05
         };
     }
-    if view.focus {
+    let ctx = contexts.ctx_mut()?;
+    // Foco e capturas limpas (sem `--panel`): sem barra e sem faixa reservada.
+    if view.focus || capture.is_some_and(|c| !c.show_panel) {
+        set_bottom_inset(ctx, 0.0);
         return Ok(());
     }
-    let ctx = contexts.ctx_mut()?;
     let snap = session.snapshot();
     let status = StatusSnapshot {
         profile: profiles.active_label(&i18n),
@@ -207,6 +249,8 @@ fn status_bar(
         low_clock: session.clock_reading().as_ref().and_then(low_clock),
         fps: prefs.show_fps.then_some(*fps),
         scale_percent: appearance.scale.percent(),
+        hovered: hovered.0,
+        view: rig.view,
     };
     let text = status_text(&status, &i18n);
 
@@ -217,6 +261,7 @@ fn status_bar(
         .fill(p.surface_1)
         .stroke(egui::Stroke::new(1.0, p.border))
         .inner_margin(egui::Margin::symmetric(12, 0));
+    set_bottom_inset(ctx, height);
     let analysis_visible = dock.layout.is_visible("Analysis");
 
     // O egui só dá painéis a partir de um `Ui` raiz: monta o mesmo que `Context::run_ui`.
@@ -252,6 +297,10 @@ fn status_bar(
                     actions.write(ActionRequested(Action::PanelAnalysis));
                 }
                 ui.label(&text.turn);
+                if let Some(hover) = &text.hover {
+                    ui.label(hover);
+                }
+                ui.label(&text.view);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = 16.0;
                     let scale = ui.label(&text.scale);
@@ -340,6 +389,8 @@ mod tests {
             low_clock: None,
             fps: None,
             scale_percent: 100,
+            hovered: None,
+            view: Some(CameraView::Standard),
         }
     }
 
@@ -356,6 +407,8 @@ mod tests {
         assert_eq!(t.engine.tone, Tone::Success);
         assert_eq!(t.turn, "Vez das brancas · Lance 12");
         assert_eq!(t.scale, "Escala 100%");
+        assert_eq!(t.hover, None);
+        assert_eq!(t.view, "Vista: Padrão");
         assert!(t.warnings.is_empty());
         assert_eq!(t.fps, None);
     }
@@ -398,6 +451,17 @@ mod tests {
             ..snapshot()
         });
         assert_eq!(t.warnings, ["Xeque", "Pouco tempo: pretas 0:25"]);
+    }
+
+    #[test]
+    fn shows_the_hovered_square_and_the_free_camera() {
+        let t = text(&StatusSnapshot {
+            hovered: "e4".parse().ok(),
+            view: None,
+            ..snapshot()
+        });
+        assert_eq!(t.hover.as_deref(), Some("Casa: e4"));
+        assert_eq!(t.view, "Vista: Livre");
     }
 
     #[test]

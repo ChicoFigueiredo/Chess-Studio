@@ -98,7 +98,6 @@ pub struct ActionEnv<'w> {
     board2d: Option<ResMut<'w, crate::board2d_panel::Board2dPanel>>,
     appearance: ResMut<'w, crate::ui_theme::Appearance>,
     flip: ResMut<'w, crate::board2d::BoardFlip>,
-    /// Só existe com `--nova-ui`.
     ribbon: Option<Res<'w, crate::ribbon::RibbonState>>,
     pub(crate) palette: ResMut<'w, crate::palette::PaletteState>,
 }

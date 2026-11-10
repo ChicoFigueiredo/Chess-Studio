@@ -21,7 +21,7 @@ use crate::i18n::I18n;
 use crate::play::PlaySet;
 use crate::session::Session;
 use bevy::prelude::*;
-use bevy_egui::egui;
+use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use chess_core::Color as Side;
 use chess_game::EngineSeat;
 use chess_uci::{EngineConfig, FailureKind, PlayerStatus, StrengthApplied};
@@ -41,7 +41,8 @@ impl Plugin for EnginePlugin {
         app.init_resource::<EngineUi>()
             .add_plugins(crate::engine_wizard::EngineWizardPlugin)
             .add_plugins(crate::engine_manager::EngineManagerPlugin)
-            .add_systems(Update, (tick_engine, sync_trusted_default).in_set(PlaySet));
+            .add_systems(Update, (tick_engine, sync_trusted_default).in_set(PlaySet))
+            .add_systems(EguiPrimaryContextPass, engine_window);
     }
 }
 
@@ -360,52 +361,53 @@ fn consent_prompt(ui: &mut egui::Ui, i18n: &I18n, state: &mut EngineUi) {
     }
 }
 
-/// Trecho do painel: escolha para começar contra a Engine e, durante a Partida, o estado.
-pub fn engine_section(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session, state: &mut EngineUi) {
-    poll_probe(session, state);
-    ui.separator();
-    ui.strong(i18n.t("engine-heading"));
-    if session.engine_active() {
-        playing_status(ui, i18n, session, state);
-    }
+/// O que a Partida contra Engine exige na tela, sem painel esquerdo: o andamento da Engine
+/// (pensando, falha com "Tentar de novo" e "Trocar Engine"), a retomada da Partida reaberta
+/// ("Conectar Engine e retomar"), o aviso de execução e a sonda. A janela só existe enquanto
+/// houver algo a mostrar; como as demais janelas que a Partida exige, continua no modo Foco.
+/// Lado, Elo e assistente ficam nas Opções e na Nova Partida.
+fn engine_window(
+    mut contexts: EguiContexts,
+    i18n: Res<I18n>,
+    mut session: ResMut<Session>,
+    mut state: ResMut<EngineUi>,
+    capture: Option<Res<crate::capture::CaptureMode>>,
+) -> Result {
+    // O resultado da sonda precisa ser recolhido mesmo com a janela fechada.
+    poll_probe(&mut session, &mut state);
     let pending = session.engine_pending().is_some();
-    if pending {
-        ui.colored_label(egui::Color32::YELLOW, i18n.t("engine-pending-title"));
-        ui.small(i18n.t("engine-pending-hint"));
+    let busy = session.engine_active()
+        || pending
+        || state.consent.launch().is_some()
+        || state.consent.error().is_some()
+        || state.not_found;
+    if !busy || capture.is_some_and(|c| !c.show_panel) {
+        return Ok(());
     }
-    ui.horizontal(|ui| {
-        ui.label(i18n.t("engine-side-label"));
-        ui.selectable_value(
-            &mut state.user_side,
-            Side::White,
-            i18n.t("engine-side-white"),
-        );
-        ui.selectable_value(
-            &mut state.user_side,
-            Side::Black,
-            i18n.t("engine-side-black"),
-        );
-    });
-    ui.add(egui::Slider::new(&mut state.elo, MIN_ELO..=MAX_ELO).text(i18n.t("engine-elo-label")));
-    ui.horizontal(|ui| {
-        ui.label(i18n.t("engine-path-label"));
-        ui.add(
-            egui::TextEdit::singleline(&mut state.path_text).hint_text(i18n.t("engine-path-hint")),
-        );
-    });
-    if pending && ui.button(i18n.t("engine-resume")).clicked() {
-        request_launch(session, state, Intent::Resume);
-    }
-    if ui.button(i18n.t("engine-start")).clicked() {
-        request_launch(session, state, Intent::NewGame);
-    }
-    if ui.small_button(i18n.t("wizard-open")).clicked() {
-        state.wizard_requested = true;
-    }
-    consent_prompt(ui, i18n, state);
-    if state.not_found {
-        ui.colored_label(egui::Color32::YELLOW, i18n.t("engine-not-found"));
-    }
+    let ctx = contexts.ctx_mut()?;
+    let top = crate::ribbon::usable_rect(ctx).min;
+    egui::Window::new(i18n.t("engine-heading"))
+        .id(egui::Id::new("engine-status-window"))
+        .collapsible(true)
+        .resizable(false)
+        .default_pos(top + egui::vec2(16.0, 16.0))
+        .show(ctx, |ui| {
+            if session.engine_active() {
+                playing_status(ui, &i18n, &mut session, &mut state);
+            }
+            if pending {
+                ui.colored_label(egui::Color32::YELLOW, i18n.t("engine-pending-title"));
+                ui.small(i18n.t("engine-pending-hint"));
+                if ui.button(i18n.t("engine-resume")).clicked() {
+                    request_launch(&mut session, &mut state, Intent::Resume);
+                }
+            }
+            consent_prompt(ui, &i18n, &mut state);
+            if state.not_found {
+                ui.colored_label(egui::Color32::YELLOW, i18n.t("engine-not-found"));
+            }
+        });
+    Ok(())
 }
 
 fn playing_status(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session, state: &mut EngineUi) {

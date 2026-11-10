@@ -11,7 +11,9 @@ use std::path::{Path, PathBuf};
 /// O que fazer com a Engine quando o caminho for liberado.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Intent {
-    /// Começar uma Partida nova contra a Engine.
+    /// Começar uma Partida nova contra a Engine. A Nova Partida só aceita Engine já liberada
+    /// (assistente ou gerenciador); a intenção segue no modelo, coberta pelos testes.
+    #[cfg_attr(not(test), allow(dead_code))]
     NewGame,
     /// Religar a Engine de uma Partida reaberta.
     Resume,

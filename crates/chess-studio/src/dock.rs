@@ -884,31 +884,6 @@ impl Behavior<PanelId> for DockBehavior<'_> {
     }
 }
 
-/// Seção "Painéis" da janela principal: mostrar/ocultar e restaurar o layout. Painéis
-/// inacessíveis na Partida competitiva aparecem desabilitados.
-pub fn panels_section(
-    ui: &mut egui::Ui,
-    i18n: &I18n,
-    dock: &mut Dock,
-    registry: &PanelRegistry,
-    session: &Session,
-) {
-    ui.strong(i18n.t("dock-heading"));
-    for def in registry.iter() {
-        let mut visible = dock.layout.is_visible(def.id);
-        let response = ui.add_enabled(
-            def.accessible(session),
-            egui::Checkbox::new(&mut visible, i18n.t(def.label_key)),
-        );
-        if response.changed() {
-            dock.layout.set_visible(def.id, visible);
-        }
-    }
-    if ui.button(i18n.t("dock-reset")).clicked() {
-        dock.reset();
-    }
-}
-
 pub struct DockPlugin;
 
 impl Plugin for DockPlugin {

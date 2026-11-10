@@ -1,7 +1,6 @@
 //! Ribbon, Barra de Acesso Rápido, KeyTips e bastidores (DS-3, issue #162; ADR-0005).
 //!
-//! Atrás do flag de desenvolvimento `--nova-ui` (ou `CHESS_STUDIO_NOVA_UI=1`): sem ele, nada
-//! daqui existe e a interface atual segue intacta. Todo item é uma Ação da lista única
+//! Todo item é uma Ação da lista única
 //! (`chess_input::actions`): rótulo, ícone, KeyTip, grupo, estado e atalho vêm dela. Clicar,
 //! digitar um KeyTip e apertar o atalho escrevem o mesmo `ActionRequested`.
 //!
@@ -154,11 +153,14 @@ pub fn top_inset(ctx: &egui::Context) -> f32 {
         .unwrap_or(0.0)
 }
 
-/// A área da janela que sobra para o tabuleiro e o dock: tudo abaixo do Ribbon.
+/// A área da janela que sobra para o tabuleiro e o dock: tudo abaixo do Ribbon e acima da barra
+/// de status.
 pub fn usable_rect(ctx: &egui::Context) -> egui::Rect {
     let mut rect = ctx.viewport_rect();
-    let inset = top_inset(ctx).min(rect.height() * 0.5);
-    rect.min.y += inset;
+    let top = top_inset(ctx).min(rect.height() * 0.5);
+    let bottom = crate::status_bar::bottom_inset(ctx).min(rect.height() * 0.25);
+    rect.min.y += top;
+    rect.max.y -= bottom;
     rect
 }
 
@@ -526,5 +528,18 @@ mod tests {
         assert_eq!(usable_rect(&ctx), full);
         set_top_inset(&ctx, 100.0);
         assert!((usable_rect(&ctx).min.y - (full.min.y + 100.0).min(full.center().y)).abs() < 1e-3);
+    }
+
+    #[test]
+    fn the_usable_rect_ends_above_the_status_bar() {
+        let ctx = egui::Context::default();
+        let mut out = ctx.run_ui(egui::RawInput::default(), |_| {});
+        out.textures_delta.clear();
+        let full = ctx.viewport_rect();
+        crate::status_bar::set_bottom_inset(&ctx, 24.0);
+        assert!((usable_rect(&ctx).max.y - (full.max.y - 24.0)).abs() < 1e-3);
+        // Foco: a barra some e devolve a faixa.
+        crate::status_bar::set_bottom_inset(&ctx, 0.0);
+        assert_eq!(usable_rect(&ctx), full);
     }
 }

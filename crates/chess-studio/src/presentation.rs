@@ -43,15 +43,6 @@ impl Presentation {
         Presentation::Technical2d,
     ];
 
-    /// Chave i18n do nome da Apresentação.
-    pub fn label_key(self) -> &'static str {
-        match self {
-            Presentation::Professional3d => "presentation-professional3d",
-            Presentation::ImmersiveTable => "presentation-immersive",
-            Presentation::Technical2d => "presentation-technical2d",
-        }
-    }
-
     pub fn next(self) -> Self {
         match self {
             Presentation::Professional3d => Presentation::ImmersiveTable,

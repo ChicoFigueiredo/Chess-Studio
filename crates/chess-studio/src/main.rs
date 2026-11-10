@@ -44,7 +44,6 @@ mod load_control;
 mod local_profiles;
 mod new_game;
 mod notation;
-mod nova_ui;
 mod openings;
 mod options;
 mod palette;
@@ -88,7 +87,8 @@ fn screenshot_dir() -> Option<PathBuf> {
     option_value("--screenshot").map(PathBuf::from)
 }
 
-/// Roteiro da captura: `--moves e2e4,e7e5`, `--select e2` e `--panel`.
+/// Roteiro da captura: `--moves e2e4,e7e5`, `--select e2` e `--panel` (mostra o invólucro da
+/// interface: Ribbon, dock, barra de status e barra de avaliação; sem ele a captura sai limpa).
 fn capture_script() -> capture::CaptureScript {
     capture::CaptureScript {
         moves: option_value("--moves")
@@ -96,7 +96,7 @@ fn capture_script() -> capture::CaptureScript {
             .unwrap_or_default(),
         select: option_value("--select").and_then(|s| s.parse().ok()),
         hover: option_value("--hover").and_then(|s| s.parse().ok()),
-        show_panel: std::env::args().any(|a| a == "--panel") || option_value("--profile").is_some(),
+        show_panel: shell_requested(),
         profile: option_value("--profile"),
         // Vazamento único na partida do processo de captura: o nome vive até o fim.
         single: option_value("--single").map(|s| &*Box::leak(s.into_boxed_str())),
@@ -111,6 +111,22 @@ fn capture_script() -> capture::CaptureScript {
         ),
         show_new_game: std::env::args().any(|a| a == "--new-game"),
     }
+}
+
+/// A captura mostra o invólucro da interface: `--panel`, `--profile` ou qualquer opção que só
+/// faz sentido com ele (Ribbon, KeyTips, bastidores, Opções, Paleta, barra de avaliação).
+fn shell_requested() -> bool {
+    const FLAGS: [&str; 8] = [
+        "--panel",
+        "--keytips",
+        "--backstage",
+        "--options",
+        "--palette",
+        "--ribbon",
+        "--ribbon-tab",
+        "--eval-demo",
+    ];
+    std::env::args().any(|a| FLAGS.contains(&a.as_str())) || option_value("--profile").is_some()
 }
 
 fn main() {
@@ -219,13 +235,12 @@ fn main() {
     app.add_plugins(scoresheet::ScoresheetPlugin);
     app.add_plugins(ui_theme::UiThemePlugin);
     app.add_plugins(options::OptionsPlugin);
-    // A Paleta de Ações (Ctrl+K) vale nos dois modos; a barra de status e o Ribbon são da
-    // interface nova.
-    app.add_plugins(palette::PalettePlugin);
-    if nova_ui::enabled() {
-        app.add_plugins(status_bar::StatusBarPlugin);
-        app.add_plugins(ribbon::RibbonPlugin);
-    }
+    // O invólucro da interface: Paleta de Ações (Ctrl+K), barra de status e Ribbon.
+    app.add_plugins((
+        palette::PalettePlugin,
+        status_bar::StatusBarPlugin,
+        ribbon::RibbonPlugin,
+    ));
     // `--gallery`: janela com todos os widgets do design system nos dois Temas e Densidades.
     if args.iter().any(|a| a == "--gallery") {
         app.insert_resource(ui_theme::GalleryMode::default());

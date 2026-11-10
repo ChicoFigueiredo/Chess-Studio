@@ -1,12 +1,13 @@
-//! Inventário do painel esquerdo (issue #164): para cada item de hoje, o destino na interface
-//! nova. É dado puro, conferido por testes: nenhum item pode ficar sem destino, e os itens do
-//! código-fonte (as chaves i18n usadas pelas seções do painel) precisam estar aqui.
+//! Inventário do painel esquerdo (issue #164): para cada item que ele tinha, o destino na
+//! interface nova. O painel foi removido na troca única (#167); o inventário ficou como o registro
+//! do que foi migrado, conferido por testes: nenhum item sem destino e toda Ação alcançável no
+//! Ribbon e na Paleta. (As `origin` abaixo são os nomes das funções do painel removido.)
 //!
 //! Destinos:
 //! - [`Destination::Option`]: uma linha do diálogo Opções (preferência persistente).
-//! - [`Destination::Actions`]: Ações da lista única (`chess_input::actions`); viverão no Ribbon
-//!   (#162) e já respondem a atalho e à Paleta.
-//! - [`Destination::Surface`]: outra superfície da interface nova (barra de status, #163).
+//! - [`Destination::Actions`]: Ações da lista única (`chess_input::actions`), no Ribbon, na Paleta
+//!   e no atalho.
+//! - [`Destination::Surface`]: outra superfície da interface nova (barra de status).
 
 use super::OptionId;
 use chess_input::controls::Action;
