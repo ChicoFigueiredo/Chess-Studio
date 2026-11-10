@@ -135,9 +135,12 @@ pub fn panel_menu(
             actions.push(DockAction::Detach(id.clone()));
             ui.close();
         }
-        // Destacar em janela do SO é a 2ª etapa (DS-03): por ora é o mesmo que Flutuar.
         if ui.button(i18n.t("dock-detach")).clicked() {
-            actions.push(DockAction::Detach(id.clone()));
+            actions.push(DockAction::DetachWindow(id.clone()));
+            ui.close();
+        }
+        if ui.button(i18n.t("dock-detach-group")).clicked() {
+            actions.push(DockAction::DetachGroup(id.clone()));
             ui.close();
         }
     }
@@ -145,6 +148,46 @@ pub fn panel_menu(
     if ui.button(i18n.t("dock-close")).clicked() {
         actions.push(DockAction::Close(id.clone()));
         ui.close();
+    }
+}
+
+/// Itens do menu "⋯" (e do menu de contexto da aba) de um Painel numa janela do sistema:
+/// Encaixar (só esta aba), Encaixar grupo (a janela toda) e Fechar Painel.
+pub fn window_menu(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    actions: &mut Vec<DockAction>,
+    id: &PanelId,
+    window: u32,
+) {
+    if ui.button(i18n.t("dock-dock-back")).clicked() {
+        actions.push(DockAction::DockBack(id.clone()));
+        ui.close();
+    }
+    if ui.button(i18n.t("dock-dock-group")).clicked() {
+        actions.push(DockAction::DockWindow(window));
+        ui.close();
+    }
+    ui.separator();
+    if ui.button(i18n.t("dock-close")).clicked() {
+        actions.push(DockAction::Close(id.clone()));
+        ui.close();
+    }
+}
+
+/// Ferramentas do cabeçalho de um grupo numa janela do sistema: "⋯" e Encaixar grupo.
+pub fn window_header_tools(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    actions: &mut Vec<DockAction>,
+    id: &PanelId,
+    window: u32,
+) {
+    ui.spacing_mut().item_spacing.x = 2.0;
+    let more = tool_button(ui, icon::DOTS_THREE, &i18n.t("dock-more"));
+    egui::Popup::menu(&more).show(|ui| window_menu(ui, i18n, actions, id, window));
+    if tool_button(ui, icon::ARROW_BEND_DOWN_LEFT, &i18n.t("dock-dock-group")).clicked() {
+        actions.push(DockAction::DockWindow(window));
     }
 }
 
@@ -166,7 +209,7 @@ pub fn header_tools(
         }
     } else {
         if tool_button(ui, icon::ARROW_SQUARE_OUT, &i18n.t("dock-detach")).clicked() {
-            actions.push(DockAction::Detach(id.clone()));
+            actions.push(DockAction::DetachWindow(id.clone()));
         }
         if tool_button(ui, icon::BROWSERS, &i18n.t("dock-float")).clicked() {
             actions.push(DockAction::Detach(id.clone()));

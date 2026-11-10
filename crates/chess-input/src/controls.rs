@@ -83,9 +83,18 @@ pub enum Action {
     FloatPanel,
     DockPanel,
     DetachPanel,
+    DetachGroup,
     ResetLayout,
     /// Oculta todos os Painéis (encaixados e flutuantes) e, de novo, devolve os que estavam abertos.
     HideAllPanels,
+    /// Mostra e põe à frente o Painel Biblioteca (importar PGN, buscar Partidas).
+    OpenLibrary,
+    /// Mostra e põe à frente o Painel Aberturas.
+    OpenOpenings,
+    /// Exporta a Partida atual em PGN para a pasta Documentos.
+    ExportPgn,
+    /// Mostra e põe à frente o Painel Treino.
+    OpenTraining,
     OpenPalette,
     ToggleRibbonCollapse,
     /// Aumenta a Escala da interface (Ctrl+=), até 200%.
@@ -95,7 +104,7 @@ pub enum Action {
 }
 
 impl Action {
-    pub const ALL: [Action; 56] = [
+    pub const ALL: [Action; 61] = [
         Action::Select,
         Action::Adjust,
         Action::Orbit,
@@ -146,8 +155,13 @@ impl Action {
         Action::FloatPanel,
         Action::DockPanel,
         Action::DetachPanel,
+        Action::DetachGroup,
         Action::ResetLayout,
         Action::HideAllPanels,
+        Action::OpenLibrary,
+        Action::OpenOpenings,
+        Action::ExportPgn,
+        Action::OpenTraining,
         Action::OpenPalette,
         Action::ToggleRibbonCollapse,
         Action::UiZoomIn,
@@ -207,8 +221,13 @@ impl Action {
             Action::FloatPanel => "float-panel",
             Action::DockPanel => "dock-panel",
             Action::DetachPanel => "detach-panel",
+            Action::DetachGroup => "detach-group",
             Action::ResetLayout => "reset-layout",
             Action::HideAllPanels => "hide-all-panels",
+            Action::OpenLibrary => "open-library",
+            Action::OpenOpenings => "open-openings",
+            Action::ExportPgn => "export-pgn",
+            Action::OpenTraining => "open-training",
             Action::OpenPalette => "open-palette",
             Action::ToggleRibbonCollapse => "toggle-ribbon-collapse",
             Action::UiZoomIn => "ui-zoom-in",

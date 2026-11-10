@@ -46,6 +46,30 @@ impl HiddenPanels {
         self.0 = Some(open);
     }
 
+    /// O conjunto guardado (ids dos Painéis que estavam abertos), se há "tudo oculto".
+    pub fn open_set(&self) -> Option<&[String]> {
+        self.0.as_deref()
+    }
+
+    /// Reconstrói o estado gravado (`None` = nada oculto).
+    pub fn from_saved(open: Option<Vec<String>>) -> Self {
+        Self(open)
+    }
+
+    /// O layout com os Painéis guardados de volta (sem tocar o estado). Janelas do sistema
+    /// ficam como estão. Sem "tudo oculto", é cópia fiel do layout.
+    pub fn restored(&self, layout: &crate::dock::DockLayout) -> crate::dock::DockLayout {
+        let mut out = layout.clone();
+        if let Some(open) = &self.0 {
+            for id in out.pane_ids() {
+                if out.window_tile_of(&id).is_none() {
+                    out.set_visible(&id, open.contains(&id));
+                }
+            }
+        }
+        out
+    }
+
     /// Esquece o conjunto guardado (o usuário mexeu nos Painéis ou trocou de Perfil).
     pub fn clear(&mut self) {
         self.0 = None;
@@ -116,6 +140,9 @@ pub struct ActionEnv<'w> {
     analysis: ResMut<'w, Analysis>,
     dock: ResMut<'w, Dock>,
     hidden: ResMut<'w, HiddenPanels>,
+    scoresheet: Option<Res<'w, crate::scoresheet::ScoresheetUi>>,
+    notes: Option<Res<'w, crate::study::StudyNotes>>,
+    file_tools: Option<ResMut<'w, crate::fen_pgn::FileTools>>,
     controls_ui: ResMut<'w, ControlsUi>,
     options_ui: ResMut<'w, crate::options::OptionsUi>,
     training: Res<'w, crate::training_ui::TrainingUi>,
@@ -170,8 +197,10 @@ impl ActionEnv<'_> {
             ribbon_visible: self.ribbon.is_some(),
             visible_panels,
             has_docked_panel: self.dock.layout.active_docked_panel().is_some(),
-            has_floating_panel: !self.dock.layout.floating.is_empty(),
+            has_floating_panel: !self.dock.layout.floating.is_empty()
+                || !self.dock.layout.windows.is_empty(),
             panels_hidden: self.hidden.is_hidden(),
+            pgn_blocked: self.scoresheet.as_ref().is_some_and(|s| s.hides_notation()),
         }
     }
 
@@ -236,6 +265,22 @@ impl ActionEnv<'_> {
             Action::DockPanel => {
                 if let Some(id) = self.dock.layout.floating.last().map(|f| f.id.0.clone()) {
                     self.dock.layout.dock_back(&id);
+                } else if let Some(window) = self.dock.layout.last_window() {
+                    self.dock.layout.dock_window_back(window);
+                }
+            }
+            Action::DetachPanel => {
+                if let Some(id) = self.dock.layout.active_docked_panel() {
+                    self.dock
+                        .layout
+                        .detach_panel_to_window(&id, crate::detached::DEFAULT_WINDOW_SIZE);
+                }
+            }
+            Action::DetachGroup => {
+                if let Some(id) = self.dock.layout.active_docked_panel() {
+                    self.dock
+                        .layout
+                        .detach_group_to_window(&id, crate::detached::DEFAULT_WINDOW_SIZE);
                 }
             }
             Action::ResetLayout => {
@@ -243,6 +288,10 @@ impl ActionEnv<'_> {
                 self.dock.reset();
             }
             Action::HideAllPanels => self.toggle_hide_all(),
+            Action::OpenLibrary => self.show_panel(crate::dock::ids::LIBRARY),
+            Action::OpenOpenings => self.show_panel(crate::dock::ids::OPENINGS),
+            Action::OpenTraining => self.show_panel(crate::dock::ids::TRAINING),
+            Action::ExportPgn => self.export_pgn(),
             Action::UiZoomIn => self.appearance.scale = self.appearance.scale.zoom_in(),
             Action::UiZoomOut => self.appearance.scale = self.appearance.scale.zoom_out(),
             other => match other.panel() {
@@ -290,24 +339,61 @@ impl ActionEnv<'_> {
     /// e janelas flutuantes ficam como estão.
     fn toggle_hide_all(&mut self) {
         let layout = &mut self.dock.layout;
+        // Janelas do sistema (Painéis destacados) ficam como estão: ocultar tudo vale para o
+        // dock e os flutuantes; fechar uma janela do SO é decisão do usuário (ela voltaria ao
+        // dock sozinha se ficasse sem aba visível).
+        let ids: Vec<String> = layout
+            .pane_ids()
+            .into_iter()
+            .filter(|id| layout.window_tile_of(id).is_none())
+            .collect();
         match self.hidden.0.take() {
             Some(open) => {
-                for id in layout.pane_ids() {
-                    layout.set_visible(&id, open.contains(&id));
+                for id in &ids {
+                    layout.set_visible(id, open.contains(id));
                 }
             }
             None => {
-                let open: Vec<String> = layout
-                    .pane_ids()
-                    .into_iter()
+                let open: Vec<String> = ids
+                    .iter()
                     .filter(|id| layout.is_visible(id))
+                    .cloned()
                     .collect();
-                for id in layout.pane_ids() {
-                    layout.set_visible(&id, false);
+                for id in &ids {
+                    layout.set_visible(id, false);
                 }
                 self.hidden.0 = Some(open);
             }
         }
+    }
+
+    /// Mostra o Painel (se oculto) e o põe à frente; nunca o esconde.
+    fn show_panel(&mut self, id: &str) {
+        if !self.dock.layout.is_visible(id) {
+            self.toggle_panel(id);
+        } else {
+            self.dock.layout.activate(id);
+        }
+    }
+
+    /// "Exportar PGN": grava na pasta Documentos; o resultado aparece no Painel Revisão
+    /// (que a Ação mostra), onde a exportação já vivia.
+    fn export_pgn(&mut self) {
+        let Some(tools) = self.file_tools.as_mut() else {
+            return;
+        };
+        let epoch = self.session.epoch();
+        let notes = self
+            .notes
+            .as_ref()
+            .map(|n| n.export(epoch))
+            .unwrap_or_default();
+        let dir = crate::paths::documents_dir(
+            crate::paths::Platform::current(),
+            &crate::paths::process_env,
+        );
+        tools.export(&self.session, &notes, &dir);
+        self.show_panel(crate::dock::ids::REVIEW);
     }
 
     fn toggle_panel(&mut self, id: &str) {
@@ -677,6 +763,50 @@ mod tests {
         let c = ctx(&mut app);
         assert_eq!(state(Action::PanelNotation, &c).checked, Some(false));
         assert_eq!(state(Action::HideAllPanels, &c).checked, Some(true));
+    }
+
+    #[test]
+    fn open_actions_show_the_panel_and_never_hide_it() {
+        use crate::dock::ids;
+        let mut app = test_app();
+        app.world_mut()
+            .resource_mut::<Dock>()
+            .layout
+            .set_visible(ids::TRAINING, false);
+        for _ in 0..2 {
+            request(&mut app, Action::OpenTraining);
+            assert!(
+                app.world()
+                    .resource::<Dock>()
+                    .layout
+                    .is_visible(ids::TRAINING)
+            );
+        }
+    }
+
+    #[test]
+    fn hiding_all_leaves_detached_os_windows_untouched() {
+        use crate::dock::ids;
+        let mut app = test_app();
+        {
+            let mut dock = app.world_mut().resource_mut::<Dock>();
+            dock.layout.set_visible(ids::NOTATION, true);
+            dock.layout.set_visible(ids::CLOCK, true);
+            let size = crate::detached::DEFAULT_WINDOW_SIZE;
+            assert!(
+                dock.layout
+                    .detach_panel_to_window(ids::CLOCK, size)
+                    .is_some()
+            );
+        }
+        request(&mut app, Action::HideAllPanels);
+        let layout = &app.world().resource::<Dock>().layout;
+        assert!(layout.is_visible(ids::CLOCK), "janela do SO intacta");
+        assert!(!layout.is_visible(ids::NOTATION));
+        request(&mut app, Action::HideAllPanels);
+        let layout = &app.world().resource::<Dock>().layout;
+        assert!(layout.is_visible(ids::CLOCK) && layout.is_visible(ids::NOTATION));
+        assert!(!layout.windows.is_empty());
     }
 
     #[test]

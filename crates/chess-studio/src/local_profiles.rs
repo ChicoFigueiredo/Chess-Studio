@@ -184,6 +184,7 @@ impl Applied<'_> {
             controls,
             notes,
             ribbon,
+            hidden,
         } = data;
         let mut session = restored.session;
         session.supersede(&self.session);
@@ -198,7 +199,7 @@ impl Applied<'_> {
         *self.appearance = prefs.appearance;
         *self.view = prefs.view;
         self.dock.set_layout(layout);
-        self.hidden.clear();
+        *self.hidden = hidden;
         if let (Some(setup), Some(state)) = (&ribbon, self.ribbon.as_mut()) {
             state.apply_setup(setup);
         }

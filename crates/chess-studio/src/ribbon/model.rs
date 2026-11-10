@@ -62,14 +62,9 @@ impl RibbonView {
     }
 }
 
-/// As abas visíveis, na ordem; a da Súmula só com ela aberta. Uma aba sem nenhuma Ação (a
-/// Biblioteca e o Treino, depois que os Painéis foram para Exibir, #183) não aparece.
+/// As abas visíveis, na ordem; a da Súmula só com ela aberta.
 pub fn visible_tabs(scoresheet_open: bool) -> Vec<RibbonView> {
-    let mut tabs: Vec<_> = RibbonTab::ALL
-        .into_iter()
-        .map(RibbonView::Tab)
-        .filter(|v| v.is_file() || !groups(*v).is_empty())
-        .collect();
+    let mut tabs: Vec<_> = RibbonTab::ALL.into_iter().map(RibbonView::Tab).collect();
     if scoresheet_open {
         tabs.push(RibbonView::Scoresheet);
     }
@@ -370,16 +365,8 @@ mod tests {
     }
 
     #[test]
-    fn tabs_without_actions_are_not_shown() {
-        let tabs = visible_tabs(false);
-        assert!(!tabs.contains(&RibbonView::Tab(RibbonTab::Library)));
-        assert!(!tabs.contains(&RibbonView::Tab(RibbonTab::Training)));
-        assert!(tabs.contains(&RibbonView::Tab(RibbonTab::View)));
-    }
-
-    #[test]
     fn the_scoresheet_tab_only_exists_with_the_panel_open() {
-        assert_eq!(visible_tabs(false).len(), 4);
+        assert_eq!(visible_tabs(false).len(), 6);
         assert_eq!(visible_tabs(true).last(), Some(&RibbonView::Scoresheet));
         assert_eq!(
             actions_of(RibbonView::Scoresheet),

@@ -407,10 +407,16 @@ fn apply_quality(
     mut commands: Commands,
     camera: Single<Entity, With<MainCamera>>,
     cameras: Query<Entity, With<Camera>>,
+    new_cameras: Query<(), Added<Camera>>,
     mut lights: Query<(&LightRole, &mut DirectionalLight)>,
     mut shadow_map: ResMut<DirectionalLightShadowMap>,
 ) {
-    if !(quality.is_changed() || effects.is_changed() || support.is_changed()) {
+    // Câmera nova (a de uma janela destacada, #168) recebe o mesmo MSAA/HDR das demais.
+    if !(quality.is_changed()
+        || effects.is_changed()
+        || support.is_changed()
+        || !new_cameras.is_empty())
+    {
         return;
     }
     let msaa = quality.msaa_for(*support);
@@ -460,6 +466,21 @@ mod tests {
 
     fn spawn_main_camera(mut commands: Commands) {
         commands.spawn((Camera3d::default(), MainCamera));
+    }
+
+    /// Câmera de UI de uma janela destacada (#168), criada pelo mesmo código do app.
+    fn spawn_detached_camera(mut commands: Commands) {
+        let mut layout = crate::dock::DockLayout::default();
+        layout
+            .detach_group_to_window(crate::dock::ids::NOTATION, [400.0, 300.0])
+            .unwrap();
+        crate::detached::spawn_detached_window(
+            &mut commands,
+            0,
+            &layout.windows[0],
+            "teste".into(),
+            &[],
+        );
     }
 
     /// US-30: o preset desce ao que a GPU suporta, sem nunca pedir uma contagem inexistente.
@@ -530,6 +551,7 @@ mod tests {
                     spawn_main_camera,
                     crate::board2d::spawn_camera,
                     crate::ui::spawn_ui_camera,
+                    spawn_detached_camera,
                 ),
             );
         for quality in GraphicsQuality::ALL {
@@ -538,7 +560,11 @@ mod tests {
             app.update();
             let mut cameras = app.world_mut().query::<(&Camera, &Msaa)>();
             let found: Vec<Msaa> = cameras.iter(app.world()).map(|(_, m)| *m).collect();
-            assert_eq!(found.len(), 3, "câmeras 3D, 2D técnico e egui");
+            assert_eq!(
+                found.len(),
+                4,
+                "câmeras 3D, 2D técnico, egui e a da janela destacada"
+            );
             assert!(
                 found
                     .iter()
@@ -571,6 +597,7 @@ mod tests {
                     spawn_main_camera,
                     crate::board2d::spawn_camera,
                     crate::ui::spawn_ui_camera,
+                    spawn_detached_camera,
                 ),
             );
         for step in 0..9 {
@@ -598,7 +625,7 @@ mod tests {
             assert!(ui_active, "passo {step}: a câmera de UI fica sempre ativa");
             let mut q = world.query::<(&Camera, &Msaa, Has<Hdr>)>();
             let setups: Vec<(Msaa, bool)> = q.iter(world).map(|(_, m, h)| (*m, h)).collect();
-            assert_eq!(setups.len(), 3);
+            assert_eq!(setups.len(), 4, "inclui a janela destacada");
             assert!(
                 setups.windows(2).all(|w| w[0] == w[1]),
                 "passo {step}: MSAA/HDR divergente entre câmeras: {setups:?}"
@@ -607,13 +634,21 @@ mod tests {
             // concorre com o `egui_pass` e a interface some em alguns quadros).
             let mut tm = world.query_filtered::<&Tonemapping, (With<Camera2d>, With<Camera>)>();
             let tonemaps: Vec<_> = tm.iter(world).copied().collect();
-            assert_eq!(tonemaps.len(), 2, "passo {step}: as duas câmeras 2D");
+            assert_eq!(
+                tonemaps.len(),
+                3,
+                "passo {step}: as câmeras 2D e a da janela"
+            );
             assert!(
                 tonemaps.iter().all(|t| *t == Tonemapping::None),
                 "passo {step}: câmeras 2D sem tonemapping: {tonemaps:?}"
             );
             let scene_active = q.iter(world).filter(|(c, ..)| c.is_active).count();
-            assert_eq!(scene_active, 2, "UI + exatamente uma câmera de cena");
+            // UI + a câmera da janela destacada (outro alvo) + exatamente uma câmera de cena.
+            assert_eq!(
+                scene_active, 3,
+                "UI + janela destacada + uma câmera de cena"
+            );
         }
     }
 }

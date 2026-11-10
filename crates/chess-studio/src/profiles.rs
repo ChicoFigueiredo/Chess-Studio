@@ -102,15 +102,9 @@ impl RibbonSetup {
     }
 }
 
-/// Painel destacado para outra janela do sistema (#168): reservado, sem efeito até lá.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct DetachedPanel {
-    pub id: String,
-    /// Índice do monitor onde estava.
-    pub monitor: Option<u32>,
-    pub pos: [f32; 2],
-    pub size: [f32; 2],
-}
+/// Janela do sistema com um Painel ou grupo de abas destacado (#168): abas, posição, tamanho
+/// e monitor. O perfil as guarda aqui, fora do layout do dock.
+pub use crate::detached::DetachedWindow;
 
 /// Qual perfil está em uso.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -154,9 +148,9 @@ pub struct InterfaceProfile {
     /// Ribbon e Barra de Acesso Rápido; `None` (perfis antigos) não mexe no Ribbon.
     #[serde(default)]
     pub ribbon: Option<RibbonSetup>,
-    /// Painéis destacados em outras janelas (#168); sempre vazio por ora.
+    /// Painéis e grupos de abas destacados em janelas do sistema (#168).
     #[serde(default)]
-    pub detached: Vec<DetachedPanel>,
+    pub detached: Vec<DetachedWindow>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -264,8 +258,17 @@ impl InterfaceProfile {
             state.ribbon = Some(next);
         }
         match &self.dock {
-            DockSetup::Layout(layout) => state.dock = (**layout).clone(),
+            DockSetup::Layout(layout) => {
+                state.dock = (**layout).clone();
+                state.dock.windows = self.detached.clone();
+                // Um Painel não vive em dois lugares: o que o perfil destaca sai do dock.
+                state.dock.sanitize_windows();
+            }
             DockSetup::Panels { visible } => {
+                if !self.detached.is_empty() {
+                    state.dock.windows = self.detached.clone();
+                    state.dock.sanitize_windows();
+                }
                 for id in state.dock.pane_ids() {
                     state.dock.set_visible(&id, visible.contains(&id));
                 }
@@ -301,14 +304,17 @@ impl InterfaceProfile {
 
     /// "Salvar o estado atual como perfil": guarda layout inteiro e a Vista informada.
     pub fn capture(state: &InterfaceState, camera_view: Option<&str>) -> Self {
+        // As janelas destacadas vão no campo próprio do perfil, não dentro do layout.
+        let mut dock = state.dock.clone();
+        let detached = std::mem::take(&mut dock.windows);
         Self {
             presentation: state.presentation,
-            dock: DockSetup::Layout(Box::new(state.dock.clone())),
+            dock: DockSetup::Layout(Box::new(dock)),
             aids: state.aids,
             focus: state.focus,
             camera_view: camera_view.map(str::to_owned),
             ribbon: state.ribbon.clone(),
-            detached: Vec::new(),
+            detached,
         }
     }
 }
@@ -474,12 +480,20 @@ fn apply_requests(
         return;
     };
     // Aplicar (ou restaurar) um Perfil devolve os Painéis dele: acaba o "tudo oculto".
+    let hidden_before = hidden.clone();
     if matches!(request, ProfileRequest::Apply(_)) {
         hidden.clear();
     }
+    let saving = matches!(request, ProfileRequest::SaveCurrent(_));
+    // Salvar com "tudo oculto" guarda os Painéis que estavam abertos, não o layout vazio.
+    let layout = if saving {
+        hidden_before.restored(&dock.layout)
+    } else {
+        dock.layout.clone()
+    };
     let mut state = InterfaceState {
         presentation: *presentation,
-        dock: dock.layout.clone(),
+        dock: layout,
         aids: *aids,
         focus: view_state.focus,
         ribbon: ribbon.as_ref().map(|r| r.setup()),
@@ -505,7 +519,7 @@ fn apply_requests(
     if state.presentation != was.presentation {
         *presentation = state.presentation;
     }
-    if state.dock != was.dock {
+    if state.dock != was.dock && !saving {
         dock.set_layout(state.dock);
     }
     if state.aids != was.aids {
@@ -1049,12 +1063,43 @@ mod tests {
         assert_eq!(back, profiles);
         let saved = &back.user[0].profile;
         assert_eq!(saved.ribbon, Some(ribbon_setup()));
-        assert!(saved.detached.is_empty(), "reservado para #168");
+        assert!(
+            saved.detached.is_empty(),
+            "sem janela destacada neste estado"
+        );
         let mut other = state();
         saved.apply(&mut other);
         assert_eq!(other.ribbon, Some(ribbon_setup()));
         assert!(other.dock.is_floating(ids::STUDY));
         assert_eq!(other.dock.floating[0].pos, [111.0, 77.0]);
+    }
+
+    #[test]
+    fn a_saved_profile_keeps_detached_windows_in_its_own_field() {
+        let mut s = state();
+        let id = s
+            .dock
+            .detach_group_to_window(ids::NOTATION, [500.0, 400.0])
+            .unwrap();
+        s.dock
+            .set_window_rect(id, Some([2000, 80]), [520.0, 410.0], Some(1));
+        let capture = InterfaceProfile::capture(&s, None);
+        assert_eq!(capture.detached.len(), 1);
+        assert_eq!(capture.detached[0].pos, Some([2000, 80]));
+        assert_eq!(capture.detached[0].monitor, Some(1));
+        match &capture.dock {
+            DockSetup::Layout(layout) => assert!(layout.windows.is_empty()),
+            DockSetup::Panels { .. } => panic!("captura guarda o layout"),
+        }
+        let mut profiles = ProfilesState::default();
+        profiles.save_user("Dois monitores", capture).unwrap();
+        let back = ProfilesState::from_json(Some(profiles.to_json()));
+        assert_eq!(back, profiles);
+        let mut other = state();
+        back.user[0].profile.apply(&mut other);
+        assert_eq!(other.dock.windows, s.dock.windows);
+        assert!(other.dock.tile_of(ids::NOTATION).is_none());
+        assert!(back.user[0].profile.matches(&other));
     }
 
     #[test]
@@ -1235,6 +1280,34 @@ mod tests {
             w.resource::<InterfaceProfiles>().state.active,
             ProfileKey::Custom
         );
+    }
+
+    #[test]
+    fn saving_the_current_state_while_all_is_hidden_saves_the_panels_that_were_open() {
+        let mut w = world();
+        request(
+            &mut w,
+            ProfileRequest::Apply(ProfileKey::Factory(FactoryProfile::PhysicalGame)),
+        );
+        let open = vec![ids::CLOCK.to_owned(), ids::NOTATION.to_owned()];
+        w.resource_scope(|_, mut dock: Mut<Dock>| {
+            for id in dock.layout.pane_ids() {
+                dock.layout.set_visible(&id, false);
+            }
+        });
+        w.resource_mut::<crate::actions::HiddenPanels>()
+            .hide_for_test(open.clone());
+        request(&mut w, ProfileRequest::SaveCurrent("Meu".into()));
+        // O dock segue oculto e o "tudo oculto" também.
+        assert!(!w.resource::<Dock>().layout.any_visible());
+        assert!(w.resource::<crate::actions::HiddenPanels>().is_hidden());
+        let saved = w.resource::<InterfaceProfiles>().state.user[0]
+            .profile
+            .clone();
+        let DockSetup::Layout(layout) = saved.dock else {
+            panic!("layout inteiro")
+        };
+        assert_eq!(visible_ids(&layout), vec![ids::CLOCK, ids::NOTATION]);
     }
 
     #[test]

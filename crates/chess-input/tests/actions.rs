@@ -62,10 +62,7 @@ fn keytips_are_unique_within_a_tab_and_present_on_ribbon_actions() {
                 m.keytip
             );
         }
-        // Biblioteca e Treino só tinham botões de Painel, que agora moram em Exibir (#183):
-        // ficam sem Ações até ganharem as suas, e o Ribbon não mostra aba vazia.
-        let may_be_empty = matches!(tab, RibbonTab::Library | RibbonTab::Training);
-        assert!(may_be_empty || !seen.is_empty(), "aba {tab:?} vazia");
+        assert!(!seen.is_empty(), "aba {tab:?} vazia");
     }
 }
 
@@ -359,18 +356,22 @@ fn float_and_dock_depend_on_the_panels() {
 }
 
 #[test]
-fn surfaces_that_do_not_exist_yet_are_disabled_with_a_reason() {
-    {
-        let a = Action::DetachPanel;
-        let ctx = ActionContext {
-            has_docked_panel: true,
+fn detaching_a_panel_or_a_group_needs_a_docked_panel() {
+    for a in [Action::DetachPanel, Action::DetachGroup] {
+        let none = ActionContext {
+            has_docked_panel: false,
             ..assisted()
         };
         assert_eq!(
-            state(a, &ctx).disabled_reason,
-            Some("reason-coming-soon"),
+            state(a, &none).disabled_reason,
+            Some("reason-no-docked-panel"),
             "{a:?}"
         );
+        let some = ActionContext {
+            has_docked_panel: true,
+            ..assisted()
+        };
+        assert!(state(a, &some).is_enabled(), "{a:?}");
     }
 }
 
@@ -501,4 +502,42 @@ fn hide_all_panels_is_a_view_toggle_with_ctrl_shift_f12() {
         ..assisted()
     };
     assert_eq!(state(Action::HideAllPanels, &on).checked, Some(true));
+}
+
+// --- #183: Biblioteca e Treino com Ações próprias ---
+
+#[test]
+fn library_and_training_tabs_keep_their_own_actions() {
+    for tab in [RibbonTab::Library, RibbonTab::Training] {
+        let own: Vec<Action> = Action::ALL
+            .into_iter()
+            .filter(|a| meta(*a).tab == Some(tab))
+            .collect();
+        assert!(!own.is_empty(), "{tab:?} sem Ações");
+        assert!(own.iter().all(|a| a.panel().is_none()), "{tab:?}");
+    }
+    let ctx = assisted();
+    for a in [
+        Action::OpenLibrary,
+        Action::OpenOpenings,
+        Action::OpenTraining,
+    ] {
+        assert_eq!(meta(a).kind, ActionKind::Command);
+        assert!(state(a, &ctx).is_enabled(), "{a:?}");
+    }
+    for a in [Action::OpenLibrary, Action::OpenOpenings] {
+        assert_eq!(
+            state(a, &fide()).disabled_reason,
+            Some("reason-competitive-lock")
+        );
+    }
+    assert!(state(Action::ExportPgn, &ctx).is_enabled());
+    let blocked = ActionContext {
+        pgn_blocked: true,
+        ..assisted()
+    };
+    assert_eq!(
+        state(Action::ExportPgn, &blocked).disabled_reason,
+        Some("reason-pgn-scoresheet")
+    );
 }

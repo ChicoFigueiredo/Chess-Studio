@@ -153,6 +153,25 @@ pub fn meta(action: Action) -> ActionMeta {
             "engine",
             "A"
         ),
+        // Biblioteca e Treino: Ações de abrir o que já existe (o Painel é alternado em Exibir).
+        A::OpenLibrary => item!("open-library", "books", Command, Library, "library", "B"),
+        A::OpenOpenings => item!(
+            "open-openings",
+            "tree-structure",
+            Command,
+            Library,
+            "library",
+            "A"
+        ),
+        A::ExportPgn => item!("export-pgn", "export", Command, Library, "library", "E"),
+        A::OpenTraining => item!(
+            "open-training",
+            "barbell",
+            Command,
+            Training,
+            "training",
+            "T"
+        ),
         // Os Painéis (Análise, Estudo, Engines, Biblioteca, Aberturas, Treino…) não repetem
         // botões nas abas de domínio: moram só no grupo Painéis da aba Exibir (#183).
         // Exibir: Apresentação.
@@ -292,6 +311,14 @@ pub fn meta(action: Action) -> ActionMeta {
             "windows",
             "JD"
         ),
+        A::DetachGroup => item!(
+            "detach-group",
+            "arrow-square-out",
+            Command,
+            View,
+            "windows",
+            "JG"
+        ),
         A::ResetLayout => item!("reset-layout", "layout", Command, View, "windows", "JR"),
         A::HideAllPanels => item!(
             "hide-all-panels",
@@ -375,9 +402,12 @@ pub struct ActionContext {
     /// Ids dos Painéis visíveis (encaixados ou flutuantes).
     pub visible_panels: BTreeSet<String>,
     pub has_docked_panel: bool,
+    /// Há Painel flutuante ou janela destacada para encaixar.
     pub has_floating_panel: bool,
     /// "Ocultar todos os Painéis" está ativo (há um conjunto guardado para restaurar).
     pub panels_hidden: bool,
+    /// A Súmula está aberta e esconde a notação: exportar PGN a revelaria.
+    pub pgn_blocked: bool,
 }
 
 /// Estado de uma Ação num dado [`ActionContext`].
@@ -489,6 +519,10 @@ fn disabled_reason(action: Action, ctx: &ActionContext) -> Option<&'static str> 
             .then_some("reason-competitive-lock");
     }
     match action {
+        A::OpenLibrary | A::OpenOpenings if ctx.competitive_in_progress => {
+            Some("reason-competitive-lock")
+        }
+        A::ExportPgn if ctx.pgn_blocked => Some("reason-pgn-scoresheet"),
         A::Undo if ctx.competitive => Some("reason-assisted-only"),
         A::Undo if !ctx.can_undo => Some("reason-nothing-to-undo"),
         A::Redo if ctx.competitive => Some("reason-assisted-only"),
@@ -514,11 +548,13 @@ fn disabled_reason(action: Action, ctx: &ActionContext) -> Option<&'static str> 
         {
             Some("reason-3d-only")
         }
-        A::FloatPanel if !ctx.has_docked_panel => Some("reason-no-docked-panel"),
+        A::FloatPanel | A::DetachPanel | A::DetachGroup if !ctx.has_docked_panel => {
+            Some("reason-no-docked-panel")
+        }
         A::DockPanel if !ctx.has_floating_panel => Some("reason-no-floating-panel"),
         // Superfícies que os tickets seguintes da DS-0x entregam.
         A::ToggleRibbonCollapse if ctx.ribbon_visible => None,
-        A::DetachPanel | A::ToggleRibbonCollapse => Some("reason-coming-soon"),
+        A::ToggleRibbonCollapse => Some("reason-coming-soon"),
         _ => None,
     }
 }

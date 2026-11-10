@@ -31,6 +31,7 @@ pub fn glyph(name: &str) -> &'static str {
         "cube-focus" => icon::CUBE_FOCUS,
         "cursor" => icon::CURSOR,
         "cursor-click" => icon::CURSOR_CLICK,
+        "export" => icon::EXPORT,
         "eye" => icon::EYE,
         "eye-slash" => icon::EYE_SLASH,
         "file-plus" => icon::FILE_PLUS,
