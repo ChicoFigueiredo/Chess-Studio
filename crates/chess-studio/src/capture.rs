@@ -100,7 +100,7 @@ pub struct CaptureScript {
     pub inverted: bool,
     /// `--new-game`: mostra a tela de Nova Partida (com a configuração acima preenchida).
     pub show_new_game: bool,
-    /// `--profile physical|training|study`: aplica o Perfil de interface de fábrica e tira
+    /// `--profile physical|training|study|competition|minimal`: aplica o Perfil de interface de fábrica e tira
     /// uma única foto (C4).
     pub profile: Option<String>,
     /// `--single <nome>`: tira uma única foto com este nome (telas novas: Controles,
@@ -115,6 +115,8 @@ impl CaptureScript {
             "physical" => Some(FactoryProfile::PhysicalGame),
             "training" => Some(FactoryProfile::AssistedTraining),
             "study" => Some(FactoryProfile::StudyAnalysis),
+            "competition" => Some(FactoryProfile::Competition),
+            "minimal" => Some(FactoryProfile::Minimal),
             _ => None,
         }
     }
@@ -195,6 +197,8 @@ fn run_capture(
                 crate::profiles::FactoryProfile::PhysicalGame => "perfil-jogo-fisico",
                 crate::profiles::FactoryProfile::AssistedTraining => "perfil-treinamento",
                 crate::profiles::FactoryProfile::StudyAnalysis => "perfil-estudo",
+                crate::profiles::FactoryProfile::Competition => "perfil-competicao",
+                crate::profiles::FactoryProfile::Minimal => "perfil-minimo",
             },
             presentation: f.profile().presentation,
             view: CameraView::Standard,

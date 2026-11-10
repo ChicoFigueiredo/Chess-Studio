@@ -33,6 +33,57 @@ pub enum RibbonMode {
     Simple,
 }
 
+impl RibbonState {
+    /// O que do Ribbon entra no Perfil de interface (#166): modo, recolhido, aba ativa e a
+    /// Barra de Acesso Rápido.
+    pub fn setup(&self) -> crate::profiles::RibbonSetup {
+        crate::profiles::RibbonSetup {
+            layout: match self.mode {
+                RibbonMode::Classic => crate::profiles::RibbonLayout::Classic,
+                RibbonMode::Simple => crate::profiles::RibbonLayout::Simple,
+            },
+            collapsed: self.collapsed,
+            active_tab: Some(self.active.id().to_owned()),
+            quick_access: self
+                .quick_access
+                .iter()
+                .map(|a| a.id().to_owned())
+                .collect(),
+        }
+    }
+
+    /// Aplica um [`RibbonSetup`](crate::profiles::RibbonSetup); aba ausente ou desconhecida
+    /// mantém a atual, ação desconhecida sai da Barra de Acesso Rápido.
+    pub fn apply_setup(&mut self, setup: &crate::profiles::RibbonSetup) {
+        let mode = match setup.layout {
+            crate::profiles::RibbonLayout::Classic => RibbonMode::Classic,
+            crate::profiles::RibbonLayout::Simple => RibbonMode::Simple,
+        };
+        let quick: Vec<Action> = setup
+            .quick_access
+            .iter()
+            .filter_map(|id| Action::from_id(id))
+            .collect();
+        let active = setup.active_tab.as_deref().and_then(RibbonView::from_id);
+        if self.mode != mode {
+            self.mode = mode;
+        }
+        if self.collapsed != setup.collapsed {
+            self.collapsed = setup.collapsed;
+            self.body_open = false;
+        }
+        if self.quick_access != quick {
+            self.quick_access = quick;
+        }
+        if let Some(active) = active
+            && self.active != active
+        {
+            self.active = active;
+            self.body_open = false;
+        }
+    }
+}
+
 /// Retângulos que o Ribbon registra a cada quadro, para os selos dos KeyTips.
 #[derive(Debug, Default, Clone)]
 pub struct Registered {
@@ -40,8 +91,8 @@ pub struct Registered {
     pub actions: Vec<(Action, egui::Rect)>,
 }
 
-/// Estado do Ribbon. O modo e a aba ativa entram no Perfil de interface em #166; por ora
-/// vivem só em memória.
+/// Estado do Ribbon. O modo, o recolhido, a aba ativa e a Barra de Acesso Rápido entram no
+/// Perfil de interface (#166) e são gravados nas preferências (`persistence`).
 #[derive(Resource, Debug)]
 pub struct RibbonState {
     pub mode: RibbonMode,
@@ -120,9 +171,13 @@ pub struct RibbonPlugin;
 impl Plugin for RibbonPlugin {
     fn build(&self, app: &mut App) {
         let mut state = RibbonState::default();
+        if let Some(setup) = crate::persistence::load_ribbon_setup(app.world()) {
+            state.apply_setup(&setup);
+        }
         apply_capture_options(&mut state);
         app.insert_resource(state)
             .init_resource::<RibbonActionContext>()
+            .add_systems(Update, crate::persistence::persist_ribbon)
             .add_systems(
                 Update,
                 (refresh_context, keytips_input, collapse_requested)
@@ -433,6 +488,33 @@ mod tests {
         assert_eq!(state.quick_access.len(), 4);
         state.set_pinned(Action::Undo, false);
         assert!(!state.is_pinned(Action::Undo));
+    }
+
+    #[test]
+    fn the_ribbon_setup_round_trips_and_ignores_unknown_ids() {
+        let mut state = RibbonState {
+            mode: RibbonMode::Simple,
+            collapsed: true,
+            active: RibbonView::Scoresheet,
+            quick_access: vec![Action::Redo],
+            ..RibbonState::default()
+        };
+        let setup = state.setup();
+        let mut other = RibbonState::default();
+        other.apply_setup(&setup);
+        assert_eq!(other.setup(), setup);
+        assert_eq!(other.mode, RibbonMode::Simple);
+        assert_eq!(other.active, RibbonView::Scoresheet);
+        // Aba e Ações desconhecidas (versão futura): aba atual fica, Ação sai.
+        let mut odd = setup.clone();
+        odd.active_tab = Some("nao-existe".into());
+        odd.quick_access.push("acao-nao-existe".into());
+        state.apply_setup(&odd);
+        assert_eq!(state.active, RibbonView::Scoresheet);
+        assert_eq!(state.quick_access, vec![Action::Redo]);
+        for tab in model::visible_tabs(true) {
+            assert_eq!(RibbonView::from_id(tab.id()), Some(tab));
+        }
     }
 
     #[test]
