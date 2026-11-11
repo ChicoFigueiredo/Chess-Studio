@@ -6,9 +6,10 @@
 mod common;
 use chess_core::{Color, Move};
 use chess_game::{
-    Command, CommandKind, Desync, EndReason, Event, EventKind, Game, GameResult, GameSetup,
-    OnlineGame, OnlinePlayer, OnlineSetupError, Opponent, Outcome, PolicyKind, ProviderClock,
-    ProviderEnd, ProviderSnapshot, Rejection, TimeControl, Timestamp, Variant,
+    Command, CommandKind, Desync, ENGINE_GAME_SUFFIX, EndReason, Event, EventKind, Game,
+    GameResult, GameSetup, OnlineGame, OnlinePlayer, OnlineSetupError, Opponent, Outcome,
+    PolicyKind, ProviderClock, ProviderEnd, ProviderSnapshot, Rejection, TimeControl, Timestamp,
+    Variant,
 };
 use common::sq;
 
@@ -651,4 +652,23 @@ fn pgn_da_partida_online_diz_o_provedor_e_abortada_sai_sem_resultado() {
     assert!(pgn.contains("Online (lichess)"), "{pgn}");
     assert!(pgn.contains("[Result \"*\"]"), "{pgn}");
     assert!(pgn.contains("1. e4"), "{pgn}");
+}
+
+#[test]
+fn partida_da_engine_online_nunca_conta_como_partida_de_pessoa_nem_liga_a_trava() {
+    // Chave `<provedor>-bot`: o lado local é uma Engine declarada (Bot API, #234).
+    let mut info = online_game(Color::White, Opponent::Human);
+    assert!(!info.is_engine_game());
+    info.provider = format!("lichess{ENGINE_GAME_SUFFIX}");
+    assert!(info.is_engine_game());
+    let setup = GameSetup::online(info, Variant::Standard, None)
+        .unwrap()
+        .with_time_control(FIVE_MINUTES);
+    let game = Game::new(setup);
+    assert!(
+        !game.online_human_in_progress(),
+        "contra pessoa, mas jogada por Engine: sem trava"
+    );
+    // A de pessoa continua ligando a trava.
+    assert!(white_vs_human().online_human_in_progress());
 }

@@ -85,16 +85,19 @@
 mod answer;
 mod auth;
 mod board;
+mod bot;
 mod chesscom;
 mod dates;
 mod error;
 mod eval;
 mod explorer;
+mod family;
 mod fics;
 mod games;
 mod lichess;
 mod pgn;
 mod profile;
+mod remote;
 mod tablebase;
 pub mod ttl;
 
@@ -105,9 +108,13 @@ pub use auth::{
 };
 pub use board::{
     Backoff, BoardAction, BoardError, CORRESPONDENCE_DAYS, Challenge, ChallengePlayer,
-    ChallengeSpec, ConnectionEvent, ConnectionEvents, DeclineReason, GameInfo, Gap, LichessBoard,
-    LinkStatus, OnlineGameSession, OnlineTime, OpponentGone, OpponentInfo, Seek, SeekState,
-    Seeking, SessionNotice, SessionPoll,
+    ChallengeSpec, ConnectionEvent, ConnectionEvents, DeclineReason, DrawResponse, EnginePolicy,
+    GameInfo, Gap, LichessBoard, LinkStatus, MoveEngine, OnlineGameSession, OnlineTime,
+    OpponentGone, OpponentInfo, Seek, SeekState, Seeking, SessionNotice, SessionPoll,
+};
+pub use bot::{
+    ChallengeAnswer, ChallengeDecision, ChallengePolicy, ChallengeSpeed, IrreversibleConfirmation,
+    LichessBot, OpponentPolicy, RatedPolicy,
 };
 pub use chesscom::{ChessCom, ChessComProfile, MonthGames};
 pub use dates::{Day, YearMonth};
@@ -117,6 +124,7 @@ pub use explorer::{
     ExplorerEvent, ExplorerMove, ExplorerPosition, ExplorerStream, LichessFilter, MastersFilter,
     OpeningName, Outcomes, PlayerFilter, ReferenceGame, ReferencePlayer, explorer_license,
 };
+pub use family::ProviderProfile;
 pub use fics::{
     DEFAULT_LOGIN_DEADLINE, Fics, FicsChallenge, FicsError, FicsLogin, FicsNotice, FicsPoll,
     FicsSession, FicsStatus, ObservedGame,
@@ -127,6 +135,10 @@ pub use games::{
 };
 pub use lichess::Lichess;
 pub use profile::{FideRating, LichessProfile, PerfRating};
+pub use remote::{
+    ChessApi, DEFAULT_DEPTH as REMOTE_DEFAULT_DEPTH, ENGINE_NAME as REMOTE_ENGINE_NAME,
+    MAX_DEPTH as REMOTE_MAX_DEPTH, RemoteEngine, user_message as remote_user_message,
+};
 pub use tablebase::{Category, MAX_PIECES, Tablebase, TablebaseMove};
 
 /// Ritmo de jogo e cor, tipos dos filtros (vêm do `chess-store` e do `chess-core`).

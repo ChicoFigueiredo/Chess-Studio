@@ -137,6 +137,9 @@ impl Lichess {
     /// resposta). Mais de [`MAX_PIECES`] peças: [`ProviderError::TooManyPieces`] sem pedido.
     /// Validade do cache: [`ttl::TABLEBASE`].
     pub fn tablebase(&self, fen: &str) -> Query<Tablebase> {
+        if self.profile.tablebase_host.is_none() {
+            return Query::failed(self.not_offered("os finais exatos"));
+        }
         let fen = fen.trim();
         if let Err(e) = CanonicalPosition::from_fen(fen) {
             return Query::failed(ProviderError::invalid(format!("FEN inválido ({e})")));

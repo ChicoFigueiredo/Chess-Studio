@@ -1,0 +1,41 @@
+# Resposta REAL gravada em 2026-11-11 com curl -i (User-Agent generico, sem chave, sem autenticacao). Mate em 1 (Td8).
+# POST https://chess-api.com/v1 corpo: {"fen":"6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1","depth":12,"variants":1}
+HTTP/2 200 
+server: nginx/1.18.0 (Ubuntu)
+date: Wed, 11 Nov 2026 16:23:47 GMT
+content-type: application/json; charset=utf-8
+content-length: 729
+x-powered-by: Express
+access-control-allow-origin: *
+etag: W/"2d9-H1vVoTDsTN6ycqVikLmMxLPNPE4"
+
+{
+  "text": "Move d1 → d8 (Rd8#): [100]. White is winning. Depth 12.",
+  "captured": false,
+  "promotion": false,
+  "isCapture": false,
+  "isPromotion": false,
+  "isCastling": false,
+  "fen": "6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1",
+  "type": "bestmove",
+  "depth": 12,
+  "move": "d1d8",
+  "eval": 100,
+  "centipawns": 10000,
+  "mate": "1",
+  "continuationArr": [],
+  "debug": "info depth 12 seldepth 2 multipv 1 score mate 1 nodes 19438 nps 19438000 hashfull 12 tbhits 0 time 1 pv d1d8",
+  "winChance": 100,
+  "taskId": "q586jejsh",
+  "turn": "w",
+  "color": "w",
+  "piece": "r",
+  "from": "d1",
+  "to": "d8",
+  "san": "Rd8#",
+  "flags": "n",
+  "lan": "d1d8",
+  "fromNumeric": "41",
+  "toNumeric": "48",
+  "continuation": []
+}
