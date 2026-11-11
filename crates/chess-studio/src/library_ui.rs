@@ -15,18 +15,21 @@ use crate::persistence::PersistenceHandle;
 use crate::session::Session;
 use crate::study::StudyNotes;
 use crate::training_ui::{TrainingUi, with_store};
+use crate::ui_theme::{ButtonVariant, cs_button, cs_dropdown, palette};
 use bevy::prelude::*;
 use bevy_egui::egui;
 use chess_core::{CanonicalPosition, Color as Side};
 use chess_game::{GameResult, Outcome, PolicyKind};
 use chess_pgn::{MoveNode, PgnGame};
 use chess_store::{
-    Favorite, FavoriteId, FavoriteOrigin, FavoriteQuery, GameId, ImportedId, LibraryEntry,
-    LibraryPage, LibraryQuery, LibrarySource, NewFavorite, ProfileId, Store,
+    Favorite, FavoriteId, FavoriteOrigin, FavoriteQuery, GameId, ImportMode, ImportOptions,
+    ImportProgress, ImportSource, ImportedId, LibraryEntry, LibraryPage, LibraryQuery,
+    LibrarySource, NewFavorite, Origin, Pace, ProfileId, Provenance, Store,
 };
 use chess_training::{Exercise, ExerciseKind};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// Partidas por página.
@@ -230,35 +233,121 @@ pub fn list_pgn_files(dir: &Path) -> Vec<PathBuf> {
     files
 }
 
-/// Resultado de importar um arquivo PGN.
+/// Resultado de importar um arquivo PGN (resumo: novas, repetidas e com erro).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImportOutcome {
     pub file: String,
+    /// Partidas novas gravadas.
     pub imported: usize,
+    /// Partidas que já estavam na Biblioteca.
+    pub duplicates: usize,
+    /// Total de Partidas puladas por erro (`errors` lista só as primeiras).
+    pub error_count: usize,
     /// Um texto por partida pulada: partida, linha, coluna e o Lance problemático.
     pub errors: Vec<String>,
+    /// Partidas convertidas de Windows-1252/Latin-1 (aviso: conferir os acentos).
+    pub converted: usize,
+    pub cancelled: bool,
 }
 
-/// Lê o arquivo (UTF-8; bytes inválidos viram `�`) e importa com `Store::import_pgn_for`.
+/// Importa o arquivo (`.pgn` ou `.pgn.gz`) em fluxo, gravando a Origem escolhida
+/// (importação manual guiada: sem rede, sem login). `progress` é chamado a cada lote.
 pub fn import_file(
     store: &mut Store,
     profile: ProfileId,
     path: &Path,
+    source: ImportSource,
+    cancel: &AtomicBool,
+    progress: &mut dyn FnMut(&ImportProgress),
 ) -> Result<ImportOutcome, String> {
-    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let text = String::from_utf8_lossy(&bytes);
     let file = path.file_name().map_or_else(
         || path.display().to_string(),
         |n| n.to_string_lossy().into_owned(),
     );
-    let report = store
-        .import_pgn_for(profile, &text, Some(&file))
-        .map_err(|e| e.to_string())?;
+    let mut options = ImportOptions::new(
+        Some(&file),
+        Provenance::from_source(source, ImportMode::Manual, unix_ms()),
+    );
+    options.batch_size = IMPORT_BATCH;
+    let summary = store
+        .import_pgn_file(profile, path, &options, cancel, progress)
+        .map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(ImportOutcome {
         file,
-        imported: report.imported.len(),
-        errors: report.errors.iter().map(ToString::to_string).collect(),
+        imported: summary.new,
+        duplicates: summary.duplicates,
+        error_count: summary.errors,
+        errors: summary
+            .error_samples
+            .iter()
+            .map(ToString::to_string)
+            .collect(),
+        converted: summary.converted_games,
+        cancelled: summary.cancelled,
     })
+}
+
+/// Instante da importação (borda da interface: o domínio recebe o instante pronto).
+fn unix_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
+}
+
+/// Partidas por transação na importação pela interface.
+const IMPORT_BATCH: usize = 500;
+
+/// Importação rodando numa thread própria, com o andamento e o cancelamento
+/// compartilhados com a interface.
+struct ImportJob {
+    file: String,
+    progress: Arc<Mutex<ImportProgress>>,
+    cancel: Arc<AtomicBool>,
+    result: Arc<Mutex<Option<Result<ImportOutcome, String>>>>,
+}
+
+impl ImportJob {
+    /// Abre uma conexão própria com o banco em `db` e importa fora da thread da interface.
+    fn spawn(db: PathBuf, profile: ProfileId, path: PathBuf, source: ImportSource) -> Self {
+        let file = path.file_name().map_or_else(
+            || path.display().to_string(),
+            |n| n.to_string_lossy().into_owned(),
+        );
+        let job = Self {
+            file,
+            progress: Arc::new(Mutex::new(ImportProgress::default())),
+            cancel: Arc::new(AtomicBool::new(false)),
+            result: Arc::new(Mutex::new(None)),
+        };
+        let (progress, cancel, result) = (
+            Arc::clone(&job.progress),
+            Arc::clone(&job.cancel),
+            Arc::clone(&job.result),
+        );
+        std::thread::spawn(move || {
+            let outcome = Store::open(&db)
+                .map_err(|e| e.to_string())
+                .and_then(|mut store| {
+                    import_file(&mut store, profile, &path, source, &cancel, &mut |p| {
+                        if let Ok(mut shared) = progress.lock() {
+                            *shared = p.clone();
+                        }
+                    })
+                });
+            if let Ok(mut slot) = result.lock() {
+                *slot = Some(outcome);
+            }
+        });
+        job
+    }
+
+    fn take_result(&self) -> Option<Result<ImportOutcome, String>> {
+        self.result.lock().ok()?.take()
+    }
+
+    fn snapshot(&self) -> ImportProgress {
+        self.progress.lock().map(|p| p.clone()).unwrap_or_default()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -336,6 +425,7 @@ struct Detail {
     id: ImportedId,
     title: String,
     tags: Vec<(String, String)>,
+    origins: Vec<Origin>,
     result: String,
     game: PgnGame,
     lines: Vec<TreeLine>,
@@ -360,6 +450,9 @@ pub struct LibraryUi {
     result: ResultFilter,
     policy: Option<PolicyKind>,
     source: SourceFilter,
+    provider: Option<ImportSource>,
+    eco: String,
+    pace: Option<Pace>,
     date_from: String,
     date_to: String,
     position: String,
@@ -376,6 +469,8 @@ pub struct LibraryUi {
     status: Option<String>,
     detail: Option<Detail>,
     import_path: String,
+    import_source: ImportSource,
+    import_job: Option<ImportJob>,
     import_result: Option<Result<ImportOutcome, String>>,
     pgn_files: Vec<PathBuf>,
     favorite_name: String,
@@ -392,6 +487,9 @@ impl Default for LibraryUi {
             result: ResultFilter::default(),
             policy: None,
             source: SourceFilter::default(),
+            provider: None,
+            eco: String::new(),
+            pace: None,
             date_from: String::new(),
             date_to: String::new(),
             position: String::new(),
@@ -408,6 +506,8 @@ impl Default for LibraryUi {
             status: None,
             detail: None,
             import_path: String::new(),
+            import_source: ImportSource::Other,
+            import_job: None,
             import_result: None,
             pgn_files: Vec::new(),
             favorite_name: String::new(),
@@ -433,6 +533,9 @@ impl LibraryUi {
                 SourceFilter::Played => Some(LibrarySource::Played),
                 SourceFilter::Imported => Some(LibrarySource::Imported),
             },
+            provider: self.provider.map(|p| p.provider_id().to_owned()),
+            eco: some(&self.eco),
+            pace: self.pace,
             profile: None, // o chamador fixa o perfil ativo
             limit: Some(PAGE_SIZE),
             offset: self.page * PAGE_SIZE,
@@ -441,6 +544,16 @@ impl LibraryUi {
 
     fn touch(&mut self) {
         self.dirty = true;
+    }
+
+    /// Recolhe o resultado da importação em andamento, se terminou.
+    fn poll_import(&mut self) {
+        let finished = self.import_job.as_ref().and_then(ImportJob::take_result);
+        if let Some(result) = finished {
+            self.import_job = None;
+            self.import_result = Some(result);
+            self.touch();
+        }
     }
 
     /// Releitura do que a aba mostra (a lista também envelhece sozinha).
@@ -544,6 +657,7 @@ enum Action {
     },
     DeleteFavorite(FavoriteId),
     Import(PathBuf),
+    CancelImport,
     OpenFavoriteSource(FavoriteOrigin),
 }
 
@@ -589,15 +703,17 @@ fn apply(
         }
         Action::OpenImported(id) => {
             let loaded = with_store(&mut lib.local, handle, |store, profile| {
-                store.load_imported(profile, id)
+                let origins = store.origins(profile, id).unwrap_or_default();
+                store.load_imported(profile, id).map(|game| (game, origins))
             });
             match loaded {
-                Some(Ok(game)) => {
+                Some(Ok((game, origins))) => {
                     let title = game_title(&game);
                     lib.detail = Some(Detail {
                         id,
                         title,
                         tags: game.tags.clone(),
+                        origins,
                         result: game.result.token().to_owned(),
                         lines: flatten_tree(&game),
                         game,
@@ -670,10 +786,37 @@ fn apply(
             lib.touch();
         }
         Action::Import(path) => {
-            lib.import_result = with_store(&mut lib.local, handle, |store, profile| {
-                import_file(store, profile, &path)
+            let source = lib.import_source;
+            lib.import_result = None;
+            // Banco em arquivo: importa numa thread com a sua conexão. Sem arquivo (capturas),
+            // não há como compartilhar o banco em memória: importa aqui mesmo.
+            let target = with_store(&mut lib.local, handle, |store, profile| {
+                (store.database_path(), profile)
             });
-            lib.touch();
+            match target {
+                Some((Some(db), profile)) => {
+                    lib.import_job = Some(ImportJob::spawn(db, profile, path, source));
+                }
+                Some((None, _)) => {
+                    lib.import_result = with_store(&mut lib.local, handle, |store, profile| {
+                        import_file(
+                            store,
+                            profile,
+                            &path,
+                            source,
+                            &AtomicBool::new(false),
+                            &mut |_| {},
+                        )
+                    });
+                    lib.touch();
+                }
+                None => {}
+            }
+        }
+        Action::CancelImport => {
+            if let Some(job) = &lib.import_job {
+                job.cancel.store(true, Ordering::Relaxed);
+            }
         }
         Action::OpenFavoriteSource(origin) => match (origin.source, handle) {
             (LibrarySource::Played, _) => {
@@ -738,6 +881,203 @@ fn add_favorite(
     }
 }
 
+fn source_key(source: ImportSource) -> &'static str {
+    match source {
+        ImportSource::QueenAlice => "library-import-source-queen-alice",
+        ImportSource::ChessBase => "library-import-source-chessbase",
+        ImportSource::Twic => "library-import-source-twic",
+        ImportSource::PgnMentor => "library-import-source-pgn-mentor",
+        ImportSource::Lichess => "library-import-source-lichess",
+        ImportSource::ChessCom => "library-import-source-chess-com",
+        ImportSource::Other => "library-import-source-other",
+    }
+}
+
+fn pace_key(pace: Pace) -> &'static str {
+    match pace {
+        Pace::Bullet => "library-pace-bullet",
+        Pace::Blitz => "library-pace-blitz",
+        Pace::Rapid => "library-pace-rapid",
+        Pace::Classical => "library-pace-classical",
+        Pace::Correspondence => "library-pace-correspondence",
+    }
+}
+
+fn mode_key(mode: ImportMode) -> &'static str {
+    match mode {
+        ImportMode::File => "library-mode-file",
+        ImportMode::Manual => "library-mode-manual",
+        ImportMode::Api => "library-mode-api",
+    }
+}
+
+/// Uma linha da Origem: Provedor, modo, data da importação e arquivo.
+fn origin_line(i18n: &I18n, origin: &Origin) -> String {
+    let provider = origin
+        .provider
+        .as_deref()
+        .and_then(ImportSource::from_provider_id)
+        .map_or_else(
+            || i18n.t("library-origin-unknown"),
+            |s| i18n.t(source_key(s)),
+        );
+    let when = origin.retrieved_at_ms / 1000 / 86_400;
+    i18n.t_with(
+        "library-origin-line",
+        &[
+            ("provider", &provider),
+            ("mode", &i18n.t(mode_key(origin.mode))),
+            ("day", &civil_date(when)),
+            ("file", origin.source.as_deref().unwrap_or("-")),
+        ],
+    )
+}
+
+/// `AAAA-MM-DD` de um número de dias desde 1970-01-01 (calendário gregoriano proléptico).
+fn civil_date(days: i64) -> String {
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
+/// Importar PGN: de onde veio o arquivo (grava a Origem e mostra a licença daquela fonte),
+/// caminho, andamento com cancelamento e o resumo (novas, repetidas, com erro).
+fn draw_import(ui: &mut egui::Ui, i18n: &I18n, lib: &mut LibraryUi, actions: &mut Vec<Action>) {
+    let p = palette(ui);
+    ui.small(i18n.t("library-import-help"));
+    ui.label(i18n.t("library-import-source-label"));
+    let sources: Vec<(ImportSource, String)> = ImportSource::ALL
+        .into_iter()
+        .map(|s| (s, i18n.t(source_key(s))))
+        .collect();
+    cs_dropdown(
+        ui,
+        "library-import-source",
+        &mut lib.import_source,
+        &sources,
+    );
+    ui.small(i18n.t(&format!(
+        "library-license-{}",
+        lib.import_source.license_code()
+    )));
+    ui.add(
+        egui::TextEdit::singleline(&mut lib.import_path)
+            .hint_text(i18n.t("library-import-hint"))
+            .desired_width(f32::INFINITY),
+    );
+    let busy = lib.import_job.is_some();
+    let ready = !lib.import_path.trim().is_empty() && !busy;
+    ui.add_enabled_ui(ready, |ui| {
+        if cs_button(ui, &i18n.t("library-import-button"), ButtonVariant::Primary).clicked() {
+            actions.push(Action::Import(PathBuf::from(lib.import_path.trim())));
+        }
+    });
+    if let Some(job) = &lib.import_job {
+        let progress = job.snapshot();
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(100));
+        ui.small(i18n.t_with(
+            "library-import-progress",
+            &[
+                ("file", &job.file),
+                ("seen", &progress.games_seen.to_string()),
+                ("new", &progress.new.to_string()),
+                ("dup", &progress.duplicates.to_string()),
+                ("errors", &progress.errors.to_string()),
+            ],
+        ));
+        if let Some(total) = progress.bytes_total.filter(|t| *t > 0) {
+            ui.add(
+                egui::ProgressBar::new((progress.bytes_read as f32 / total as f32).min(1.0))
+                    .desired_width(f32::INFINITY),
+            );
+        }
+        if cs_button(
+            ui,
+            &i18n.t("library-import-cancel"),
+            ButtonVariant::Secondary,
+        )
+        .clicked()
+        {
+            actions.push(Action::CancelImport);
+        }
+    }
+    if lib.pgn_files.is_empty() {
+        let dir = crate::paths::documents_dir(
+            crate::paths::Platform::current(),
+            &crate::paths::process_env,
+        );
+        lib.pgn_files = list_pgn_files(&dir);
+    }
+    if !lib.pgn_files.is_empty() {
+        ui.small(i18n.t("library-import-suggestions"));
+        for file in lib.pgn_files.clone() {
+            let name = file
+                .file_name()
+                .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+            if ui.small_button(name).clicked() {
+                lib.import_path = file.display().to_string();
+            }
+        }
+    }
+    match &lib.import_result {
+        Some(Ok(outcome)) => {
+            let key = if outcome.cancelled {
+                "library-import-cancelled"
+            } else {
+                "library-import-summary"
+            };
+            ui.colored_label(
+                p.success,
+                i18n.t_with(
+                    key,
+                    &[
+                        ("file", &outcome.file),
+                        ("new", &outcome.imported.to_string()),
+                        ("dup", &outcome.duplicates.to_string()),
+                        ("errors", &outcome.error_count.to_string()),
+                    ],
+                ),
+            );
+            if outcome.converted > 0 {
+                ui.colored_label(
+                    p.warning,
+                    i18n.t_with(
+                        "library-import-converted",
+                        &[("count", &outcome.converted.to_string())],
+                    ),
+                );
+            }
+            if !outcome.errors.is_empty() {
+                ui.colored_label(
+                    p.danger,
+                    i18n.t_with(
+                        "library-import-errors",
+                        &[("count", &outcome.error_count.to_string())],
+                    ),
+                );
+                for error in outcome.errors.iter().take(MAX_LISTED_ERRORS) {
+                    ui.small(error.clone());
+                }
+            }
+        }
+        Some(Err(message)) => {
+            ui.colored_label(
+                p.danger,
+                i18n.t_with("library-import-failed", &[("detail", message)]),
+            );
+        }
+        None => {}
+    }
+}
+
 fn game_title(game: &PgnGame) -> String {
     let name = |tag: &str| game.tag(tag).filter(|v| *v != "?").map(str::to_owned);
     match (name("White"), name("Black")) {
@@ -785,6 +1125,7 @@ fn library_panel(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
             let mut actions = Vec::new();
             {
                 let handle = world.get_resource::<PersistenceHandle>();
+                lib.poll_import();
                 lib.refresh(handle);
                 draw(ui, i18n, &mut lib, &session, swapped, &mut actions);
             }
@@ -890,72 +1231,7 @@ fn draw_games(
     actions: &mut Vec<Action>,
 ) {
     egui::CollapsingHeader::new(i18n.t("library-import-heading")).show(ui, |ui| {
-        ui.small(i18n.t("library-import-help"));
-        ui.add(
-            egui::TextEdit::singleline(&mut lib.import_path)
-                .hint_text(i18n.t("library-import-hint"))
-                .desired_width(f32::INFINITY),
-        );
-        if ui
-            .add_enabled(
-                !lib.import_path.trim().is_empty(),
-                egui::Button::new(i18n.t("library-import-button")),
-            )
-            .clicked()
-        {
-            actions.push(Action::Import(PathBuf::from(lib.import_path.trim())));
-        }
-        if lib.pgn_files.is_empty() {
-            let dir = crate::paths::documents_dir(
-                crate::paths::Platform::current(),
-                &crate::paths::process_env,
-            );
-            lib.pgn_files = list_pgn_files(&dir);
-        }
-        if !lib.pgn_files.is_empty() {
-            ui.small(i18n.t("library-import-suggestions"));
-            for file in lib.pgn_files.clone() {
-                let name = file
-                    .file_name()
-                    .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-                if ui.small_button(name).clicked() {
-                    lib.import_path = file.display().to_string();
-                }
-            }
-        }
-        match &lib.import_result {
-            Some(Ok(outcome)) => {
-                ui.colored_label(
-                    egui::Color32::LIGHT_GREEN,
-                    i18n.t_with(
-                        "library-import-done",
-                        &[
-                            ("file", &outcome.file),
-                            ("count", &outcome.imported.to_string()),
-                        ],
-                    ),
-                );
-                if !outcome.errors.is_empty() {
-                    ui.colored_label(
-                        egui::Color32::LIGHT_RED,
-                        i18n.t_with(
-                            "library-import-errors",
-                            &[("count", &outcome.errors.len().to_string())],
-                        ),
-                    );
-                    for error in outcome.errors.iter().take(MAX_LISTED_ERRORS) {
-                        ui.small(error.clone());
-                    }
-                }
-            }
-            Some(Err(message)) => {
-                ui.colored_label(
-                    egui::Color32::LIGHT_RED,
-                    i18n.t_with("library-import-failed", &[("detail", message)]),
-                );
-            }
-            None => {}
-        }
+        draw_import(ui, i18n, lib, actions);
     });
 
     let before = (
@@ -964,6 +1240,7 @@ fn draw_games(
         lib.result,
         lib.policy,
         lib.source,
+        (lib.provider, lib.eco.clone(), lib.pace),
         lib.date_from.clone(),
         lib.date_to.clone(),
         lib.position.clone(),
@@ -1040,6 +1317,31 @@ fn draw_games(
                     .desired_width(86.0),
             );
         });
+        ui.horizontal_wrapped(|ui| {
+            let providers: Vec<(Option<ImportSource>, String)> =
+                std::iter::once((None, i18n.t("library-any-provider")))
+                    .chain(
+                        ImportSource::ALL
+                            .into_iter()
+                            .map(|s| (Some(s), i18n.t(source_key(s)))),
+                    )
+                    .collect();
+            cs_dropdown(ui, "library-provider", &mut lib.provider, &providers);
+            let paces: Vec<(Option<Pace>, String)> =
+                std::iter::once((None, i18n.t("library-any-pace")))
+                    .chain(
+                        Pace::ALL
+                            .into_iter()
+                            .map(|p| (Some(p), i18n.t(pace_key(p)))),
+                    )
+                    .collect();
+            cs_dropdown(ui, "library-pace", &mut lib.pace, &paces);
+            ui.add(
+                egui::TextEdit::singleline(&mut lib.eco)
+                    .hint_text(i18n.t("library-filter-eco"))
+                    .desired_width(64.0),
+            );
+        });
         ui.add(
             egui::TextEdit::singleline(&mut lib.position)
                 .hint_text(i18n.t("library-filter-position"))
@@ -1055,6 +1357,9 @@ fn draw_games(
                 lib.result = ResultFilter::Any;
                 lib.policy = None;
                 lib.source = SourceFilter::Any;
+                lib.provider = None;
+                lib.eco.clear();
+                lib.pace = None;
                 lib.date_from.clear();
                 lib.date_to.clear();
                 lib.position.clear();
@@ -1067,6 +1372,7 @@ fn draw_games(
         lib.result,
         lib.policy,
         lib.source,
+        (lib.provider, lib.eco.clone(), lib.pace),
         lib.date_from.clone(),
         lib.date_to.clone(),
         lib.position.clone(),
@@ -1203,6 +1509,16 @@ fn draw_detail(
             ]
         )
     ));
+    egui::CollapsingHeader::new(i18n.t("library-origin-heading"))
+        .default_open(true)
+        .show(ui, |ui| {
+            for origin in &detail.origins {
+                ui.small(origin_line(i18n, origin));
+                if let Some(license) = &origin.license {
+                    ui.weak(i18n.t(&format!("library-license-{license}")));
+                }
+            }
+        });
     egui::CollapsingHeader::new(i18n.t("library-tags")).show(ui, |ui| {
         for (name, value) in &detail.tags {
             ui.small(format!("{name}: {value}"));
@@ -1611,6 +1927,7 @@ fn library_demo(
                     id: ImportedId(id),
                     title: game_title(&game),
                     tags: game.tags.clone(),
+                    origins: Vec::new(),
                     result: game.result.token().to_owned(),
                     lines,
                     game,
@@ -1721,6 +2038,44 @@ mod tests {
         dir
     }
 
+    fn quick_import(store: &mut Store, path: &Path) -> Result<ImportOutcome, String> {
+        import_file(
+            store,
+            ProfileId(1),
+            path,
+            ImportSource::Twic,
+            &AtomicBool::new(false),
+            &mut |_| {},
+        )
+    }
+
+    #[test]
+    fn importing_twice_reports_the_second_time_as_duplicates_with_the_origin() {
+        let dir = temp_dir("again");
+        let path = dir.join("twic.pgn");
+        std::fs::write(&path, DEMO_PGN).unwrap();
+        let mut store = Store::open_in_memory().unwrap();
+        let first = quick_import(&mut store, &path).unwrap();
+        let second = quick_import(&mut store, &path).unwrap();
+        assert_eq!((second.imported, second.duplicates), (0, first.imported));
+        let id = store
+            .list_imported(&chess_store::ImportedQuery::default())
+            .unwrap()[0]
+            .id;
+        let origin = &store.origins(ProfileId(1), id).unwrap()[0];
+        assert_eq!(origin.provider.as_deref(), Some("twic"));
+        assert_eq!(origin.mode, ImportMode::Manual);
+        assert_eq!(origin.source.as_deref(), Some("twic.pgn"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn civil_dates_convert_from_epoch_days() {
+        assert_eq!(civil_date(0), "1970-01-01");
+        assert_eq!(civil_date(19_723), "2024-01-01");
+        assert_eq!(civil_date(20_593), "2026-05-20");
+    }
+
     #[test]
     fn importing_a_file_reports_the_good_games_and_the_errors() {
         let dir = temp_dir("import");
@@ -1731,7 +2086,7 @@ mod tests {
         )
         .unwrap();
         let mut store = Store::open_in_memory().unwrap();
-        let outcome = import_file(&mut store, ProfileId(1), &path).unwrap();
+        let outcome = quick_import(&mut store, &path).unwrap();
         assert_eq!(outcome.file, "estudos.pgn");
         assert_eq!(outcome.imported, 3);
         assert_eq!(outcome.errors.len(), 1);
@@ -1745,7 +2100,7 @@ mod tests {
     #[test]
     fn importing_a_missing_file_is_an_error_message() {
         let mut store = Store::open_in_memory().unwrap();
-        let err = import_file(&mut store, ProfileId(1), Path::new("/nao/existe.pgn")).unwrap_err();
+        let err = quick_import(&mut store, Path::new("/nao/existe.pgn")).unwrap_err();
         assert!(err.contains("existe.pgn"));
     }
 

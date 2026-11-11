@@ -1947,6 +1947,7 @@ dependencies = [
  "chess-game",
  "chess-pgn",
  "chess-training",
+ "flate2",
  "rusqlite",
  "serde",
  "serde_json",

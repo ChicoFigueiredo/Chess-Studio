@@ -53,7 +53,24 @@ fn bancos_com_o_flag_errado_sao_corrigidos_ao_migrar() {
         // Volta ao esquema v8 (anterior à correção): sem as tabelas das migrações seguintes.
         conn.execute_batch(
             "DROP TABLE opening_moves; DROP TABLE manual_scoresheet_check_entries; DROP TABLE manual_scoresheet_checks;
-             DROP TABLE manual_scoresheet_entries; DROP TABLE manual_scoresheets;",
+             DROP TABLE manual_scoresheet_entries; DROP TABLE manual_scoresheets;
+             DROP TABLE imported_game_origins;
+             DROP INDEX imported_games_fingerprint; DROP INDEX imported_games_remote;
+             DROP INDEX imported_games_provider; DROP INDEX imported_games_eco;
+             DROP INDEX imported_games_pace;
+             ALTER TABLE imported_games DROP COLUMN provider;
+             ALTER TABLE imported_games DROP COLUMN import_mode;
+             ALTER TABLE imported_games DROP COLUMN retrieved_at_ms;
+             ALTER TABLE imported_games DROP COLUMN license;
+             ALTER TABLE imported_games DROP COLUMN reference_url;
+             ALTER TABLE imported_games DROP COLUMN remote_id;
+             ALTER TABLE imported_games DROP COLUMN fingerprint;
+             ALTER TABLE imported_games DROP COLUMN site;
+             ALTER TABLE imported_games DROP COLUMN white_elo;
+             ALTER TABLE imported_games DROP COLUMN black_elo;
+             ALTER TABLE imported_games DROP COLUMN time_control;
+             ALTER TABLE imported_games DROP COLUMN eco;
+             ALTER TABLE imported_games DROP COLUMN pace;",
         )
         .unwrap();
         conn.pragma_update(None, "user_version", 8).unwrap();

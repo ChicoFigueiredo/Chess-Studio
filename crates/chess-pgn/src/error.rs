@@ -43,6 +43,10 @@ pub enum PgnErrorKind {
     InvalidNag(String),
     /// Variações aninhadas além do limite.
     NestingTooDeep,
+    /// Uma linha passou do limite de tamanho (arquivo hostil ou binário).
+    LineTooLong,
+    /// A partida passou do limite de tamanho.
+    GameTooLarge,
 }
 
 /// Erro de importação: onde (partida, linha, coluna) e o quê.
@@ -91,6 +95,8 @@ impl fmt::Display for PgnError {
             PgnErrorKind::AnnotationWithoutMove => f.write_str("anotação sem lance anterior"),
             PgnErrorKind::InvalidNag(t) => write!(f, "NAG inválido {t:?}"),
             PgnErrorKind::NestingTooDeep => f.write_str("variações aninhadas demais"),
+            PgnErrorKind::LineTooLong => f.write_str("linha grande demais"),
+            PgnErrorKind::GameTooLarge => f.write_str("partida grande demais"),
         }
     }
 }
