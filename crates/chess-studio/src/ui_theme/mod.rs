@@ -8,11 +8,20 @@ mod appearance;
 mod fonts;
 mod gallery;
 mod style;
+mod themes;
 mod tokens;
 mod widgets;
 
 pub use appearance::{Appearance, Density, ThemeMode, UiScale, resolve_theme};
 pub use gallery::GalleryMode;
+// API para a galeria de Temas (ticket seguinte) e para os componentes com estilos novos.
+#[allow(unused_imports)]
+pub use style::{BODY_LARGE, RIBBON_LABEL, styled_text};
+#[allow(unused_imports)]
+pub use themes::{
+    ContrastLevel, THEME_COLOR_NAMES, ThemeCatalog, ThemeId, ThemeInfo, ThemeSwatch, all_themes,
+    themes_by_family,
+};
 pub use tokens::{Palette, ThemeKind, Tokens};
 // Os widgets são a API do tema para os próximos tickets (Ribbon, Opções): o app ainda não usa todos.
 #[allow(unused_imports)]
@@ -47,7 +56,7 @@ fn system_dark(window: Option<&Window>) -> Option<bool> {
 pub struct ApplyState {
     pub(crate) fonts_requested: bool,
     /// Tema e Densidade já instalados nos estilos do egui.
-    applied: Option<(ThemeKind, Density)>,
+    applied: Option<(ThemeId, Density)>,
 }
 
 /// Instala fontes e estilos e aplica a Escala. Roda antes de qualquer painel, no passe do egui.
@@ -89,13 +98,19 @@ pub fn apply_to_context(
     let theme = resolve_theme(appearance.theme, system_dark);
     if state.applied != Some((theme, appearance.density)) {
         let tokens = Tokens::embedded();
+        // Cada base guarda o seu estilo: os de fábrica, e por cima o do Tema escolhido na base dele.
         for kind in ThemeKind::ALL {
+            let id = if kind == theme.base() {
+                theme
+            } else {
+                ThemeId::factory(kind)
+            };
             ctx.set_style_of(
                 kind.egui(),
-                style::build_style(kind, appearance.density, tokens),
+                style::build_style(id, appearance.density, tokens),
             );
         }
-        ctx.set_theme(match theme {
+        ctx.set_theme(match theme.base() {
             ThemeKind::Dark => egui::ThemePreference::Dark,
             ThemeKind::Light => egui::ThemePreference::Light,
         });

@@ -14,7 +14,7 @@ use crate::focus::ViewState;
 use crate::i18n::I18n;
 use crate::profiles::{FactoryProfile, InterfaceProfiles, ProfileKey, ProfileRequest};
 use crate::session::Session;
-use crate::ui_theme::{self, Appearance, Palette, ThemeKind, Tokens};
+use crate::ui_theme::{self, Appearance, Palette, Tokens};
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use chess_core::{Color as Side, Square};
@@ -254,8 +254,7 @@ fn status_bar(
     };
     let text = status_text(&status, &i18n);
 
-    let theme = ThemeKind::from_dark_mode(ctx.global_style().visuals.dark_mode);
-    let p = Palette::of(theme);
+    let p = Palette::from_visuals(&ctx.global_style().visuals);
     let height = Tokens::embedded().length("statusbar-h").unwrap_or(24.0);
     let frame = egui::Frame::new()
         .fill(p.surface_1)

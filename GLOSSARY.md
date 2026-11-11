@@ -170,7 +170,7 @@ Diálogo com as preferências persistentes por categoria (Aparência, Tabuleiro,
 _Evitar_: configurações, settings, preferências (como nome do diálogo)
 
 **Tema** (_en_: `Theme`):
-Aparência da interface (claro, escuro ou segue o sistema), preferência do Perfil local; independente do Perfil de interface.
+Aparência da interface, preferência do Perfil local; independente do Perfil de interface. São 22 Temas: Escuro e Claro, de fábrica, e 20 de xadrez (Ébano, Feltro, Torneio, Pretas e outros). Cada um parte de uma base, Escuro ou Claro, e troca só cores da interface. "Seguir o sistema" (o padrão) alterna entre Escuro e Claro; escolher um Tema de xadrez fixa esse Tema. O Tema nunca muda o tabuleiro nem a barra de avaliação; casas e peças são preferências do Tabuleiro. Pretas e Brancas são os Temas de alto contraste.
 _Evitar_: skin, estilo
 
 **Tela cheia** (_en_: `ViewState::fullscreen`):

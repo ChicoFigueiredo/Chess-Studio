@@ -5,7 +5,7 @@
 
 use crate::dock::{DockAction, PanelId, ids};
 use crate::i18n::I18n;
-use crate::ui_theme::{Palette, ThemeKind, Tokens, icon_font};
+use crate::ui_theme::{Palette, Tokens, icon_font};
 use bevy_egui::egui;
 use egui_phosphor::regular as icon;
 
@@ -79,7 +79,7 @@ pub fn panel_icon(id: &str) -> &'static str {
 }
 
 pub fn palette_of(visuals: &egui::Visuals) -> &'static Palette {
-    Palette::of(ThemeKind::from_dark_mode(visuals.dark_mode))
+    Palette::from_visuals(visuals)
 }
 
 /// Medida do design system em pixels (com um valor de reserva se o token faltar).

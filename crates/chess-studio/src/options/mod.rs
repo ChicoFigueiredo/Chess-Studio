@@ -29,8 +29,8 @@ use crate::presentation::{GpuSupport, GraphicsQuality, UltraEffects};
 use crate::profiles::InterfaceProfiles;
 use crate::session::Session;
 use crate::ui_theme::{
-    Appearance, ButtonVariant, Density, Palette, ThemeKind, ThemeMode, UiScale, cs_button,
-    cs_dropdown, cs_radio_value, cs_slider, cs_switch, icon_job, palette, strong,
+    Appearance, ButtonVariant, Density, Palette, ThemeMode, UiScale, cs_button, cs_dropdown,
+    cs_radio_value, cs_slider, cs_switch, icon_job, palette, strong,
 };
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
@@ -435,9 +435,7 @@ fn options_dialog(
         return Ok(());
     }
     let ctx = contexts.ctx_mut()?;
-    let p = Palette::of(ThemeKind::from_dark_mode(
-        ctx.global_style().visuals.dark_mode,
-    ));
+    let p = Palette::from_visuals(&ctx.global_style().visuals);
     let screen = ctx.content_rect();
     let width = (screen.width() - 32.0).clamp(320.0, 760.0);
     let height = (screen.height() - 64.0).clamp(240.0, 560.0);
@@ -699,9 +697,10 @@ fn category_ui(
 }
 
 fn appearance(ui: &mut egui::Ui, i18n: &I18n, env: &mut OptionsEnv) {
-    let themes: Vec<_> = ThemeMode::ALL
-        .iter()
-        .map(|m| (*m, i18n.t(m.key())))
+    let system = i18n.t(ThemeMode::SYSTEM_LABEL_KEY);
+    let themes: Vec<_> = ThemeMode::all()
+        .into_iter()
+        .map(|m| (m, m.label(&system)))
         .collect();
     let theme = env.appearance.theme;
     if let Some(v) = dropdown_row(ui, i18n, OptionId::Theme, "opt-theme", &theme, &themes) {

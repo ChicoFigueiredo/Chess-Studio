@@ -28,29 +28,33 @@ Design system da interface do Chess Studio, um app desktop offline de xadrez em 
 - Texto em `ink`; secundário (rótulos de grupo, atalhos, metadados) em `ink-muted`; desabilitado em `ink-disabled`, nunca como único sinal.
 - `accent` (âmbar) só para: botão primário, aba ativa do Ribbon (sublinhado), alternância e Switch ligados, slider, Painel ativo (traço) e relógio em andamento. Sobre `accent`, texto em `on-accent`.
 - Seleção e estado ligado em superfícies usam `accent-subtle` com texto em `accent-ink`.
-- `info` (azul) é para seleção no tabuleiro e informação, nunca para identidade.
+- `info` é para informação e Engine pensando, nunca para identidade. A peça e a casa selecionadas no Tabuleiro 2D usam um contorno de 3px em `board-select`.
 - Estados usam `success`, `warning` e `danger` **sempre com ícone ou palavra**, nunca só a cor.
-- `board-light`, `board-dark`, `eval-white`, `eval-black` e `last-move` são iguais nos dois Temas: o tabuleiro não muda com o Tema.
-- `border` é só divisória (decorativa); `border-strong` contorna controles; `control-track` pinta o trilho do slider (3:1 sobre `surface-1` a `surface-3`) e vale para qualquer trilho de controle de arrastar. Nunca use `surface-4` como trilho.
-- Os dois Temas, Escuro (primeiro) e Claro, seguem o sistema operacional por padrão. Todos os pares de texto foram conferidos com 4,5:1 (contornos e anel de foco com 3:1) nos dois.
+- `board-light`, `board-dark`, `board-select`, `eval-black`, `last-move` e `hover-ring` são iguais em todos os Temas: o tabuleiro não muda com o Tema. `eval-white` só muda entre as bases Escuro e Claro.
+- Escuro (primeiro) e Claro são os Temas de fábrica e seguem o sistema operacional por padrão. Há mais 20 Temas de xadrez, 10 escuros e 10 claros, em `themes.json`; veja a seção Temas e a página "Themes".
+- Todo Tema cumpre o mesmo contrato: texto com 4,5:1 sobre as superfícies que a nota do token cita; contornos de controle, anel de foco, trilho do slider e marcas com 3:1. Pretas e Brancas são os Temas de alto contraste, com 7:1 em todo texto.
+- Nunca escreva um hex na interface: use o token. Um Tema novo só entra se passar em todos os pares.
 
 ## Tipografia
 
 - Interface em **Inter** (OFL), embutida no app. Log UCI e FEN em **JetBrains Mono** (OFL).
-- Use só a escala: `caption` 12/16, `body` 14/20, `body-strong` 14/20 semibold, `subtitle` 16/22, `title` 20/28, `display` 28/36 (só nos bastidores e no fim de Partida).
+- Use só a escala: `caption` 12/16, `ribbon-label` 12/14 (só nos botões grandes do Ribbon), `body` 14/20, `body-strong` 14/20 semibold, `body-large` 16/22 (só no campo da Paleta de Ações), `subtitle` 16/22 semibold, `title` 20/28, `display` 28/36 (só nos bastidores e no fim de Partida).
+- Nenhum texto é menor que 12px, nem em miniaturas.
+- `display` usa espaçamento de −0,02em e `title`, −0,01em; os demais, 0.
 - Xadrez: `clock` 32/36 com números tabulares, `notation` 14/24, `eval` 12/16 negrito.
-- Números que se alinham (relógio, notação, estatísticas) usam números tabulares.
+- Números que se alinham (relógio, notação, avaliação, atalhos, barra de status) usam números tabulares (`tnum`). Nas prévias isso é `font-variant-numeric: tabular-nums`; nunca declare `font-feature-settings` num ancestral, porque ele anula essa propriedade.
 
 ## Espaço, raio, sombra e tamanho
 
 - Grade de 4px: `space-1` (4) entre controles de um grupo, `space-2` (8) de padding de botão, `space-4` (16) de padding de Painel (Confortável) ou `space-3` (12) na Compacta, `space-6` (24) de margem de diálogo.
 - Raios pequenos: `radius-m` (4) em controles e abas, `radius-l` (6) em menus e Painéis flutuantes, `radius-xl` (8) em diálogos. Nada de pílulas, exceto o Switch e os chips.
 - Sombra só em camadas que flutuam: `shadow-flyout` (menus, tooltips), `shadow-floating` (Painel flutuante), `shadow-dialog` (diálogos e Paleta). Painéis encaixados não têm sombra; usam `border`.
-- Alturas: `control-h` 32 (Confortável) ou `control-h-compact` 24 (Compacta), `ribbon-classic-h` 92, `ribbon-simple-h` 40, `panel-header-h` 32, `statusbar-h` 24. A Escala da interface (80% a 200%) multiplica todas.
+- Alturas: `control-h` 32 (Confortável) ou `control-h-compact` 24 (Compacta), `ribbon-classic-h` 96, `ribbon-simple-h` 40, `panel-header-h` 32, `statusbar-h` 24. A Escala da interface (80% a 200%) multiplica todas.
+- Nada clicável é menor que 24px (`control-h-compact`): por isso o Ribbon clássico tem três linhas de 24px, e o slider e a caixa de seleção têm área de clique de 24px.
 
 ## Estados e foco
 
-Todo controle interativo tem cinco estados: repouso, hover, pressionado, desabilitado e foco. O foco do teclado é um anel sólido de 2px em `focus-ring` (cor de `ink`), afastado 1px, visível sobre qualquer superfície. Movimento: só transições de 100–150 ms em hover e abertura de menus; nada anima com "reduzir movimento" ligado no sistema.
+Todo controle interativo tem cinco estados: repouso, hover, pressionado, desabilitado e foco. Um controle ligado e desabilitado continua mostrando que está ligado: o visto, o botão do Switch e o preenchimento ficam, em `ink-disabled`, sem `accent`. O foco do teclado é um anel sólido de 2px em `focus-ring` (cor de `ink`), afastado 1px, visível sobre qualquer superfície. Movimento: só transições de 100–150 ms em hover e abertura de menus; nada anima com "reduzir movimento" ligado no sistema.
 
 ## Iconografia
 
@@ -72,6 +76,7 @@ Todo Painel pode estar encaixado, flutuante ou destacado (janela do SO). O Perfi
 ## Implementação em egui
 
 - Um módulo `ui_theme` lê estes tokens (cores por Tema, espaçamentos, raios, alturas) e preenche `egui::Style`/`Visuals`: `widgets.{inactive,hovered,active,noninteractive}`, `selection`, `window_*`, `menu_*`, `extreme_bg_color` e `spacing.{item_spacing,button_padding,interact_size}`.
-- Densidade e Escala mudam `Spacing` e `pixels_per_point`; o Tema troca o `Visuals` inteiro.
+- Densidade e Escala mudam `Spacing` e `pixels_per_point`; o Tema troca o `Visuals` inteiro: parte da base (Escuro ou Claro) e aplica as cores do Tema escolhido em `themes.json`.
+- Números tabulares: confira se o texto do egui aplica `tnum`; se não aplicar, embuta uma Inter com `tnum` fixado para o relógio, a notação e a avaliação.
 - Componentes são widgets do projeto (`cs_button`, `toggle_switch`, `ribbon_group`, `panel_tabs`…), nunca `egui::Button` com estilo ad hoc.
 - As fontes Inter e JetBrains Mono entram por `FontDefinitions`, com a licença registrada (ADR-0004).

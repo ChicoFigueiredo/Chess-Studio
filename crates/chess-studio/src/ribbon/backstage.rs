@@ -194,10 +194,8 @@ pub(super) fn backstage_ui(
 }
 
 fn palette_for(ctx: &egui::Context) -> &'static crate::ui_theme::Palette {
-    use crate::ui_theme::{Palette, ThemeKind};
-    Palette::of(ThemeKind::from_dark_mode(
-        ctx.global_style().visuals.dark_mode,
-    ))
+    use crate::ui_theme::Palette;
+    Palette::from_visuals(&ctx.global_style().visuals)
 }
 
 /// Uma entrada da navegação, em `on-accent` sobre `accent`.

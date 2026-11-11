@@ -627,7 +627,8 @@ impl Persistence {
                     .unwrap_or(defaults.table_captured.0),
             ),
             appearance: Appearance {
-                theme: from_debug_id(&ThemeMode::ALL, get(KEY_UI_THEME))
+                theme: get(KEY_UI_THEME)
+                    .and_then(|v| v.as_str().and_then(ThemeMode::from_storage))
                     .unwrap_or(defaults.appearance.theme),
                 density: from_debug_id(&Density::ALL, get(KEY_UI_DENSITY))
                     .unwrap_or(defaults.appearance.density),
@@ -959,7 +960,10 @@ impl Persistence {
             writes.push((KEY_TABLE_CAPTURED, json!(now.table_captured.0)));
         }
         if before.appearance.theme != now.appearance.theme {
-            writes.push((KEY_UI_THEME, debug_id(&now.appearance.theme)));
+            writes.push((
+                KEY_UI_THEME,
+                Value::String(now.appearance.theme.storage_key().to_owned()),
+            ));
         }
         if before.appearance.density != now.appearance.density {
             writes.push((KEY_UI_DENSITY, debug_id(&now.appearance.density)));
@@ -1632,7 +1636,7 @@ mod tests {
             table_clock: TableClock(false),
             table_captured: TableCaptured(false),
             appearance: Appearance {
-                theme: ThemeMode::Light,
+                theme: ThemeMode::LIGHT,
                 density: Density::Compact,
                 scale: UiScale::from_percent(125),
             },
@@ -1703,7 +1707,7 @@ mod tests {
         assert_eq!(p.load_prefs().appearance, Appearance::default());
         p.sync_prefs(SavedPrefs {
             appearance: Appearance {
-                theme: ThemeMode::Dark,
+                theme: ThemeMode::DARK,
                 density: Density::Compact,
                 scale: UiScale::from_percent(150),
             },
@@ -1713,7 +1717,7 @@ mod tests {
         let a = p2.load_prefs().appearance;
         assert_eq!(
             (a.theme, a.density, a.scale.percent()),
-            (ThemeMode::Dark, Density::Compact, 150)
+            (ThemeMode::DARK, Density::Compact, 150)
         );
         p2.store
             .set_pref(p2.profile, KEY_UI_THEME, &json!("lixo"))

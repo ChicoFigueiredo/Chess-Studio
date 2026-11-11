@@ -6,7 +6,7 @@
 //! Os cinco estados de todo controle interativo: repouso, hover, pressionado, desabilitado e
 //! foco do teclado (anel sólido de 2px em `focus-ring`, afastado 1px).
 
-use super::tokens::{Palette, ThemeKind};
+use super::tokens::Palette;
 use bevy_egui::egui::{
     self, Align2, Color32, Context, CornerRadius, FontFamily, FontId, Id, Rect, Response, RichText,
     Sense, Stroke, StrokeKind, Ui, Vec2, Widget, pos2, vec2,
@@ -17,7 +17,7 @@ use std::ops::RangeInclusive;
 
 /// Paleta do Tema em uso no `Ui`.
 pub fn palette(ui: &Ui) -> &'static Palette {
-    Palette::of(ThemeKind::from_dark_mode(ui.visuals().dark_mode))
+    Palette::from_visuals(ui.visuals())
 }
 
 fn fonts_ready_id() -> Id {
@@ -735,7 +735,7 @@ pub fn cs_slider(ui: &mut Ui, value: &mut f32, range: RangeInclusive<f32>, step:
         let v = ui.visuals_mut();
         v.selection.bg_fill = p.accent;
         v.slider_trailing_fill = true;
-        v.widgets.inactive.bg_fill = p.control_track;
+        v.widgets.inactive.bg_fill = p.border_strong;
         v.widgets.inactive.fg_stroke = Stroke::new(3.0, p.accent);
         v.widgets.hovered.bg_fill = p.accent_hover;
         v.widgets.hovered.fg_stroke = Stroke::new(3.0, p.accent_hover);
@@ -824,6 +824,7 @@ mod tests {
     use super::*;
     use crate::ui_theme::appearance::Density;
     use crate::ui_theme::style::build_style;
+    use crate::ui_theme::tokens::ThemeKind;
     use crate::ui_theme::tokens::Tokens;
 
     /// Um quadro do egui; descarta as texturas, que ninguém vai enviar à GPU.
