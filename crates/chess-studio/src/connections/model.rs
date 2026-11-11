@@ -729,6 +729,7 @@ pub fn sends_key(provider: &Provider, state: CardState) -> &'static str {
         ProviderId::Lichess => "connections-sends-lichess",
         ProviderId::ChessCom => "connections-sends-chesscom",
         ProviderId::Fide => "connections-sends-fide",
+        ProviderId::ChessApi => "connections-sends-chessapi",
         _ => match state {
             CardState::ManualImport => "connections-sends-manual",
             CardState::NeedsApproval | CardState::Unconfirmed => "connections-sends-info",
@@ -923,7 +924,7 @@ mod tests {
         // Adaptadores distantes aparecem como "Em breve".
         assert_eq!(state_of(ProviderId::Fics), CardState::Planned);
         assert_eq!(state_of(ProviderId::PlayStrategy), CardState::Planned);
-        assert_eq!(state_of(ProviderId::ChessApi), CardState::Planned);
+        assert_eq!(state_of(ProviderId::ChessApi), CardState::Off);
         // Sem nada para fazer hoje, não há Switch: o Chessigma também espera.
         assert_eq!(state_of(ProviderId::Chessigma), CardState::Planned);
 

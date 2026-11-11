@@ -840,6 +840,19 @@ impl View<'_> {
             self.ending_block(ui, slot, &ending, p);
         }
         let has_active = engines.iter().any(Connection::is_authorized);
+        if has_active {
+            ui.add_space(4.0);
+            if ui
+                .add(
+                    CsButton::new(&i18n.t("engine-act-open-screen"))
+                        .icon(icon::ROBOT)
+                        .variant(ButtonVariant::Primary),
+                )
+                .clicked()
+            {
+                self.ops.push(Op::OpenEngineOnline);
+            }
+        }
         if !has_active && !busy && !self.auth.key_forms.contains_key(&slot) {
             if engines.is_empty() {
                 ui.add_space(4.0);

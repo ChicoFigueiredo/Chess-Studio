@@ -297,6 +297,8 @@ pub(crate) struct Auth {
     pub standings: HashMap<ConnectionId, Standing>,
     /// Quais entradas têm o detalhe da Engine online aberto.
     pub engine_open: std::collections::HashSet<ProviderId>,
+    /// "Abrir a tela da Engine online" foi clicado; a tela (`engine_online`) consome o pedido.
+    pub open_engine_online: bool,
     /// A Conexão que espera confirmação para ser desconectada.
     pub confirm_disconnect: Option<ConnectionId>,
     signature: Option<Signature>,

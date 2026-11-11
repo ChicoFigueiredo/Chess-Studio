@@ -47,6 +47,8 @@ pub(crate) enum Op {
     Fide(crate::fide_profile::FideAction),
     OpenDocs(ProviderId),
     OpenTerms(ProviderId),
+    /// Abrir a tela da Engine online (#252).
+    OpenEngineOnline,
     Link {
         provider: ProviderId,
         kind: ConnectionKind,
@@ -287,6 +289,7 @@ impl ConnectionsUi {
                         self.authorize(slot, Some(id), service, dialog, handle);
                     }
                 }
+                Op::OpenEngineOnline => self.auth.open_engine_online = true,
                 Op::OpenKeyForm { slot, renew } => self.open_key_form(slot, renew),
                 Op::CloseKeyForm(slot) => {
                     self.auth.key_forms.remove(&slot);

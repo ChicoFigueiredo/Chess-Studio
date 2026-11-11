@@ -62,6 +62,11 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 | CX-HOM-40 | Desafiar por nome e desafios recebidos | sim | UNVERIFIED |
 | CX-HOM-41 | Correspondência: lista, fechar e reabrir o app | sim | UNVERIFIED |
 | CX-HOM-42 | Trava de fair play na Partida online | sim | UNVERIFIED |
+| CX-HOM-43 | Engine remota: escolher, aviso e consentimento | sim | UNVERIFIED |
+| CX-HOM-44 | Engine remota: análise, limite e Provedor desligado | sim | UNVERIFIED |
+| CX-HOM-45 | Engine remota sob a Trava de fair play | sim | UNVERIFIED |
+| CX-HOM-46 | Engine online: ligar, esperar, jogar e parar | sim | UNVERIFIED |
+| CX-HOM-47 | Engine online: limites, conta BOT e falha da Engine | sim | UNVERIFIED |
 
 ## Itens
 
@@ -551,6 +556,61 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Esperado:** em tempo real nada calcula, em Posição nenhuma, enquanto o Lichess não confirmar o fim (abandonar ou fechar o Painel não solta). Destinos legais, último Lance e coordenadas continuam. Na correspondência, outras Partidas e Posições ficam livres; a Posição da Partida (e o que se joga a partir dela) mostra **Posição de uma Partida em andamento** e nada é consultado.
 - **Com o serviço real:** com o monitor de rede, nenhum pedido ao Explorador, à avaliação em cache ou aos finais sai nesses casos.
 - **Evidência:** [`fair_play.rs`](../../crates/chess-studio/src/fair_play.rs), [`online/tests.rs`](../../crates/chess-studio/src/online/tests.rs), [decisões PO-13 a PO-19](../decisoes/2026-11-11-partida-online.md).
+
+### CX-HOM-43. Engine remota: escolher, aviso e consentimento
+
+- **Passos:**
+  1. Com o Chess-API.com **desligado** na Central, abra o Painel **Análise** e abra a lista **Engine**.
+  2. Escolha **Stockfish (Chess-API.com) · Remota**.
+  3. Leia o aviso e clique em **Cancelar**; repita e clique em **Continuar**.
+  4. No diálogo **Ligar Chess-API.com?**, clique em **Agora não**; repita até **Ligar**.
+  5. Feche e reabra o app.
+- **Esperado:** a Engine remota aparece numa linha separada, nunca marcada como padrão. O aviso diz que a Posição sai do computador, para o Chess-API.com, e que só o FEN vai. **Cancelar** não muda nada e nada sai para a rede. **Continuar** abre o consentimento do Provedor; **Agora não** deixa a Engine local. Só **Ligar** escolhe a Engine remota e deixa o selo **Remota · Chess-API.com** com o lembrete no Painel. Ao reabrir o app, a Engine local volta a ser a escolhida e o Chess-API.com continua ligado.
+- **Com o serviço real:** no monitor de rede, nada vai ao `chess-api.com` antes do **Ligar**.
+- **Evidência:** [`remote_engine.rs`](../../crates/chess-studio/src/remote_engine.rs), [`remote_engine_tests.rs`](../../crates/chess-studio/src/remote_engine_tests.rs).
+
+### CX-HOM-44. Engine remota: análise, limite e Provedor desligado
+
+- **Passos:**
+  1. Com a Engine remota escolhida, ligue a análise na Posição inicial e depois navegue rápido pelos Lances de uma Partida.
+  2. Em **Conexões**, desligue o Chess-API.com e volte ao Painel.
+  3. Clique em **Ligar o Chess-API.com**.
+  4. Faça muitas análises seguidas até o serviço pedir pausa (se acontecer).
+- **Esperado:** a avaliação chega como a de uma Engine local (placar das Brancas, linha principal clicável) com o selo da Engine remota; navegar rápido não dispara um pedido por Lance (a Posição precisa parar). Com o Provedor desligado, o Painel diz que ele está desligado e que nada foi enviado, e oferece **Ligar o Chess-API.com** (que repete o aviso e o consentimento). No limite, o Painel diz em quantos segundos tentar de novo e a análise local segue disponível. Nenhum texto mostra código HTTP ou termo técnico.
+- **Com o serviço real:** o Lance devolvido é sempre legal na Posição (o app recusa e não mostra o ilegal).
+- **Evidência:** [`remote_engine_tests.rs`](../../crates/chess-studio/src/remote_engine_tests.rs).
+
+### CX-HOM-45. Engine remota sob a Trava de fair play
+
+- **Passos:**
+  1. Com a Engine remota escolhida e a análise ligada, comece uma Partida online contra pessoa (tempo real).
+  2. Tente ligar a análise de novo e trocar para a Engine remota na lista.
+  3. Termine a Partida, aguarde o resultado confirmado pelo Lichess e ligue a análise.
+- **Esperado:** a análise some e o Painel diz **Trava de fair play** e que a análise volta quando a Partida online terminar. Nenhum pedido sai ao Chess-API.com enquanto a Partida durar. Depois do fim confirmado, a análise liga de novo (a escolha da Engine é a mesma da sessão).
+- **Com o serviço real:** no monitor de rede, nenhum pedido ao `chess-api.com` durante a Partida.
+- **Evidência:** [`fair_play.rs`](../../crates/chess-studio/src/fair_play.rs), [`remote_engine_tests.rs`](../../crates/chess-studio/src/remote_engine_tests.rs).
+
+### CX-HOM-46. Engine online: ligar, esperar, jogar e parar
+
+- **Passos:**
+  1. Em **Conexões** > Lichess > **Engine online**, autorize a Conexão de Engine com um usuário BOT de teste (ver CX-HOM-47) e clique em **Abrir a tela da Engine online**.
+  2. Com uma Engine instalada, escolha-a e não clique em Ligar; feche e reabra o app.
+  3. Clique em **Ligar a Engine online**; do site, com outro usuário, desafie o BOT em blitz, sem rating.
+  4. Durante a Partida, clique em **Parar**; depois ligue de novo e clique em **Parar já…**.
+- **Esperado:** a tela abre parada e nada sai para o Lichess até **Ligar** (reabrir o app volta a **Parada**). Ligada, mostra **Esperando desafios**; o desafio aceito vira **Jogando 1** com a Partida na lista (adversário, cor, Lances, quem pensa). **Parar** muda para **Parando** e a Engine fecha sozinha quando a Partida termina; desafios novos nesse meio-tempo são recusados. **Parar já…** pede confirmação e abandona a Partida em andamento. A Partida terminada fica na Biblioteca como Partida da Engine, e a Trava de fair play nunca liga.
+- **Com o serviço real:** a Partida joga Lances legais a cada vez (ver CX-HOM-47 para a falha da Engine).
+- **Evidência:** [`engine_online/tests.rs`](../../crates/chess-studio/src/engine_online/tests.rs), [`docs/evidencias/engine-remota-online`](../evidencias/engine-remota-online).
+
+### CX-HOM-47. Engine online: limites, conta BOT e falha da Engine
+
+- **Passos:**
+  1. Ligue com só **Blitz**, **Só sem rating**, **Só pessoas**, **1** Partida ao mesmo tempo e máximo **1**; desafie com bullet, depois com rating, depois de outro BOT, depois em Chess960, e por fim com blitz sem rating.
+  2. Durante a Partida, desafie de novo.
+  3. Com uma conta nova do Lichess que nunca jogou, abra **A conta ainda não é uma conta BOT?**, leia o aviso, marque a confirmação e clique em **Converter em conta BOT**. Tente também com uma conta que já tem Partidas.
+  4. Escolha uma Engine cujo arquivo foi movido ou apagado e deixe aceitar uma Partida.
+- **Esperado:** cada desafio fora dos limites é recusado com o motivo certo e aparece em **Atividade recente**; o último é aceito e, atingido o máximo, a tela passa a **Parando** com a razão **Limite de Partidas atingido**; desafios durante a Partida são recusados. A conversão só acontece depois do aviso e da confirmação marcada, uma vez; numa conta com Partidas o Lichess recusa e a tela diz que a conta precisa ser nova. Se a Engine não inicia, a Partida é abandonada e a atividade diz que a Engine não iniciou (o relógio não corre). Nunca há Lance ilegal enviado.
+- **Com o serviço real:** a conversão em BOT é **irreversível**: use só uma conta criada para o teste.
+- **Evidência:** [`engine_online/tests.rs`](../../crates/chess-studio/src/engine_online/tests.rs).
 
 ## Fora deste roteiro
 

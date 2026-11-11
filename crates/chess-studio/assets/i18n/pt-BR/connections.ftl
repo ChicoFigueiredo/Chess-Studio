@@ -114,6 +114,7 @@ connections-auth-partner = Aprovação do Provedor
 connections-sends-lichess = Os nomes públicos que você consulta, as Posições que você explora ou analisa e os meses de Partidas que você pede. Nada do seu Perfil local vai junto.
 connections-sends-chesscom = Os nomes públicos que você consulta e os meses de Partidas que você pede. Nenhuma senha.
 connections-sends-fide = Nada vai para a FIDE. O ID fica neste computador; o rating vem pelo Lichess, se você ligar o Lichess.
+connections-sends-chessapi = A Posição que você analisa (só o FEN: onde estão as peças, de quem é a vez e os direitos de roque) e a profundidade pedida. Sem nomes, sem histórico e sem nada do seu Perfil local. Só quando você escolhe a Engine remota.
 connections-sends-generic = As consultas que você fizer a este Provedor. Nada do seu Perfil local vai junto.
 connections-sends-manual = Nada. Você baixa o arquivo no site e importa do disco.
 connections-sends-info = Nada. Este cartão é só informativo.
