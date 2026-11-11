@@ -8,9 +8,7 @@
 //! Site, Elo, TimeControl, ECO e ritmo. A importação em fluxo lê o arquivo em lotes.
 
 use crate::error::{Result, StoreError};
-use crate::origin::{
-    ImportMode, Origin, Pace, Provenance, game_fingerprint, parse_elo, remote_id,
-};
+use crate::origin::{ImportMode, Origin, Pace, Provenance, game_fingerprint, parse_elo, remote_id};
 use crate::store::{ProfileId, Store, ensure_profile, now_ms};
 use chess_pgn::{PgnError, PgnGame, PgnStream, StreamItem};
 use rusqlite::{OptionalExtension, params};
@@ -418,11 +416,12 @@ impl Store {
                     in_batch += 1;
                     progress.games_seen += 1;
                     match item.map_err(|e| StoreError::Io(e.to_string()))? {
-                        StreamItem::Game(game) => match writer.store(profile, &game, options, now)?
-                        {
-                            Stored::New => summary.new += 1,
-                            Stored::Duplicate => summary.duplicates += 1,
-                        },
+                        StreamItem::Game(game) => {
+                            match writer.store(profile, &game, options, now)? {
+                                Stored::New => summary.new += 1,
+                                Stored::Duplicate => summary.duplicates += 1,
+                            }
+                        }
                         StreamItem::Error(error) => {
                             summary.errors += 1;
                             if summary.error_samples.len() < MAX_ERROR_SAMPLES {

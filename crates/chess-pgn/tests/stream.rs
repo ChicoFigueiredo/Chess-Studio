@@ -37,7 +37,10 @@ fn a_bad_game_is_reported_with_the_file_line_and_the_next_one_survives() {
     assert_eq!(games.len(), 2);
     assert_eq!(errors.len(), 1);
     assert_eq!(errors[0].game, 2);
-    assert_eq!(errors[0].line, 7, "linha do arquivo, não do trecho da partida");
+    assert_eq!(
+        errors[0].line, 7,
+        "linha do arquivo, não do trecho da partida"
+    );
 }
 
 #[test]

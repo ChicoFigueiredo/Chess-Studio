@@ -36,7 +36,6 @@ fn no_progress() -> impl FnMut(&ImportProgress) {
 
 #[test]
 fn migration_13_lifts_a_v12_database_and_keeps_everything() {
-    assert!(LATEST_SCHEMA_VERSION >= 13);
     let db = TempDb::new("mig13");
     let tree = {
         let g = &parse_pgn(
@@ -108,7 +107,10 @@ fn reimporting_the_same_pgn_adds_nothing() {
     let second = store.import_pgn_with(ME, &text, &o).unwrap();
     assert_eq!((second.imported.len(), second.duplicates), (0, 3));
     assert_eq!(
-        store.list_imported(&ImportedQuery::default()).unwrap().len(),
+        store
+            .list_imported(&ImportedQuery::default())
+            .unwrap()
+            .len(),
         3
     );
     // Reimportar o mesmo arquivo não acrescenta Origem repetida.
@@ -167,7 +169,10 @@ fn fingerprint_ignores_case_accents_and_name_order_but_not_colors() {
         let g = &parse_pgn(&game("E", w, b, "2020.01.01", "1. e4 e5")).unwrap()[0];
         game_fingerprint(g)
     };
-    assert_eq!(fp("Magnus Carlsen", "Hikaru Nakamura"), fp("CARLSEN, Magnus", "nakamura,  hikaru"));
+    assert_eq!(
+        fp("Magnus Carlsen", "Hikaru Nakamura"),
+        fp("CARLSEN, Magnus", "nakamura,  hikaru")
+    );
     assert_eq!(fp("José Silva", "Ana"), fp("jose silva", "ANA"));
     assert_ne!(fp("Ana", "Beto"), fp("Beto", "Ana"));
 }
@@ -247,7 +252,10 @@ fn many_games_import_in_batches_with_progress() {
             &mut |p: &ImportProgress| ticks.push(p.clone()),
         )
         .unwrap();
-    assert_eq!((summary.new, summary.duplicates, summary.errors), (5_000, 0, 0));
+    assert_eq!(
+        (summary.new, summary.duplicates, summary.errors),
+        (5_000, 0, 0)
+    );
     assert!(!summary.cancelled);
     // Um relato por lote: leitura em lotes, nunca o arquivo inteiro de uma vez.
     assert!(ticks.len() >= 10, "{} relatos", ticks.len());
@@ -303,7 +311,10 @@ fn a_big_import_can_be_cancelled_and_keeps_what_was_committed() {
         .unwrap();
     assert!(summary.cancelled);
     assert!(summary.new >= 300 && summary.new < 1_000, "{}", summary.new);
-    let total = store.list_imported(&ImportedQuery::default()).unwrap().len();
+    let total = store
+        .list_imported(&ImportedQuery::default())
+        .unwrap()
+        .len();
     assert_eq!(total, summary.new);
 }
 
@@ -377,7 +388,9 @@ fn gzip_pgn_imports() {
 #[test]
 fn hostile_pgn_is_counted_as_errors_and_the_good_games_survive() {
     let mut bytes = Vec::new();
-    bytes.extend_from_slice(b"[Event \"x\"]\n[Event \"y\"]\n[White \"Ana\"]\n[Black \"B\"]\n\n1. e4 e5 *\n\n");
+    bytes.extend_from_slice(
+        b"[Event \"x\"]\n[Event \"y\"]\n[White \"Ana\"]\n[Black \"B\"]\n\n1. e4 e5 *\n\n",
+    );
     bytes.extend_from_slice(b"[Event \"gigante\"]\n\n1. e4 {");
     bytes.extend(std::iter::repeat_n(b'a', 2 * 1024 * 1024));
     bytes.extend_from_slice(b"} *\n\n[Event \"lixo\"]\n\n1. e4 (( e5 \0\0 )))\n\n");

@@ -36,10 +36,10 @@ mod engines;
 mod error;
 mod favorites;
 mod imported;
-mod origin;
 mod library;
 pub mod migrations;
 mod openings;
+mod origin;
 mod scoresheet;
 mod store;
 mod training;
@@ -52,14 +52,12 @@ pub use imported::{
     DEFAULT_BATCH, ImportOptions, ImportProgress, ImportReport, ImportSummary, ImportedId,
     ImportedQuery, ImportedSummary, MAX_ERROR_SAMPLES,
 };
-pub use origin::{
-    ImportMode, ImportSource, Origin, Pace, Provenance, game_fingerprint, remote_id,
-};
 pub use library::{
     LibraryEntry, LibraryEntryId, LibraryPage, LibraryQuery, LibrarySource, position_key,
 };
 pub use migrations::LATEST_VERSION as LATEST_SCHEMA_VERSION;
 pub use openings::{OPENING_PLIES, OpeningMoveStats};
+pub use origin::{ImportMode, ImportSource, Origin, Pace, Provenance, game_fingerprint, remote_id};
 pub use store::{
     GameId, GameMetadata, GameQuery, GameSummary, MAX_PROFILE_NAME_LEN, OpenedGame, Pragmas,
     ProfileId, ProfileInfo, Store,

@@ -255,8 +255,10 @@ fn o_indice_acompanha_lances_novos_e_exclusoes() {
 #[test]
 fn paginacao_devolve_o_total_e_fatias() {
     let mut store = Store::open_in_memory().unwrap();
-    for _ in 0..5 {
-        store.import_pgn("1. e4 e5 *", None).unwrap();
+    // Partidas distintas: a mesma Partida importada de novo seria uma duplicata (CX-4).
+    for n in 0..5 {
+        let pgn = format!("[White \"Jogador {n}\"]\n\n1. e4 e5 *");
+        store.import_pgn(&pgn, None).unwrap();
     }
     let page = |offset| {
         store
