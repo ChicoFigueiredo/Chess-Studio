@@ -51,6 +51,7 @@ pub(crate) struct Selection {
 }
 
 impl Selection {
+    #[cfg(test)]
     pub(crate) fn is_empty(&self) -> bool {
         self.providers.is_empty() && self.batches.is_empty()
     }
@@ -176,10 +177,6 @@ impl BulkUi {
         }
         self.loaded_at = Some(Instant::now());
         self.dirty = false;
-    }
-
-    pub(crate) fn touch(&mut self) {
-        self.dirty = true;
     }
 
     /// Executa os pedidos do quadro. Devolve `true` se apagou Partidas (a Biblioteca relê).

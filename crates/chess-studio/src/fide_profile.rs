@@ -44,8 +44,6 @@ pub(crate) enum Rhythm {
 }
 
 impl Rhythm {
-    pub(crate) const ALL: [Self; 3] = [Self::Standard, Self::Rapid, Self::Blitz];
-
     pub(crate) fn key(self) -> &'static str {
         match self {
             Self::Standard => "fide-rhythm-standard",
@@ -77,7 +75,7 @@ pub(crate) fn snapshot_of(answer: &Answer<FideRating>) -> FideSnapshot {
         rapid: fide.rapid,
         blitz: fide.blitz,
         inactive: fide.inactive,
-        queried_at_ms: i64::try_from(answer.provenance.queried_at.as_millis()).unwrap_or(0),
+        queried_at_ms: answer.provenance.queried_at.as_millis(),
         source: answer.provenance.provider.key().to_owned(),
     }
 }
@@ -157,14 +155,14 @@ enum Job {
 }
 
 enum Running {
-    Refresh(u64, Query<FideRating>),
+    Refresh(Query<FideRating>),
     Search(Query<Vec<FideRating>>),
 }
 
 impl std::fmt::Debug for Running {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            Self::Refresh(..) => "Running::Refresh",
+            Self::Refresh(_) => "Running::Refresh",
             Self::Search(_) => "Running::Search",
         })
     }
@@ -177,7 +175,7 @@ enum Task {
     /// O diálogo "Ligar Lichess?" está aberto para este pedido.
     AwaitingConsent(Job),
     /// `Query` não é `Sync`: o `Mutex` deixa o estado viver num recurso do Bevy.
-    Running(Mutex<Running>),
+    Running(Box<Mutex<Running>>),
 }
 
 /// O rating FIDE do Perfil local ativo e a busca por nome.
@@ -220,7 +218,7 @@ impl FideProfile {
             rapid: Some(2250),
             blitz: None,
             inactive: false,
-            queried_at_ms: i64::try_from(now.as_millis()).unwrap_or(0) - 2 * 86_400_000,
+            queried_at_ms: now.as_millis() - 2 * 86_400_000,
             source: ProviderId::Lichess.key().to_owned(),
         };
         let _ = with_store(&mut fide.local, None, |store, profile| {
@@ -382,10 +380,10 @@ impl FideProfile {
 
     fn start(&mut self, job: Job, service: &NetService) {
         let running = match job {
-            Job::Refresh(id) => Running::Refresh(id, service.lichess().fide_player_refreshed(id)),
+            Job::Refresh(id) => Running::Refresh(service.lichess().fide_player_refreshed(id)),
             Job::Search(text) => Running::Search(service.lichess().fide_search(&text)),
         };
-        self.task = Task::Running(Mutex::new(running));
+        self.task = Task::Running(Box::new(Mutex::new(running)));
     }
 
     fn finish(&mut self, outcome: Outcome, handle: Option<&PersistenceHandle>) {
@@ -455,7 +453,7 @@ enum Outcome {
 impl Running {
     fn poll(&mut self) -> Option<Outcome> {
         match self {
-            Self::Refresh(_, q) => q.try_take().map(Outcome::Rating),
+            Self::Refresh(q) => q.try_take().map(Outcome::Rating),
             Self::Search(q) => q.try_take().map(Outcome::Search),
         }
     }
@@ -1064,7 +1062,7 @@ mod tests {
         env.run(refresh(), &[]);
         env.settle(&[]);
         let saved = env.fide.saved.clone().unwrap();
-        assert_eq!(saved.queried_at_ms, i64::try_from(T0.as_millis()).unwrap());
+        assert_eq!(saved.queried_at_ms, T0.as_millis());
         assert_eq!(saved.source, "lichess");
         assert_eq!(env.fide.notice.as_ref().unwrap().key, "fide-note-updated");
 
@@ -1211,7 +1209,7 @@ mod tests {
     fn dates_and_ages_read_in_plain_portuguese() {
         let i18n = I18n::pt_br();
         let at = |secs: u64| T0.plus(Duration::from_secs(secs));
-        let ms = i64::try_from(T0.as_millis()).unwrap();
+        let ms = T0.as_millis();
         assert_eq!(when_text(&i18n, ms, at(10)), "agora há pouco");
         assert_eq!(when_text(&i18n, ms, at(300)), "há 5 min");
         assert_eq!(when_text(&i18n, ms, at(7200)), "há 2 h");
