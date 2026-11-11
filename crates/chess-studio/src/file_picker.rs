@@ -12,8 +12,8 @@ use crate::ui_theme::{ButtonVariant, cs_button};
 use bevy_egui::egui;
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::sync::{Arc, Mutex};
 
 /// Um filtro de extensões do diálogo (sem ponto: `["pgn", "gz"]`).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -140,7 +140,7 @@ fn linux_available(
 /// Botão com o seu próprio pedido em andamento: uma instância por campo de caminho.
 pub struct FilePickButton {
     picker: Arc<dyn FilePicker>,
-    pending: Option<Receiver<PickOutcome>>,
+    pending: Option<Mutex<Receiver<PickOutcome>>>,
     unavailable: bool,
 }
 
@@ -192,7 +192,7 @@ impl FilePickButton {
                 let _ = tx.send(picker.pick(request));
             });
         match spawned {
-            Ok(_) => self.pending = Some(rx),
+            Ok(_) => self.pending = Some(Mutex::new(rx)),
             Err(_) => self.unavailable = true,
         }
     }
@@ -201,7 +201,10 @@ impl FilePickButton {
     /// morreu sem responder (falha do backend) conta como indisponível.
     pub fn poll(&mut self) -> Option<PickOutcome> {
         let rx = self.pending.as_ref()?;
-        let outcome = match rx.try_recv() {
+        let received = rx
+            .lock()
+            .map_or(Err(TryRecvError::Disconnected), |rx| rx.try_recv());
+        let outcome = match received {
             Ok(outcome) => outcome,
             Err(TryRecvError::Empty) => return None,
             Err(TryRecvError::Disconnected) => PickOutcome::Unavailable,
@@ -288,7 +291,10 @@ pub fn pgn_open_request(i18n: &I18n, typed: &str) -> PickRequest {
     PickRequest {
         kind: PickKind::Open,
         title: i18n.t("file-picker-title-pgn-open"),
-        filters: vec![Filter::new(&i18n.t("file-picker-filter-pgn"), &["pgn", "gz"])],
+        filters: vec![Filter::new(
+            &i18n.t("file-picker-filter-pgn"),
+            &["pgn", "gz"],
+        )],
         start_dir: start_dir_for(typed),
     }
 }
@@ -320,7 +326,6 @@ pub fn pgn_save_request(i18n: &I18n, file_name: String) -> PickRequest {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
     use std::time::{Duration, Instant};
 
     struct Fake {
@@ -373,6 +378,21 @@ mod tests {
             assert!(Instant::now() < limit, "o seletor não respondeu");
             std::thread::sleep(Duration::from_millis(2));
         }
+    }
+
+    /// Manual: abre o diálogo real do sistema (`cargo test -- --ignored real_system_dialog`).
+    #[test]
+    #[ignore = "abre uma janela do sistema e espera o usuário"]
+    fn real_system_dialog() {
+        let picker = SystemPicker;
+        assert!(picker.available());
+        let outcome = picker.pick(PickRequest {
+            kind: PickKind::Open,
+            title: "Chess Studio: teste do seletor".into(),
+            filters: vec![Filter::new("PGN", &["pgn", "gz"])],
+            start_dir: start_dir_for(""),
+        });
+        eprintln!("RESULTADO DO DIALOGO: {outcome:?}");
     }
 
     #[test]
@@ -479,7 +499,11 @@ mod tests {
         let bus = |k: &str| (k == "DBUS_SESSION_BUS_ADDRESS").then(|| "unix:path=/b".into());
         assert!(linux_available(&bus, &no_file, false));
         let runtime = |k: &str| (k == "XDG_RUNTIME_DIR").then(|| "/run/user/1".into());
-        assert!(linux_available(&runtime, &|p| p == "/run/user/1/bus", false));
+        assert!(linux_available(
+            &runtime,
+            &|p| p == "/run/user/1/bus",
+            false
+        ));
         assert!(!linux_available(&runtime, &no_file, false));
     }
 }

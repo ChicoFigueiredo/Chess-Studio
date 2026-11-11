@@ -175,7 +175,10 @@ mod tests {
         mv(&mut s, "e2", "e4");
         let mut tools = FileTools::default();
         tools.export_to(&s, &[], &target);
-        assert_eq!(tools.pgn_result.as_ref().unwrap().as_ref().unwrap(), &target);
+        assert_eq!(
+            tools.pgn_result.as_ref().unwrap().as_ref().unwrap(),
+            &target
+        );
         assert!(std::fs::read_to_string(&target).unwrap().contains("1. e4"));
         tools.export_to(&s, &[], &dir.join("nao/existe/x.pgn"));
         assert!(tools.pgn_result.as_ref().unwrap().is_err());
