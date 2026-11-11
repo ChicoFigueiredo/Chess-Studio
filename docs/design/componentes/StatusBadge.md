@@ -7,4 +7,5 @@ O selo diz em que estado algo está, com **ícone e palavra**: a cor sozinha nun
 - O tom `Accent` (fundo `accent-subtle`, texto e ícone `accent-ink`) é só para a marca de identidade "Padrão".
 - Não é clicável e não tem foco. Se precisar explicar, o chamador põe o tooltip (`on_hover_text`).
 - A palavra vem do estado, não da cor: "Desligado", "Ligado", "Limitado · volta em 3 min", "Com falha", "Importação manual", "Em breve", "Requer aprovação".
+- Os estados de autorização seguem a mesma regra: "Autorizado" (sucesso), "Autorização expirada" e "Cofre bloqueado" (atenção). Numa Conexão listada, o selo é "Autorizada", "Expirada" ou "Bloqueada".
 - **egui:** `cs_status_badge(ui, StatusTone, icon, label)` em `ui_theme`.
