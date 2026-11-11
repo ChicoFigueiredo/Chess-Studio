@@ -54,14 +54,6 @@ impl Presentation {
     pub fn is_3d(self) -> bool {
         self != Presentation::Technical2d
     }
-
-    fn background(self) -> Color {
-        match self {
-            Presentation::Professional3d => Color::srgb(0.07, 0.075, 0.085),
-            Presentation::ImmersiveTable => Color::srgb(0.12, 0.115, 0.11),
-            Presentation::Technical2d => Color::srgb(0.15, 0.14, 0.13),
-        }
-    }
 }
 
 /// Qualidade gráfica. Nenhum preset toca na geometria de picking (matemática pura de
@@ -272,6 +264,7 @@ impl Plugin for PresentationPlugin {
                 (
                     apply_visibility,
                     apply_presentation,
+                    apply_scene_background,
                     detect_gpu_support,
                     apply_quality,
                     show_new_entities,
@@ -320,6 +313,90 @@ pub(crate) fn apply_visibility(
     }
 }
 
+/// O fundo da cena (3D e 2D técnico) é o `surface-0` do Tema efetivo (issue #206). Só o
+/// `ClearColor`: tabuleiro, peças e iluminação não mudam com o Tema, e as câmeras seguem
+/// idênticas em `Msaa` e `Hdr`.
+fn apply_scene_background(
+    appearance: Option<Res<crate::ui_theme::Appearance>>,
+    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
+    mut clear: ResMut<ClearColor>,
+    floor: Query<&MeshMaterial3d<StandardMaterial>, With<crate::board::StudioFloor>>,
+    mut materials: Option<ResMut<Assets<StandardMaterial>>>,
+    mut labels: Query<&mut TextColor, With<crate::coordinates::Labels2d>>,
+) {
+    let mode = appearance.map_or_else(Default::default, |a| a.theme);
+    let system_dark = windows.single().ok().and_then(|w| match w.window_theme? {
+        bevy::window::WindowTheme::Dark => Some(true),
+        bevy::window::WindowTheme::Light => Some(false),
+    });
+    let want = crate::ui_theme::scene_background(mode, system_dark);
+    if clear.0 != want {
+        clear.0 = want;
+    }
+    // As coordenadas do 2D técnico ficam sobre o fundo: `ink-muted` do Tema.
+    let label = crate::ui_theme::scene_label_color(mode, system_dark);
+    for mut color in &mut labels {
+        if color.0 != label {
+            color.0 = label;
+        }
+    }
+    // O piso do 3D profissional cobre o fundo: sem luz, na cor do token, para o que aparece
+    // na tela ficar no `surface-0` (o mapeamento de tons da câmera 3D é compensado).
+    let floor_color = compensate_tonemapping(want);
+    if let Some(materials) = materials.as_deref_mut() {
+        for handle in &floor {
+            if materials
+                .get(&handle.0)
+                .is_some_and(|m| m.base_color != floor_color)
+                && let Some(mut m) = materials.get_mut(&handle.0)
+            {
+                m.base_color = floor_color;
+            }
+        }
+    }
+}
+
+/// Resposta medida do mapeamento de tons da câmera 3D (`TonyMcMapface`, sem HDR) a um piso sem
+/// luz de cinza neutro: (entrada sRGB, saída sRGB) em capturas de 1280x720. Os claros saem
+/// comprimidos: a entrada 1,0 aparece como 0,77 (197/255).
+const TONEMAP_RESPONSE: [(f32, f32); 12] = [
+    (0.0, 0.004),
+    (0.1, 0.110),
+    (0.2, 0.212),
+    (0.3, 0.310),
+    (0.4, 0.400),
+    (0.5, 0.482),
+    (0.6, 0.557),
+    (0.7, 0.624),
+    (0.8, 0.682),
+    (0.9, 0.729),
+    (0.95, 0.753),
+    (1.0, 0.773),
+];
+
+/// Entrada sRGB que o mapeamento de tons devolve como `want` (limitada ao que ele alcança).
+fn invert_tonemapping(want: f32) -> f32 {
+    for w in TONEMAP_RESPONSE.windows(2) {
+        let ((i0, o0), (i1, o1)) = (w[0], w[1]);
+        if want <= o1 {
+            let t = ((want - o0) / (o1 - o0)).clamp(0.0, 1.0);
+            return i0 + (i1 - i0) * t;
+        }
+    }
+    1.0
+}
+
+/// Cor a entregar à câmera 3D para que, depois do mapeamento de tons, apareça `target`. Os
+/// claros acima de ~0,77 não se alcançam: ficam no máximo da câmera.
+fn compensate_tonemapping(target: Color) -> Color {
+    let c = target.to_srgba();
+    Color::srgb(
+        invert_tonemapping(c.red),
+        invert_tonemapping(c.green),
+        invert_tonemapping(c.blue),
+    )
+}
+
 #[allow(clippy::type_complexity)]
 fn apply_presentation(
     presentation: Res<Presentation>,
@@ -327,7 +404,6 @@ fn apply_presentation(
         Single<&mut Camera, With<MainCamera>>,
         Single<&mut Camera, With<TechnicalCamera>>,
     )>,
-    mut clear: ResMut<ClearColor>,
     mut lights: Query<(&LightRole, &mut DirectionalLight, &mut Transform)>,
     mut ambient: ResMut<GlobalAmbientLight>,
 ) {
@@ -337,7 +413,6 @@ fn apply_presentation(
     let p = *presentation;
     cameras.p0().is_active = p.is_3d();
     cameras.p1().is_active = !p.is_3d();
-    clear.0 = p.background();
 
     // Iluminação: (iluminância, cor, posição) por papel.
     for (role, mut light, mut transform) in &mut lights {
@@ -460,6 +535,20 @@ fn apply_quality(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A compensação inverte a resposta medida do mapeamento de tons: escuros quase idênticos,
+    /// claros no máximo que a câmera alcança, sempre monótona.
+    #[test]
+    fn tonemapping_compensation_is_monotonic_and_clamped() {
+        let mut last = -1.0;
+        for i in 0..=100 {
+            let v = invert_tonemapping(i as f32 / 100.0);
+            assert!((0.0..=1.0).contains(&v) && v >= last);
+            last = v;
+        }
+        assert!((invert_tonemapping(0.110) - 0.1).abs() < 1e-3);
+        assert_eq!(invert_tonemapping(0.92), 1.0);
+    }
     use crate::camera::MainCamera;
     use bevy_egui::EguiGlobalSettings;
     use bevy_egui::input::EguiWantsInput;

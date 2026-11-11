@@ -15,6 +15,9 @@ use egui_phosphor::regular as icon;
 use std::hash::Hash;
 use std::ops::RangeInclusive;
 
+mod theme_card;
+pub use theme_card::{ThemeCardMark, cs_theme_card};
+
 /// Paleta do Tema em uso no `Ui`.
 pub fn palette(ui: &Ui) -> &'static Palette {
     Palette::from_visuals(ui.visuals())
