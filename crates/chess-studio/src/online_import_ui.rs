@@ -1,4 +1,4 @@
-//! Formulário "Importar do Lichess ou Chess.com" da Biblioteca (CX-9, #226): nome público,
+//! Formulário "Importar do Lichess, PlayStrategy ou Chess.com" da Biblioteca (CX-9, #226): nome público,
 //! período, ritmo, cor e máximo; andamento com Cancelar; resumo igual ao da importação de
 //! arquivo; botão "Atualizar" que traz só as Partidas novas daquele nome.
 //!
@@ -37,6 +37,7 @@ const UPDATE_MAX: u32 = 1000;
 pub struct Env {
     pub lichess_on: bool,
     pub chesscom_on: bool,
+    pub playstrategy_on: bool,
     /// Partida competitiva em andamento (Trava de fair play).
     pub locked: bool,
     pub now: Option<Timestamp>,
@@ -49,6 +50,7 @@ impl Env {
         match site {
             Site::Lichess => self.lichess_on,
             Site::ChessCom => self.chesscom_on,
+            Site::PlayStrategy => self.playstrategy_on,
         }
     }
 }
@@ -80,6 +82,8 @@ pub struct OnlineState {
     env: Env,
     /// Pedido de ligar o Provedor (o diálogo abre fora do desenho).
     pub ask_to_turn_on: Option<Site>,
+    /// Só para capturas: rola o formulário até o fim.
+    pub demo_scroll_end: bool,
 }
 
 impl Default for OnlineState {
@@ -100,6 +104,7 @@ impl Default for OnlineState {
             clients: None,
             env: Env::default(),
             ask_to_turn_on: None,
+            demo_scroll_end: false,
         }
     }
 }
@@ -119,6 +124,7 @@ impl OnlineState {
             }
             self.env.lichess_on = net.is_enabled(Site::Lichess.provider());
             self.env.chesscom_on = net.is_enabled(Site::ChessCom.provider());
+            self.env.playstrategy_on = net.is_enabled(Site::PlayStrategy.provider());
         }
         self.env.locked = locked;
         self.env.now = Some(NetService::now());
@@ -219,7 +225,7 @@ impl OnlineState {
 /// A Conexão padrão (papel de jogador) do Provedor: o nome que o formulário sugere.
 fn default_name(store: &Store, profile: ProfileId, site: Site) -> Option<String> {
     store
-        .list_connections_by_role(profile, Some(site.key()), ConnectionRole::Player)
+        .list_connections_by_role(profile, Some(site.provider().key()), ConnectionRole::Player)
         .ok()?
         .into_iter()
         .find(|c| c.is_default)
@@ -321,6 +327,17 @@ pub fn draw(ui: &mut egui::Ui, i18n: &I18n, state: &mut OnlineState) {
         )
         .wrap(),
     );
+    if site == Site::PlayStrategy {
+        ui.add_space(4.0);
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(i18n.t("library-online-standard-only-playstrategy"))
+                    .small()
+                    .color(p.ink_muted),
+            )
+            .wrap(),
+        );
+    }
     ui.add_space(8.0);
 
     if let Some(job) = &state.job {
@@ -581,6 +598,27 @@ fn outcome(ui: &mut egui::Ui, i18n: &I18n, finished: &Finished, now: Timestamp) 
                     ))
                     .small()
                     .color(p.warning),
+                );
+            }
+            if summary.skipped_variants > 0 {
+                ui.add_space(4.0);
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(i18n.t_with(
+                            if summary.skipped_variants == 1 {
+                                "library-online-skipped-variants-one"
+                            } else {
+                                "library-online-skipped-variants-many"
+                            },
+                            &[
+                                ("count", &summary.skipped_variants.to_string()),
+                                ("provider", finished.site.name()),
+                            ],
+                        ))
+                        .small()
+                        .color(p.warning),
+                    )
+                    .wrap(),
                 );
             }
             if summary.received == 0 && !summary.cancelled {

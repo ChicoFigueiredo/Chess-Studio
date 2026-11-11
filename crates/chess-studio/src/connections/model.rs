@@ -400,7 +400,7 @@ pub struct Actions {
 pub fn can_test(provider: ProviderId) -> bool {
     matches!(
         provider,
-        ProviderId::Lichess | ProviderId::ChessCom | ProviderId::Fide
+        ProviderId::Lichess | ProviderId::ChessCom | ProviderId::Fide | ProviderId::PlayStrategy
     )
 }
 
@@ -725,7 +725,12 @@ pub fn requirements(provider: &Provider) -> Vec<&'static str> {
     provider
         .services
         .iter()
-        .filter(|s| s.cost > provider.cost() && s.cost <= Cost::FreeWithSignup)
+        // Só o que já funciona: o que vem depois (Partida online) aparece em "O que vem depois".
+        .filter(|s| {
+            s.status == ServiceStatus::Ready
+                && s.cost > provider.cost()
+                && s.cost <= Cost::FreeWithSignup
+        })
         .map(|s| service_key(s.capability))
         .collect()
 }
@@ -758,6 +763,7 @@ pub fn consent_line_key(provider: ProviderId, capability: Capability) -> Option<
         (ProviderId::Lichess, Capability::Download) => "consent-sends-lichess-download",
         (ProviderId::Lichess, Capability::Play) => "consent-sends-lichess-play",
         (ProviderId::ChessCom, Capability::Query) => "consent-sends-chesscom-query",
+        (ProviderId::PlayStrategy, Capability::Query) => "consent-sends-playstrategy-query",
         _ => return None,
     })
 }
@@ -791,6 +797,7 @@ pub fn sends_keys(provider: &Provider, state: CardState) -> Vec<&'static str> {
     }
     keys.push(match provider.id {
         ProviderId::ChessCom => "consent-sends-tail-no-password",
+        ProviderId::PlayStrategy => "consent-sends-tail-playstrategy",
         _ => "consent-sends-tail-local-profile",
     });
     keys
@@ -990,7 +997,8 @@ mod tests {
         assert_eq!(state_of(ProviderId::StockfishApi), CardState::Unconfirmed);
         // Adaptadores distantes aparecem como "Em breve".
         assert_eq!(state_of(ProviderId::Fics), CardState::Planned);
-        assert_eq!(state_of(ProviderId::PlayStrategy), CardState::Planned);
+        // Partidas públicas prontas: o cartão liga; Partida online segue "numa próxima versão".
+        assert_eq!(state_of(ProviderId::PlayStrategy), CardState::Off);
         assert_eq!(state_of(ProviderId::ChessApi), CardState::Planned);
         // Sem nada para fazer hoje, não há Switch: o Chessigma também espera.
         assert_eq!(state_of(ProviderId::Chessigma), CardState::Planned);
@@ -1211,6 +1219,7 @@ mod tests {
         let mut expected = vec![
             ProviderId::Lichess,
             ProviderId::ChessCom,
+            ProviderId::PlayStrategy,
             ProviderId::Fide,
             ProviderId::QueenAlice,
             ProviderId::ChessBase,
@@ -1244,11 +1253,18 @@ mod tests {
         };
         assert!(!has_test(false), "sem nome vinculado não há o que testar");
         assert!(has_test(true));
-        for id in [
-            ProviderId::PlayStrategy,
-            ProviderId::Fics,
-            ProviderId::Chessigma,
-        ] {
+        // O PlayStrategy testa o nome como o Lichess (#253); FICS e Chessigma ainda não.
+        let ps = provider(ProviderId::PlayStrategy);
+        let ps_actions = card_actions(ps, state_of(ProviderId::PlayStrategy), true);
+        assert!(
+            ps_actions
+                .primary
+                .into_iter()
+                .chain(ps_actions.menu)
+                .any(|a| a.action == CardAction::Test)
+        );
+        assert_eq!(test_via(ProviderId::PlayStrategy), ProviderId::PlayStrategy);
+        for id in [ProviderId::Fics, ProviderId::Chessigma] {
             let p = provider(id);
             let actions = card_actions(p, state_of(id), true);
             assert!(
@@ -1298,6 +1314,8 @@ mod tests {
         // O requisito do Explorador sai do custo (e do jogo), sem texto do catálogo.
         assert!(requirements(provider(ProviderId::Lichess)).contains(&"connections-svc-explore"));
         assert!(requirements(provider(ProviderId::ChessCom)).is_empty());
+        // O PlayStrategy só pede cadastro para o que ainda não existe (Partida online).
+        assert!(requirements(provider(ProviderId::PlayStrategy)).is_empty());
     }
 
     #[test]
