@@ -1,0 +1,10 @@
+# Resposta SINTÉTICA no formato da PubAPI do Chess.com (lista de meses com Partidas).
+# Para gravar uma real, fora da suíte (CX-17):
+#   curl -sS -i -A 'ChessStudio/0.1.0' 'https://api.chess.com/pub/player/USUARIO/games/archives' > chesscom-archives.http
+HTTP/1.1 200 OK
+Content-Type: application/json; charset=utf-8
+Cache-Control: max-age=43200
+ETag: W/"archives-1"
+Last-Modified: Tue, 10 Nov 2026 08:00:00 GMT
+
+{"archives":["https://api.chess.com/pub/player/usuario/games/2026/10","https://api.chess.com/pub/player/usuario/games/2026/11"]}

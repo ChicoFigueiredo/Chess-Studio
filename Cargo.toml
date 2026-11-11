@@ -18,6 +18,7 @@ chess-pgn = { path = "crates/chess-pgn" }
 chess-input = { path = "crates/chess-input" }
 chess-store = { path = "crates/chess-store" }
 chess-uci = { path = "crates/chess-uci" }
+chess-net = { path = "crates/chess-net" }
 chess-training = { path = "crates/chess-training" }
 chess-openings = { path = "crates/chess-openings" }
 
