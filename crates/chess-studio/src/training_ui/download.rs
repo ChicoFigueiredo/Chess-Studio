@@ -315,6 +315,9 @@ fn failure_text(i18n: &I18n, error: &ProviderError) -> String {
         ProviderError::Net(NetError::Unreachable { .. } | NetError::Timeout { .. }) => {
             i18n.t("training-download-error-offline")
         }
+        ProviderError::Net(NetError::RedirectRefused { .. }) => {
+            i18n.t("training-download-error-redirect")
+        }
         other => i18n.t_with(
             "training-download-error-other",
             &[("reason", &other.to_string())],
@@ -1053,6 +1056,10 @@ mod tests {
                 provider: lichess,
                 detail: "x".into(),
             },
+            ProviderError::Net(chess_net::NetError::RedirectRefused {
+                provider: lichess,
+                location: "https://exemplo.invalid/x".into(),
+            }),
         ];
         for error in errors {
             let text = failure_text(&i18n, &error);

@@ -504,7 +504,7 @@ impl View<'_> {
         ui.spacing_mut().item_spacing.y = 8.0;
 
         cs_detail_row(ui, &i18n.t("connections-detail-sends"), |ui| {
-            let text = i18n.t(model::sends_key(provider, state));
+            let text = model::sends_text(i18n, provider, state);
             if provider.uses_network() && !self.service.is_enabled(id) {
                 ui.label(RichText::new(i18n.t("connections-sends-off-lead")).color(p.ink));
                 ui.label(
