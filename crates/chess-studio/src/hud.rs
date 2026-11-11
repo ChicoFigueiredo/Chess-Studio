@@ -7,7 +7,7 @@
 //! as escolhas do usuário nunca ampliam a política. Cálculos de ataque vivem no
 //! `chess-core`; a forma das setas, em `chess-input`. Aqui nada toca a Partida (ADR-0001).
 
-use crate::hud_policy::{Allowance, allowance};
+use crate::hud_policy::{Allowance, effective};
 use crate::play::PlaySet;
 use crate::session::Session;
 use bevy::prelude::*;
@@ -380,10 +380,15 @@ fn update_hud(
     session: Res<Session>,
     settings: Res<HudSettings>,
     analysis: Res<HudAnalysis>,
+    fair: Option<Res<crate::fair_play::FairPlay>>,
     mut marks: ResMut<HudMarks>,
     mut key: Local<Option<HudKey>>,
 ) {
-    let allowed = allowance(&session);
+    // Sem o ponto único da Trava (apps parciais de teste), nada que calcula aparece.
+    let allowed = match fair.as_deref() {
+        Some(fair) => effective(&session, fair),
+        None => crate::hud_policy::allowance(&session).without_computation(),
+    };
     let now = (session.revision(), *settings, allowed, analysis.clone());
     if key.as_ref() == Some(&now) {
         return;
@@ -705,6 +710,9 @@ mod tests {
         app.init_resource::<HudSettings>()
             .init_resource::<HudAnalysis>()
             .init_resource::<HudMarks>()
+            .insert_resource(crate::fair_play::FairPlay::new(
+                chess_net::FairPlayGuard::new(),
+            ))
             .add_systems(Update, update_hud);
         let config = crate::new_game::NewGameConfig::for_policy(policy);
         let mut session = Session::new();

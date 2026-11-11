@@ -101,7 +101,12 @@ impl NewGameConfig {
             policy: setup.policy(),
             infraction_stage: setup.infraction_stage(),
             time: setup.time_control(),
-            user_side: engine.map_or(Side::White, |seat| seat.color.opposite()),
+            // Online, o lado do usuário é o que o Provedor deu a ele.
+            user_side: match (engine, setup.online_game()) {
+                (_, Some(online)) => online.local_color,
+                (Some(seat), None) => seat.color.opposite(),
+                (None, None) => Side::White,
+            },
             opponent: if engine.is_some() {
                 Opponent::Engine
             } else {
@@ -217,6 +222,7 @@ fn new_game_window(
     mut session: ResMut<Session>,
     mut rig: ResMut<CameraRig>,
     capture: Option<Res<crate::capture::CaptureMode>>,
+    online: Option<ResMut<crate::online::OnlineUi>>,
 ) -> Result {
     if !dialog.open || capture.as_ref().is_some_and(|c| !c.show_new_game) {
         return Ok(());
@@ -231,6 +237,7 @@ fn new_game_window(
     let mut draft = dialog.draft.clone();
     let mut start = false;
     let mut cancel = false;
+    let mut go_online = false;
     egui::Window::new(i18n.t("newgame-title"))
         .collapsible(false)
         .resizable(false)
@@ -241,6 +248,19 @@ fn new_game_window(
             time_section(ui, &i18n, &mut draft);
             ui.separator();
             players_section(ui, &i18n, &mut draft, &mut engine_ui);
+            ui.separator();
+            // Início > Nova Partida > Online (Lichess): a tela própria da Partida online.
+            if ui
+                .add(
+                    crate::ui_theme::CsButton::new(&i18n.t("action-new-game-online"))
+                        .icon(egui_phosphor::regular::GLOBE)
+                        .variant(crate::ui_theme::ButtonVariant::Subtle),
+                )
+                .on_hover_text(i18n.t("action-new-game-online-desc"))
+                .clicked()
+            {
+                go_online = true;
+            }
             ui.separator();
             ui.horizontal(|ui| {
                 if ui.button(i18n.t("newgame-start")).clicked() {
@@ -272,6 +292,9 @@ fn new_game_window(
         }
     } else if cancel {
         dialog.open = false;
+    } else if go_online && let Some(mut online) = online {
+        dialog.open = false;
+        online.open_at(crate::online::Tab::Seek);
     }
     if dialog.draft != draft {
         dialog.draft = draft;

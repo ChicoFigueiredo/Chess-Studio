@@ -138,6 +138,7 @@ pub fn meta(action: Action) -> ActionMeta {
             "new-game",
             "NR"
         ),
+        A::NewGameOnline => item!("new-game-online", "globe", Command, Home, "new-game", "NO"),
         A::OpenControls => item!(
             "open-controls",
             "keyboard",
@@ -170,6 +171,32 @@ pub fn meta(action: Action) -> ActionMeta {
         A::ClaimDraw => item!("claim-draw", "scales", Command, Home, "game", "L"),
         A::ClockPress => item!("clock-press", "timer", Command, Home, "clock", "K"),
         A::PauseClock => item!("pause-clock", "pause", Toggle, Home, "clock", "P"),
+        // Início: grupo Online (Lichess), depois do relógio.
+        A::SeekOnline => item!(
+            "seek-online",
+            "magnifying-glass",
+            Command,
+            Home,
+            "online",
+            "OB"
+        ),
+        A::ChallengeOnline => item!(
+            "challenge-online",
+            "user-plus",
+            Command,
+            Home,
+            "online",
+            "OD"
+        ),
+        A::PlayLichessEngine => item!("play-lichess-engine", "cpu", Command, Home, "online", "OE"),
+        A::OnlineGames => item!(
+            "online-games",
+            "list-bullets",
+            Command,
+            Home,
+            "online",
+            "OP"
+        ),
         // Análise.
         A::ToggleAnalysis => item!(
             "toggle-analysis",
@@ -346,6 +373,7 @@ pub fn meta(action: Action) -> ActionMeta {
         ),
         A::PanelExplorer => item!("panel-explorer", "compass", Toggle, View, "panels", "NX"),
         A::PanelTraining => item!("panel-training", "barbell", Toggle, View, "panels", "NT"),
+        A::PanelOnline => item!("panel-online", "globe", Toggle, View, "panels", "NI"),
         // Exibir: janelas dos Painéis.
         A::FloatPanel => item!(
             "float-panel",
@@ -467,6 +495,10 @@ pub struct ActionContext {
     pub resumable_game: bool,
     /// A Súmula está aberta e esconde a notação: exportar PGN a revelaria.
     pub pgn_blocked: bool,
+    /// A Partida no tabuleiro é uma Partida online (o Provedor decide relógio e resultado).
+    pub online: bool,
+    /// Há uma Partida online em tempo real contra pessoa em andamento (outra não começa).
+    pub online_realtime_in_progress: bool,
 }
 
 /// Estado de uma Ação num dado [`ActionContext`].
@@ -524,6 +556,7 @@ impl Action {
             Action::PanelScoresheet => ("Scoresheet", false),
             Action::PanelBoard2d => ("Board2d", false),
             Action::PanelEngines => ("Engines", false),
+            Action::PanelOnline => ("Online", false),
             _ => return None,
         })
     }
@@ -586,6 +619,18 @@ fn disabled_reason(action: Action, ctx: &ActionContext) -> Option<&'static str> 
             Some("reason-competitive-lock")
         }
         A::ResumeGame if !ctx.resumable_game => Some("reason-no-resumable-game"),
+        A::NewGameOnline | A::SeekOnline | A::ChallengeOnline | A::PlayLichessEngine
+            if ctx.online_realtime_in_progress =>
+        {
+            Some("reason-online-in-progress")
+        }
+        A::NewGameOnline | A::SeekOnline | A::ChallengeOnline | A::PlayLichessEngine
+            if ctx.competitive_in_progress && !ctx.online =>
+        {
+            Some("reason-competitive-lock")
+        }
+        // Online, relógio e Pausa são do Provedor (PO-07).
+        A::PauseClock | A::ClockPress if ctx.online => Some("reason-online-provider"),
         A::ExportPgn if ctx.pgn_blocked => Some("reason-pgn-scoresheet"),
         A::Undo if ctx.competitive => Some("reason-assisted-only"),
         A::Undo if !ctx.can_undo => Some("reason-nothing-to-undo"),

@@ -302,7 +302,14 @@ fn update_marks(
                     position: &snapshot.position,
                     side_to_move: snapshot.side_to_move,
                     in_check: snapshot.in_check,
-                    last_move: snapshot.history.last().map(|h| (h.mv.from(), h.mv.to())),
+                    // Partida online: a intenção enviada fica marcada como o último Lance
+                    // (a peça já está no destino) até o Provedor confirmar ou recusar.
+                    last_move: snapshot
+                        .made_move
+                        .as_ref()
+                        .filter(|_| session.is_online())
+                        .map(|m| (m.mv.from(), m.mv.to()))
+                        .or_else(|| snapshot.history.last().map(|h| (h.mv.from(), h.mv.to()))),
                 },
                 origin,
                 &dests,

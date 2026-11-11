@@ -5,13 +5,21 @@
 //! manda intenções (`gesture`, `command`). O instante dos Comandos vem do relógio do app
 //! (`Instant`), nunca do domínio. Sem dependência do Bevy além do atributo `Resource`:
 //! o fluxo inteiro (ponteiro -> Comando -> Partida) é testável sem janela.
+//!
+//! **Partida online (ADR-0007).** Quem escreve a Partida online é a sessão do Provedor
+//! (`chess_providers::OnlineGameSession`), dona do controlador; a `Session` só a **espelha**
+//! ([`Session::mirror_online`]) e nunca chama `Game::handle` nela. Os gestos viram
+//! [`OnlineIntent`]s que o serviço online recolhe ([`Session::take_online_intents`]); a
+//! intenção enviada aparece no tabuleiro como o Lance feito (peça no destino) até o Provedor
+//! confirmar ou recusar.
 
 use crate::new_game::{NewGameConfig, Opponent};
 use bevy::prelude::{Resource, Vec3, warn};
 use chess_core::{Color, FenError, Move, Piece, Square};
 use chess_game::{
-    ClockReading, Command, EngineSeat, EventKind, Game, GameSetup, IllegalReason, PgnOptions,
-    PolicyKind, Rejection, ReviewView, Snapshot, Timestamp,
+    ClockReading, Command, EngineSeat, EventKind, Game, GameSetup, IllegalReason, MadeMove,
+    PendingPromotion, PgnOptions, PolicyKind, ProvisionalView, Rejection, ReviewView, Snapshot,
+    Timestamp,
 };
 use chess_input::{DRAG_HEIGHT, GestureEvent, GestureInterpreter, GestureVisual, MoveMethod};
 use chess_uci::{EngineConfig, EnginePlayer};
@@ -66,6 +74,33 @@ pub struct IllegalIncident {
     pub notice: IllegalNotice,
 }
 
+/// O que o jogador pede numa Partida online. Nada muda até o Provedor confirmar (ADR-0007).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OnlineIntent {
+    /// Lance local: vira intenção enviada, um único envio.
+    Play(Move),
+    Resign,
+    Abort,
+    /// Propõe empate (ou aceita a proposta do adversário).
+    OfferDraw,
+    AcceptDraw,
+    DeclineDraw,
+    /// Vitória pela ausência do adversário, quando o Provedor permite.
+    ClaimVictory,
+}
+
+/// A Partida online espelhada no tabuleiro.
+#[derive(Debug, Default)]
+struct OnlineBoard {
+    /// A Partida no banco (a persistência acompanha; quem grava é o serviço online).
+    store_id: Option<chess_store::GameId>,
+    /// A sessão do Provedor está aberta: os gestos viram intenções.
+    live: bool,
+    intents: Vec<OnlineIntent>,
+    /// Peão na última fileira: a peça é escolhida antes do envio.
+    promotion: Option<(Square, Square)>,
+}
+
 #[derive(Resource, Debug)]
 pub struct Session {
     game: Game,
@@ -95,6 +130,8 @@ pub struct Session {
     /// Configuração da Nova Partida (derivada do `GameSetup` ao reabrir).
     config: NewGameConfig,
     notice: Option<(Notice, Instant)>,
+    /// Partida online: espelho da sessão do Provedor (só ela escreve).
+    online: Option<OnlineBoard>,
 }
 
 impl Default for Session {
@@ -121,8 +158,10 @@ impl Session {
     fn with_engine(game: Game, engine: Option<EnginePlayer>) -> Self {
         let mono_offset = game.events().last().map_or(0, |e| e.at.mono_ms);
         let config = NewGameConfig::from_setup(game.setup());
+        let online = game.setup().online_game().map(|_| OnlineBoard::default());
+        let snapshot = online_overlay(game.snapshot(), None);
         Self {
-            snapshot: game.snapshot(),
+            snapshot,
             game,
             revision: 0,
             started: Instant::now(),
@@ -138,6 +177,7 @@ impl Session {
             epoch: 0,
             review: None,
             variation: false,
+            online,
             config,
             notice: None,
         }
@@ -373,6 +413,10 @@ impl Session {
         if self.engine_turn() || self.review.is_some() {
             return;
         }
+        if self.online.is_some() {
+            self.online_gesture(event);
+            return;
+        }
         let visual = self.interpreter.visual();
         let commands = self.interpreter.handle(event, &self.snapshot);
         for command in commands {
@@ -399,6 +443,10 @@ impl Session {
     /// Comando vindo da interface (painel e seletor de promoção).
     pub fn command(&mut self, command: Command) {
         if self.review.is_some() {
+            return;
+        }
+        if self.online.is_some() {
+            self.online_command(&command);
             return;
         }
         self.apply(command, None);
@@ -476,7 +524,8 @@ impl Session {
     /// com a Partida em curso e fora de Pausa; o relógio é o de quem tem a vez e, contra
     /// a Engine, só na vez do usuário (a Engine aciona o dela via `EngineMove`, DEC-33).
     pub fn can_press_clock(&self, side: Color) -> bool {
-        self.is_competitive()
+        self.online.is_none()
+            && self.is_competitive()
             && self.snapshot.outcome.is_none()
             && !self.snapshot.paused
             && self.review.is_none()
@@ -497,13 +546,19 @@ impl Session {
     /// Registra a bandeira caída: um Comando que chega com o tempo esgotado só grava
     /// `FlagFell` e o resultado (o Comando em si é descartado).
     pub fn tick(&mut self) {
-        if self.snapshot.outcome.is_none() && self.clock_reading().is_some_and(|r| r.flag.is_some())
+        // Online, o tempo e a bandeira são do Provedor (PO-07).
+        if self.online.is_none()
+            && self.snapshot.outcome.is_none()
+            && self.clock_reading().is_some_and(|r| r.flag.is_some())
         {
             self.command(Command::PressClock);
         }
     }
 
     pub fn toggle_pause(&mut self) {
+        if self.online.is_some() {
+            return;
+        }
         let command = if self.snapshot.paused {
             Command::Resume
         } else {
@@ -529,6 +584,11 @@ impl Session {
     /// Abandona: o lado da vez (dois jogadores no mesmo computador) ou, contra a Engine,
     /// sempre o lado do usuário.
     pub fn resign_side_to_move(&mut self) {
+        if self.online.is_some() {
+            // Pedido ao Provedor (a interface confirma antes); a Partida só muda com o retrato.
+            self.online_request(OnlineIntent::Resign);
+            return;
+        }
         let side: Color = match &self.engine {
             Some(engine) => engine.seat().color.opposite(),
             None => self.snapshot.side_to_move,
@@ -611,6 +671,10 @@ impl Session {
     }
 
     fn apply(&mut self, command: Command, start: Option<Vec3>) {
+        // A Partida online só é escrita pela sessão do Provedor (ADR-0007).
+        if self.online.is_some() {
+            return;
+        }
         match self.game.handle(command.clone(), self.now()) {
             Ok(events) => {
                 if events.is_empty() {
@@ -737,6 +801,257 @@ fn lifted(p: Vec3) -> Vec3 {
     Vec3::new(p.x, DRAG_HEIGHT, p.z)
 }
 
+/// A leitura da Partida online para o tabuleiro: a intenção enviada aparece como o Lance
+/// feito (a peça no destino, ainda fora da Posição canônica) e a promoção em escolha, como a
+/// Posição visual provisória. Nada disso está no log.
+fn online_overlay(mut snapshot: Snapshot, promotion: Option<(Square, Square)>) -> Snapshot {
+    let Some(online) = &snapshot.online else {
+        return snapshot;
+    };
+    if let Some(sent) = &online.sent_move {
+        snapshot.made_move = Some(MadeMove {
+            side: sent.side,
+            mv: sent.mv,
+            san: sent.san.clone(),
+            position_after: sent.position_after.clone(),
+        });
+    }
+    if let Some((from, to)) = promotion
+        && let Some((color, piece)) = snapshot.position.piece_at(from)
+    {
+        let mut pieces: Vec<(Square, Color, Piece)> = chess_input::all_squares()
+            .filter(|s| *s != from && *s != to)
+            .filter_map(|s| snapshot.position.piece_at(s).map(|(c, p)| (s, c, p)))
+            .collect();
+        pieces.push((to, color, piece));
+        pieces.sort_by_key(|(s, _, _)| (s.rank(), s.file()));
+        snapshot.provisional = Some(ProvisionalView {
+            pending_promotion: PendingPromotion {
+                side: color,
+                from,
+                to,
+            },
+            pieces,
+        });
+    }
+    snapshot
+}
+
+/// Partida online (ADR-0007): espelho e intenções.
+impl Session {
+    /// A Partida no tabuleiro é uma Partida online.
+    pub fn is_online(&self) -> bool {
+        self.online.is_some()
+    }
+
+    /// Id da Partida no Provedor, se a do tabuleiro é online.
+    pub fn online_remote_id(&self) -> Option<&str> {
+        self.game
+            .setup()
+            .online_game()
+            .map(|o| o.remote_id.as_str())
+    }
+
+    /// A Partida online do tabuleiro no banco.
+    pub fn online_store_id(&self) -> Option<chess_store::GameId> {
+        self.online.as_ref().and_then(|o| o.store_id)
+    }
+
+    /// Diz em que linha do banco está a Partida online do tabuleiro (reaberta do banco).
+    pub fn set_online_store_id(&mut self, id: Option<chess_store::GameId>) {
+        if let Some(board) = &mut self.online {
+            board.store_id = id;
+        }
+    }
+
+    /// A sessão do Provedor da Partida do tabuleiro abriu ou fechou.
+    pub fn set_online_live(&mut self, live: bool) {
+        if let Some(board) = &mut self.online
+            && board.live != live
+        {
+            board.live = live;
+            self.revision = self.revision.wrapping_add(1);
+        }
+    }
+
+    /// Põe uma Partida online no tabuleiro (época nova: a persistência a acompanha).
+    pub fn show_online(&mut self, game: Game, store_id: Option<chess_store::GameId>, live: bool) {
+        self.replace_game(game);
+        if let Some(online) = &mut self.online {
+            online.store_id = store_id;
+            online.live = live;
+        }
+    }
+
+    /// Acompanha a Partida online que a sessão do Provedor escreveu. Só copia: a Partida do
+    /// tabuleiro nunca é escrita aqui. Outra Partida (outro id) é ignorada.
+    pub fn mirror_online(&mut self, game: &Game, live: bool) {
+        let same = game
+            .setup()
+            .online_game()
+            .is_some_and(|o| Some(o.remote_id.as_str()) == self.online_remote_id());
+        if !same {
+            return;
+        }
+        let Some(board) = &mut self.online else {
+            return;
+        };
+        let was_live = board.live;
+        board.live = live;
+        let grew = game.events().len() != self.game.events().len();
+        let changed = grew
+            || game.sent_move() != self.game.sent_move()
+            || game.snapshot().online != self.game.snapshot().online;
+        if !changed {
+            if was_live != live {
+                self.revision = self.revision.wrapping_add(1);
+            }
+            return;
+        }
+        if grew {
+            // O relógio do Provedor conta a partir do último retrato (PO-07).
+            self.mono_offset = game.events().last().map_or(0, |e| e.at.mono_ms);
+            self.started = Instant::now();
+        }
+        self.game = game.clone();
+        // Saiu da vez (ou acabou): a promoção em escolha deixa de valer.
+        if (self.game.sent_move().is_some() || self.game.snapshot().is_over())
+            && let Some(board) = &mut self.online
+        {
+            board.promotion = None;
+        }
+        self.refresh_online();
+        self.interpreter
+            .handle(GestureEvent::Resync, &self.snapshot);
+    }
+
+    fn refresh_online(&mut self) {
+        let promotion = self.online.as_ref().and_then(|o| o.promotion);
+        self.snapshot = online_overlay(self.game.snapshot(), promotion);
+        self.revision = self.revision.wrapping_add(1);
+    }
+
+    /// O jogador local pode mover agora? Sessão aberta, na vez dele, sem intenção à espera,
+    /// sem dessincronização, sem fim e fora da revisão.
+    pub fn online_can_move(&self) -> bool {
+        let Some(board) = &self.online else {
+            return false;
+        };
+        let Some(info) = self.game.setup().online_game() else {
+            return false;
+        };
+        let snapshot = self.game.snapshot();
+        let view = snapshot.online.as_ref();
+        board.live
+            && board.promotion.is_none()
+            && self.review.is_none()
+            && !snapshot.is_over()
+            && snapshot.side_to_move == info.local_color
+            && view.is_none_or(|v| v.sent_move.is_none() && v.desync.is_none())
+    }
+
+    /// Pedido ao Provedor (abandonar, empate, abortar, reclamar vitória).
+    pub fn online_request(&mut self, intent: OnlineIntent) {
+        if let Some(board) = &mut self.online {
+            board.intents.push(intent);
+        }
+    }
+
+    /// As intenções desde a última consulta, na ordem (o serviço online as envia).
+    pub fn take_online_intents(&mut self) -> Vec<OnlineIntent> {
+        self.online
+            .as_mut()
+            .map(|o| std::mem::take(&mut o.intents))
+            .unwrap_or_default()
+    }
+
+    fn online_gesture(&mut self, event: GestureEvent) {
+        if !self.online_can_move() {
+            // Fora da vez o ponteiro não move nada; um arrasto em curso volta à origem.
+            self.interpreter
+                .handle(GestureEvent::Escape, &self.snapshot);
+            return;
+        }
+        let visual = self.interpreter.visual();
+        let commands = self.interpreter.handle(event, &self.snapshot);
+        for command in commands {
+            let Command::Release { from, to } = command else {
+                continue;
+            };
+            let start = visual
+                .drag_world
+                .map_or_else(|| lifted(chess_input::square_center(from)), lifted);
+            self.online_release(from, to, start);
+            self.interpreter
+                .handle(GestureEvent::Resolved, &self.snapshot);
+        }
+        self.interpreter
+            .handle(GestureEvent::Resync, &self.snapshot);
+    }
+
+    /// Peça solta numa Partida online: Lance legal vira intenção; promoção abre a escolha;
+    /// ilegal volta à origem (nada sai para o Provedor).
+    fn online_release(&mut self, from: Square, to: Square, start: Vec3) {
+        let position = &self.snapshot.position;
+        let promotes = matches!(position.piece_at(from), Some((_, Piece::Pawn)))
+            && (to.rank() == 7 || to.rank() == 0);
+        let legal = position
+            .legal_moves()
+            .into_iter()
+            .any(|m| m.from() == from && m.to() == to);
+        if !legal {
+            self.hint = Some(SettleHint {
+                square: from,
+                from: start,
+            });
+            self.revision = self.revision.wrapping_add(1);
+            return;
+        }
+        self.hint = Some(SettleHint {
+            square: to,
+            from: start,
+        });
+        if promotes {
+            if let Some(board) = &mut self.online {
+                board.promotion = Some((from, to));
+            }
+            self.refresh_online();
+            return;
+        }
+        self.online_request(OnlineIntent::Play(Move::new(from, to, None)));
+        self.revision = self.revision.wrapping_add(1);
+    }
+
+    fn online_command(&mut self, command: &Command) {
+        let promotion = self.online.as_ref().and_then(|o| o.promotion);
+        match (command, promotion) {
+            (Command::ChoosePromotion { piece }, Some((from, to))) => {
+                if let Some(board) = &mut self.online {
+                    board.promotion = None;
+                }
+                self.online_request(OnlineIntent::Play(Move::new(from, to, Some(*piece))));
+                self.refresh_online();
+            }
+            (Command::RetractMove, Some((from, _))) => {
+                if let Some(board) = &mut self.online {
+                    board.promotion = None;
+                }
+                self.hint = Some(SettleHint {
+                    square: from,
+                    from: lifted(chess_input::square_center(from)),
+                });
+                self.refresh_online();
+            }
+            (Command::OfferDraw { .. }, _) => self.online_request(OnlineIntent::OfferDraw),
+            (Command::AcceptDraw, _) => self.online_request(OnlineIntent::AcceptDraw),
+            (Command::DeclineDraw, _) => self.online_request(OnlineIntent::DeclineDraw),
+            (Command::Resign { .. }, _) => self.online_request(OnlineIntent::Resign),
+            // Desfazer, relógio, Pausa, toque e reclamações locais não existem online (CX-19).
+            _ => {}
+        }
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
@@ -781,6 +1096,120 @@ mod tests {
 
     fn drag(s: &mut Session, from: &str, to: &str) {
         feed(s, &[down(from), mv(from), mv(to), up(to)]);
+    }
+
+    fn online_session(moves: &[&str]) -> Session {
+        use chess_game::{OnlineGame, OnlinePlayer, ProviderSnapshot, Variant};
+        let setup = GameSetup::online(
+            OnlineGame {
+                provider: "lichess".into(),
+                remote_id: "abcd1234".into(),
+                local_color: Color::White,
+                opponent: chess_game::Opponent::Human,
+                white: OnlinePlayer {
+                    name: "Ana".into(),
+                    rating: None,
+                },
+                black: OnlinePlayer {
+                    name: "Bia".into(),
+                    rating: None,
+                },
+                rated: false,
+                days_per_move: Some(3),
+            },
+            Variant::Standard,
+            None,
+        )
+        .unwrap();
+        let mut game = Game::new(setup);
+        game.handle(
+            Command::Provider(ProviderSnapshot {
+                moves: moves.iter().map(|m| (*m).to_owned()).collect(),
+                clock: None,
+                draw_offer: None,
+                end: None,
+            }),
+            Timestamp::mono(1),
+        )
+        .unwrap();
+        let mut session = Session::new();
+        session.show_online(game, None, true);
+        session
+    }
+
+    #[test]
+    fn online_gestures_become_intents_and_never_write_the_game() {
+        let mut s = online_session(&[]);
+        let events = s.game().events().len();
+        tap(&mut s, "e2", "e4");
+        assert_eq!(
+            s.take_online_intents(),
+            vec![OnlineIntent::Play(Move::new(sq("e2"), sq("e4"), None))]
+        );
+        assert_eq!(s.game().events().len(), events, "só o Provedor escreve");
+        // Lance ilegal: nada sai.
+        tap(&mut s, "e2", "e5");
+        assert!(s.take_online_intents().is_empty());
+        // Desfazer, relógio e Pausa não existem online.
+        s.undo();
+        s.toggle_pause();
+        s.press_clock();
+        assert_eq!(s.game().events().len(), events);
+        assert!(!s.can_press_clock(Color::White));
+    }
+
+    #[test]
+    fn online_board_is_closed_out_of_turn_and_without_a_live_session() {
+        let mut s = online_session(&["e2e4"]);
+        assert!(!s.online_can_move(), "vez do adversário");
+        tap(&mut s, "e7", "e5");
+        assert!(s.take_online_intents().is_empty());
+        let mut s = online_session(&[]);
+        s.set_online_live(false);
+        tap(&mut s, "e2", "e4");
+        assert!(
+            s.take_online_intents().is_empty(),
+            "sem sessão, o tabuleiro não joga"
+        );
+    }
+
+    #[test]
+    fn online_promotion_is_chosen_before_sending() {
+        let moves = [
+            "a2a4", "h7h6", "a4a5", "h6h5", "a5a6", "h5h4", "a6b7", "h4h3",
+        ];
+        let mut s = online_session(&moves);
+        tap(&mut s, "b7", "a8");
+        assert!(s.snapshot().provisional.is_some(), "a escolha da peça abre");
+        assert!(s.take_online_intents().is_empty());
+        s.command(Command::ChoosePromotion {
+            piece: Piece::Knight,
+        });
+        assert_eq!(
+            s.take_online_intents(),
+            vec![OnlineIntent::Play(Move::new(
+                sq("b7"),
+                sq("a8"),
+                Some(Piece::Knight)
+            ))]
+        );
+        assert!(s.snapshot().provisional.is_none());
+    }
+
+    #[test]
+    fn the_sent_move_shows_on_the_board_until_the_provider_answers() {
+        let mut s = online_session(&[]);
+        let mut game = s.game().clone();
+        game.send_move(Move::new(sq("e2"), sq("e4"), None)).unwrap();
+        s.mirror_online(&game, true);
+        let made = s.snapshot().made_move.clone().unwrap();
+        assert_eq!(made.san, "e4");
+        assert!(s.snapshot().history.is_empty(), "fora do histórico");
+        assert!(!s.online_can_move(), "nenhum segundo envio");
+        game.drop_sent_move();
+        s.mirror_online(&game, true);
+        assert!(s.snapshot().made_move.is_none(), "recusado: a peça volta");
+        assert!(s.online_can_move());
     }
 
     /// Mate do pastor, alternando dois toques e arrasto.

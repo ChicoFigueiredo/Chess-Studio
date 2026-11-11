@@ -65,7 +65,9 @@ explorer-stale = Sem conexão com a internet. Mostrando o que estava salvo, de {
 
 ## Estados do Painel
 explorer-fairplay-title = Indisponível durante a Partida
-explorer-fairplay-text = A Trava de fair play desliga o Explorador, os finais e a avaliação em cache enquanto uma Partida competitiva está em andamento. Nada é consultado. Eles voltam quando a Partida terminar.
+explorer-fairplay-text = A Trava de fair play desliga o Explorador, os finais e a avaliação em cache enquanto uma Partida competitiva, ou uma Partida online contra uma pessoa, está em andamento. Nada é consultado. Eles voltam quando a Partida terminar.
+explorer-fairplay-position-title = Posição de uma Partida em andamento
+explorer-fairplay-position-text = Esta Posição é de uma Partida por correspondência ainda em andamento, ou vem dela. A Trava de fair play não consulta nada para ela. Outras Partidas e Posições continuam livres.
 explorer-training-title = Indisponível durante um Exercício
 explorer-training-text = Termine ou saia do Exercício para consultar o Explorador.
 explorer-off-title = O { $provider } está desligado
@@ -123,7 +125,7 @@ explorer-cloud-title = Em cache (Lichess)
 explorer-cloud-none = Sem avaliação em cache para esta Posição.
 explorer-cloud-loading = Consultando o cache do Lichess…
 explorer-cloud-off = O Lichess está desligado. Ligue para ver avaliações já calculadas por outros.
-explorer-cloud-fairplay = Indisponível durante a Partida.
+explorer-cloud-fairplay = Indisponível: Trava de fair play.
 explorer-cloud-limited = O serviço pediu uma pausa. Volta sozinho em instantes.
 explorer-cloud-failed = Não foi possível consultar agora.
 explorer-cloud-depth = Profundidade { $depth }

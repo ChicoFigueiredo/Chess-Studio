@@ -119,10 +119,22 @@ pub enum Action {
     UiZoomIn,
     /// Diminui a Escala da interface (Ctrl+-), até 80%.
     UiZoomOut,
+    /// Início > Nova Partida > Online (Lichess): abre a tela da Partida online.
+    NewGameOnline,
+    /// Busca adversário no Lichess (tempo real ou correspondência).
+    SeekOnline,
+    /// Desafia um jogador do Lichess pelo nome.
+    ChallengeOnline,
+    /// Partida online contra a Engine do Lichess.
+    PlayLichessEngine,
+    /// Minhas Partidas online em andamento (correspondência inclusive).
+    OnlineGames,
+    /// Mostra ou oculta o Painel Partida online.
+    PanelOnline,
 }
 
 impl Action {
-    pub const ALL: [Action; 70] = [
+    pub const ALL: [Action; 76] = [
         Action::Select,
         Action::Adjust,
         Action::Orbit,
@@ -193,6 +205,12 @@ impl Action {
         Action::ToggleRibbonCollapse,
         Action::UiZoomIn,
         Action::UiZoomOut,
+        Action::NewGameOnline,
+        Action::SeekOnline,
+        Action::ChallengeOnline,
+        Action::PlayLichessEngine,
+        Action::OnlineGames,
+        Action::PanelOnline,
     ];
 
     /// Identificador estável (gravado no banco; nunca muda).
@@ -262,6 +280,12 @@ impl Action {
             Action::OpenOpenings => "open-openings",
             Action::OpenExplorer => "open-explorer",
             Action::ImportOnline => "import-online",
+            Action::NewGameOnline => "new-game-online",
+            Action::SeekOnline => "seek-online",
+            Action::ChallengeOnline => "challenge-online",
+            Action::PlayLichessEngine => "play-lichess-engine",
+            Action::OnlineGames => "online-games",
+            Action::PanelOnline => "panel-online",
             Action::ExportPgn => "export-pgn",
             Action::OpenTraining => "open-training",
             Action::OpenPalette => "open-palette",

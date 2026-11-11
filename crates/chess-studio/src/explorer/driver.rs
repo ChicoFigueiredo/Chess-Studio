@@ -11,6 +11,7 @@ use super::model::{
     Authorization, CloudView, EndgameTable, Lock, Notice, OpeningsTable, Source, Tab,
     covered_by_tablebase, notice_for,
 };
+use crate::fair_play::{Computation, FairPlay, Subject};
 use crate::net_service::NetService;
 use chess_core::{CanonicalPosition, Color};
 use chess_net::{ProviderId, Timestamp};
@@ -33,6 +34,22 @@ pub struct Input<'a> {
     /// Por que o Painel não pode consultar nada, se for o caso.
     pub lock: Option<Lock>,
     pub authorization: Authorization,
+    /// A Posição com a Partida de onde vem (Trava de fair play); `None`: só o FEN.
+    pub subject: Option<&'a Subject>,
+}
+
+/// A Trava de fair play do app para `computation` sobre o que a interface mostra.
+pub(crate) fn fair_lock(
+    fair: &FairPlay,
+    computation: Computation,
+    subject: Option<&Subject>,
+    fen: &str,
+) -> Option<Lock> {
+    let checked = match subject {
+        Some(subject) => fair.check(computation, subject),
+        None => fair.check_fen(computation, fen),
+    };
+    checked.err().map(Lock::from)
 }
 
 /// O que a aba Aberturas mostra para uma fonte online.
@@ -150,6 +167,18 @@ impl Explorer {
         }
     }
 
+    /// A Trava, consultada pelo próprio serviço: a que o Painel já sabe (`input.lock`) ou a do
+    /// ponto único do app (`NetService::fair_play`), mesmo que o Painel não saiba de nada.
+    fn locked(&self, input: &Input<'_>, service: &NetService) -> Option<Lock> {
+        let computation = match self.tab {
+            Tab::Openings => Computation::Explorer,
+            Tab::Endgames => Computation::Endgames,
+        };
+        input
+            .lock
+            .or_else(|| fair_lock(service.fair_play(), computation, input.subject, input.fen))
+    }
+
     /// Chame a cada quadro. Não bloqueia: recolhe o que chegou, cancela o que ficou velho e
     /// só pede quando a Posição parou.
     pub fn drive(&mut self, input: &Input<'_>, service: &NetService) {
@@ -161,7 +190,7 @@ impl Explorer {
         );
         self.retry_after_pause(input);
         // A Trava vale antes de tudo: nem um pedido sai, e o que estava a caminho é cancelado.
-        if input.lock.is_some() {
+        if self.locked(input, service).is_some() {
             self.stand_down();
             return;
         }
@@ -242,7 +271,7 @@ impl Explorer {
     /// A aba Aberturas para uma fonte online.
     pub fn openings_view(&self, input: &Input<'_>, service: &NetService) -> OpeningsView {
         let provider = self.source.provider().unwrap_or(ProviderId::Lichess);
-        if let Some(lock) = input.lock {
+        if let Some(lock) = self.locked(input, service) {
             return OpeningsView::Notice(lock_notice(lock));
         }
         if !service.is_enabled(provider) {
@@ -274,7 +303,7 @@ impl Explorer {
 
     /// A aba Finais.
     pub fn endgames_view(&self, input: &Input<'_>, service: &NetService) -> EndgamesView {
-        if let Some(lock) = input.lock {
+        if let Some(lock) = self.locked(input, service) {
             return EndgamesView::Notice(lock_notice(lock));
         }
         let pieces = super::model::pieces_in_fen(input.fen);
@@ -301,9 +330,10 @@ impl Explorer {
     }
 }
 
-fn lock_notice(lock: Lock) -> Notice {
+pub(crate) fn lock_notice(lock: Lock) -> Notice {
     match lock {
         Lock::Competitive => Notice::FairPlay,
+        Lock::OnlinePosition => Notice::FairPlayPosition,
         Lock::Training => Notice::Training,
     }
 }
@@ -345,15 +375,20 @@ impl CloudDriver {
         self.settle.reset();
     }
 
-    /// Recolhe, cancela e pede (quando a Posição parou) e devolve o que mostrar.
+    /// Recolhe, cancela e pede (quando a Posição parou) e devolve o que mostrar. A Trava de
+    /// fair play do app é consultada aqui, antes de qualquer pedido.
     pub fn drive(
         &mut self,
         base: &CanonicalPosition,
         now: Instant,
         at: Timestamp,
         lock: Option<Lock>,
+        subject: Option<&Subject>,
         service: &NetService,
     ) -> CloudRow {
+        let fen = base.to_fen();
+        let lock =
+            lock.or_else(|| fair_lock(service.fair_play(), Computation::CloudEval, subject, &fen));
         self.lookup.poll();
         if let LookupState::Failed(ProviderError::RateLimited { until, .. }) = self.lookup.state()
             && at >= *until
@@ -368,7 +403,6 @@ impl CloudDriver {
             self.retry();
             return CloudRow::Notice(Notice::ProviderOff(ProviderId::Lichess));
         }
-        let fen = base.to_fen();
         if self.lookup.key() != Some(fen.as_str()) {
             self.lookup.clear();
         }
@@ -482,6 +516,7 @@ mod tests {
             at: env.clock.now(),
             lock: None,
             authorization: Authorization::lichess_now(&env.service),
+            subject: None,
         }
     }
 
@@ -932,7 +967,7 @@ mod tests {
         let mut row = None;
         for _ in 0..2000 {
             let now = env.t0 + Duration::from_millis(ms);
-            row = Some(driver.drive(base, now, env.clock.now(), None, &env.service));
+            row = Some(driver.drive(base, now, env.clock.now(), None, None, &env.service));
             if !driver.is_busy() && ms > 400 {
                 break;
             }
@@ -981,6 +1016,7 @@ mod tests {
             env.t0 + Duration::from_secs(5),
             T0,
             Some(Lock::Competitive),
+            None,
             &env.service,
         );
         assert_eq!(row, CloudRow::Notice(Notice::FairPlay));

@@ -312,13 +312,32 @@ Enquanto uma Partida competitiva está em andamento (Simulação FIDE ou Elimina
 - o **Explorador**, nas Aberturas e nos Finais;
 - as **avaliações prontas** do Painel Análise;
 - a **importação online** e a abertura da Biblioteca;
-- a análise por Engine, pela interface.
+- a análise por Engine, a barra de avaliação, a dica e as marcas do HUD que calculam;
+- a estatística da sua Biblioteca para a Posição (Explorador e Painel Aberturas).
 
 O Painel Explorador não some. Ele diz **Indisponível durante a Partida** e não consulta nada. O indicador da barra de status mostra **Trava de fair play**.
 
-Para o Explorador, os finais e as avaliações prontas, a trava vale também na camada que faz os pedidos à rede, não só na tela. Por isso um Painel escondido ou um atalho não a contorna. Ela cai quando a Partida termina.
+A trava vale nos próprios serviços, não só na tela: a análise, a dica, a estatística da Biblioteca, o Explorador, os finais e as avaliações prontas perguntam a ela antes de calcular. Por isso um Painel escondido ou um atalho não a contorna. Ela cai quando a Partida termina.
 
-Quando jogar online chegar, a trava valerá também em toda Partida online contra uma pessoa, inclusive por correspondência. Ela só cairá quando o Lichess confirmar o fim.
+Numa **Partida online contra uma pessoa** a trava também vale, e só cai quando o Lichess confirma o fim (abandonar ou fechar o Painel não a soltam). Continuam os Auxílios que só mostram regras: destinos legais, último Lance e coordenadas. Contra a Engine do Lichess a trava não liga.
+
+Na **correspondência**, com a Partida fora do tabuleiro, a trava vale para ela e para as Posições dela: a Posição atual, as que estão a até dois Lances dela (com as mesmas peças e peões) e tudo o que se joga a partir delas, venha de onde vier. As outras Partidas e Posições ficam livres; o Explorador diz **Posição de uma Partida em andamento** quando for o caso.
+
+## Jogar no Lichess
+
+Precisa do Lichess ligado e da **Conexão do jogador** autorizada (a de Engine nunca joga como pessoa). Sem ela, a tela explica e leva à Central.
+
+1. Início > Nova Partida > **Online (Lichess)**, ou o grupo **Online (Lichess)** do Início: **Buscar adversário**, **Desafiar**, **Contra a Engine do Lichess** e **Partidas em andamento**.
+2. **Buscar adversário:** escolha o ritmo (rápida, clássica ou correspondência em dias por Lance) e se vale rating. O app mostra **Procurando adversário** com o tempo de espera e **Cancelar busca**. Blitz só por desafio direto.
+3. **Desafiar:** digite o nome no Lichess, o ritmo (blitz inclusive), a cor e o rating. O desafio fica **Aguardando resposta** até ser aceito ou recusado; dá para cancelar.
+4. **Desafios recebidos:** aparecem num aviso discreto no canto (nunca durante outra Partida competitiva) e na aba **Desafiar**, com **Aceitar** e **Recusar** (com o motivo). Variante que não é xadrez padrão é recusada.
+5. **Contra a Engine do Lichess:** nível de 1 a 8, cor e ritmo.
+
+Durante a Partida, jogue no tabuleiro 3D ou 2D com os gestos de sempre. O seu Lance fica no destino com **Enviando …** no Painel **Partida online** até o Lichess confirmar; se ele recusar, a peça volta com a explicação. Os relógios do Painel Relógio e do relógio 3D são os do Lichess. No Painel: **Propor empate**, aceitar ou recusar a proposta do adversário, **Abandonar** (com confirmação), **Abortar** no começo e **Reclamar vitória** quando o adversário sair e o Lichess permitir. Se a internet cair, o selo mostra **Reconectando** e nenhum Lance é reenviado; ao voltar, vale o que o Lichess diz. Não há desfazer nem as Políticas de arbitragem locais.
+
+No fim, o resultado e o motivo são os do Lichess. A Partida fica na Biblioteca com a Origem (**Partida online · Lichess · lichess.org/…**) e só então **Analisar** fica disponível.
+
+**Correspondência:** **Partidas em andamento** lista de quem é a vez e quanto falta; **Abrir** continua a Partida pelo que o Lichess diz. Ao abrir o app, nada sai sozinho: um aviso oferece **Atualizar**.
 
 ## Onde ficam os segredos
 
@@ -389,7 +408,6 @@ Apagar uma Conexão ou um Perfil local apaga primeiro a autorização guardada. 
 
 Estas coisas **ainda não existem** no app. Os cartões e os textos da Central podem citá-las, mas nenhuma funciona hoje.
 
-- **Jogar Partidas online** no Lichess (buscar adversário, desafiar, ser desafiado, correspondência).
 - **Engine online**: jogar com uma Engine no Lichess. A Central já deixa criar uma autorização separada para isso, mas nada a usa ainda.
 - **PlayStrategy** e **FICS**.
 - **Engine remota** para análise.

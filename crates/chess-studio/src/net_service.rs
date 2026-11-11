@@ -9,21 +9,24 @@
 //! - acompanha o Perfil local ativo (`Net::set_active_profile`): consentimento e cache são do
 //!   Perfil local;
 //! - liga a Trava de fair play ([`FairPlayGuard`]) enquanto uma Partida competitiva está em
-//!   andamento (por ora o único gatilho; a Partida online chega na etapa 4);
+//!   andamento; as Partidas online contra pessoa seguram a mesma trava pela sessão delas;
+//! - cria o ponto único da trava no app ([`FairPlay`]), sobre a mesma `FairPlayGuard`: todo
+//!   serviço que calcula (rede ou não) o consulta;
 //! - resume o estado da rede para a barra de status ([`NetSummary`]);
 //! - oferece [`NetService::ensure_enabled`], a porta de entrada dos recursos que precisam de um
 //!   Provedor desligado: abre o diálogo "Ligar <Provedor>?" (`provider_consent`).
 //!
 //! Só Apresentação e serviço (ADR-0001): nada aqui toca a Partida.
 
+use crate::fair_play::FairPlay;
 use crate::local_profiles::LocalProfiles;
 use crate::provider_consent::ConsentDialog;
 use crate::secrets::{self, OpenedVault};
 use crate::session::Session;
 use bevy::prelude::*;
 use chess_net::{
-    Clock, ConnectionId, LocalProfileId, Net, NetConfig, NetError, NetworkStatus, ProviderId,
-    SystemClock, Timestamp,
+    Clock, ConnectionId, FairPlayHold, LocalProfileId, Net, NetConfig, NetError, NetworkStatus,
+    ProviderId, SystemClock, Timestamp,
 };
 use chess_providers::{ChessCom, Lichess, LichessAuth};
 use chess_store::ConnectionRole;
@@ -123,6 +126,13 @@ pub struct NetService {
     /// ativo. Ver [`NetService::authorized_connection`].
     authorized:
         std::sync::Mutex<std::collections::HashMap<(ProviderId, ConnectionRole), ConnectionId>>,
+    /// A Trava de fair play do app, sobre a `FairPlayGuard` desta rede.
+    fair_play: FairPlay,
+    /// O relógio da rede (o do sistema; o falso nos testes).
+    clock: Arc<dyn Clock>,
+    /// A Partida competitiva local segura a trava como as Partidas online: uma
+    /// [`FairPlayHold`] própria, que nunca solta a de outra Partida (e vice-versa).
+    competitive_hold: Mutex<Option<FairPlayHold>>,
 }
 
 impl std::fmt::Debug for NetService {
@@ -199,10 +209,13 @@ impl NetService {
             error,
             real,
         } = opened;
+        let fair_play = FairPlay::new(net.fair_play_guard().clone());
         Self {
             lichess: Lichess::new(net.clone(), clock.clone()),
             chesscom: ChessCom::new(net.clone(), clock.clone()),
-            auth: LichessAuth::new(net.clone(), vault.clone(), clock),
+            auth: LichessAuth::new(net.clone(), vault.clone(), clock.clone()),
+            clock,
+            competitive_hold: Mutex::new(None),
             net,
             persistent,
             vault,
@@ -215,7 +228,18 @@ impl NetService {
             })),
             _scratch: scratch,
             authorized: std::sync::Mutex::default(),
+            fair_play,
         }
+    }
+
+    /// O relógio da rede (o mesmo que os adaptadores usam).
+    pub fn clock(&self) -> Arc<dyn Clock> {
+        self.clock.clone()
+    }
+
+    /// O ponto único da Trava de fair play no app (o mesmo recurso [`FairPlay`] do Bevy).
+    pub fn fair_play(&self) -> &FairPlay {
+        &self.fair_play
     }
 
     /// O Cofre dos segredos das Conexões.
@@ -328,7 +352,7 @@ impl NetService {
 
     /// Resumo do estado da rede (barato: pode ser lido a cada quadro).
     pub fn summary(&self) -> NetSummary {
-        NetSummary::from_status(&self.net.status(), self.net.fair_play_guard().is_engaged())
+        NetSummary::from_status(&self.net.status(), self.fair_play.any())
     }
 
     pub fn is_enabled(&self, provider: ProviderId) -> bool {
@@ -348,18 +372,20 @@ impl NetService {
         }
     }
 
-    /// Liga a Trava de fair play enquanto `competitive_in_progress` e solta quando acaba. Só
-    /// mexe na trava na transição, para não pisar no gatilho futuro da Partida online.
+    /// Segura a Trava de fair play enquanto `competitive_in_progress` e solta quando acaba.
+    /// É uma [`FairPlayHold`] própria, como a de cada Partida online: o fim da Partida
+    /// competitiva local nunca solta a trava de uma Partida online em andamento, e o fim de uma
+    /// Partida online nunca solta a da competitiva.
     pub fn follow_competitive(&self, competitive_in_progress: bool, was_engaged: &mut bool) {
         if competitive_in_progress == *was_engaged {
             return;
         }
-        let guard = self.net.fair_play_guard();
-        if competitive_in_progress {
-            guard.engage(COMPETITIVE_REASON);
-        } else {
-            guard.release();
-        }
+        let mut hold = self
+            .competitive_hold
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *hold =
+            competitive_in_progress.then(|| self.net.fair_play_guard().hold(COMPETITIVE_REASON));
         *was_engaged = competitive_in_progress;
     }
 
@@ -407,7 +433,8 @@ impl Plugin for NetServicePlugin {
                 .map(NetService::db_path_beside)
                 .as_deref(),
         );
-        app.insert_resource(service)
+        app.insert_resource(service.fair_play().clone())
+            .insert_resource(service)
             .add_systems(Update, follow_app_state);
     }
 }
@@ -516,6 +543,33 @@ mod tests {
         service.net().fair_play_guard().engage("outro gatilho");
         service.follow_competitive(false, &mut engaged);
         assert!(service.net().fair_play_guard().is_engaged());
+    }
+
+    #[test]
+    fn the_local_competitive_game_and_an_online_game_never_release_each_others_lock() {
+        let service = NetService::in_memory();
+        let guard = service.net().fair_play_guard().clone();
+        let mut engaged = false;
+        // Competitiva local começa; uma Partida online contra pessoa começa por cima.
+        service.follow_competitive(true, &mut engaged);
+        let online = guard.hold("Partida online contra pessoa");
+        // A competitiva termina: a online continua segurando.
+        service.follow_competitive(false, &mut engaged);
+        assert!(
+            guard.is_engaged(),
+            "a Partida online ainda está em andamento"
+        );
+        assert!(service.fair_play().everything_locked());
+        // Outra competitiva começa; a online termina: a competitiva continua segurando.
+        service.follow_competitive(true, &mut engaged);
+        drop(online);
+        assert!(
+            guard.is_engaged(),
+            "a competitiva local ainda está em andamento"
+        );
+        service.follow_competitive(false, &mut engaged);
+        assert!(!guard.is_engaged(), "só cai quando as duas terminaram");
+        assert!(!service.fair_play().any());
     }
 
     #[test]

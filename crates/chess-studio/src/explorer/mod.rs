@@ -27,6 +27,7 @@ pub use model::{Authorization, Lock, fmt_count, minutes_until};
 
 use crate::actions::ActionRequested;
 use crate::dock::{PanelAccess, PanelDef, ids};
+use crate::fair_play::{Computation, FairPlay, Subject};
 use crate::i18n::I18n;
 use crate::net_service::NetService;
 use crate::notation;
@@ -42,8 +43,9 @@ use chess_input::controls::Action;
 use chess_openings::OpeningBook;
 use chess_store::{Pace, ProfileId, Store};
 use driver::{EndgamesView, OpeningsView};
+pub(crate) use model::Notice;
 pub(crate) use model::Source;
-use model::{Notice, OpeningsTable, Tab};
+use model::{OpeningsTable, Tab};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 pub(crate) use view::UiAction;
@@ -76,6 +78,8 @@ struct LibraryCache {
     refreshed: Option<Instant>,
     table: Option<OpeningsTable>,
     error: Option<String>,
+    /// A Trava de fair play recusou a estatística desta Posição.
+    locked: Option<Lock>,
 }
 
 pub struct ExplorerPlugin;
@@ -160,14 +164,22 @@ fn shown(session: &Session) -> Option<Shown> {
     })
 }
 
-fn lock_of(session: &Session, training: bool) -> Option<Lock> {
+/// A Posição mostrada como a Trava de fair play a vê (só montada quando há alguma trava:
+/// sem trava, o FEN basta e nada é recalculado a cada quadro).
+fn subject_of(session: &Session, fair: &FairPlay) -> Option<Subject> {
+    fair.any().then(|| Subject::shown(session)).flatten()
+}
+
+fn lock_of(session: &Session, training: bool, fair: &FairPlay) -> Option<Lock> {
     if session.competitive_in_progress() {
-        Some(Lock::Competitive)
-    } else if training {
-        Some(Lock::Training)
-    } else {
-        None
+        return Some(Lock::Competitive);
     }
+    let subject = subject_of(session, fair);
+    let fen = shown(session).map(|s| s.fen).unwrap_or_default();
+    if let Some(lock) = driver::fair_lock(fair, Computation::Explorer, subject.as_ref(), &fen) {
+        return Some(lock);
+    }
+    training.then_some(Lock::Training)
 }
 
 fn explorer_panel(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
@@ -211,7 +223,8 @@ impl ExplorerUi {
         training: bool,
         actions: &mut Vec<UiAction>,
     ) {
-        let lock = lock_of(session, training);
+        let fair = net.fair_play();
+        let lock = lock_of(session, training, fair);
         let Some(here) = shown(session) else {
             return;
         };
@@ -219,12 +232,14 @@ impl ExplorerUi {
         let now = Instant::now();
         let at = NetService::now();
         let authorization = Authorization::lichess_now(net);
+        let subject = subject_of(session, fair);
         let input = Input {
             fen: &here.fen,
             now,
             at,
             lock,
             authorization,
+            subject: subject.as_ref(),
         };
         if self.demo.is_none() {
             self.explorer.drive(&input, net);
@@ -234,10 +249,7 @@ impl ExplorerUi {
         }
         // Trava: o Painel só explica e nada é consultado (o serviço também recusaria).
         if let Some(lock) = lock {
-            let notice = match lock {
-                Lock::Competitive => Notice::FairPlay,
-                Lock::Training => Notice::Training,
-            };
+            let notice = driver::lock_notice(lock);
             view::notice(ui, i18n, &notice, false, at, actions);
             return;
         }
@@ -396,6 +408,7 @@ impl ExplorerUi {
                 ui,
                 i18n,
                 session,
+                (net.fair_play(), input.subject),
                 handle,
                 here,
                 selected.as_deref(),
@@ -433,12 +446,19 @@ impl ExplorerUi {
         ui: &mut egui::Ui,
         i18n: &I18n,
         session: &Session,
+        (fair, subject): (&FairPlay, Option<&Subject>),
         handle: Option<&PersistenceHandle>,
         here: &Shown,
         selected: Option<&str>,
         actions: &mut Vec<UiAction>,
     ) {
-        self.library.refresh(session, handle, here, &mut self.local);
+        self.library
+            .refresh(session, (fair, subject), handle, here, &mut self.local);
+        if let Some(lock) = self.library.locked {
+            let notice = driver::lock_notice(lock);
+            view::notice(ui, i18n, &notice, false, NetService::now(), actions);
+            return;
+        }
         if let Some(error) = &self.library.error {
             view::muted(
                 ui,
@@ -521,8 +541,8 @@ impl ExplorerUi {
     }
 
     fn show(&mut self, session: &mut Session, san: &str) {
-        // A Partida competitiva nunca é tocada, nem para mostrar variante (ADR-0001).
-        if session.competitive_in_progress() {
+        // A Partida competitiva (ou online) nunca é tocada, nem para mostrar variante (ADR-0001).
+        if session.competitive_in_progress() || session.is_online() {
             return;
         }
         let ply = notation::current_ply(session);
@@ -542,10 +562,21 @@ impl LibraryCache {
     fn refresh(
         &mut self,
         session: &Session,
+        (fair, subject): (&FairPlay, Option<&Subject>),
         handle: Option<&PersistenceHandle>,
         here: &Shown,
         local: &mut Option<Mutex<Store>>,
     ) {
+        // A Trava vale a cada quadro, antes do cache: ligou agora, some na hora.
+        let fen_subject = Subject::position(&here.position);
+        let subject = subject.unwrap_or(&fen_subject);
+        if let Err(locked) = fair.check(Computation::LibraryStats, subject) {
+            self.locked = Some(Lock::from(locked));
+            self.table = None;
+            self.key = None;
+            return;
+        }
+        self.locked = None;
         let key = (session.epoch(), here.ply, here.total, here.fen.clone());
         let due = self
             .refreshed
@@ -558,8 +589,17 @@ impl LibraryCache {
         let opening = crate::openings::opening_at(OpeningBook::embedded(), session, here.ply)
             .map(|o| (o.eco, o.name));
         let stats = with_store(local, handle, |store, profile| {
-            store.opening_stats(profile, &here.fen)
+            crate::fair_play::opening_stats(fair, subject, store, profile, &here.fen)
         });
+        let stats = match stats {
+            Some(Ok(stats)) => Some(stats),
+            Some(Err(locked)) => {
+                self.locked = Some(Lock::from(locked));
+                self.table = None;
+                return;
+            }
+            None => None,
+        };
         match stats {
             Some(Ok(stats)) => {
                 self.error = None;
@@ -629,7 +669,14 @@ pub fn cloud_prepare(world: &mut World, session: &Session) -> CloudPrepared {
     let training = world
         .get_resource::<TrainingUi>()
         .is_some_and(TrainingUi::session_swapped);
-    let lock = lock_of(session, training);
+    let Some(fair) = world.get_resource::<FairPlay>().cloned() else {
+        return CloudPrepared {
+            row: None,
+            white_to_move: true,
+        };
+    };
+    let lock = lock_of(session, training, &fair);
+    let subject = subject_of(session, &fair);
     let Some(here) = shown(session).filter(|_| world.contains_resource::<ExplorerUi>()) else {
         return CloudPrepared {
             row: None,
@@ -642,11 +689,14 @@ pub fn cloud_prepare(world: &mut World, session: &Session) -> CloudPrepared {
             return Some(row);
         }
         let net = world.get_resource::<NetService>()?;
-        Some(
-            state
-                .cloud
-                .drive(&here.position, Instant::now(), NetService::now(), lock, net),
-        )
+        Some(state.cloud.drive(
+            &here.position,
+            Instant::now(),
+            NetService::now(),
+            lock,
+            subject.as_ref(),
+            net,
+        ))
     });
     CloudPrepared { row, white_to_move }
 }
@@ -758,10 +808,31 @@ mod tests {
     #[test]
     fn the_lock_follows_the_game_and_the_training_exercise() {
         let mut session = Session::new();
-        assert_eq!(lock_of(&session, false), None);
-        assert_eq!(lock_of(&session, true), Some(Lock::Training));
+        assert_eq!(
+            lock_of(
+                &session,
+                false,
+                &FairPlay::new(chess_net::FairPlayGuard::new())
+            ),
+            None
+        );
+        assert_eq!(
+            lock_of(
+                &session,
+                true,
+                &FairPlay::new(chess_net::FairPlayGuard::new())
+            ),
+            Some(Lock::Training)
+        );
         session = competitive();
         // A competitiva vence o Treino na explicação.
-        assert_eq!(lock_of(&session, true), Some(Lock::Competitive));
+        assert_eq!(
+            lock_of(
+                &session,
+                true,
+                &FairPlay::new(chess_net::FairPlayGuard::new())
+            ),
+            Some(Lock::Competitive)
+        );
     }
 }

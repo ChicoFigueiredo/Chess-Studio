@@ -185,6 +185,8 @@ pub struct ActionEnv<'w> {
     persistence: Option<Res<'w, crate::persistence::PersistenceHandle>>,
     library: Option<ResMut<'w, crate::library_ui::LibraryUi>>,
     pub(crate) palette: ResMut<'w, crate::palette::PaletteState>,
+    online_ui: Option<ResMut<'w, crate::online::OnlineUi>>,
+    online: Option<Res<'w, crate::online::OnlineService>>,
 }
 
 fn presentation_id(p: Presentation) -> PresentationId {
@@ -209,7 +211,8 @@ impl ActionEnv<'_> {
         ActionContext {
             competitive: self.session.is_competitive(),
             competitive_in_progress: self.session.competitive_in_progress(),
-            game_running: snapshot.outcome.is_none(),
+            // Partida online abortada não tem resultado, mas acabou (PO-06).
+            game_running: !snapshot.is_over(),
             can_undo: snapshot.can_undo,
             can_redo: snapshot.can_redo,
             has_clock: snapshot.clock.is_some(),
@@ -238,6 +241,11 @@ impl ActionEnv<'_> {
             panels_hidden: self.hidden.is_hidden(),
             resumable_game: self.resumable.as_ref().is_some_and(|r| r.0.is_some()),
             pgn_blocked: self.scoresheet.as_ref().is_some_and(|s| s.hides_notation()),
+            online: self.session.is_online(),
+            online_realtime_in_progress: self
+                .online
+                .as_ref()
+                .is_some_and(|o| o.with(|play| play.realtime_in_progress())),
         }
     }
 
@@ -273,7 +281,19 @@ impl ActionEnv<'_> {
             Action::OpenPalette => self.palette.toggle(),
             Action::Undo => self.session.undo(),
             Action::Redo => self.session.command(Command::Redo),
+            // Online, abandonar pede confirmação (o Lichess registra a derrota).
+            Action::Resign if self.session.is_online() => {
+                if let Some(ui) = self.online_ui.as_mut() {
+                    ui.confirm_resign = true;
+                }
+            }
             Action::Resign => self.session.resign_side_to_move(),
+            Action::NewGameOnline | Action::SeekOnline => {
+                self.open_online(crate::online::Tab::Seek)
+            }
+            Action::ChallengeOnline => self.open_online(crate::online::Tab::Challenge),
+            Action::PlayLichessEngine => self.open_online(crate::online::Tab::Engine),
+            Action::OnlineGames => self.open_online(crate::online::Tab::Playing),
             Action::OfferDraw => {
                 let side = self.session.snapshot().side_to_move;
                 self.session.command(Command::OfferDraw { side });
@@ -479,6 +499,14 @@ impl ActionEnv<'_> {
         );
         tools.export(&self.session, &notes, &dir);
         self.show_panel(crate::dock::ids::REVIEW);
+    }
+
+    /// Abre a tela da Partida online numa aba (a Paleta fecha: a tela é modal).
+    fn open_online(&mut self, tab: crate::online::Tab) {
+        if let Some(ui) = self.online_ui.as_mut() {
+            ui.open_at(tab);
+        }
+        self.palette.close();
     }
 
     fn toggle_panel(&mut self, id: &str) {
@@ -975,6 +1003,7 @@ mod tests {
             ids::SCORESHEET,
             ids::BOARD2D,
             "Engines",
+            crate::online::PANEL_ID,
         ];
         for id in ids {
             assert!(

@@ -98,10 +98,22 @@ impl Authorization {
 /// Por que o Painel não consulta nada.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Lock {
-    /// Partida competitiva em andamento (Trava de fair play).
+    /// Partida competitiva, ou Partida online contra pessoa, em andamento (Trava de fair play).
     Competitive,
+    /// A Posição é de uma Partida por correspondência em andamento (ou vem dela): a Trava de
+    /// fair play vale para ela; as outras Posições seguem livres (PO-13).
+    OnlinePosition,
     /// Exercício de Treino na tela.
     Training,
+}
+
+impl From<crate::fair_play::FairPlayLocked> for Lock {
+    fn from(locked: crate::fair_play::FairPlayLocked) -> Self {
+        match locked.scope {
+            crate::fair_play::LockScope::ThisPosition => Lock::OnlinePosition,
+            _ => Lock::Competitive,
+        }
+    }
 }
 
 // --- Números e textos --------------------------------------------------------------------
@@ -368,6 +380,8 @@ impl OpeningsTable {
 pub enum Notice {
     /// Partida competitiva em andamento (a Trava de fair play está ligada).
     FairPlay,
+    /// A Posição é de uma Partida por correspondência em andamento (Trava de fair play).
+    FairPlayPosition,
     /// Exercício de Treino na tela.
     Training,
     /// O Provedor está desligado: oferece ligar.

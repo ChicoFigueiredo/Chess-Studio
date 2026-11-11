@@ -70,6 +70,8 @@ pub(crate) fn reason_key(reason: EndReason) -> &'static str {
         EndReason::SecondIllegalMoveDraw => "game-reason-second-illegal-draw",
         EndReason::EliminatedByInfraction => "game-reason-eliminated",
         EndReason::EliminatedByInfractionDraw => "game-reason-eliminated-draw",
+        EndReason::Disconnection => "game-reason-disconnection",
+        EndReason::EndedByProvider => "game-reason-ended-by-provider",
         _ => "game-reason-other",
     }
 }

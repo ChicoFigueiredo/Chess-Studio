@@ -192,7 +192,8 @@ impl GestureInterpreter {
                 square,
                 modifiers,
             } => {
-                if snapshot.policy == PolicyKind::Assisted {
+                // Online não há Toque intencional: valem as regras do Provedor (CX-19).
+                if matches!(snapshot.policy, PolicyKind::Assisted | PolicyKind::Online) {
                     self.pointer_down(button, square, snapshot)
                 } else {
                     self.competitive_down(button, square, modifiers, snapshot)

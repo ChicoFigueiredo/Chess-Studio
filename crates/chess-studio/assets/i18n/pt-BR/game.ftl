@@ -28,6 +28,8 @@ game-reason-second-illegal-draw = Segundo Lance ilegal, sem material para o mate
 game-reason-eliminated = Eliminação Imediata: Infração concluída
 game-reason-eliminated-draw = Eliminação Imediata, sem material para o mate
 game-reason-other = Partida encerrada
+game-reason-disconnection = O adversário saiu da Partida
+game-reason-ended-by-provider = Encerrada pelo Lichess
 
 button-undo = Desfazer
 button-redo = Refazer

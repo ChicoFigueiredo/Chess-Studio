@@ -31,6 +31,7 @@ mod engine_manager;
 mod engine_wizard;
 mod eval_bar;
 mod explorer;
+mod fair_play;
 mod fen_pgn;
 mod fide_panel;
 mod focus;
@@ -48,6 +49,7 @@ mod local_profiles;
 mod net_service;
 mod new_game;
 mod notation;
+mod online;
 mod online_import;
 mod online_import_ui;
 mod openings;
@@ -127,7 +129,8 @@ fn capture_script() -> capture::CaptureScript {
 /// A captura mostra o invólucro da interface: `--panel`, `--profile` ou qualquer opção que só
 /// faz sentido com ele (Ribbon, KeyTips, bastidores, Opções, Paleta, barra de avaliação).
 fn shell_requested() -> bool {
-    const FLAGS: [&str; 10] = [
+    const FLAGS: [&str; 11] = [
+        "--online-demo",
         "--backstage-page",
         "--panel",
         "--keytips",
@@ -257,6 +260,7 @@ fn main() {
     app.add_plugins(library_ui::LibraryPlugin);
     app.add_plugins(openings::OpeningsPlugin);
     app.add_plugins(explorer::ExplorerPlugin);
+    app.add_plugins(online::OnlinePlugin);
     app.add_plugins(scoresheet::ScoresheetPlugin);
     app.add_plugins(ui_theme::UiThemePlugin);
     app.add_plugins(options::OptionsPlugin);
@@ -324,6 +328,7 @@ fn main() {
                     {
                         scene.ui.scrolled(pixels);
                     }
+                    app.insert_resource(scene.service.fair_play().clone());
                     app.insert_resource(scene.service);
                     app.insert_resource(scene.ui);
                 }
