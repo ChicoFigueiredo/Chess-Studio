@@ -1,0 +1,2 @@
+importacao: 10.22 ms/quadro (98 quadros/s)
+carregamento da cena: 0.79 s

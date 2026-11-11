@@ -147,6 +147,33 @@ fn the_same_game_from_two_providers_is_one_game_with_two_origins() {
 }
 
 #[test]
+fn playstrategy_games_carry_their_own_origin_and_are_found_by_the_remote_id() {
+    assert_eq!(
+        ImportSource::from_provider_id("playstrategy"),
+        Some(ImportSource::PlayStrategy)
+    );
+    assert_eq!(
+        ImportSource::PlayStrategy.license_code(),
+        "playstrategy-terms"
+    );
+    let mut store = Store::open_in_memory().unwrap();
+    let text = "[Event \"Rated Rapid game\"]\n[Site \"https://playstrategy.org/Ps4rT9xQ\"]\n\
+                [White \"ana\"]\n[Black \"jorge\"]\n[Date \"2026.11.05\"]\n[Result \"1-0\"]\n\n\
+                1. e4 e5 1-0\n\n";
+    let mut options = opts(ImportSource::PlayStrategy, "ps");
+    options.provenance.mode = ImportMode::Api;
+    store.import_pgn_with(ME, text, &options).unwrap();
+    let again = store.import_pgn_with(ME, text, &options).unwrap();
+    assert_eq!((again.imported.len(), again.duplicates), (0, 1));
+    let found = store
+        .imported_by_remote_id(ME, "playstrategy", "Ps4rT9xQ")
+        .unwrap();
+    assert!(found.is_some(), "achada pelo id remoto do PlayStrategy");
+    let list = store.list_imported(&ImportedQuery::default()).unwrap();
+    assert_eq!(list[0].provider.as_deref(), Some("playstrategy"));
+}
+
+#[test]
 fn same_names_but_different_games_are_not_merged() {
     let mut store = Store::open_in_memory().unwrap();
     let text = [

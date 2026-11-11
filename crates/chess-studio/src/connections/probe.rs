@@ -72,6 +72,7 @@ impl std::fmt::Debug for TestState {
 pub(crate) enum Running {
     Lichess(Query<LichessProfile>),
     ChessCom(Query<ChessComProfile>),
+    PlayStrategy(Query<LichessProfile>),
     Fide(Query<FideRating>),
 }
 
@@ -88,6 +89,9 @@ pub(crate) fn start(
         }
         (ProviderId::ChessCom, Target::Name(name)) => {
             Ok(Running::ChessCom(service.chesscom().profile(name)))
+        }
+        (ProviderId::PlayStrategy, Target::Name(name)) => {
+            Ok(Running::PlayStrategy(service.playstrategy().profile(name)))
         }
         (ProviderId::Fide, Target::FideId(id)) => match id.trim().parse::<u64>() {
             Ok(id) => Ok(Running::Fide(service.lichess().fide_player(id))),
@@ -115,6 +119,9 @@ impl Running {
                 .try_take()
                 .map(|r| report(r, via, now, |p| p.username.clone())),
             Self::ChessCom(q) => q
+                .try_take()
+                .map(|r| report(r, via, now, |p| p.username.clone())),
+            Self::PlayStrategy(q) => q
                 .try_take()
                 .map(|r| report(r, via, now, |p| p.username.clone())),
             Self::Fide(q) => q

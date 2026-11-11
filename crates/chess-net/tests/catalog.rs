@@ -384,6 +384,24 @@ fn playstrategy_accepts_only_standard_chess_and_names_the_refused_variants() {
 }
 
 #[test]
+fn playstrategy_public_games_are_ready_but_online_play_is_not_yet() {
+    let ps = provider(ProviderId::PlayStrategy);
+    let query = ps.service(Capability::Query).expect("consulta");
+    assert_eq!(query.status, ServiceStatus::Ready, "Partidas públicas");
+    assert!(!query.requires_connection(), "sem Conexão para importar");
+    // Sem Partida online nem Engine online nesta etapa (#253).
+    for capability in [Capability::Play, Capability::OnlineEngine] {
+        let service = ps.service(capability).expect("serviço");
+        assert!(
+            matches!(service.status, ServiceStatus::Planned { .. }),
+            "{capability:?} segue planejado"
+        );
+    }
+    // Mudou o que o cartão libera: a versão do catálogo subiu.
+    const { assert!(CATALOG_VERSION >= 5) };
+}
+
+#[test]
 fn chess_api_is_a_computing_engine_without_token_and_documents_that_no_key_is_needed() {
     let api = provider(ProviderId::ChessApi);
     let e = endpoint(ProviderId::ChessApi, "chess-api.com", "/v1");

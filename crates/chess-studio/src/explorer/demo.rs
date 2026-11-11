@@ -270,7 +270,9 @@ pub fn apply_demo(
         // Evidência: só o Painel da cena no dock, para ele ocupar a altura toda.
         let only = match name.as_str() {
             "cloud" | "cloud-off" => ids::ANALYSIS,
-            "import" | "import-done" => ids::LIBRARY,
+            "import" | "import-done" | "import-playstrategy" | "import-playstrategy-done" => {
+                ids::LIBRARY
+            }
             _ => ids::EXPLORER,
         };
         for def in registry.iter() {
@@ -280,12 +282,20 @@ pub fn apply_demo(
     if *frame != 3 {
         return;
     }
-    if matches!(name.as_str(), "import" | "import-done") {
+    if matches!(
+        name.as_str(),
+        "import" | "import-done" | "import-playstrategy" | "import-playstrategy-done"
+    ) {
+        let playstrategy = name.starts_with("import-playstrategy");
         if let Some(library) = library.as_mut() {
-            library.demo_online(name == "import");
+            library.demo_online(
+                name == "import" || name == "import-playstrategy",
+                playstrategy,
+            );
         }
         if let Some(net) = net {
             let _ = net.set_enabled(ProviderId::Lichess, true);
+            let _ = net.set_enabled(ProviderId::PlayStrategy, true);
         }
         return;
     }

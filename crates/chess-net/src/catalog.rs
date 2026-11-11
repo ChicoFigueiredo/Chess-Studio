@@ -814,8 +814,8 @@ static CATALOG: [Provider; 19] = [
                 C::Query,
                 &[A::None, A::PublicId],
                 K::FreeNoSignup,
-                S::Planned { stage: 5 },
-                "Perfil e exportação de Partidas públicas",
+                S::Ready,
+                "Perfil e exportação de Partidas públicas (importação sob demanda; só xadrez padrão)",
             ),
         ],
         endpoints: &[
