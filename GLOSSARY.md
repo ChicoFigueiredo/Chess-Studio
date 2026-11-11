@@ -1,6 +1,6 @@
 # Chess Studio
 
-Mesa pessoal de treinamento de xadrez, offline, para que o enxadrista aprenda a jogar presencialmente sem depender de auxílios digitais.
+Mesa pessoal de treinamento de xadrez, offline por padrão, para que o enxadrista aprenda a jogar presencialmente sem depender de auxílios digitais.
 
 Os termos são em português; o equivalente em inglês (_en_) é o nome usado no código.
 
@@ -201,6 +201,14 @@ _Evitar_: trilha, plano
 Programa externo de xadrez, falando UCI, que propõe Lances ou análises e nunca decide legalidade.
 _Evitar_: motor, IA, bot
 
+**Engine remota** (_en_: `RemoteEngine`):
+Engine que roda num Provedor e recebe a posição pela rede. Aparece na lista de Engines com o selo do Provedor e só é usada quando o usuário a escolhe; nunca substitui a Engine local em silêncio.
+_Evitar_: engine na nuvem, fallback
+
+**Engine online** (_en_: `OnlineEngine`):
+Engine local jogando Partidas online por uma Conexão de Engine, sempre separada da Conexão do jogador. A palavra "BOT" só aparece onde o Provedor a exige.
+_Evitar_: bot, robô
+
 **Anotação de estudo** (_en_: `StudyNotes`):
 Comentário livre do usuário sobre um Lance, fora de Partida competitiva; não altera a Partida e sai no PGN como comentário. Edita-se no Painel Anotações ou, como nota rápida, ao lado do Lance na Notação: é o mesmo texto nas duas vistas.
 _Evitar_: comentário (sozinho), nota rápida (como dado separado)
@@ -212,3 +220,37 @@ _Evitar_: planilha, scoresheet
 **Entrega da Súmula** (_en_: `deliver`):
 Ato de encerrar a anotação da Súmula manual, como entregá-la ao árbitro: o texto fica imutável e a notação automática volta a ser exibida.
 _Evitar_: salvar, finalizar
+
+## Provedores e Conexões
+
+**Provedor** (_en_: `Provider`):
+Serviço externo de xadrez com o qual o app conversa por API ou exportação documentada: Lichess, Chess.com, FIDE, FICS e outros. Nasce desligado; nenhuma chamada de rede acontece para um Provedor que o usuário não ligou. Cada um declara o que permite (jogar, consultar, importar, analisar), o custo e a licença dos dados.
+_Evitar_: site, plataforma, integração (como nome do serviço)
+
+**Conexão** (_en_: `Connection`):
+Vínculo de um Perfil local com um Provedor: autorizada pelo navegador, por chave, por nome ou ID público, ou só de importação. Pode haver várias por Provedor; a do jogador e a de Engine nunca se misturam. Ter uma Conexão não libera o que o Provedor não oferece.
+_Evitar_: conta, login, credencial
+
+**Central de Conexões** (_en_: `ConnectionCenter`):
+Página dos bastidores (Arquivo > Conexões) com o catálogo de Provedores, gratuitos primeiro: o que cada um permite agora, como se identifica, estado da Conexão e as ações de ligar, autorizar, testar e desconectar.
+_Evitar_: central de credenciais, integrações, contas
+
+**Origem** (_en_: `Provenance`):
+De onde veio um dado externo: Provedor, instante da consulta, licença e modo de importação. Acompanha toda Partida importada, estatística, avaliação e rating.
+_Evitar_: fonte (sozinho), metadados
+
+**Cofre** (_en_: `SecretVault`):
+Onde ficam os segredos das Conexões: o cofre do sistema operacional ou, sem ele, um cofre próprio cifrado com senha-mestra. Segredo nunca aparece em texto, log ou exportação.
+_Evitar_: chaveiro, keystore
+
+**Partida online** (_en_: `OnlineGame`):
+Partida jogada por um Provedor, que decide Lances, relógio e resultado. O Lance local é uma intenção enviada até o Provedor confirmar. Não usa as Políticas de arbitragem locais. Pode ser em tempo real ou por correspondência.
+_Evitar_: jogo online, partida remota
+
+**Trava de fair play** (_en_: `FairPlayGuard`):
+Bloqueio, durante uma Partida online contra uma pessoa, de tudo o que calcula para aquela Partida: Engines, avaliação em cache, finais exatos, Explorador e análise. Vale na camada de serviço e só cai quando o Provedor confirma o fim.
+_Evitar_: modo anti-trapaça, bloqueio de engine
+
+**Explorador** (_en_: `Explorer`):
+Painel que segue a posição do tabuleiro e mostra dados de Provedores: estatística de aberturas (mestres, Lichess, um jogador) e finais exatos de até sete peças, sempre com a Origem.
+_Evitar_: opening explorer, livro (para a estatística online)
