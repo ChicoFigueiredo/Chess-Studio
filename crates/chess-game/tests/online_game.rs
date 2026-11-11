@@ -640,3 +640,15 @@ fn setup_online_faz_ida_e_volta_e_setup_adulterado_e_recusado() {
     let tampered = json.replace("\"policy\":\"online\"", "\"policy\":\"assisted\"");
     assert!(serde_json::from_str::<GameSetup>(&tampered).is_err());
 }
+
+#[test]
+fn pgn_da_partida_online_diz_o_provedor_e_abortada_sai_sem_resultado() {
+    let mut game = white_vs_human();
+    let mut aborted = snap("e2e4", 0, 0);
+    aborted.end = Some(ProviderEnd::Aborted);
+    provider(&mut game, aborted, 10).unwrap();
+    let pgn = game.to_pgn(&chess_game::PgnOptions::default());
+    assert!(pgn.contains("Online (lichess)"), "{pgn}");
+    assert!(pgn.contains("[Result \"*\"]"), "{pgn}");
+    assert!(pgn.contains("1. e4"), "{pgn}");
+}
