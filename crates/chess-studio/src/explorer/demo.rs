@@ -9,7 +9,7 @@ use super::ExplorerUi;
 use super::driver::{CloudRow, EndgamesView, OpeningsView};
 use super::model::{
     Age, CloudView, EndgameMove, EndgameTable, How, MoveRow, Notice, Nuance, OpeningsTable,
-    OriginNote, Outlook, ReferenceRow, Source, Tab, Verdict,
+    OriginNote, Outlook, ReferenceRow, Source, Tab, Verdict, Window,
 };
 use crate::capture::{CaptureMode, option_value};
 use crate::dock::{Dock, PanelRegistry, ids};
@@ -53,6 +53,7 @@ fn lichess_origin(how: How) -> OriginNote {
         provider: "Lichess".into(),
         how,
         license: "CC0".into(),
+        window: Window::NotReported,
     }
 }
 
