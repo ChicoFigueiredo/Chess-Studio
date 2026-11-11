@@ -584,15 +584,23 @@ impl LibraryUi {
     }
 
     /// Cena de evidência (`--explorer-demo import`): importação online em andamento ou concluída.
-    pub(crate) fn demo_online(&mut self, running: bool) {
+    pub(crate) fn demo_online(&mut self, running: bool, playstrategy: bool) {
         use crate::online_import::{Progress, Site, Summary};
+        let site = if playstrategy {
+            Site::PlayStrategy
+        } else {
+            Site::Lichess
+        };
         // Partidas já importadas deste nome: habilita o "Atualizar".
         seed_online_demo(&mut self.local);
         self.show_online_import();
-        self.import_method = ImportMethod::Online(Site::Lichess);
+        self.import_method = ImportMethod::Online(site);
+        self.online.site = site;
+        // Evidência: o resumo (e a nota das variantes) ficam à vista.
+        self.online.demo_scroll_end = !running;
         if running {
             self.online.demo_running(
-                Site::Lichess,
+                site,
                 "ana_alvares",
                 Progress {
                     received: 184,
@@ -603,7 +611,7 @@ impl LibraryUi {
             );
         } else {
             self.online.demo_finished(
-                Site::Lichess,
+                site,
                 "ana_alvares",
                 Summary {
                     received: 212,
@@ -611,6 +619,7 @@ impl LibraryUi {
                     duplicates: 33,
                     errors: 0,
                     cancelled: false,
+                    skipped_variants: if playstrategy { 41 } else { 0 },
                 },
             );
         }
@@ -1002,6 +1011,7 @@ pub(crate) fn source_key(source: ImportSource) -> &'static str {
         ImportSource::PgnMentor => "library-import-source-pgn-mentor",
         ImportSource::Lichess => "library-import-source-lichess",
         ImportSource::ChessCom => "library-import-source-chess-com",
+        ImportSource::PlayStrategy => "library-import-source-playstrategy",
         ImportSource::Other => "library-import-source-other",
     }
 }
@@ -1088,6 +1098,10 @@ fn draw_import(ui: &mut egui::Ui, i18n: &I18n, lib: &mut LibraryUi, actions: &mu
         (
             ImportMethod::Online(crate::online_import::Site::ChessCom),
             i18n.t("library-import-method-chesscom"),
+        ),
+        (
+            ImportMethod::Online(crate::online_import::Site::PlayStrategy),
+            i18n.t("library-import-method-playstrategy"),
         ),
     ]);
     cs_dropdown(
@@ -1426,7 +1440,19 @@ fn draw_games(
     egui::CollapsingHeader::new(i18n.t("library-import-heading"))
         .open(force_open)
         .show(ui, |ui| {
-            draw_import(ui, i18n, lib, actions);
+            // O formulário com o resumo é mais alto que um Painel curto: rola por dentro, sem
+            // esconder a lista de Partidas embaixo.
+            let demo_end = lib.online.demo_scroll_end;
+            egui::ScrollArea::vertical()
+                .id_salt("library-import-scroll")
+                .max_height(ui.available_height() * 0.75)
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    draw_import(ui, i18n, lib, actions);
+                    if demo_end {
+                        ui.scroll_to_cursor(Some(egui::Align::BOTTOM));
+                    }
+                });
         });
 
     let before = (

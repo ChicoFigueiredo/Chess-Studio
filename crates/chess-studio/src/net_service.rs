@@ -110,6 +110,8 @@ pub struct NetService {
     /// Adaptadores tipados de dados públicos (#221) sobre a mesma rede.
     lichess: Lichess,
     chesscom: ChessCom,
+    /// O mesmo cliente da família do Lichess com o perfil do PlayStrategy (#253).
+    playstrategy: Lichess,
     /// Em disco (`rede.db`) ou em memória.
     persistent: bool,
     /// O Cofre dos segredos das Conexões (o mesmo que o gate de rede consulta).
@@ -213,6 +215,7 @@ impl NetService {
         Self {
             lichess: Lichess::new(net.clone(), clock.clone()),
             chesscom: ChessCom::new(net.clone(), clock.clone()),
+            playstrategy: Lichess::playstrategy(net.clone(), clock.clone()),
             auth: LichessAuth::new(net.clone(), vault.clone(), clock.clone()),
             clock,
             competitive_hold: Mutex::new(None),
@@ -298,6 +301,12 @@ impl NetService {
     /// Consultas públicas do Chess.com.
     pub fn chesscom(&self) -> &ChessCom {
         &self.chesscom
+    }
+
+    /// Consultas públicas do PlayStrategy (perfil e Partidas): o cliente do Lichess com o perfil
+    /// do PlayStrategy. Sem Explorador, avaliação em cache nem finais.
+    pub fn playstrategy(&self) -> &Lichess {
+        &self.playstrategy
     }
 
     /// A Conexão **autorizada** (com segredo no Cofre) do Provedor, no papel dado, para o Perfil

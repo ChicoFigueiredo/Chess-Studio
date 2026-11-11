@@ -277,6 +277,13 @@ fn has_use_today(provider: &Provider) -> bool {
             .any(|s| s.status == ServiceStatus::Ready)
 }
 
+fn has_ready_network_service(provider: &Provider) -> bool {
+    provider
+        .services
+        .iter()
+        .any(|s| s.capability.uses_network() && s.status == ServiceStatus::Ready)
+}
+
 /// O estado do cartão a partir do catálogo, do estado da rede, de haver nome vinculado e de
 /// haver Conexão autorizada. `authorized` só vale com o Provedor ligado.
 pub fn card_state(
@@ -331,8 +338,11 @@ pub fn card_state_with(
             None => CardState::On,
         },
         ProviderState::Disabled => {
+            // Um serviço de rede pronto (as Partidas públicas do PlayStrategy) basta para o
+            // cartão ser usável, mesmo que Partida online e Engine online venham depois.
             if has_use_today(provider)
-                && earliest_stage(provider).is_none_or(|stage| stage < PLANNED_FROM_STAGE)
+                && (has_ready_network_service(provider)
+                    || earliest_stage(provider).is_none_or(|stage| stage < PLANNED_FROM_STAGE))
             {
                 CardState::Off
             } else {
@@ -393,7 +403,7 @@ pub struct Actions {
 pub fn can_test(provider: ProviderId) -> bool {
     matches!(
         provider,
-        ProviderId::Lichess | ProviderId::ChessCom | ProviderId::Fide
+        ProviderId::Lichess | ProviderId::ChessCom | ProviderId::Fide | ProviderId::PlayStrategy
     )
 }
 
@@ -718,7 +728,12 @@ pub fn requirements(provider: &Provider) -> Vec<&'static str> {
     provider
         .services
         .iter()
-        .filter(|s| s.cost > provider.cost() && s.cost <= Cost::FreeWithSignup)
+        // Só o que já funciona: o que vem depois (Partida online) aparece em "O que vem depois".
+        .filter(|s| {
+            s.status == ServiceStatus::Ready
+                && s.cost > provider.cost()
+                && s.cost <= Cost::FreeWithSignup
+        })
         .map(|s| service_key(s.capability))
         .collect()
 }
@@ -728,6 +743,7 @@ pub fn sends_key(provider: &Provider, state: CardState) -> &'static str {
     match provider.id {
         ProviderId::Lichess => "connections-sends-lichess",
         ProviderId::ChessCom => "connections-sends-chesscom",
+        ProviderId::PlayStrategy => "connections-sends-playstrategy",
         ProviderId::Fide => "connections-sends-fide",
         _ => match state {
             CardState::ManualImport => "connections-sends-manual",
@@ -922,7 +938,8 @@ mod tests {
         assert_eq!(state_of(ProviderId::StockfishApi), CardState::Unconfirmed);
         // Adaptadores distantes aparecem como "Em breve".
         assert_eq!(state_of(ProviderId::Fics), CardState::Planned);
-        assert_eq!(state_of(ProviderId::PlayStrategy), CardState::Planned);
+        // Partidas públicas prontas: o cartão liga; Partida online segue "numa próxima versão".
+        assert_eq!(state_of(ProviderId::PlayStrategy), CardState::Off);
         assert_eq!(state_of(ProviderId::ChessApi), CardState::Planned);
         // Sem nada para fazer hoje, não há Switch: o Chessigma também espera.
         assert_eq!(state_of(ProviderId::Chessigma), CardState::Planned);
@@ -1143,6 +1160,7 @@ mod tests {
         let mut expected = vec![
             ProviderId::Lichess,
             ProviderId::ChessCom,
+            ProviderId::PlayStrategy,
             ProviderId::Fide,
             ProviderId::QueenAlice,
             ProviderId::ChessBase,
@@ -1176,11 +1194,18 @@ mod tests {
         };
         assert!(!has_test(false), "sem nome vinculado não há o que testar");
         assert!(has_test(true));
-        for id in [
-            ProviderId::PlayStrategy,
-            ProviderId::Fics,
-            ProviderId::Chessigma,
-        ] {
+        // O PlayStrategy testa o nome como o Lichess (#253); FICS e Chessigma ainda não.
+        let ps = provider(ProviderId::PlayStrategy);
+        let ps_actions = card_actions(ps, state_of(ProviderId::PlayStrategy), true);
+        assert!(
+            ps_actions
+                .primary
+                .into_iter()
+                .chain(ps_actions.menu)
+                .any(|a| a.action == CardAction::Test)
+        );
+        assert_eq!(test_via(ProviderId::PlayStrategy), ProviderId::PlayStrategy);
+        for id in [ProviderId::Fics, ProviderId::Chessigma] {
             let p = provider(id);
             let actions = card_actions(p, state_of(id), true);
             assert!(
@@ -1230,6 +1255,8 @@ mod tests {
         // O requisito do Explorador sai do custo (e do jogo), sem texto do catálogo.
         assert!(requirements(provider(ProviderId::Lichess)).contains(&"connections-svc-explore"));
         assert!(requirements(provider(ProviderId::ChessCom)).is_empty());
+        // O PlayStrategy só pede cadastro para o que ainda não existe (Partida online).
+        assert!(requirements(provider(ProviderId::PlayStrategy)).is_empty());
     }
 
     #[test]

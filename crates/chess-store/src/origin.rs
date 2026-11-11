@@ -53,17 +53,19 @@ pub enum ImportSource {
     PgnMentor,
     Lichess,
     ChessCom,
+    PlayStrategy,
     Other,
 }
 
 impl ImportSource {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::QueenAlice,
         Self::ChessBase,
         Self::Twic,
         Self::PgnMentor,
         Self::Lichess,
         Self::ChessCom,
+        Self::PlayStrategy,
         Self::Other,
     ];
 
@@ -76,6 +78,7 @@ impl ImportSource {
             Self::PgnMentor => "pgn-mentor",
             Self::Lichess => "lichess",
             Self::ChessCom => "chess-com",
+            Self::PlayStrategy => "playstrategy",
             Self::Other => "other",
         }
     }
@@ -88,6 +91,7 @@ impl ImportSource {
             Self::PgnMentor => "pgn-mentor-free",
             Self::Lichess => "lichess-cc0",
             Self::ChessCom => "chesscom-terms",
+            Self::PlayStrategy => "playstrategy-terms",
         }
     }
 
@@ -235,6 +239,17 @@ pub(crate) fn parse_elo(value: Option<&str>) -> Option<i64> {
 }
 
 /// Identificador da Partida no Provedor, quando as tags o trazem.
+/// O id de Partida da família do Lichess: `Site` (ou a tag alternativa) com o endereço do
+/// Provedor; o id tem 8 caracteres e a URL pode trazer o lado (`/black`).
+fn lila_id(game: &PgnGame, host: &str, alt_tag: &str) -> Option<String> {
+    let site = game.tag("Site").filter(|s| s.contains(host));
+    let id = site.or_else(|| game.tag(alt_tag))?;
+    let tail = id.split(['?', '#']).next()?.trim_end_matches('/');
+    let id = tail.rsplit('/').next()?;
+    let id: String = id.chars().take(8).collect();
+    (id.len() == 8 && id.chars().all(|c| c.is_ascii_alphanumeric())).then_some(id)
+}
+
 pub fn remote_id(provider: Option<&str>, game: &PgnGame) -> Option<String> {
     let url_tail = |tag: &str| -> Option<String> {
         let url = game.tag(tag)?;
@@ -245,15 +260,9 @@ pub fn remote_id(provider: Option<&str>, game: &PgnGame) -> Option<String> {
             .map(str::to_owned)
     };
     match provider? {
-        "lichess" => {
-            let site = game.tag("Site").filter(|s| s.contains("lichess.org/"));
-            let id = site.or_else(|| game.tag("LichessURL"))?;
-            let tail = id.split(['?', '#']).next()?.trim_end_matches('/');
-            let id = tail.rsplit('/').next()?;
-            // O id de Partida do Lichess tem 8 caracteres; a URL pode trazer o lado (`/black`).
-            let id: String = id.chars().take(8).collect();
-            (id.len() == 8 && id.chars().all(|c| c.is_ascii_alphanumeric())).then_some(id)
-        }
+        "lichess" => lila_id(game, "lichess.org/", "LichessURL"),
+        // Mesma família de API do Lichess: o `Site` aponta para a Partida em playstrategy.org.
+        "playstrategy" => lila_id(game, "playstrategy.org/", "LichessURL"),
         "chess-com" => {
             let id = url_tail("Link").or_else(|| {
                 game.tag("Site")

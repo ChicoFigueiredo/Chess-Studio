@@ -22,7 +22,7 @@ use std::fmt;
 use std::time::Duration;
 
 /// Versão dos dados do catálogo; gravada junto do consentimento.
-pub const CATALOG_VERSION: u32 = 3;
+pub const CATALOG_VERSION: u32 = 4;
 
 /// Provedor do catálogo. A chave ([`ProviderId::key`]) é o que se grava no banco e na Origem.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -813,8 +813,8 @@ static CATALOG: [Provider; 19] = [
                 C::Query,
                 &[A::None, A::PublicId],
                 K::FreeNoSignup,
-                S::Planned { stage: 5 },
-                "Perfil e exportação de Partidas públicas",
+                S::Ready,
+                "Perfil e exportação de Partidas públicas (importação sob demanda; só xadrez padrão)",
             ),
         ],
         endpoints: &[

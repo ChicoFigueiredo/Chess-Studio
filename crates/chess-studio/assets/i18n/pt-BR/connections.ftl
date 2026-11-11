@@ -113,6 +113,7 @@ connections-auth-partner = Aprovação do Provedor
 # O que é enviado: texto próprio da interface, sem endereços em frase.
 connections-sends-lichess = Os nomes públicos que você consulta, as Posições que você explora ou analisa e os meses de Partidas que você pede. Nada do seu Perfil local vai junto.
 connections-sends-chesscom = Os nomes públicos que você consulta e os meses de Partidas que você pede. Nenhuma senha.
+connections-sends-playstrategy = Os nomes públicos que você consulta e os pedidos de Partidas públicas que você faz. Nenhuma senha. Nesta versão não há Partida online no PlayStrategy.
 connections-sends-fide = Nada vai para a FIDE. O ID fica neste computador; o rating vem pelo Lichess, se você ligar o Lichess.
 connections-sends-generic = As consultas que você fizer a este Provedor. Nada do seu Perfil local vai junto.
 connections-sends-manual = Nada. Você baixa o arquivo no site e importa do disco.

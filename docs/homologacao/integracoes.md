@@ -62,6 +62,9 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 | CX-HOM-40 | Desafiar por nome e desafios recebidos | sim | UNVERIFIED |
 | CX-HOM-41 | Correspondência: lista, fechar e reabrir o app | sim | UNVERIFIED |
 | CX-HOM-42 | Trava de fair play na Partida online | sim | UNVERIFIED |
+| CX-HOM-43 | PlayStrategy: cartão na Central, ligar e testar | sim | UNVERIFIED |
+| CX-HOM-44 | PlayStrategy: importar Partidas públicas e variantes puladas | sim | UNVERIFIED |
+| CX-HOM-45 | PlayStrategy: Origem, Atualizar e duplicatas | sim | UNVERIFIED |
 
 ## Itens
 
@@ -551,6 +554,34 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Esperado:** em tempo real nada calcula, em Posição nenhuma, enquanto o Lichess não confirmar o fim (abandonar ou fechar o Painel não solta). Destinos legais, último Lance e coordenadas continuam. Na correspondência, outras Partidas e Posições ficam livres; a Posição da Partida (e o que se joga a partir dela) mostra **Posição de uma Partida em andamento** e nada é consultado.
 - **Com o serviço real:** com o monitor de rede, nenhum pedido ao Explorador, à avaliação em cache ou aos finais sai nesses casos.
 - **Evidência:** [`fair_play.rs`](../../crates/chess-studio/src/fair_play.rs), [`online/tests.rs`](../../crates/chess-studio/src/online/tests.rs), [decisões PO-13 a PO-19](../decisoes/2026-11-11-partida-online.md).
+
+### CX-HOM-43. PlayStrategy: cartão na Central, ligar e testar
+
+- **Passos:**
+  1. **Arquivo > Conexões**: abra o cartão do **PlayStrategy**. Com tudo desligado, leia "O que será enviado".
+  2. Ligue o Provedor pelo Switch e confirme o aviso. Vincule o nome de um usuário público do PlayStrategy e use **Testar**.
+  3. Teste também um nome que não existe.
+- **Esperado:** o cartão está completo (não mais em "Em breve"), com Switch, e diz que não há Partida online no PlayStrategy nesta versão. Desligado, nada sai. O teste confirma o nome e mostra "PlayStrategy" como fonte; o nome inexistente dá "Nome não encontrado".
+- **Com o serviço real:** os formatos do PlayStrategy são os da família do Lichess, mas **só foram escritos a partir do contrato e de respostas sintéticas** (a página de documentação não entrega o texto das rotas): confirme que `/api/user/{nome}` responde assim.
+- **Evidência:** [`connections/model.rs`](../../crates/chess-studio/src/connections/model.rs), [`probe.rs`](../../crates/chess-studio/src/connections/probe.rs), [capturas](../evidencias/playstrategy-central-importacao/README.md).
+
+### CX-HOM-44. PlayStrategy: importar Partidas públicas e variantes puladas
+
+- **Passos:**
+  1. **Biblioteca > Importar > PlayStrategy (online)**, com o Provedor desligado: o botão pede para ligar e nada é pedido.
+  2. Ligue, informe um usuário público que jogue também variantes (damas, shogi, Crazyhouse...) e importe com período e ritmo.
+- **Esperado:** só as Partidas de xadrez padrão entram; o resumo diz quantas Partidas de variantes foram puladas. O formulário avisa que só xadrez padrão é importado e que não há Partida online no PlayStrategy.
+- **Com o serviço real:** confirme que `/api/games/user/{nome}` aceita os filtros (`since`, `perfType`, `max`) e que o campo `variant` de cada linha vem como `standard`/`fromPosition` para xadrez; se o PlayStrategy usar outros nomes, as Partidas de xadrez seriam puladas por engano.
+- **Evidência:** [`online_import.rs`](../../crates/chess-studio/src/online_import.rs) (testes com servidor falso), [`catalog.rs`](../../crates/chess-net/src/catalog.rs).
+
+### CX-HOM-45. PlayStrategy: Origem, Atualizar e duplicatas
+
+- **Passos:**
+  1. Depois do item anterior, abra uma Partida importada: a Origem diz "PlayStrategy · API".
+  2. Na aba **Origens** da Biblioteca, confira o grupo **PlayStrategy**.
+  3. Volte ao formulário e use **Atualizar**; depois importe o mesmo nome de novo.
+- **Esperado:** Origem e aba Origens mostram "PlayStrategy" (não "Lichess" nem "Outro"). **Atualizar** pede só o que veio depois da última Partida; repetir a importação não duplica nada (as Partidas voltam como repetidas).
+- **Evidência:** [`origin.rs`](../../crates/chess-store/src/origin.rs), [`import_origin.rs`](../../crates/chess-store/tests/import_origin.rs).
 
 ## Fora deste roteiro
 

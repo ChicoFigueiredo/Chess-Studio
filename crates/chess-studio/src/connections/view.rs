@@ -1123,7 +1123,7 @@ impl View<'_> {
         let fields = model::card_fields(provider, state);
         let kind = model::connection_kind(provider);
         let hint_key = match id {
-            ProviderId::Lichess => "connections-link-hint-lichess",
+            ProviderId::Lichess | ProviderId::PlayStrategy => "connections-link-hint-lichess",
             ProviderId::ChessCom => "connections-link-hint-chesscom",
             ProviderId::Fide => "connections-link-hint-fide",
             _ => "connections-link-hint-default",
