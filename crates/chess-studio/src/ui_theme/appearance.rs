@@ -1,36 +1,73 @@
 //! Preferências de aparência do Perfil local: Tema, Densidade e Escala (DS-05, DS-13). Ficam
 //! fora do Perfil de interface (DS-07): trocar de Perfil de interface não muda o Tema.
 
-use super::tokens::ThemeKind;
+use super::themes::{ThemeId, all_themes};
 use bevy::prelude::Resource;
 
-/// Escolha do Tema: seguir o sistema (padrão), Escuro ou Claro.
+/// Escolha do Tema: seguir o sistema (padrão) ou um dos 22 Temas fixo. "Seguir o sistema"
+/// alterna só entre o Escuro e o Claro de fábrica; escolher um Tema de xadrez fixa esse Tema.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ThemeMode {
     #[default]
     System,
-    Dark,
-    Light,
+    Fixed(ThemeId),
 }
 
 impl ThemeMode {
-    pub const ALL: [ThemeMode; 3] = [ThemeMode::System, ThemeMode::Dark, ThemeMode::Light];
+    /// Escuro de fábrica, fixo.
+    pub const DARK: ThemeMode = ThemeMode::Fixed(ThemeId::DARK);
+    /// Claro de fábrica, fixo.
+    pub const LIGHT: ThemeMode = ThemeMode::Fixed(ThemeId::LIGHT);
 
-    pub fn key(self) -> &'static str {
+    /// "Seguir o sistema" e depois os 22 Temas, na ordem do catálogo.
+    pub fn all() -> Vec<ThemeMode> {
+        std::iter::once(ThemeMode::System)
+            .chain(all_themes().map(ThemeMode::Fixed))
+            .collect()
+    }
+
+    /// Chave de tradução de "Seguir o sistema"; os Temas fixos usam o nome do catálogo.
+    pub const SYSTEM_LABEL_KEY: &'static str = "theme-mode-system";
+
+    /// Texto do seletor: o rótulo traduzido de "Seguir o sistema" ou o nome do Tema.
+    pub fn label(self, system_label: &str) -> String {
         match self {
-            ThemeMode::System => "theme-mode-system",
-            ThemeMode::Dark => "theme-mode-dark",
-            ThemeMode::Light => "theme-mode-light",
+            ThemeMode::System => system_label.to_owned(),
+            ThemeMode::Fixed(id) => id.name().to_owned(),
+        }
+    }
+
+    /// Texto gravado no banco: `"System"` ou o id do Tema (`"feltro"`, `"dark"`).
+    pub fn storage_key(self) -> &'static str {
+        match self {
+            ThemeMode::System => "System",
+            ThemeMode::Fixed(id) => id.key(),
+        }
+    }
+
+    /// Lê o texto gravado. Aceita os valores antigos (`"System"`, `"Dark"`, `"Light"`, que eram
+    /// o `Debug` do enum de antes) e as grafias em pt-BR; valor desconhecido é `None`.
+    pub fn from_storage(text: &str) -> Option<Self> {
+        match text {
+            "System" | "system" | "sistema" => Some(ThemeMode::System),
+            "Dark" | "escuro" => Some(ThemeMode::DARK),
+            "Light" | "claro" => Some(ThemeMode::LIGHT),
+            id => ThemeId::from_key(id).map(ThemeMode::Fixed),
         }
     }
 }
 
 /// O Tema efetivo. Sem informação do sistema (Linux sem portal, WSL), vale o Escuro.
-pub fn resolve_theme(mode: ThemeMode, system_dark: Option<bool>) -> ThemeKind {
+pub fn resolve_theme(mode: ThemeMode, system_dark: Option<bool>) -> ThemeId {
     match mode {
-        ThemeMode::Dark => ThemeKind::Dark,
-        ThemeMode::Light => ThemeKind::Light,
-        ThemeMode::System => ThemeKind::from_dark_mode(system_dark.unwrap_or(true)),
+        ThemeMode::Fixed(id) => id,
+        ThemeMode::System => {
+            if system_dark.unwrap_or(true) {
+                ThemeId::DARK
+            } else {
+                ThemeId::LIGHT
+            }
+        }
     }
 }
 
@@ -117,23 +154,17 @@ mod tests {
     fn system_theme_follows_the_os_and_falls_back_to_dark() {
         assert_eq!(
             resolve_theme(ThemeMode::System, Some(false)),
-            ThemeKind::Light
+            ThemeId::LIGHT
         );
-        assert_eq!(
-            resolve_theme(ThemeMode::System, Some(true)),
-            ThemeKind::Dark
-        );
-        assert_eq!(resolve_theme(ThemeMode::System, None), ThemeKind::Dark);
+        assert_eq!(resolve_theme(ThemeMode::System, Some(true)), ThemeId::DARK);
+        assert_eq!(resolve_theme(ThemeMode::System, None), ThemeId::DARK);
     }
 
     #[test]
     fn an_explicit_theme_ignores_the_os() {
-        assert_eq!(resolve_theme(ThemeMode::Dark, Some(false)), ThemeKind::Dark);
-        assert_eq!(
-            resolve_theme(ThemeMode::Light, Some(true)),
-            ThemeKind::Light
-        );
-        assert_eq!(resolve_theme(ThemeMode::Light, None), ThemeKind::Light);
+        assert_eq!(resolve_theme(ThemeMode::DARK, Some(false)), ThemeId::DARK);
+        assert_eq!(resolve_theme(ThemeMode::LIGHT, Some(true)), ThemeId::LIGHT);
+        assert_eq!(resolve_theme(ThemeMode::LIGHT, None), ThemeId::LIGHT);
     }
 
     #[test]
@@ -165,6 +196,39 @@ mod tests {
         // Um valor fora da escada (125 vira 150, 118 vira 125 e volta a 110).
         assert_eq!(UiScale::from_percent(118).zoom_in().percent(), 125);
         assert_eq!(UiScale::from_percent(118).zoom_out().percent(), 110);
+    }
+
+    /// A preferência antiga (o `Debug` do enum de antes) continua carregando.
+    #[test]
+    fn old_stored_values_still_load() {
+        assert_eq!(ThemeMode::from_storage("System"), Some(ThemeMode::System));
+        assert_eq!(ThemeMode::from_storage("Dark"), Some(ThemeMode::DARK));
+        assert_eq!(ThemeMode::from_storage("Light"), Some(ThemeMode::LIGHT));
+        assert_eq!(ThemeMode::from_storage("sistema"), Some(ThemeMode::System));
+        assert_eq!(ThemeMode::from_storage("escuro"), Some(ThemeMode::DARK));
+        assert_eq!(ThemeMode::from_storage("claro"), Some(ThemeMode::LIGHT));
+        assert_eq!(ThemeMode::from_storage("lixo"), None);
+    }
+
+    #[test]
+    fn every_choice_round_trips_through_its_storage_key() {
+        let all = ThemeMode::all();
+        assert_eq!(all.len(), 23, "Seguir o sistema + 22 Temas");
+        assert_eq!(all[0], ThemeMode::System);
+        for mode in all {
+            assert_eq!(ThemeMode::from_storage(mode.storage_key()), Some(mode));
+        }
+    }
+
+    #[test]
+    fn follow_the_system_only_switches_between_the_factory_themes() {
+        for dark in [Some(true), Some(false), None] {
+            let id = resolve_theme(ThemeMode::System, dark);
+            assert!(id == ThemeId::DARK || id == ThemeId::LIGHT);
+        }
+        let feltro = ThemeId::from_key("feltro").expect("feltro");
+        assert_eq!(resolve_theme(ThemeMode::Fixed(feltro), Some(false)), feltro);
+        assert_eq!(resolve_theme(ThemeMode::Fixed(feltro), None), feltro);
     }
 
     #[test]

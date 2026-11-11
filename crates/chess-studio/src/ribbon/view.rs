@@ -1041,10 +1041,7 @@ pub(super) fn ribbon_ui(
 }
 
 fn palette_of(ctx: &egui::Context) -> &'static Palette {
-    use crate::ui_theme::ThemeKind;
-    Palette::of(ThemeKind::from_dark_mode(
-        ctx.global_style().visuals.dark_mode,
-    ))
+    Palette::from_visuals(&ctx.global_style().visuals)
 }
 
 // --- KeyTips ---

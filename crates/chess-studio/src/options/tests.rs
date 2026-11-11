@@ -183,11 +183,11 @@ fn inventory_keys_exist_in_the_translations() {
 #[test]
 fn a_dialog_change_updates_the_same_resource_the_old_control_did() {
     let mut app = options_app();
-    apply(&mut app, OptionChange::Theme(ThemeMode::Light));
+    apply(&mut app, OptionChange::Theme(ThemeMode::LIGHT));
     apply(&mut app, OptionChange::Density(Density::Compact));
     apply(&mut app, OptionChange::Scale(125));
     let appearance = *app.world().resource::<Appearance>();
-    assert_eq!(appearance.theme, ThemeMode::Light);
+    assert_eq!(appearance.theme, ThemeMode::LIGHT);
     assert_eq!(appearance.density, Density::Compact);
     assert_eq!(appearance.scale.percent(), 125);
 
@@ -268,7 +268,7 @@ fn an_unchanged_value_does_not_mark_the_resource_as_changed() {
     apply(&mut app, OptionChange::Quality(GraphicsQuality::default()));
     assert_eq!(tick(&app), before);
     // Controle: uma mudança de verdade marca o recurso.
-    apply(&mut app, OptionChange::Theme(ThemeMode::Dark));
+    apply(&mut app, OptionChange::Theme(ThemeMode::DARK));
     assert_ne!(tick(&app), before);
 }
 
@@ -284,7 +284,7 @@ fn the_engine_elo_stays_inside_the_allowed_range() {
 // --- Restaurar padrões ---------------------------------------------------------------------
 
 fn change_everything(app: &mut App) {
-    apply(app, OptionChange::Theme(ThemeMode::Dark));
+    apply(app, OptionChange::Theme(ThemeMode::DARK));
     apply(app, OptionChange::Scale(150));
     apply(app, OptionChange::Quality(GraphicsQuality::Economic));
     apply(app, OptionChange::Coordinates(false));

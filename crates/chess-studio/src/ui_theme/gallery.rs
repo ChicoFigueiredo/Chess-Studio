@@ -99,9 +99,10 @@ fn controls(
 ) {
     ui.horizontal_wrapped(|ui| {
         ui.label(i18n.t("gallery-theme"));
-        let options: Vec<_> = ThemeMode::ALL
-            .iter()
-            .map(|m| (*m, i18n.t(m.key())))
+        let system = i18n.t(ThemeMode::SYSTEM_LABEL_KEY);
+        let options: Vec<_> = ThemeMode::all()
+            .into_iter()
+            .map(|m| (m, m.label(&system)))
             .collect();
         cs_dropdown(ui, "gallery-theme", &mut appearance.theme, &options);
         ui.add_space(12.0);

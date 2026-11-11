@@ -10,7 +10,7 @@ use crate::camera::{CameraRig, MainCamera};
 use crate::dock::Dock;
 use crate::presentation::Presentation;
 use crate::presentation::TechnicalCamera;
-use crate::ui_theme::{Palette, ThemeKind, Tokens, strong_font};
+use crate::ui_theme::{Palette, Tokens, strong_font};
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use chess_uci::Score;
@@ -274,9 +274,7 @@ fn eval_bar_ui(
 }
 
 fn palette_of(ctx: &egui::Context) -> &'static Palette {
-    Palette::of(ThemeKind::from_dark_mode(
-        ctx.global_style().visuals.dark_mode,
-    ))
+    Palette::from_visuals(&ctx.global_style().visuals)
 }
 
 #[cfg(test)]

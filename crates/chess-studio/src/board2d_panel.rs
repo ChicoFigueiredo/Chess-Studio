@@ -293,6 +293,14 @@ pub fn paint_board(
             0.0,
             Color32::from_rgba_unmultiplied(255, 204, 26, 128),
         );
+        // Contorno de 3px `board-select`: igual em todos os Temas, 3:1 sobre as duas casas.
+        let select = crate::ui_theme::Palette::of(crate::ui_theme::ThemeKind::Dark).board_select;
+        painter.rect_stroke(
+            square_rect(sq, board, orientation),
+            0.0,
+            Stroke::new(3.0, select),
+            egui::StrokeKind::Inside,
+        );
     }
     if coordinates {
         let size = (board.width() / 8.0 * 0.22).clamp(8.0, 14.0);

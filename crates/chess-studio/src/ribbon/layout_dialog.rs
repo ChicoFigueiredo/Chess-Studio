@@ -79,7 +79,7 @@ pub fn show(
         return;
     }
     let theme = ThemeKind::from_dark_mode(ctx.global_style().visuals.dark_mode);
-    let p = Palette::of(theme);
+    let p = Palette::from_visuals(&ctx.global_style().visuals);
     let tokens = Tokens::embedded();
     let frame = egui::Frame::new()
         .fill(p.surface_1)

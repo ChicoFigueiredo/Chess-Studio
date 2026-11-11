@@ -2,10 +2,11 @@
 //! O Tema troca o `Visuals` inteiro; a Densidade muda só o `Spacing`.
 
 use super::appearance::Density;
+use super::themes::ThemeId;
 use super::tokens::{Palette, ThemeKind, Tokens};
 use bevy_egui::egui::{
-    Color32, CornerRadius, FontFamily, FontId, Margin, Stroke, Style, TextStyle, Vec2, Visuals,
-    vec2,
+    self, Color32, CornerRadius, FontFamily, FontId, Margin, Stroke, Style, TextStyle, Vec2,
+    Visuals, vec2,
 };
 
 /// Medidas que dependem da Densidade (alturas e respiros, em pixels lógicos na Escala 100%).
@@ -45,14 +46,16 @@ fn radius(px: f32) -> CornerRadius {
 }
 
 /// `Visuals` de um Tema, preenchido só com tokens.
-pub fn build_visuals(theme: ThemeKind, tokens: &Tokens) -> Visuals {
-    let p = Palette::of(theme);
-    let mut v = match theme {
+pub fn build_visuals(theme: impl Into<ThemeId>, tokens: &Tokens) -> Visuals {
+    let theme: ThemeId = theme.into();
+    let base = theme.base();
+    let p = Palette::of_theme(theme);
+    let mut v = match base {
         ThemeKind::Dark => Visuals::dark(),
         ThemeKind::Light => Visuals::light(),
     };
     let r = |name: &str| radius(tokens.length(name).unwrap_or(4.0));
-    let shadow = |name: &str| tokens.shadow(name, theme).unwrap_or_default();
+    let shadow = |name: &str| tokens.shadow(name, base).unwrap_or_default();
     let hairline = |c: Color32| Stroke::new(1.0, c);
 
     v.override_text_color = None;
@@ -123,6 +126,23 @@ pub fn build_visuals(theme: ThemeKind, tokens: &Tokens) -> Visuals {
     v
 }
 
+/// Nome do estilo `ribbon-label` (12/14, botões grandes do Ribbon clássico).
+pub const RIBBON_LABEL: &str = "ribbon-label";
+/// Nome do estilo `body-large` (16/22, campo de busca da Paleta de Ações).
+pub const BODY_LARGE: &str = "body-large";
+
+/// Texto num estilo do design system, com o espaçamento entre letras do token (`title` −0,01em,
+/// `display` −0,02em; os demais 0). O `TextStyle` do egui só leva a fonte; o espaçamento vai
+/// no `RichText` (`extra_letter_spacing`, em pontos).
+#[allow(dead_code)] // API para os componentes que usam title/display (bastidores, fim de Partida).
+pub fn styled_text(tokens: &Tokens, name: &str, text: impl Into<String>) -> egui::RichText {
+    let token = tokens.text(name);
+    let (size, spacing) = token.map_or((14.0, 0.0), |t| (t.size, t.size * t.letter_spacing_em));
+    egui::RichText::new(text)
+        .size(size)
+        .extra_letter_spacing(spacing)
+}
+
 /// Estilos de texto da escala tipográfica (`caption`, `body`, `subtitle`, `title`, `log`).
 pub fn text_styles(tokens: &Tokens) -> std::collections::BTreeMap<TextStyle, FontId> {
     let size = |name: &str, fallback: f32| tokens.text(name).map_or(fallback, |t| t.size);
@@ -132,6 +152,16 @@ pub fn text_styles(tokens: &Tokens) -> std::collections::BTreeMap<TextStyle, Fon
         (TextStyle::Body, sans(size("body", 14.0))),
         (TextStyle::Button, sans(size("body", 14.0))),
         (TextStyle::Heading, sans(size("title", 20.0))),
+        // Estilos só de alguns componentes: rótulo dos botões grandes do Ribbon (12/14) e campo
+        // da Paleta de Ações (16/22). Usados com `TextStyle::Name`.
+        (
+            TextStyle::Name(RIBBON_LABEL.into()),
+            sans(size(RIBBON_LABEL, 12.0)),
+        ),
+        (
+            TextStyle::Name(BODY_LARGE.into()),
+            sans(size(BODY_LARGE, 16.0)),
+        ),
         (
             TextStyle::Monospace,
             FontId::new(size("log", 12.0), FontFamily::Monospace),
@@ -142,7 +172,7 @@ pub fn text_styles(tokens: &Tokens) -> std::collections::BTreeMap<TextStyle, Fon
 }
 
 /// `Style` completo de um Tema e uma Densidade.
-pub fn build_style(theme: ThemeKind, density: Density, tokens: &Tokens) -> Style {
+pub fn build_style(theme: impl Into<ThemeId>, density: Density, tokens: &Tokens) -> Style {
     let m = DensityMetrics::of(density, tokens);
     let mut style = Style {
         visuals: build_visuals(theme, tokens),

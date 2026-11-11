@@ -287,7 +287,7 @@ fn palette_ui(
     }
 
     let theme = ThemeKind::from_dark_mode(ctx.global_style().visuals.dark_mode);
-    let p = Palette::of(theme);
+    let p = Palette::from_visuals(&ctx.global_style().visuals);
     let tokens = Tokens::embedded();
     let radius = tokens.length("radius-xl").unwrap_or(8.0);
     let frame = egui::Frame::new()

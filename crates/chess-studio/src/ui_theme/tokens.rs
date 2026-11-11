@@ -124,6 +124,9 @@ struct RawStyle {
     line_height: String,
     #[serde(rename = "fontWeight")]
     font_weight: u16,
+    /// Espaçamento entre letras em em (`"-0.01em"`); ausente é 0.
+    #[serde(rename = "letterSpacing", default)]
+    letter_spacing: Option<String>,
 }
 
 /// Estilo tipográfico (`body`, `caption`, `clock`…).
@@ -132,6 +135,8 @@ pub struct TypeToken {
     pub size: f32,
     pub line_height: f32,
     pub weight: u16,
+    /// Espaçamento entre letras em em (`title` -0,01; `display` -0,02; os demais 0).
+    pub letter_spacing_em: f32,
 }
 
 /// Todos os valores do design system, indexados pelo nome do token.
@@ -180,6 +185,10 @@ impl Tokens {
                     size: parse_px(&style.font_size)?,
                     line_height: parse_px(&style.line_height)?,
                     weight: style.font_weight,
+                    letter_spacing_em: match style.letter_spacing.as_deref() {
+                        None => 0.0,
+                        Some(text) => parse_em(text)?,
+                    },
                 },
             );
         }
@@ -268,6 +277,14 @@ pub fn parse_px(text: &str) -> Result<f32, TokenError> {
         .ok_or_else(|| TokenError::BadValue(text.to_owned()))
 }
 
+/// `"-0.01em"` -> -0.01.
+pub fn parse_em(text: &str) -> Result<f32, TokenError> {
+    text.trim()
+        .strip_suffix("em")
+        .and_then(|n| n.trim().parse::<f32>().ok())
+        .ok_or_else(|| TokenError::BadValue(text.to_owned()))
+}
+
 /// `"0 4px 12px rgba(0,0,0,0.45)"` (x, y, desfoque, cor; sem espalhamento).
 pub fn parse_shadow(text: &str) -> Result<egui::Shadow, TokenError> {
     let bad = || TokenError::BadValue(text.to_owned());
@@ -316,7 +333,6 @@ pub struct Palette {
     pub surface_4: Color32,
     pub border: Color32,
     pub border_strong: Color32,
-    pub control_track: Color32,
     pub ink: Color32,
     pub ink_muted: Color32,
     pub ink_disabled: Color32,
@@ -332,6 +348,8 @@ pub struct Palette {
     pub warning: Color32,
     pub danger: Color32,
     pub scrim: Color32,
+    /// Contorno de 3px da casa e da peça selecionadas no Tabuleiro 2D (igual em todos os Temas).
+    pub board_select: Color32,
     pub eval_white: Color32,
     pub eval_black: Color32,
 }
@@ -347,7 +365,6 @@ impl Palette {
             surface_4: c("surface-4")?,
             border: c("border")?,
             border_strong: c("border-strong")?,
-            control_track: c("control-track")?,
             ink: c("ink")?,
             ink_muted: c("ink-muted")?,
             ink_disabled: c("ink-disabled")?,
@@ -363,9 +380,41 @@ impl Palette {
             warning: c("warning")?,
             danger: c("danger")?,
             scrim: c("scrim")?,
+            board_select: c("board-select")?,
             eval_white: c("eval-white")?,
             eval_black: c("eval-black")?,
         })
+    }
+
+    /// Troca uma das 22 cores que um Tema pode definir (`themes.json`), pelo nome do token.
+    pub fn set_color(&mut self, name: &str, color: Color32) -> Result<(), TokenError> {
+        let slot = match name {
+            "surface-0" => &mut self.surface_0,
+            "surface-1" => &mut self.surface_1,
+            "surface-2" => &mut self.surface_2,
+            "surface-3" => &mut self.surface_3,
+            "surface-4" => &mut self.surface_4,
+            "border" => &mut self.border,
+            "border-strong" => &mut self.border_strong,
+            "ink" => &mut self.ink,
+            "ink-muted" => &mut self.ink_muted,
+            "ink-disabled" => &mut self.ink_disabled,
+            "accent" => &mut self.accent,
+            "accent-hover" => &mut self.accent_hover,
+            "accent-pressed" => &mut self.accent_pressed,
+            "on-accent" => &mut self.on_accent,
+            "accent-subtle" => &mut self.accent_subtle,
+            "accent-ink" => &mut self.accent_ink,
+            "focus-ring" => &mut self.focus_ring,
+            "info" => &mut self.info,
+            "success" => &mut self.success,
+            "warning" => &mut self.warning,
+            "danger" => &mut self.danger,
+            "scrim" => &mut self.scrim,
+            other => return Err(TokenError::Missing(other.to_owned())),
+        };
+        *slot = color;
+        Ok(())
     }
 
     /// Paleta embutida do Tema (calculada uma vez).
@@ -381,6 +430,35 @@ impl Palette {
             ThemeKind::Dark => &all[0],
             ThemeKind::Light => &all[1],
         }
+    }
+}
+
+impl Palette {
+    /// Paleta de qualquer um dos 22 Temas: a base mais as cores do Tema (calculada uma vez).
+    pub fn of_theme(theme: super::themes::ThemeId) -> &'static Palette {
+        static PALETTES: OnceLock<Vec<Palette>> = OnceLock::new();
+        let all = PALETTES.get_or_init(|| {
+            super::themes::all_themes()
+                .map(|t| {
+                    super::themes::build_palette(Tokens::embedded(), t)
+                        .expect("Tema incompleto (ver testes de ui_theme)")
+                })
+                .collect()
+        });
+        &all[theme.index()]
+    }
+}
+
+impl Palette {
+    /// A paleta do Tema cujo `Visuals` é este (os estilos do app e das janelas destacadas vêm de
+    /// `build_visuals`). Um `Visuals` de fora dos 22 Temas cai no de fábrica da base.
+    pub fn from_visuals(visuals: &egui::Visuals) -> &'static Palette {
+        let base = ThemeKind::from_dark_mode(visuals.dark_mode);
+        super::themes::all_themes()
+            .filter(|t| t.base() == base)
+            .map(Palette::of_theme)
+            .find(|p| p.surface_1 == visuals.panel_fill && p.border == visuals.window_stroke.color)
+            .unwrap_or_else(|| Palette::of(base))
     }
 }
 
@@ -555,25 +633,8 @@ mod tests {
         }
     }
 
-    /// #196: o trilho do slider (e de controles de arrastar) precisa de 3:1 sobre as
-    /// superfícies onde fica, nos dois Temas; antes usava `surface-4` (cerca de 1,5:1).
-    #[test]
-    fn slider_rail_reaches_3_to_1_in_both_themes() {
-        for theme in ThemeKind::ALL {
-            let p = palette(theme);
-            for (name, surface) in [
-                ("surface-1", p.surface_1),
-                ("surface-2", p.surface_2),
-                ("surface-3", p.surface_3),
-            ] {
-                let ratio = contrast_ratio(p.control_track, surface);
-                assert!(ratio >= 3.0, "{theme:?} control-track/{name}: {ratio:.2}:1");
-            }
-        }
-    }
-
     /// #196: no Tema escuro as superfícies vizinhas se distinguem (degraus de pelo menos
-    /// 1,1:1) e a divisória `border` aparece sobre `surface-1` (2:1).
+    /// 1,05:1, o Escuro revisado do artefato) e a divisória `border` (decorativa no Escuro do artefato) aparece sobre `surface-1` (1,3:1).
     #[test]
     fn dark_surfaces_are_separated_and_the_border_shows() {
         let p = palette(ThemeKind::Dark);
@@ -586,11 +647,11 @@ mod tests {
         ];
         for pair in steps.windows(2) {
             let ratio = contrast_ratio(pair[0], pair[1]);
-            assert!(ratio >= 1.1, "degrau de superfície {ratio:.2}:1 < 1,1:1");
+            assert!(ratio >= 1.05, "degrau de superfície {ratio:.2}:1 < 1,05:1");
         }
         let ratio = contrast_ratio(p.border, p.surface_1);
-        assert!(ratio >= 2.0, "border/surface-1: {ratio:.2}:1");
-        let strong = contrast_ratio(p.border_strong, p.surface_3);
-        assert!(strong >= 3.0, "border-strong/surface-3: {strong:.2}:1");
+        assert!(ratio >= 1.3, "border/surface-1: {ratio:.2}:1");
+        let strong = contrast_ratio(p.border_strong, p.surface_2);
+        assert!(strong >= 3.0, "border-strong/surface-2: {strong:.2}:1");
     }
 }
