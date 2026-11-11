@@ -11,6 +11,7 @@
 //! controlador.
 
 pub mod demo;
+pub mod exit;
 pub mod service;
 pub mod view;
 
@@ -62,6 +63,7 @@ pub struct EngineOnlinePlugin;
 impl Plugin for EngineOnlinePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<EngineOnlineService>()
+            .init_resource::<exit::ExitPrompt>()
             .init_resource::<EngineOnlineUi>()
             .add_systems(
                 Update,
@@ -73,7 +75,11 @@ impl Plugin for EngineOnlinePlugin {
                 )
                     .chain(),
             )
-            .add_systems(EguiPrimaryContextPass, engine_online_window);
+            .add_systems(Update, exit::guard_close)
+            .add_systems(
+                EguiPrimaryContextPass,
+                (engine_online_window, exit::exit_prompt_window),
+            );
     }
 }
 
@@ -176,7 +182,12 @@ pub fn apply_intent(
             ui.error = match spec {
                 None => None,
                 Some(spec) => run
-                    .start(net, spec, ui.form.settings.clone(), uci_factory())
+                    .start(
+                        net,
+                        spec,
+                        ui.form.settings.clone(),
+                        uci_factory(ui.form.settings.elo),
+                    )
                     .err(),
             };
         }
