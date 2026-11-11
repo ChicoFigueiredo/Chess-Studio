@@ -147,7 +147,7 @@ impl Shared {
         let enabled = || self.is_enabled(profile, provider);
         // Fila cheia: espera espaço; para se quem lê fechou ou se o Provedor foi desligado.
         let push = |event: IcsEvent| -> Result<bool, NetError> {
-            if deliver(events, event, cancel, &enabled) {
+            if deliver(events, event, cancel, enabled) {
                 Ok(true)
             } else if cancel.load(Ordering::Acquire) || enabled() {
                 Ok(false)
