@@ -499,7 +499,7 @@ fn stop_with_nothing_running_closes_and_ignores_later_challenges() {
 #[test]
 fn stop_lets_the_running_game_finish_and_declines_new_challenges() {
     let mut env = env();
-    env.server.route("/api/challenge/chal0001/accept", ok());
+    env.server.route("/api/challenge/En9ineQ1/accept", ok());
     env.server.route("/api/challenge/chal0002/decline", ok());
     env.server.route(&move_path(GAME, "e2e4"), ok());
     let (factory, _) = scripted(&["e2e4"]);
@@ -510,8 +510,8 @@ fn stop_lets_the_running_game_finish_and_declines_new_challenges() {
         },
         factory,
     );
-    env.push_challenge("chal0001", "Salma", "blitz", "standard", None);
-    assert!(env.until(|e| e.posts_to("/api/challenge/chal0001/accept") == 1));
+    env.push_challenge("En9ineQ1", "Salma", "blitz", "standard", None);
+    assert!(env.until(|e| e.posts_to("/api/challenge/En9ineQ1/accept") == 1));
     let feed = env.open_game(GAME, "Salma");
     assert!(env.until(|_| feed.wait_connected(Duration::from_millis(1))));
     feed.push(&full(GAME, "Salma").to_string());

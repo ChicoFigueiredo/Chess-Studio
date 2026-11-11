@@ -55,7 +55,7 @@ pub struct ViewModel {
 }
 
 /// O formulário: o que o usuário escolheu (vale só até ligar).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Form {
     pub engine: Option<PathBuf>,
     pub settings: Settings,
@@ -64,18 +64,6 @@ pub struct Form {
     /// Área da conversão em BOT aberta, e a confirmação marcada.
     pub upgrade_open: bool,
     pub upgrade_understood: bool,
-}
-
-impl Default for Form {
-    fn default() -> Self {
-        Self {
-            engine: None,
-            settings: Settings::default(),
-            confirm_stop_now: false,
-            upgrade_open: false,
-            upgrade_understood: false,
-        }
-    }
 }
 
 /// O que a tela pediu neste quadro.

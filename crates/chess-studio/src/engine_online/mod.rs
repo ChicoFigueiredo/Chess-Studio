@@ -191,6 +191,7 @@ pub fn apply_intent(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn engine_online_window(
     mut contexts: EguiContexts,
     i18n: Res<I18n>,
@@ -232,9 +233,10 @@ fn engine_online_window(
         .resizable(false)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(&ctx, |ui| {
-            let height = (ctx.viewport_rect().height() - 120.0).max(240.0);
+            let height = (ctx.viewport_rect().height() - 400.0).max(240.0);
             egui::ScrollArea::vertical()
                 .max_height(height)
+                .min_scrolled_height(height)
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
                     view::body(

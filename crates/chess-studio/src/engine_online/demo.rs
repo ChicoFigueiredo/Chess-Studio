@@ -267,6 +267,26 @@ fn enter(
     flow.cancel();
     if let Some(kind) = scene.remote {
         if let Some(dock) = dock {
+            // Só o Painel Análise, para a captura mostrar a lista de Engines inteira.
+            for id in [
+                ids::CLOCK,
+                ids::CAPTURED,
+                ids::BOARD2D,
+                ids::NOTATION,
+                ids::STUDY,
+                ids::AIDS,
+                ids::REVIEW,
+                ids::ARBITRATION,
+                ids::TRAINING,
+                ids::LIBRARY,
+                ids::OPENINGS,
+                ids::EXPLORER,
+                ids::SCORESHEET,
+                crate::online::PANEL_ID,
+                "Engines",
+            ] {
+                dock.layout.set_visible(id, false);
+            }
             dock.layout.set_visible(ids::ANALYSIS, true);
             dock.layout.activate(ids::ANALYSIS);
         }

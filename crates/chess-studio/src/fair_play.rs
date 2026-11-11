@@ -403,11 +403,11 @@ pub struct GuardedAnalysis {
 enum Backend {
     Local(chess_uci::AnalysisController),
     /// Num `Mutex` só para o recurso ser `Sync` (as consultas da rede não são); nunca há disputa.
-    Remote(std::sync::Mutex<chess_providers::RemoteEngine>),
+    Remote(Box<std::sync::Mutex<chess_providers::RemoteEngine>>),
 }
 
 fn unpoisoned(
-    engine: &mut std::sync::Mutex<chess_providers::RemoteEngine>,
+    engine: &mut Box<std::sync::Mutex<chess_providers::RemoteEngine>>,
 ) -> &mut chess_providers::RemoteEngine {
     engine
         .get_mut()
@@ -436,8 +436,8 @@ impl GuardedAnalysis {
     ) -> Result<Self, FairPlayLocked> {
         fair.check(Computation::RemoteEngine, subject)?;
         Ok(Self {
-            backend: Backend::Remote(std::sync::Mutex::new(chess_providers::RemoteEngine::new(
-                api,
+            backend: Backend::Remote(Box::new(std::sync::Mutex::new(
+                chess_providers::RemoteEngine::new(api),
             ))),
         })
     }
