@@ -42,25 +42,38 @@ pub fn category_key(category: Category) -> &'static str {
     }
 }
 
-/// Filtro por custo.
+/// Filtro por custo e modo de uso (US-CRED-01: Grátis, Com cadastro, Manual, Pago opcional).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum CostFilter {
     #[default]
     All,
     /// Gratuitos (com ou sem cadastro, com ou sem limites).
     Free,
+    /// Gratuitos que pedem cadastro no Provedor.
+    WithSignup,
+    /// Sem API: só importação de arquivo.
+    Manual,
     /// Pagos, sob aprovação ou com custo não confirmado.
     Paid,
 }
 
 impl CostFilter {
-    pub const ALL: [CostFilter; 3] = [CostFilter::All, CostFilter::Free, CostFilter::Paid];
+    pub const ALL: [CostFilter; 5] = [
+        CostFilter::All,
+        CostFilter::Free,
+        CostFilter::WithSignup,
+        CostFilter::Manual,
+        CostFilter::Paid,
+    ];
 
-    pub fn matches(self, cost: Cost) -> bool {
+    pub fn matches(self, provider: &Provider) -> bool {
+        let cost = provider.cost();
         let free = cost <= Cost::FreeLimited;
         match self {
             Self::All => true,
             Self::Free => free,
+            Self::WithSignup => cost == Cost::FreeWithSignup,
+            Self::Manual => is_manual(provider),
             Self::Paid => !free,
         }
     }
@@ -69,7 +82,74 @@ impl CostFilter {
         match self {
             Self::All => "connections-filter-all",
             Self::Free => "connections-filter-free",
+            Self::WithSignup => "connections-filter-signup",
+            Self::Manual => "connections-filter-manual",
             Self::Paid => "connections-filter-paid",
+        }
+    }
+}
+
+/// O Provedor só oferece importação manual de arquivo.
+fn is_manual(provider: &Provider) -> bool {
+    !provider.uses_network()
+        && provider
+            .services
+            .iter()
+            .any(|s| s.status == ServiceStatus::ManualImport)
+}
+
+/// Filtro pelo estado do cartão (a palavra do selo).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum StateFilter {
+    #[default]
+    All,
+    /// Desligado.
+    Off,
+    /// Ligado (com ou sem nome vinculado, inclusive em pausa ou com falha).
+    On,
+    /// Com Conexão autorizada (inclusive a que precisa de atenção).
+    Authorized,
+    /// Importação manual.
+    Manual,
+    /// Em breve ou a confirmar.
+    Soon,
+}
+
+impl StateFilter {
+    pub const ALL: [StateFilter; 6] = [
+        StateFilter::All,
+        StateFilter::Off,
+        StateFilter::On,
+        StateFilter::Authorized,
+        StateFilter::Manual,
+        StateFilter::Soon,
+    ];
+
+    pub fn matches(self, state: CardState) -> bool {
+        match self {
+            Self::All => true,
+            Self::Off => state == CardState::Off,
+            Self::On => matches!(
+                state,
+                CardState::On | CardState::Linked | CardState::Limited | CardState::Failing
+            ),
+            Self::Authorized => matches!(
+                state,
+                CardState::Authorized | CardState::Expired | CardState::Locked
+            ),
+            Self::Manual => state == CardState::ManualImport,
+            Self::Soon => matches!(state, CardState::Planned | CardState::Unconfirmed),
+        }
+    }
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::All => "connections-state-filter-all",
+            Self::Off => "connections-state-filter-off",
+            Self::On => "connections-state-filter-on",
+            Self::Authorized => "connections-state-filter-authorized",
+            Self::Manual => "connections-state-filter-manual",
+            Self::Soon => "connections-state-filter-soon",
         }
     }
 }
@@ -114,14 +194,31 @@ fn fold(text: &str) -> String {
 /// Os Provedores do catálogo que passam nos filtros, por categoria na ordem da Central e,
 /// dentro de cada uma, o que funciona antes do que vem em breve e do que requer aprovação e, em cada faixa,
 /// **gratuitos primeiro** (custo crescente; a ordem do catálogo desempata).
+#[cfg(test)]
 pub fn groups(filter: CostFilter, query: &str) -> Vec<Group> {
+    groups_by(filter, StateFilter::All, query, &|p| {
+        card_state(p, &ProviderState::Disabled, false, false)
+    })
+}
+
+/// Como [`groups`], também pelo estado do cartão (`state_of` diz o estado de cada Provedor).
+pub fn groups_by(
+    filter: CostFilter,
+    state_filter: StateFilter,
+    query: &str,
+    state_of: &dyn Fn(&Provider) -> CardState,
+) -> Vec<Group> {
     CATEGORY_ORDER
         .into_iter()
         .filter_map(|category| {
             let mut providers: Vec<&'static Provider> = catalog()
                 .iter()
                 .filter(|p| p.category == category)
-                .filter(|p| filter.matches(p.cost()) && matches_query(p, query))
+                .filter(|p| {
+                    filter.matches(p)
+                        && state_filter.matches(state_of(p))
+                        && matches_query(p, query)
+                })
                 .collect();
             // Estável: o desempate é a ordem do catálogo.
             providers.sort_by_key(|p| (tier_of(p), p.cost()));
@@ -135,10 +232,17 @@ pub fn groups(filter: CostFilter, query: &str) -> Vec<Group> {
 
 /// Quantos Provedores cada filtro mostraria (sem a busca): o detalhe dos cartões de filtro.
 pub fn count(filter: CostFilter) -> usize {
-    catalog()
-        .iter()
-        .filter(|p| filter.matches(p.cost()))
-        .count()
+    catalog().iter().filter(|p| filter.matches(p)).count()
+}
+
+/// Id Fluent da licença dos dados do Provedor (Origem, ADR-0006).
+pub fn license_key(provider: &Provider) -> String {
+    format!("connections-license-{}", provider.id.key())
+}
+
+/// Id Fluent das restrições de uso do Provedor.
+pub fn restrictions_key(provider: &Provider) -> String {
+    format!("connections-restrict-{}", provider.id.key())
 }
 
 /// O estado do cartão (a palavra do selo).
@@ -991,6 +1095,92 @@ mod tests {
     }
 
     #[test]
+    fn signup_and_manual_filters_follow_the_catalog() {
+        let signup = groups(CostFilter::WithSignup, "");
+        assert!(!signup.is_empty());
+        assert!(
+            signup
+                .iter()
+                .flat_map(|g| &g.providers)
+                .all(|p| p.cost() == Cost::FreeWithSignup)
+        );
+        let manual = groups(CostFilter::Manual, "");
+        let ids: Vec<ProviderId> = manual
+            .iter()
+            .flat_map(|g| &g.providers)
+            .map(|p| p.id)
+            .collect();
+        assert!(ids.contains(&ProviderId::Twic));
+        assert!(!ids.contains(&ProviderId::Lichess));
+        assert!(
+            ids.iter()
+                .all(|id| state_of(*id) == CardState::ManualImport)
+        );
+        assert_eq!(count(CostFilter::Manual), ids.len());
+        // As contagens batem com a lista mostrada.
+        for filter in CostFilter::ALL {
+            let shown: usize = groups(filter, "").iter().map(|g| g.providers.len()).sum();
+            assert_eq!(count(filter), shown, "{filter:?}");
+        }
+    }
+
+    #[test]
+    fn the_state_filter_uses_the_state_of_each_card() {
+        let state = |p: &Provider| {
+            if p.id == ProviderId::Lichess {
+                CardState::Authorized
+            } else {
+                state_of(p.id)
+            }
+        };
+        let ids = |sf: StateFilter| -> Vec<ProviderId> {
+            groups_by(CostFilter::All, sf, "", &state)
+                .iter()
+                .flat_map(|g| &g.providers)
+                .map(|p| p.id)
+                .collect()
+        };
+        assert_eq!(ids(StateFilter::Authorized), vec![ProviderId::Lichess]);
+        assert!(ids(StateFilter::Manual).contains(&ProviderId::Twic));
+        assert!(!ids(StateFilter::Manual).contains(&ProviderId::Lichess));
+        assert!(ids(StateFilter::Off).contains(&ProviderId::ChessCom));
+        assert!(!ids(StateFilter::Off).contains(&ProviderId::Lichess));
+        assert!(!ids(StateFilter::Soon).is_empty());
+        assert_eq!(ids(StateFilter::All).len(), catalog().len());
+        // Combina com o filtro de custo e a busca.
+        let both = groups_by(CostFilter::Free, StateFilter::Authorized, "lichess", &state);
+        assert_eq!(both.len(), 1);
+        assert!(groups_by(CostFilter::Manual, StateFilter::Authorized, "", &state).is_empty());
+    }
+
+    #[test]
+    fn every_provider_has_its_data_license_and_restrictions_in_user_language() {
+        let i18n = I18n::pt_br();
+        for p in catalog() {
+            for key in [license_key(p), restrictions_key(p)] {
+                let text = i18n.t(&key);
+                assert_ne!(text, key, "{} sem texto ({key})", p.name);
+                // Nunca o texto técnico do catálogo.
+                assert_ne!(text, p.data_license, "{}", p.name);
+                assert!(!p.restrictions.contains(&text.as_str()), "{}", p.name);
+            }
+        }
+        // Os direitos que a especificação cita.
+        assert!(
+            i18n.t(&license_key(provider(ProviderId::Fide)))
+                .contains("FIDE")
+        );
+        assert!(
+            i18n.t(&license_key(provider(ProviderId::Twic)))
+                .contains("uso pessoal")
+        );
+        assert!(
+            i18n.t(&license_key(provider(ProviderId::ChessCom)))
+                .contains("Sem redistribuição")
+        );
+    }
+
+    #[test]
     fn card_states_follow_the_catalog_and_the_network_state() {
         assert_eq!(state_of(ProviderId::Lichess), CardState::Off);
         assert_eq!(state_of(ProviderId::ChessCom), CardState::Off);
@@ -1504,6 +1694,93 @@ mod tests {
         assert!(checked > 200, "os arquivos foram lidos ({checked} linhas)");
     }
 
+    /// Os textos das integrações (#263) seguem o GLOSSARY: "Conexão" e não "conta"; "cofre do
+    /// sistema" e não "chaveiro"; erro do Provedor sem código HTTP. Lê os `.ftl` das integrações
+    /// inteiros (só os valores, sem comentários); `training` e `library` entram porque os
+    /// textos de rede vivem neles e não têm nenhuma dessas palavras.
+    #[test]
+    fn integration_texts_avoid_the_glossary_banned_words_and_http_codes() {
+        let files = [
+            (
+                "connections",
+                include_str!("../../assets/i18n/pt-BR/connections.ftl"),
+            ),
+            (
+                "authorization",
+                include_str!("../../assets/i18n/pt-BR/authorization.ftl"),
+            ),
+            (
+                "engineonline",
+                include_str!("../../assets/i18n/pt-BR/engineonline.ftl"),
+            ),
+            ("online", include_str!("../../assets/i18n/pt-BR/online.ftl")),
+            ("fics", include_str!("../../assets/i18n/pt-BR/fics.ftl")),
+            (
+                "explorer",
+                include_str!("../../assets/i18n/pt-BR/explorer.ftl"),
+            ),
+            (
+                "profiledata",
+                include_str!("../../assets/i18n/pt-BR/profiledata.ftl"),
+            ),
+            ("fide", include_str!("../../assets/i18n/pt-BR/fide.ftl")),
+            (
+                "analysis",
+                include_str!("../../assets/i18n/pt-BR/analysis.ftl"),
+            ),
+            (
+                "training",
+                include_str!("../../assets/i18n/pt-BR/training.ftl"),
+            ),
+            (
+                "library",
+                include_str!("../../assets/i18n/pt-BR/library.ftl"),
+            ),
+        ];
+        // Palavras inteiras (sem pegar "contagem" nem "conteúdo").
+        let banned_words = [
+            "conta",
+            "contas",
+            "chaveiro",
+            "keystore",
+            "login",
+            "credencial",
+            "credenciais",
+        ];
+        // Pedaços que não podem aparecer em nenhum lugar do texto.
+        let banned_parts = ["http", "erro { $status", "erro {$status", "código de erro"];
+        // (arquivo, trecho) justificados: hoje nenhum.
+        let exceptions: [(&str, &str); 0] = [];
+        let mut checked = 0;
+        for (name, source) in files {
+            for line in source.lines() {
+                let trimmed = line.trim_start();
+                if trimmed.is_empty() || trimmed.starts_with('#') {
+                    continue;
+                }
+                if exceptions
+                    .iter()
+                    .any(|(file, part)| *file == name && line.contains(part))
+                {
+                    continue;
+                }
+                let text = trimmed.split_once('=').map_or(trimmed, |(_, value)| value);
+                let lower = text.to_lowercase();
+                for word in lower.split(|c: char| !c.is_alphanumeric()) {
+                    assert!(
+                        !banned_words.contains(&word),
+                        "{word:?} em {name}.ftl: {line}"
+                    );
+                }
+                for part in banned_parts {
+                    assert!(!lower.contains(part), "{part:?} em {name}.ftl: {line}");
+                }
+                checked += 1;
+            }
+        }
+        assert!(checked > 800, "os arquivos foram lidos ({checked} linhas)");
+    }
+
     #[test]
     fn every_ready_network_service_has_a_consent_line() {
         // Toda capacidade que o app usa (serviço pronto, com rede) tem frase em "O que será
@@ -1592,6 +1869,9 @@ mod tests {
             }
         }
         for filter in CostFilter::ALL {
+            assert_ne!(i18n.t(filter.key()), filter.key());
+        }
+        for filter in StateFilter::ALL {
             assert_ne!(i18n.t(filter.key()), filter.key());
         }
         for tier in [Tier::Soon, Tier::Approval] {

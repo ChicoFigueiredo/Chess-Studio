@@ -329,6 +329,48 @@ fn the_provider_pause_becomes_a_wait_in_seconds() {
 }
 
 #[test]
+fn the_remote_answer_records_the_instant_and_the_origin_names_provider_time_and_terms() {
+    let mut env = env(true);
+    env.server.route("/v1", fixture("chess-api-start.http"));
+    assert!(env.analysis.remote().answered_at().is_none());
+    env.analysis.choose_remote();
+    env.analysis.set_enabled(true);
+    assert!(env.until(|a| a.shown().is_some()), "sem resposta");
+    let at = env
+        .analysis
+        .remote()
+        .answered_at()
+        .expect("instante da resposta");
+
+    let i18n = I18n::pt_br();
+    let later = Timestamp::from_millis(at.as_millis() + 5 * 60_000);
+    let text = origin_text(&i18n, Some(at), later);
+    assert!(text.contains("Chess-API.com"), "{text}");
+    assert!(text.contains("5 min"), "{text}");
+    assert!(text.contains("termos do Chess-API.com"), "{text}");
+    // Sem resposta ainda: o Provedor e os termos aparecem, sem inventar instante.
+    let pending = origin_text(&i18n, None, later);
+    assert!(
+        pending.contains("Chess-API.com") && pending.contains("termos"),
+        "{pending}"
+    );
+    assert!(!pending.contains("min"), "{pending}");
+    // Trocar a Engine esquece o instante.
+    env.analysis.set_engine(None);
+    assert!(env.analysis.remote().answered_at().is_none());
+}
+
+#[test]
+fn the_local_engine_controls_do_not_apply_to_the_remote_engine() {
+    let mut analysis = Analysis::default();
+    assert!(analysis.shows_local_engine_controls());
+    analysis.choose_remote();
+    assert!(!analysis.shows_local_engine_controls());
+    analysis.set_engine(None);
+    assert!(analysis.shows_local_engine_controls());
+}
+
+#[test]
 fn every_remote_text_exists_in_pt_br_and_stays_in_user_language() {
     let i18n = I18n::pt_br();
     let keys = [
@@ -341,6 +383,8 @@ fn every_remote_text_exists_in_pt_br_and_stays_in_user_language() {
         "remote-warning-continue",
         "remote-warning-cancel",
         "remote-act-turn-on",
+        "remote-origin",
+        "remote-origin-pending",
         "remote-problem-disabled",
         "remote-problem-fairplay",
         "remote-problem-invalid",

@@ -6,8 +6,8 @@ mod common;
 
 use chess_game::{GameSetup, PolicyKind};
 use chess_store::{
-    FideSnapshot, GameMetadata, ImportMode, ImportOptions, ImportScope, ImportedQuery, ProfileId,
-    Provenance, Store, migrations,
+    FIDE_LICENSE_VIA_LICHESS, FideSnapshot, GameMetadata, ImportMode, ImportOptions, ImportScope,
+    ImportedQuery, ProfileId, Provenance, Store, migrations,
 };
 use common::{TempDb, play};
 
@@ -26,6 +26,7 @@ fn snapshot(id: u64) -> FideSnapshot {
         inactive: false,
         queried_at_ms: 1_794_398_400_000,
         source: "lichess".into(),
+        license: FIDE_LICENSE_VIA_LICHESS.into(),
     }
 }
 
@@ -47,11 +48,42 @@ fn migration_17_applies_on_a_v16_database_and_keeps_every_row() {
         assert_eq!(migrations::current_version(&conn).unwrap(), 16);
     }
     let store = Store::open(db.path()).unwrap();
-    assert_eq!(store.schema_version().unwrap(), 17);
+    assert_eq!(store.schema_version().unwrap(), 18);
     let ana = ProfileId(2);
     assert_eq!(store.profile(ana).unwrap().name, "Ana");
     assert_eq!(store.list_connections(ana, None).unwrap().len(), 1);
     assert_eq!(store.fide_rating(ana, 9_999_991).unwrap(), None);
+}
+
+#[test]
+fn migration_18_gives_the_rows_already_saved_the_license_of_the_lichess_copy() {
+    let db = TempDb::new("fide-mig18");
+    {
+        let mut conn = rusqlite::Connection::open(db.path()).unwrap();
+        migrations::migrate_to(&mut conn, 17).unwrap();
+        conn.execute_batch(
+            "INSERT INTO profiles (id, name, created_at_ms) VALUES (2, 'Ana', 5);
+             INSERT INTO fide_ratings (profile_id, fide_id, name, standard, queried_at_ms, source)
+                 VALUES (2, 9999991, 'Exemplo, Ana', 2301, 7, 'lichess');",
+        )
+        .unwrap();
+    }
+    let store = Store::open(db.path()).unwrap();
+    let saved = store.fide_rating(ProfileId(2), 9_999_991).unwrap().unwrap();
+    assert_eq!(saved.standard, Some(2301));
+    assert_eq!(saved.license, FIDE_LICENSE_VIA_LICHESS);
+}
+
+#[test]
+fn the_license_is_saved_and_read_back_with_the_rating() {
+    let store = Store::open_in_memory().unwrap();
+    let mut other = snapshot(3);
+    other.license = "outra-licenca".into();
+    store.save_fide_rating(ME, &other).unwrap();
+    assert_eq!(
+        store.fide_rating(ME, 3).unwrap().unwrap().license,
+        "outra-licenca"
+    );
 }
 
 #[test]

@@ -56,7 +56,7 @@ pub use connections::{
 pub use engines::{EngineId, EngineOrigin, EngineRecord};
 pub use error::{Result, StoreError};
 pub use favorites::{Favorite, FavoriteId, FavoriteOrigin, FavoriteQuery, NewFavorite};
-pub use fide::FideSnapshot;
+pub use fide::{FIDE_LICENSE_VIA_LICHESS, FideSnapshot};
 pub use imported::{
     DEFAULT_BATCH, DEFAULT_MAX_DECOMPRESSED, ImportOptions, ImportProgress, ImportReport,
     ImportSummary, ImportedId, ImportedQuery, ImportedSummary, MAX_ERROR_SAMPLES,

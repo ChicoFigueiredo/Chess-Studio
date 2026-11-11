@@ -31,7 +31,7 @@ use chess_net::ProviderId;
 use chess_store::{
     Connection, ConnectionId, ConnectionKind, NewConnection, ProfileId, Store, StoreError,
 };
-use model::CostFilter;
+use model::{CostFilter, StateFilter};
 use probe::{Target, TestState};
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
@@ -136,6 +136,7 @@ impl Note {
 #[derive(Resource, Debug, Default)]
 pub struct ConnectionsUi {
     pub(crate) filter: CostFilter,
+    pub(crate) state_filter: StateFilter,
     pub(crate) query: String,
     pub(crate) forms: HashMap<ProviderId, LinkForm>,
     pub(crate) notes: HashMap<ProviderId, Note>,
@@ -216,6 +217,24 @@ impl ConnectionsUi {
     /// A página já rolada `pixels` para baixo (capturas de evidência).
     pub fn scrolled(&mut self, pixels: f32) {
         self.scroll = Some((pixels, 8));
+    }
+
+    /// Escolhe os filtros pela chave (`--connections-filter signup|manual|free|paid`,
+    /// `--connections-state-filter off|on|authorized|manual|soon`), só para capturas.
+    pub fn set_filters(&mut self, cost: Option<&str>, state: Option<&str>) {
+        let by_key = |key: &str| key.rsplit('-').next().unwrap_or_default().to_owned();
+        if let Some(cost) = cost {
+            self.filter = CostFilter::ALL
+                .into_iter()
+                .find(|f| by_key(f.key()) == cost)
+                .unwrap_or_default();
+        }
+        if let Some(state) = state {
+            self.state_filter = StateFilter::ALL
+                .into_iter()
+                .find(|f| by_key(f.key()) == state)
+                .unwrap_or_default();
+        }
     }
 
     /// Abre os Detalhes dos Provedores de chave dada (capturas de evidência).

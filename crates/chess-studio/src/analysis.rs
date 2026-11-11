@@ -512,10 +512,20 @@ impl Analysis {
         self.demo = true;
         self.enabled = !matches!(status, Status::Off | Status::Locked(_));
         self.remote.select();
+        if shown.is_some() {
+            self.remote
+                .set_answered_at(crate::net_service::NetService::now());
+        }
         self.ready = true;
         self.view = shown;
         self.remote.set_problem(problem);
         self.status = status;
+    }
+
+    /// Threads, Hash, Carga e o aviso da segunda Engine só valem para uma Engine local: a
+    /// remota roda no servidor do Provedor (#264).
+    pub fn shows_local_engine_controls(&self) -> bool {
+        !self.remote.is_selected()
     }
 
     /// A Engine remota passa a ser a escolhida (depois do aviso e do consentimento).
@@ -694,6 +704,10 @@ impl Analysis {
                     if update.id == self.request
                         && let Some(target) = &self.target
                     {
+                        if self.launched.as_ref().is_some_and(|l| l.remote) {
+                            self.remote
+                                .set_answered_at(crate::net_service::NetService::now());
+                        }
                         self.view = Some(Shown {
                             update,
                             base: target.base.clone(),
@@ -1319,6 +1333,9 @@ fn settings(ui: &mut egui::Ui, i18n: &I18n, analysis: &mut Analysis) {
             analysis.set_multipv(lines);
         }
     });
+    if !analysis.shows_local_engine_controls() {
+        return;
+    }
     let mut threads = analysis.threads;
     let response = ui.add(
         egui::Slider::new(&mut threads, 1..=analysis.limits.max_threads)
@@ -1486,7 +1503,12 @@ fn engine_picker(ui: &mut egui::Ui, i18n: &I18n, analysis: &mut Analysis) {
         analysis.set_engine(path);
     }
     if analysis.remote.is_selected() {
-        crate::remote_engine::active_note(ui, i18n);
+        crate::remote_engine::active_note(
+            ui,
+            i18n,
+            analysis.remote.answered_at(),
+            crate::net_service::NetService::now(),
+        );
     }
     if let Some(name) = &analysis.engine_name
         && analysis.has_engine()
