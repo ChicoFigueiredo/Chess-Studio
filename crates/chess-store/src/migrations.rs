@@ -315,6 +315,22 @@ CREATE TABLE opening_moves (
 CREATE INDEX opening_moves_entry ON opening_moves (entry_id);
 ";
 
+// Versão 13 reservada para a Biblioteca e o PGN (#216), que corre em paralelo. Este marcador
+// só mantém a numeração; ao juntar os dois branches, o conteúdo da outra migração substitui
+// esta linha e a V14 abaixo (independente: só toca `exercises`) segue valendo.
+const V13_RESERVED: &str = "SELECT 1;";
+
+// Pacotes de Exercícios externos (CX-5, #217): Origem (`bundled` ou o Provedor, ex.:
+// `lichess`), pacote a que o Exercício pertence e marca de oculto. Um Exercício de pacote
+// removido que já tem Resolução fica oculto (`hidden = 1`) para a Resolução, que referencia
+// `exercises(id)` com ON DELETE CASCADE, não ser apagada junto.
+const V14_EXERCISE_PACKS: &str = "
+ALTER TABLE exercises ADD COLUMN origin TEXT NOT NULL DEFAULT 'bundled';
+ALTER TABLE exercises ADD COLUMN pack TEXT;
+ALTER TABLE exercises ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1));
+CREATE INDEX exercises_pack ON exercises (pack) WHERE pack IS NOT NULL;
+";
+
 /// Migrações em ordem; o índice + 1 é a versão resultante.
 const MIGRATIONS: &[&str] = &[
     V1_CORE,
@@ -329,6 +345,8 @@ const MIGRATIONS: &[&str] = &[
     V10_MANUAL_SCORESHEET,
     V11_SCORESHEET_CHECK,
     V12_OPENING_EXPLORER,
+    V13_RESERVED,
+    V14_EXERCISE_PACKS,
 ];
 
 /// Versão de esquema desta build.

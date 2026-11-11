@@ -53,7 +53,9 @@ fn bancos_com_o_flag_errado_sao_corrigidos_ao_migrar() {
         // Volta ao esquema v8 (anterior à correção): sem as tabelas das migrações seguintes.
         conn.execute_batch(
             "DROP TABLE opening_moves; DROP TABLE manual_scoresheet_check_entries; DROP TABLE manual_scoresheet_checks;
-             DROP TABLE manual_scoresheet_entries; DROP TABLE manual_scoresheets;",
+             DROP TABLE manual_scoresheet_entries; DROP TABLE manual_scoresheets;
+             DROP INDEX exercises_pack; ALTER TABLE exercises DROP COLUMN origin;
+             ALTER TABLE exercises DROP COLUMN pack; ALTER TABLE exercises DROP COLUMN hidden;",
         )
         .unwrap();
         conn.pragma_update(None, "user_version", 8).unwrap();
