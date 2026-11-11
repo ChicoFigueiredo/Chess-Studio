@@ -83,6 +83,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 | CX-HOM-62 | Engine online: Ação no Ribbon e na Paleta | não | UNVERIFIED |
 | CX-HOM-63 | Engine online: força (Elo) da Engine | sim | UNVERIFIED |
 | CX-HOM-64 | Engine online: retomar Partida ao religar | sim | UNVERIFIED |
+| CX-HOM-76 | Explorador: janela temporal, aviso de amostra e privacidade | sim | UNVERIFIED |
 
 ## Itens
 
@@ -740,6 +741,16 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Esperado:** um tabuleiro pequeno mostra a Partida, com nomes, relógios e o último Lance. Nada vai ao tabuleiro principal nem à Biblioteca, e a Trava de fair play não liga. Uma Partida de variante é recusada com aviso.
 - **Com o serviço real (UNVERIFIED):** os textos de observação (`You are now observing game N.`, `Game N: …`, `Removing game N from observation list.`) do FICS real são reconhecidos.
 - **Evidência:** [`online/fics_tests.rs`](../../crates/chess-studio/src/online/fics_tests.rs), [decisões FC-13 a FC-21](../decisoes/2026-11-11-fics.md).
+
+### CX-HOM-76. Explorador: janela temporal, aviso de amostra e texto de privacidade
+
+- **Passos:**
+  1. Painel Explorador, fonte **Mestres (Lichess)**, com o Lichess ligado e a conexão autorizada: olhe o rodapé.
+  2. Troque para **Minha Biblioteca** e olhe o rodapé de novo.
+  3. Desligue o Lichess e leia o texto do estado "O Lichess está desligado".
+- **Esperado:** o rodapé traz a Origem, o **Período** (nas fontes do Lichess: "o Lichess não informa as datas desta base, e o app não filtra por data"; na Biblioteca: "todas as Partidas da sua Biblioteca") e a frase de que a estatística é histórica, não é avaliação e que vitórias por cor não mostram vantagem objetiva nem o melhor Lance. O texto do estado desligado diz que vão a Posição, a chave da conexão autorizada e, em "Um jogador", o nome digitado.
+- **Serviço real?** sim, só para ver os números reais; o texto não depende do serviço.
+- **Evidência:** testes em `explorer/view.rs`, [capturas](../evidencias/explorador-janela/README.md).
 
 ## Fora deste roteiro
 

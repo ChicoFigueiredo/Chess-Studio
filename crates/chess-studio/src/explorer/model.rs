@@ -246,6 +246,18 @@ pub struct OriginNote {
     pub provider: String,
     pub how: How,
     pub license: String,
+    /// A janela temporal da base consultada (#265).
+    pub window: Window,
+}
+
+/// O período que a estatística cobre. O Provedor não devolve as datas da base e o app não
+/// filtra por data, então a fonte diz que não informa em vez de inventar um intervalo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Window {
+    /// Tudo o que há na Biblioteca do Perfil.
+    Library,
+    /// O Provedor não informa a janela da base.
+    NotReported,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -275,6 +287,7 @@ impl OriginNote {
             provider: answer.provenance.provider.info().name.to_owned(),
             how,
             license: answer.provenance.license.clone(),
+            window: Window::NotReported,
         }
     }
 
@@ -387,6 +400,7 @@ impl OpeningsTable {
                 provider: String::new(),
                 how: How::Local,
                 license: String::new(),
+                window: Window::Library,
             },
             still_loading: false,
         }
