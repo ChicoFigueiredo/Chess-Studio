@@ -7,8 +7,13 @@
 //! [`view`]. Aqui vivem o estado da tela e a execução dos pedidos da interface: a Central só
 //! escreve no `NetService` (consentimento, cache) e no `chess-store` (Conexões); nunca na
 //! Partida (ADR-0001).
+//!
+//! A autorização do Lichess (Cofre, senha-mestra, navegador, chave pessoal, desconectar) vive em
+//! [`auth`]; as cenas de demonstração das capturas, em [`demo`].
 
+mod auth;
 mod browser;
+pub mod demo;
 pub mod model;
 mod probe;
 mod view;
@@ -16,7 +21,9 @@ mod view;
 use crate::net_service::NetService;
 use crate::persistence::PersistenceHandle;
 use crate::provider_consent::{ConsentDialog, ProviderConsentAnswered};
+use crate::secrets;
 use crate::training_ui::with_store;
+use auth::{Intent, Slot, VaultMode};
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use chess_net::ProviderId;
@@ -52,6 +59,34 @@ pub(crate) enum Op {
         provider: ProviderId,
         feature: String,
     },
+    /// Autorizar a entrada pelo navegador (uma Conexão nova).
+    Authorize(Slot),
+    /// Autorizar de novo a Conexão expirada ou recusada pelo Provedor.
+    Reauthorize(ConnectionId),
+    /// Abrir o formulário da chave pessoal (`renew`: a Conexão expirada que ela substitui).
+    OpenKeyForm {
+        slot: Slot,
+        renew: Option<ConnectionId>,
+    },
+    CloseKeyForm(Slot),
+    /// Guardar a chave pessoal do formulário.
+    SubmitKey(Slot),
+    /// Cancelar a autorização em andamento (ou o pedido que espera o Cofre).
+    CancelAuthorization,
+    /// Abrir de novo a página de autorização no navegador.
+    ReopenBrowser,
+    /// Esquecer como terminou a última tentativa da entrada.
+    DismissEnding(Slot),
+    /// Tentar de novo o último pedido da entrada.
+    Retry(Slot),
+    /// Conferir a Conexão autorizada com o Provedor.
+    TestAuthorized(ConnectionId),
+    /// Desconectar: revogar no Provedor, apagar o segredo e remover a Conexão.
+    Disconnect(ConnectionId),
+    OpenVaultDialog(VaultMode),
+    CloseVaultDialog,
+    SubmitVaultDialog,
+    LockVault,
 }
 
 /// Formulário de vincular, aberto num cartão.
@@ -107,9 +142,14 @@ pub struct ConnectionsUi {
     pub(crate) renaming: Option<RenameForm>,
     /// A Conexão que espera a confirmação para ser removida.
     pub(crate) confirm_remove: Option<ConnectionId>,
-    /// Provedores com Conexão **autorizada**. Fica vazio até o Cofre (#224): hoje só nomes e IDs
-    /// públicos se vinculam, e "Autorizado" nunca aparece sem isto.
+    /// Provedores com Conexão **autorizada e em uso** (segredo no Cofre aberto, não recusada
+    /// pelo Provedor). Derivado do banco e do Cofre por [`ConnectionsUi::sync`]: "Autorizado"
+    /// nunca aparece sem isto.
     pub(crate) authorized: HashSet<ProviderId>,
+    /// Autorizações em andamento, diálogos do Cofre e situação de cada Conexão autorizada.
+    pub(crate) auth: auth::Auth,
+    /// Como abrir páginas no navegador (os testes trocam por um gravador).
+    pub(crate) opener: auth::Opener,
     /// Rolagem vertical inicial, uma vez (`--connections-scroll`, para as capturas).
     pub(crate) scroll: Option<(f32, u8)>,
     /// As Conexões do Perfil local ativo.
@@ -226,6 +266,44 @@ impl ConnectionsUi {
                     };
                     self.notes.insert(provider, note);
                 }
+                Op::Authorize(slot) => self.authorize(slot, None, service, dialog, handle),
+                Op::Reauthorize(id) => {
+                    let slot = self.list.iter().find(|c| c.id == id).and_then(|c| {
+                        ProviderId::from_key(&c.provider).map(|provider| Slot {
+                            provider,
+                            role: c.role,
+                        })
+                    });
+                    if let Some(slot) = slot {
+                        self.authorize(slot, Some(id), service, dialog, handle);
+                    }
+                }
+                Op::OpenKeyForm { slot, renew } => self.open_key_form(slot, renew),
+                Op::CloseKeyForm(slot) => {
+                    self.auth.key_forms.remove(&slot);
+                }
+                Op::SubmitKey(slot) => self.submit_key(slot, service, dialog, handle),
+                Op::CancelAuthorization => self.cancel_authorization(service, handle),
+                Op::ReopenBrowser => self.reopen_browser(),
+                Op::DismissEnding(slot) => {
+                    self.auth.endings.remove(&slot);
+                }
+                Op::Retry(slot) => match self.auth.last.get(&slot).copied() {
+                    // A chave digitada já foi consumida: reabre o formulário vazio.
+                    Some(Intent::Key { renew, .. }) => {
+                        self.open_key_form(slot, renew);
+                    }
+                    Some(Intent::Browser { renew, .. }) => {
+                        self.authorize(slot, renew, service, dialog, handle);
+                    }
+                    None => self.authorize(slot, None, service, dialog, handle),
+                },
+                Op::TestAuthorized(id) => self.check_authorized(id, service),
+                Op::Disconnect(id) => self.disconnect(id, service),
+                Op::OpenVaultDialog(mode) => self.open_vault_dialog(mode),
+                Op::CloseVaultDialog => self.close_vault_dialog(),
+                Op::SubmitVaultDialog => self.submit_vault_dialog(service),
+                Op::LockVault => self.lock_vault(service, handle),
                 Op::OpenDocs(provider) | Op::OpenTerms(provider) => {
                     // O endereço vem do catálogo, nunca da tela.
                     let info = provider.info();
@@ -235,7 +313,7 @@ impl ConnectionsUi {
                         info.terms_url
                     };
                     self.notes.remove(&provider);
-                    if !browser::open(url) {
+                    if !self.opener.open(url, false) {
                         self.notes
                             .insert(provider, Note::with("connections-open-failed", "url", url));
                     }
@@ -269,9 +347,21 @@ impl ConnectionsUi {
                     }
                 }
                 Op::Remove(id) => {
-                    let _ = with_store(&mut self.local, handle, |store, profile| {
-                        store.remove_connection(profile, id)
+                    // O segredo sai do Cofre antes da linha sair do banco; se o Cofre recusar,
+                    // a Conexão fica e a tela explica.
+                    let vault = service.vault().clone();
+                    let result = with_store(&mut self.local, handle, |store, profile| {
+                        secrets::forget_connection(store, &vault, profile, id)
                     });
+                    let provider = self
+                        .list
+                        .iter()
+                        .find(|c| c.id == id)
+                        .and_then(|c| ProviderId::from_key(&c.provider));
+                    if let (Some(Err(_)), Some(provider)) = (result, provider) {
+                        self.notes
+                            .insert(provider, Note::plain("connections-remove-error"));
+                    }
                     self.confirm_remove = None;
                     self.dirty = true;
                 }
@@ -280,6 +370,7 @@ impl ConnectionsUi {
                 }
             }
         }
+        self.sync(service, handle);
     }
 
     /// Testa a Conexão padrão do Provedor. Provedor desligado: abre o diálogo "Ligar
@@ -296,7 +387,10 @@ impl ConnectionsUi {
         };
         let target = match connection.kind {
             ConnectionKind::PublicId => Target::FideId(connection.identifier.clone()),
-            ConnectionKind::PublicName => Target::Name(connection.identifier.clone()),
+            // A autorizada também se testa pelo nome público que o Provedor confirmou.
+            ConnectionKind::PublicName
+            | ConnectionKind::AuthorizedBrowser
+            | ConnectionKind::AuthorizedKey => Target::Name(connection.identifier.clone()),
         };
         let now = NetService::now();
         let via = model::test_via(provider);
@@ -327,11 +421,29 @@ impl ConnectionsUi {
         probe::advance(&mut self.tests, service, answers, NetService::now());
     }
 
+    /// Tudo o que a Central faz a cada quadro, com ou sem a página aberta: recarrega as
+    /// Conexões, mantém a Conexão autorizada do `NetService` em dia, avança as autorizações,
+    /// os diálogos do Cofre e os testes.
+    pub(crate) fn drive(
+        &mut self,
+        service: &NetService,
+        dialog: &mut ConsentDialog,
+        handle: Option<&PersistenceHandle>,
+        answers: &[ProviderConsentAnswered],
+    ) {
+        self.poll_auth(service, dialog, handle, answers);
+        if !self.tests.is_empty() {
+            self.poll(service, answers);
+        }
+        self.sync(service, handle);
+    }
+
     fn of_provider_default(&self, provider: ProviderId) -> Option<&Connection> {
         self.list
             .iter()
             .filter(|c| c.provider == provider.key())
             .filter(|c| c.role == chess_store::ConnectionRole::Player)
+            .filter(|c| !c.is_pending())
             .find(|c| c.is_default)
     }
 
@@ -373,6 +485,7 @@ impl ConnectionsUi {
             .iter()
             .filter(|c| c.provider == provider.key())
             .filter(|c| c.role == chess_store::ConnectionRole::Player)
+            .filter(|c| !c.is_pending())
             .collect();
         found.sort_by_key(|c| !c.is_default);
         found
@@ -393,19 +506,21 @@ pub struct ConnectionsPlugin;
 impl Plugin for ConnectionsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ConnectionsUi>()
-            .add_systems(Update, poll_tests);
+            .add_systems(Update, drive_connections);
     }
 }
 
-fn poll_tests(
+/// A Central trabalha a cada quadro mesmo com a página fechada: o Explorador depende da Conexão
+/// autorizada que ela mantém em dia, e uma autorização em andamento não pode parar.
+fn drive_connections(
     mut ui: ResMut<ConnectionsUi>,
     service: Res<NetService>,
+    mut dialog: ResMut<ConsentDialog>,
+    persistence: Option<Res<PersistenceHandle>>,
     mut answers: MessageReader<ProviderConsentAnswered>,
 ) {
     let answered: Vec<ProviderConsentAnswered> = answers.read().copied().collect();
-    if !ui.tests.is_empty() {
-        ui.poll(&service, &answered);
-    }
+    ui.drive(&service, &mut dialog, persistence.as_deref(), &answered);
 }
 
 #[cfg(test)]

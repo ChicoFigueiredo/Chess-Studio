@@ -68,6 +68,7 @@ mod responsive;
 mod ribbon;
 mod scoresheet;
 mod screen_layouts;
+mod secrets;
 mod session;
 mod status_bar;
 mod study;
@@ -311,6 +312,22 @@ fn main() {
                 chess_net::ProviderId::ChessCom,
             ] {
                 let _ = net.set_enabled(provider, true);
+            }
+        }
+        // `--connections-auth <cena>`: a Central com a autorização do Lichess em cena (cofre
+        // falso e temporário, nunca o real; nenhum pedido sai). Cenas em `connections::demo`.
+        if let Some(name) = option_value("--connections-auth") {
+            match connections::demo::scene(&name) {
+                Some(mut scene) => {
+                    if let Some(pixels) =
+                        option_value("--connections-scroll").and_then(|v| v.parse().ok())
+                    {
+                        scene.ui.scrolled(pixels);
+                    }
+                    app.insert_resource(scene.service);
+                    app.insert_resource(scene.ui);
+                }
+                None => eprintln!("cena desconhecida em --connections-auth: {name}"),
             }
         }
         // `--consent-demo`: o diálogo "Ligar <Provedor>?" aberto, para a evidência.

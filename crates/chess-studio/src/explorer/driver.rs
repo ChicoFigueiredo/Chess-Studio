@@ -18,7 +18,7 @@ use chess_providers::{
     CloudEval, ExplorerPosition, LichessFilter, MastersFilter, PlayerFilter, ProviderError,
     Tablebase,
 };
-use chess_store::ConnectionRole;
+use chess_store::{ConnectionRole, Pace};
 use std::time::Instant;
 
 /// O que muda a cada quadro.
@@ -62,6 +62,10 @@ pub struct Explorer {
     /// Nome público no Lichess, para a fonte "Um jogador".
     pub player: String,
     pub player_color: Color,
+    /// Ritmos da fonte Lichess e de Um jogador; vazio = todos.
+    pub paces: Vec<Pace>,
+    /// Faixas de rating (pelo piso) da fonte Lichess; vazio = todas.
+    pub ratings: Vec<u16>,
     settle: Settle<String>,
     openings: Lookup<ExplorerPosition>,
     tablebase: Lookup<Tablebase>,
@@ -74,6 +78,8 @@ impl Default for Explorer {
             source: Source::default(),
             player: String::new(),
             player_color: Color::White,
+            paces: Vec::new(),
+            ratings: Vec::new(),
             settle: Settle::default(),
             openings: Lookup::default(),
             tablebase: Lookup::default(),
@@ -123,8 +129,18 @@ impl Explorer {
                 if self.source == Source::Player && self.player.trim().is_empty() {
                     return None;
                 }
+                // Tudo o que muda a pergunta entra na chave: mudou o filtro, é outro pedido.
+                let paces: Vec<&str> = self.paces.iter().map(|p| p.as_str()).collect();
                 let who = match self.source {
-                    Source::Player => format!("{}:{:?}", self.player.trim(), self.player_color),
+                    Source::Player => format!(
+                        "{}:{:?}:{}",
+                        self.player.trim(),
+                        self.player_color,
+                        paces.join(",")
+                    ),
+                    Source::Lichess => {
+                        format!("lichess:{}:{:?}", paces.join(","), self.ratings)
+                    }
                     other => other.key().to_owned(),
                 };
                 Some((Wanted::Openings, format!("aberturas|{who}|{}", input.fen)))
@@ -182,7 +198,12 @@ impl Explorer {
                 self.openings.start(key, query);
             }
             Source::Lichess => {
-                let query = lichess.explorer(fen, &LichessFilter::default());
+                let filter = LichessFilter {
+                    paces: self.paces.clone(),
+                    ratings: self.ratings.clone(),
+                    ..LichessFilter::default()
+                };
+                let query = lichess.explorer(fen, &filter);
                 self.openings.start(key, query);
             }
             Source::Player => {
@@ -190,7 +211,10 @@ impl Explorer {
                     fen,
                     self.player.trim(),
                     self.player_color,
-                    &PlayerFilter::default(),
+                    &PlayerFilter {
+                        paces: self.paces.clone(),
+                        ..PlayerFilter::default()
+                    },
                 );
                 self.openings.start(key, stream);
             }
@@ -529,6 +553,66 @@ mod tests {
         }
         assert!(env.server.requests().is_empty());
         assert_eq!(explorer.requests_started(), 0);
+    }
+
+    #[test]
+    fn pace_and_rating_filters_reach_the_request_and_a_change_makes_a_new_one() {
+        let env = env(true);
+        env.server
+            .route("/lichess", fixture("lichess-explorer-masters.http"));
+        let mut explorer = Explorer {
+            source: Source::Lichess,
+            paces: vec![Pace::Blitz, Pace::Rapid],
+            ratings: vec![1800, 2000],
+            ..Explorer::default()
+        };
+        settle_down(&mut explorer, &env, AFTER_E4, Authorization::Granted);
+        let sent = env.server.requests();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(
+            sent[0].query_value("speeds").as_deref(),
+            Some("blitz,rapid")
+        );
+        assert_eq!(sent[0].query_value("ratings").as_deref(), Some("1800,2000"));
+        // Mudar o filtro é outra pergunta: o pedido velho some e sai um novo.
+        explorer.ratings = vec![2200];
+        explorer.paces = vec![Pace::Classical];
+        settle_down(&mut explorer, &env, AFTER_E4, Authorization::Granted);
+        let sent = env.server.requests();
+        assert_eq!(sent.len(), 2);
+        assert_eq!(sent[1].query_value("speeds").as_deref(), Some("classical"));
+        assert_eq!(sent[1].query_value("ratings").as_deref(), Some("2200"));
+        // Sem filtro, nenhum parâmetro de filtro vai junto.
+        explorer.ratings.clear();
+        explorer.paces.clear();
+        settle_down(&mut explorer, &env, AFTER_E4, Authorization::Granted);
+        let sent = env.server.requests();
+        assert_eq!(sent.len(), 3);
+        assert!(sent[2].query_value("speeds").is_none());
+        assert!(sent[2].query_value("ratings").is_none());
+    }
+
+    #[test]
+    fn a_player_query_carries_the_color_and_the_pace_filter() {
+        let env = env(true);
+        env.server
+            .route("/player", FakeResponse::stream(&[b"{}\n"]));
+        let mut explorer = Explorer {
+            source: Source::Player,
+            player: "alguem_exemplo".into(),
+            player_color: Color::Black,
+            paces: vec![Pace::Bullet],
+            ..Explorer::default()
+        };
+        settle_down(&mut explorer, &env, AFTER_E4, Authorization::Granted);
+        let sent = env.server.requests();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0].query_value("color").as_deref(), Some("black"));
+        assert_eq!(sent[0].query_value("speeds").as_deref(), Some("bullet"));
+        assert_eq!(
+            sent[0].query_value("player").as_deref(),
+            Some("alguem_exemplo")
+        );
     }
 
     #[test]

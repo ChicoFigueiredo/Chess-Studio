@@ -21,6 +21,9 @@ chess-input.workspace = true
 chess-store.workspace = true
 chess-net.workspace = true
 chess-providers.workspace = true
+chess-vault.workspace = true
+# Senha-mestra e chave pessoal na memória da interface: zeradas ao descartar.
+zeroize = "1.9"
 chess-uci.workspace = true
 chess-pgn.workspace = true
 chess-training.workspace = true

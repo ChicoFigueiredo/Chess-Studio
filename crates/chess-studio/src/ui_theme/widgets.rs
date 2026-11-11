@@ -848,7 +848,6 @@ pub fn error_stroke(p: &Palette) -> Stroke {
 /// Campo de texto (`TextField.md`). `hint` é um exemplo real, nunca o rótulo. Com `error`, o
 /// contorno vira `danger` e a mensagem aparece logo abaixo, com ícone.
 pub fn cs_text_field(ui: &mut Ui, text: &mut String, hint: &str, error: Option<&str>) -> Response {
-    let p = palette(ui);
     let response = ui.add(
         egui::TextEdit::singleline(text)
             .hint_text(hint)
@@ -856,6 +855,42 @@ pub fn cs_text_field(ui: &mut Ui, text: &mut String, hint: &str, error: Option<&
             .vertical_align(egui::Align::Center)
             .min_size(vec2(0.0, ui.spacing().interact_size.y)),
     );
+    finish_text_field(ui, response, error)
+}
+
+/// Campo de segredo (senha-mestra, chave pessoal): igual ao campo de texto, mas **mascarado**.
+/// O `egui` não deixa copiar nem recortar o texto de um campo mascarado, e este widget nunca
+/// escreve na área de transferência. `id` identifica o campo: quem consome o segredo chama
+/// [`forget_secret_field`] para o `egui` esquecer o histórico de desfazer do campo.
+pub fn cs_secret_field(
+    ui: &mut Ui,
+    id: Id,
+    text: &mut String,
+    hint: &str,
+    error: Option<&str>,
+) -> Response {
+    let response = ui.add(
+        egui::TextEdit::singleline(text)
+            .id(id)
+            .password(true)
+            .desired_width(f32::INFINITY)
+            .hint_text(hint)
+            .margin(egui::Margin::symmetric(8, 4))
+            .vertical_align(egui::Align::Center)
+            .min_size(vec2(0.0, ui.spacing().interact_size.y)),
+    );
+    finish_text_field(ui, response, error)
+}
+
+/// Faz o `egui` esquecer o estado de um campo de segredo (cursor e histórico de desfazer, que
+/// guardam cópias do texto digitado). Chame depois de consumir o segredo.
+pub fn forget_secret_field(ctx: &Context, id: Id) {
+    egui::text_edit::TextEditState::default().store(ctx, id);
+}
+
+/// Contorno de erro, anel de foco e a mensagem do campo de texto.
+fn finish_text_field(ui: &mut Ui, response: Response, error: Option<&str>) -> Response {
+    let p = palette(ui);
     let corner = radius_m();
     if error.is_some() {
         ui.painter()

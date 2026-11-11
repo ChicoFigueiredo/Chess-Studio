@@ -19,6 +19,7 @@ mod demo;
 mod driver;
 mod lookup;
 mod model;
+mod prefs;
 mod view;
 
 pub use driver::{CloudDriver, CloudRow, Explorer, Input};
@@ -33,15 +34,16 @@ use crate::persistence::PersistenceHandle;
 use crate::provider_consent::ConsentDialog;
 use crate::session::Session;
 use crate::training_ui::{TrainingUi, with_store};
-use crate::ui_theme::{cs_dropdown, cs_segmented, cs_text_field};
+use crate::ui_theme::{cs_dropdown, cs_segmented, cs_text_field, cs_toggle_button};
 use bevy::prelude::*;
 use bevy_egui::egui;
 use chess_core::{CanonicalPosition, Color};
 use chess_input::controls::Action;
 use chess_openings::OpeningBook;
-use chess_store::Store;
+use chess_store::{Pace, ProfileId, Store};
 use driver::{EndgamesView, OpeningsView};
-use model::{Notice, OpeningsTable, Source, Tab};
+pub(crate) use model::Source;
+use model::{Notice, OpeningsTable, Tab};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 pub(crate) use view::UiAction;
@@ -62,6 +64,10 @@ pub struct ExplorerUi {
     pub(crate) local: Option<Mutex<Store>>,
     /// Dados de demonstração das capturas (`--explorer-demo`): nenhum pedido sai.
     pub(crate) demo: Option<demo::Scene>,
+    /// O Perfil local cujas escolhas (aba, fonte, filtros) já foram lidas.
+    prefs_for: Option<ProfileId>,
+    /// As últimas escolhas gravadas, para só gravar quando algo mudou.
+    saved_prefs: Option<serde_json::Value>,
 }
 
 #[derive(Default)]
@@ -89,6 +95,48 @@ impl Plugin for ExplorerPlugin {
                 ui: explorer_panel,
             },
         );
+    }
+}
+
+/// Id Fluent do nome do ritmo.
+fn pace_key(pace: Pace) -> &'static str {
+    match pace {
+        Pace::Bullet => "explorer-pace-bullet",
+        Pace::Blitz => "explorer-pace-blitz",
+        Pace::Rapid => "explorer-pace-rapid",
+        Pace::Classical => "explorer-pace-classical",
+        Pace::Correspondence => "explorer-pace-correspondence",
+    }
+}
+
+/// O rótulo curto de uma faixa de rating pelo piso: "< 1000", "1200", "2500+".
+fn rating_label(i18n: &I18n, floor: u16) -> String {
+    match floor {
+        0 => i18n.t("explorer-rating-below"),
+        2500 => i18n.t("explorer-rating-above"),
+        other => other.to_string(),
+    }
+}
+
+/// A explicação da faixa: "Jogadores de 1200 a 1399".
+fn rating_tip(i18n: &I18n, floor: u16) -> String {
+    let bands = prefs::RATING_BANDS;
+    let next = bands
+        .iter()
+        .position(|b| *b == floor)
+        .and_then(|i| bands.get(i + 1));
+    match next {
+        Some(next) if floor == 0 => {
+            i18n.t_with("explorer-rating-tip-below", &[("to", &next.to_string())])
+        }
+        Some(next) => i18n.t_with(
+            "explorer-rating-tip",
+            &[
+                ("from", &floor.to_string()),
+                ("to", &(next - 1).to_string()),
+            ],
+        ),
+        None => i18n.t_with("explorer-rating-tip-above", &[("from", &floor.to_string())]),
     }
 }
 
@@ -167,6 +215,7 @@ impl ExplorerUi {
         let Some(here) = shown(session) else {
             return;
         };
+        self.sync_prefs(handle);
         let now = Instant::now();
         let at = NetService::now();
         let authorization = Authorization::lichess_now(net);
@@ -225,6 +274,71 @@ impl ExplorerUi {
         }
     }
 
+    /// Lembra a aba, a fonte e os filtros por Perfil local: lê ao trocar de Perfil e grava só
+    /// quando algo mudou. As cenas de demonstração não leem nem gravam.
+    fn sync_prefs(&mut self, handle: Option<&PersistenceHandle>) {
+        if self.demo.is_some() {
+            return;
+        }
+        let explorer = &mut self.explorer;
+        let (prefs_for, saved) = (&mut self.prefs_for, &mut self.saved_prefs);
+        let _ = with_store(&mut self.local, handle, |store, profile| {
+            if *prefs_for != Some(profile) {
+                if let Ok(Some(value)) = store.get_pref(profile, prefs::KEY) {
+                    explorer.apply_prefs(&value);
+                }
+                *prefs_for = Some(profile);
+                *saved = Some(explorer.prefs());
+                return;
+            }
+            let current = explorer.prefs();
+            if saved.as_ref() != Some(&current) {
+                // Falha ao gravar uma preferência não atrapalha: tenta na próxima mudança.
+                let _ = store.set_pref(profile, prefs::KEY, &current);
+                *saved = Some(current);
+            }
+        });
+    }
+
+    /// Ritmos (Lichess e Um jogador) e faixas de rating (Lichess): botões de alternância;
+    /// nenhum marcado = todos.
+    fn filters(&mut self, ui: &mut egui::Ui, i18n: &I18n) {
+        let source = self.explorer.source;
+        if !matches!(source, Source::Lichess | Source::Player) {
+            return;
+        }
+        ui.add_space(8.0);
+        view::muted(ui, i18n.t("explorer-pace-label"));
+        ui.add_space(4.0);
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
+            for pace in Pace::ALL {
+                let mut on = self.explorer.paces.contains(&pace);
+                if cs_toggle_button(ui, &mut on, &i18n.t(pace_key(pace))).clicked() {
+                    self.explorer.toggle_pace(pace);
+                }
+            }
+        });
+        if source == Source::Lichess {
+            ui.add_space(8.0);
+            view::muted(ui, i18n.t("explorer-rating-label"));
+            ui.add_space(4.0);
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
+                for floor in prefs::RATING_BANDS {
+                    let mut on = self.explorer.ratings.contains(&floor);
+                    let label = rating_label(i18n, floor);
+                    if cs_toggle_button(ui, &mut on, &label)
+                        .on_hover_text(rating_tip(i18n, floor))
+                        .clicked()
+                    {
+                        self.explorer.toggle_rating(floor);
+                    }
+                }
+            });
+        }
+    }
+
     fn header(&mut self, ui: &mut egui::Ui, i18n: &I18n) {
         let tabs = [
             (Tab::Openings, i18n.t("explorer-tab-openings")),
@@ -270,6 +384,7 @@ impl ExplorerUi {
             ];
             cs_segmented(ui, &mut self.explorer.player_color, &colors);
         }
+        self.filters(ui, i18n);
         ui.add_space(12.0);
         let selected = self.preview.clone();
         if let Some(scene) = self.demo.as_ref().and_then(demo::Scene::openings_view) {

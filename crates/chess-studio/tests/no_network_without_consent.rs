@@ -27,6 +27,9 @@ const HTTP_CRATES: [&str; 2] = ["chess-net", "chess-uci"];
 const SOCKET_DIR: &str = "chess-net/src/testing/";
 /// ...e no servidor de loopback do retorno da autorização (a única escuta de produção).
 const LOOPBACK_FILE: &str = "chess-net/src/loopback.rs";
+/// ...e o "navegador" falso dos testes da Central, que só conecta ao retorno em `127.0.0.1`
+/// da autorização (nunca a um endereço de fora). Arquivo só de testes.
+const BROWSER_STUB_FILE: &str = "chess-studio/src/connections/auth_tests.rs";
 
 fn workspace_crates() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
@@ -130,7 +133,7 @@ fn raw_sockets_exist_only_in_the_fake_server_and_the_oauth_loopback() {
     for socket in ["TcpStream", "UdpSocket", "TcpListener", "std::net::"] {
         for file in files_containing(socket) {
             assert!(
-                file.starts_with(SOCKET_DIR) || file == LOOPBACK_FILE,
+                file.starts_with(SOCKET_DIR) || file == LOOPBACK_FILE || file == BROWSER_STUB_FILE,
                 "{socket} fora do servidor falso e do loopback da autorização: {file}"
             );
         }
