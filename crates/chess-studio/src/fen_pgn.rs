@@ -61,6 +61,27 @@ impl FileTools {
         );
     }
 
+    /// Abre o "Salvar como…" sem botão (Ação Exportar PGN do Ribbon). `false` quando o sistema
+    /// não tem diálogo: quem chama grava em Documentos.
+    pub fn start_save_as(&mut self, i18n: &crate::i18n::I18n) -> bool {
+        if self.pgn_pick.is_unavailable() {
+            return false;
+        }
+        self.pgn_pick.request(crate::file_picker::pgn_save_request(
+            i18n,
+            Self::suggested_file_name(),
+        ));
+        true
+    }
+
+    /// Por quadro: grava o PGN se o diálogo terminou com um destino escolhido. Vale para o
+    /// "Salvar como…" de qualquer lugar (Ribbon, Painel Revisão, fim de Partida).
+    pub fn finish_save_as(&mut self, session: &Session, notes: &[(usize, String)]) {
+        if let Some(crate::file_picker::PickOutcome::Chosen(path)) = self.pgn_pick.poll() {
+            self.export_to(session, notes, &path);
+        }
+    }
+
     /// Nome sugerido no "Salvar como…".
     pub fn suggested_file_name() -> String {
         pgn_file_name(session_wall_ms())
@@ -183,6 +204,92 @@ mod tests {
         tools.export_to(&s, &[], &dir.join("nao/existe/x.pgn"));
         assert!(tools.pgn_result.as_ref().unwrap().is_err());
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    struct FakePicker {
+        outcome: crate::file_picker::PickOutcome,
+        seen: std::sync::Mutex<Vec<crate::file_picker::PickRequest>>,
+    }
+
+    impl crate::file_picker::FilePicker for FakePicker {
+        fn available(&self) -> bool {
+            true
+        }
+        fn pick(
+            &self,
+            request: crate::file_picker::PickRequest,
+        ) -> crate::file_picker::PickOutcome {
+            self.seen.lock().unwrap().push(request);
+            self.outcome.clone()
+        }
+    }
+
+    fn tools_with(
+        outcome: crate::file_picker::PickOutcome,
+    ) -> (FileTools, std::sync::Arc<FakePicker>) {
+        let fake = std::sync::Arc::new(FakePicker {
+            outcome,
+            seen: std::sync::Mutex::new(Vec::new()),
+        });
+        let tools = FileTools {
+            pgn_pick: crate::file_picker::FilePickButton::with_picker(fake.clone()),
+            ..FileTools::default()
+        };
+        (tools, fake)
+    }
+
+    fn finish(tools: &mut FileTools, session: &Session) {
+        let limit = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while tools.pgn_pick.is_busy() {
+            tools.finish_save_as(session, &[]);
+            assert!(std::time::Instant::now() < limit, "o seletor não respondeu");
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+    }
+
+    #[test]
+    fn the_ribbon_action_asks_the_picker_and_writes_the_chosen_file() {
+        let dir = temp_dir("ribbon-save-as");
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("escolhido.pgn");
+        let (mut tools, fake) = tools_with(crate::file_picker::PickOutcome::Chosen(target.clone()));
+        let mut s = Session::new();
+        mv(&mut s, "e2", "e4");
+        assert!(tools.start_save_as(&crate::i18n::I18n::pt_br()));
+        finish(&mut tools, &s);
+        let seen = fake.seen.lock().unwrap();
+        assert!(matches!(
+            &seen[0].kind,
+            crate::file_picker::PickKind::Save { file_name } if file_name.ends_with(".pgn")
+        ));
+        assert_eq!(
+            tools.pgn_result.as_ref().unwrap().as_ref().unwrap(),
+            &target
+        );
+        assert!(std::fs::read_to_string(&target).unwrap().contains("1. e4"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn cancelling_the_save_as_dialog_writes_nothing() {
+        let (mut tools, _) = tools_with(crate::file_picker::PickOutcome::Cancelled);
+        let s = Session::new();
+        assert!(tools.start_save_as(&crate::i18n::I18n::pt_br()));
+        finish(&mut tools, &s);
+        assert!(tools.pgn_result.is_none());
+    }
+
+    #[test]
+    fn without_a_system_dialog_the_action_reports_it_and_the_caller_uses_documents() {
+        let (mut tools, fake) = tools_with(crate::file_picker::PickOutcome::Unavailable);
+        // `available()` do falso é true; um pedido que volta `Unavailable` marca o botão.
+        let s = Session::new();
+        assert!(tools.start_save_as(&crate::i18n::I18n::pt_br()));
+        finish(&mut tools, &s);
+        assert!(tools.pgn_pick.is_unavailable());
+        assert!(!tools.start_save_as(&crate::i18n::I18n::pt_br()));
+        assert_eq!(fake.seen.lock().unwrap().len(), 1);
+        assert!(tools.pgn_result.is_none());
     }
 
     #[test]

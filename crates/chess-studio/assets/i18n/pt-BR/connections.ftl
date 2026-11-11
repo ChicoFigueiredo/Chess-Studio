@@ -225,6 +225,16 @@ consent-intro-feature = { $feature } precisa de { $provider }, que está desliga
 consent-intro = { $provider } está desligado. Ligar permite consultas a ele.
 consent-sends-label = O que será enviado
 consent-where-label = Para onde vai
+# Uma frase por uso real de rede (todo serviço pronto do catálogo tem a sua; há teste que garante).
+consent-sends-lichess-explore = As Posições que você abre no Explorador de aberturas.
+consent-sends-lichess-cached-eval = As Posições que você analisa, para buscar uma avaliação que o Lichess já calculou.
+consent-sends-lichess-endgames = As Posições de finais com poucas peças, para saber o resultado exato.
+consent-sends-lichess-query = Os nomes de usuário e os IDs FIDE públicos que você consulta e os meses de Partidas que você pede.
+consent-sends-lichess-download = Ao baixar problemas, só o pedido do pacote: nada seu vai junto, e o arquivo vem para este computador.
+consent-sends-lichess-play = Em Partidas online, com a sua Conexão autorizada, os seus Lances e os desafios que você fizer.
+consent-sends-chesscom-query = Os nomes de usuário públicos que você consulta e os meses de Partidas que você pede.
+consent-sends-tail-local-profile = Nada do seu Perfil local vai junto.
+consent-sends-tail-no-password = Nenhuma senha.
 consent-footer = Você desliga quando quiser, em Arquivo > Conexões. Nada é enviado antes disso.
 consent-turn-on = Ligar
 consent-not-now = Agora não

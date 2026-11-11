@@ -274,7 +274,7 @@ impl Shared {
         events: &SyncSender<DownloadEvent>,
     ) -> Result<End, NetError> {
         let provider = request.provider;
-        let (head, mut body) = self.open_body(request, profile, cancel)?;
+        let (head, mut body) = self.open_following(request, profile, cancel)?;
         let total = head.content_length;
         if !send(events, DownloadEvent::Started { total }, cancel) {
             return Ok(End::Closed);
