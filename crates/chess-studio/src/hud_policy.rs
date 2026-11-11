@@ -144,7 +144,7 @@ pub fn effective(session: &Session, fair: &crate::fair_play::FairPlay) -> Allowa
     if !fair.any() {
         return allowed;
     }
-    let refused = crate::fair_play::Subject::shown(session).map_or(true, |subject| {
+    let refused = crate::fair_play::Subject::shown(session).is_none_or(|subject| {
         fair.check(crate::fair_play::Computation::Hint, &subject)
             .is_err()
     });
