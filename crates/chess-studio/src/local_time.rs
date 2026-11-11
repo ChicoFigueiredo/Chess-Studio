@@ -145,8 +145,14 @@ mod tests {
     #[test]
     fn reads_the_clock_in_the_injected_zone() {
         assert_eq!(brasilia().clock(MID_DAY).as_deref(), Some("12:30"));
-        assert_eq!(LocalClock::fixed(0).clock(MID_DAY).as_deref(), Some("15:30"));
-        assert_eq!(LocalClock::fixed(330).clock(MID_DAY).as_deref(), Some("21:00"));
+        assert_eq!(
+            LocalClock::fixed(0).clock(MID_DAY).as_deref(),
+            Some("15:30")
+        );
+        assert_eq!(
+            LocalClock::fixed(330).clock(MID_DAY).as_deref(),
+            Some("21:00")
+        );
     }
 
     #[test]

@@ -3,12 +3,12 @@
 //! system); nada de cor escrita à mão, nada de rede.
 
 use super::driver::CloudRow;
-use super::reference::Status;
 use super::model::{
     Age, CloudView, EndgameMove, EndgameTable, How, Notice, Nuance, OpeningsTable, OriginNote,
     Outlook, ReferenceRow, Source, Verdict, clock_local, day_month, fmt_count, format_eval,
     mate_in_moves, minutes_until, white_share,
 };
+use super::reference::Status;
 use crate::i18n::I18n;
 use crate::local_time::LocalClock;
 use crate::net_service::NetService;
@@ -460,9 +460,7 @@ fn reference_row(
     let p = palette(ui);
     // Abrindo esta Partida, ou não deu certo: a linha de baixo diz, sem esconder os jogadores.
     let (meta_text, meta_color) = match reference {
-        Status::Opening(id) if *id == game.id => {
-            (i18n.t("explorer-reference-opening"), p.accent)
-        }
+        Status::Opening(id) if *id == game.id => (i18n.t("explorer-reference-opening"), p.accent),
         Status::Failed { id, key } if *id == game.id => (i18n.t(key), p.warning),
         _ => (reference_meta(i18n, game), p.ink_muted),
     };

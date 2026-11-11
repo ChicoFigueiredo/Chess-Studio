@@ -391,7 +391,14 @@ impl ExplorerUi {
         ui.add_space(12.0);
         let selected = self.preview.clone();
         if let Some(scene) = self.demo.as_ref().and_then(demo::Scene::openings_view) {
-            self.show_openings(ui, i18n, scene, &here.position, selected.as_deref(), actions);
+            self.show_openings(
+                ui,
+                i18n,
+                scene,
+                &here.position,
+                selected.as_deref(),
+                actions,
+            );
             return;
         }
         if self.explorer.source == Source::Library {

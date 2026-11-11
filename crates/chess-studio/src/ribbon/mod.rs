@@ -322,6 +322,7 @@ fn is_alt(key: KeyCode) -> bool {
 /// mouse, a janela perder o foco ou os bastidores abrirem por outro caminho (a Central de
 /// Conexões aberta pelo Explorador, por exemplo). Sem isso as letras ficavam sobre o título da
 /// página aberta e as teclas seguiam capturadas.
+#[allow(clippy::too_many_arguments)] // parâmetros de sistema do Bevy
 fn keytips_input(
     keys: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
@@ -337,9 +338,7 @@ fn keytips_input(
         *alt_armed = false;
     }
     if state.keytips.is_active()
-        && (lost_focus
-            || state.backstage.is_some()
-            || mouse.get_just_pressed().next().is_some())
+        && (lost_focus || state.backstage.is_some() || mouse.get_just_pressed().next().is_some())
     {
         state.keytips.close();
     }

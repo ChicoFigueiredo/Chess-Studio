@@ -142,7 +142,10 @@ fn rook_endgame() -> EndgameTable {
             mv("Kd3", Outlook::Draw, None, Some(0), None),
             mv("Rg7", Outlook::Loss, None, Some(-4), Some(-9)),
         ],
-        origin: lichess_origin(How::Queried(Age::Minutes(3), Timestamp::from_millis(now_ms() - 180_000))),
+        origin: lichess_origin(How::Queried(
+            Age::Minutes(3),
+            Timestamp::from_millis(now_ms() - 180_000),
+        )),
     }
 }
 
@@ -166,7 +169,10 @@ fn scene(name: &str) -> Option<Scene> {
     let notice = |n: Notice| OpeningsView::Notice(n);
     Some(match name {
         "masters" | "lichess-filters" | "reference-opening" | "reference-failed" => Scene {
-            openings: Some(table(masters_table(How::Queried(Age::Minutes(3), Timestamp::from_millis(now_ms() - 180_000))))),
+            openings: Some(table(masters_table(How::Queried(
+                Age::Minutes(3),
+                Timestamp::from_millis(now_ms() - 180_000),
+            )))),
             ..Scene::default()
         },
         "stale" => Scene {

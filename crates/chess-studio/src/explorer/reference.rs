@@ -217,7 +217,8 @@ mod tests {
     #[test]
     fn a_game_not_in_the_library_is_downloaded_imported_and_then_found() {
         let rig = rig();
-        rig.server.route("/game/export/AbCd1234", FakeResponse::ok(PGN));
+        rig.server
+            .route("/game/export/AbCd1234", FakeResponse::ok(PGN));
         let mut store = Store::open_in_memory().expect("banco");
         assert_eq!(plan(&store, ME, "AbCd1234"), Plan::Download);
 
@@ -243,7 +244,8 @@ mod tests {
     #[test]
     fn a_game_already_in_the_library_is_opened_without_touching_the_network() {
         let rig = rig();
-        rig.server.route("/game/export/AbCd1234", FakeResponse::ok(PGN));
+        rig.server
+            .route("/game/export/AbCd1234", FakeResponse::ok(PGN));
         let mut store = Store::open_in_memory().expect("banco");
         let mut open = ReferenceOpen::default();
         open.start("AbCd1234", Source::Lichess, &rig.lichess);
@@ -274,7 +276,8 @@ mod tests {
             }
         );
         // Tentar de novo limpa a falha e volta a baixar.
-        rig.server.route("/game/export/ZZZZ9999", FakeResponse::ok(PGN));
+        rig.server
+            .route("/game/export/ZZZZ9999", FakeResponse::ok(PGN));
         open.start("ZZZZ9999", Source::Lichess, &rig.lichess);
         assert_eq!(open.status(), Status::Opening("ZZZZ9999".into()));
     }
@@ -282,7 +285,8 @@ mod tests {
     #[test]
     fn only_one_download_runs_at_a_time() {
         let rig = rig();
-        rig.server.route("/game/export/AbCd1234", FakeResponse::stall());
+        rig.server
+            .route("/game/export/AbCd1234", FakeResponse::stall());
         let mut open = ReferenceOpen::default();
         open.start("AbCd1234", Source::Lichess, &rig.lichess);
         open.start("Other123", Source::Lichess, &rig.lichess);

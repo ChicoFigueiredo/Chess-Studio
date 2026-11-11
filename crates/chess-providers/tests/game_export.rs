@@ -84,8 +84,10 @@ fn an_unknown_game_is_no_data_and_a_bad_id_never_reaches_the_network() {
 #[test]
 fn an_answer_that_is_not_a_pgn_is_malformed() {
     let env = env_enabled();
-    env.server
-        .route("/game/export/AbCd1234", FakeResponse::ok("<html>oops</html>"));
+    env.server.route(
+        "/game/export/AbCd1234",
+        FakeResponse::ok("<html>oops</html>"),
+    );
     assert!(matches!(
         env.lichess.game_pgn("AbCd1234").wait(),
         Err(ProviderError::Malformed { .. })

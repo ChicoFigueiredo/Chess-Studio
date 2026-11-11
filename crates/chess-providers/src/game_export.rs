@@ -9,8 +9,8 @@
 use crate::answer::{Query, fetch};
 use crate::error::{Missing, ProviderError};
 use crate::lichess::{API_HOST, Lichess, PROVIDER};
-use std::time::Duration;
 use chess_net::Request;
+use std::time::Duration;
 
 /// Validade do cache: uma Partida terminada não muda.
 const GAME_TTL: Duration = Duration::from_secs(7 * 24 * 3600);

@@ -39,16 +39,15 @@ fn each_part_of_a_long_name_is_translated_and_the_separators_are_kept() {
         pt("Sicilian Defense: Najdorf Variation, English Attack"),
         "Defesa Siciliana: Variante Najdorf, Ataque Inglês"
     );
-    assert_eq!(
-        pt("Ruy Lopez: Morphy Defense"),
-        "Ruy Lopez: Defesa Morphy"
-    );
+    assert_eq!(pt("Ruy Lopez: Morphy Defense"), "Ruy Lopez: Defesa Morphy");
     assert_eq!(
         pt("French Defense: Exchange Variation"),
         "Defesa Francesa: Variante da Troca"
     );
-    assert_eq!(pt("Sicilian Defense: Dragon Variation, Classical Variation"),
-        "Defesa Siciliana: Variante Dragon, Variante Clássica");
+    assert_eq!(
+        pt("Sicilian Defense: Dragon Variation, Classical Variation"),
+        "Defesa Siciliana: Variante Dragon, Variante Clássica"
+    );
 }
 
 #[test]

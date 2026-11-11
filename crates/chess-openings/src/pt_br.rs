@@ -188,7 +188,11 @@ fn piece(text: &str) -> String {
         };
     };
     words.pop();
-    let noun = if last == "Variations" { plural } else { singular };
+    let noun = if last == "Variations" {
+        plural
+    } else {
+        singular
+    };
     let mut out = vec![noun.to_owned()];
     let mut i = 0;
     while i < words.len() {

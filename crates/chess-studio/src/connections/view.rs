@@ -1693,7 +1693,8 @@ mod tests {
         let all: Vec<&str> = found.iter().map(|(t, _)| t.as_str()).collect();
         // Custo: o custo e os serviços separados por pontos, sem "e" nem ":" no meio.
         assert!(
-            all.iter().any(|t| t.starts_with("Gratuito, sem cadastro  \u{b7}  ")),
+            all.iter()
+                .any(|t| t.starts_with("Gratuito, sem cadastro  \u{b7}  ")),
             "{all:?}"
         );
         // O que vem depois: nomes de serviço, não verbos numa frase.

@@ -17,7 +17,7 @@ ASSETS (assets/)
 
 RESUMO DAS LICENÇAS DAS DEPENDÊNCIAS
 ------------------------------------
-MIT License (573 crates)
+MIT License (577 crates)
 ISC License (24 crates)
 Unicode License v3 (23 crates)
 Apache License 2.0 (20 crates)
@@ -9271,6 +9271,10 @@ Usada por:
 - aho-corasick 1.1.5 (https://github.com/BurntSushi/aho-corasick)
 - byteorder-lite 0.1.0 (https://github.com/image-rs/byteorder-lite)
 - byteorder 1.5.0 (https://github.com/BurntSushi/byteorder)
+- jiff-core 0.1.5 (https://github.com/BurntSushi/jiff)
+- jiff-tzdb-platform 0.1.3 (https://github.com/BurntSushi/jiff)
+- jiff-tzdb 0.1.9 (https://github.com/BurntSushi/jiff)
+- jiff 0.2.43 (https://github.com/BurntSushi/jiff)
 - memchr 2.8.3 (https://github.com/BurntSushi/memchr)
 
 The MIT License (MIT)

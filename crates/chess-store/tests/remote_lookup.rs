@@ -26,7 +26,9 @@ fn a_game_imported_from_the_api_is_found_by_its_remote_id() {
         .unwrap();
     let id = report.imported[0];
     assert_eq!(
-        store.imported_by_remote_id(ME, "lichess", "AbCd1234").unwrap(),
+        store
+            .imported_by_remote_id(ME, "lichess", "AbCd1234")
+            .unwrap(),
         Some(id)
     );
 }
@@ -37,8 +39,18 @@ fn another_id_another_provider_or_another_profile_finds_nothing() {
     store
         .import_pgn_with(ME, &lichess_game("AbCd1234"), &api())
         .unwrap();
-    assert_eq!(store.imported_by_remote_id(ME, "lichess", "ZZZZ9999").unwrap(), None);
-    assert_eq!(store.imported_by_remote_id(ME, "chess-com", "AbCd1234").unwrap(), None);
+    assert_eq!(
+        store
+            .imported_by_remote_id(ME, "lichess", "ZZZZ9999")
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        store
+            .imported_by_remote_id(ME, "chess-com", "AbCd1234")
+            .unwrap(),
+        None
+    );
     assert_eq!(
         store
             .imported_by_remote_id(ProfileId(2), "lichess", "AbCd1234")
@@ -62,7 +74,9 @@ fn the_same_game_from_a_file_and_later_the_api_is_found_through_the_added_origin
         .unwrap();
     assert_eq!(second.duplicates, 1, "não vira cópia");
     assert_eq!(
-        store.imported_by_remote_id(ME, "lichess", "AbCd1234").unwrap(),
+        store
+            .imported_by_remote_id(ME, "lichess", "AbCd1234")
+            .unwrap(),
         Some(first.imported[0])
     );
 }
