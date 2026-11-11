@@ -29,6 +29,39 @@ pub use tokens::{Palette, ThemeKind, Tokens};
 #[allow(unused_imports)]
 pub use widgets::*;
 
+/// Um quadro do egui nos testes; descarta as texturas, que ninguém vai enviar à GPU.
+#[cfg(test)]
+pub(crate) fn run_quiet(
+    ctx: &bevy_egui::egui::Context,
+    raw: bevy_egui::egui::RawInput,
+    add: impl FnMut(&mut bevy_egui::egui::Ui),
+) {
+    let mut out = ctx.run_ui(raw, add);
+    out.textures_delta.clear();
+}
+
+/// Um contexto do egui com as fontes e o estilo de um Tema e Densidade, para os testes que
+/// desenham telas inteiras (Central de Conexões).
+#[cfg(test)]
+pub(crate) fn test_context(theme: ThemeId, density: Density) -> bevy_egui::egui::Context {
+    use bevy_egui::egui;
+    let ctx = egui::Context::default();
+    ctx.set_fonts(fonts::definitions());
+    // O primeiro quadro instala as fontes; o segundo já pode usar a família em negrito.
+    run_quiet(&ctx, egui::RawInput::default(), |_| {});
+    widgets::mark_fonts_ready(&ctx);
+    let base = theme.base();
+    ctx.set_style_of(
+        base.egui(),
+        style::build_style(theme, density, Tokens::embedded()),
+    );
+    ctx.set_theme(match base {
+        ThemeKind::Dark => egui::ThemePreference::Dark,
+        ThemeKind::Light => egui::ThemePreference::Light,
+    });
+    ctx
+}
+
 use bevy::prelude::*;
 use bevy::window::{PrimaryWindow, WindowTheme};
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
