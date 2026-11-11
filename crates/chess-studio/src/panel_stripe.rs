@@ -30,7 +30,7 @@ const BUTTON: f32 = 26.0;
 const GAP: f32 = 4.0;
 
 /// As Ações de Painel, na ordem da faixa (mesmas do grupo Exibir > Painéis e das abas).
-pub const PANEL_ACTIONS: [Action; 15] = [
+pub const PANEL_ACTIONS: [Action; 16] = [
     Action::PanelNotation,
     Action::PanelClock,
     Action::PanelCaptured,
@@ -46,6 +46,7 @@ pub const PANEL_ACTIONS: [Action; 15] = [
     Action::PanelOpenings,
     Action::PanelExplorer,
     Action::PanelTraining,
+    Action::PanelOnline,
 ];
 
 /// Situação de um Painel para a faixa.

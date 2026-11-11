@@ -60,6 +60,8 @@ pub mod ids {
     pub const EXPLORER: &str = "Explorer";
     pub const SCORESHEET: &str = "Scoresheet";
     pub const BOARD2D: &str = "Board2d";
+    /// Partida online no Lichess (#233).
+    pub const ONLINE: &str = "Online";
 }
 
 /// Quando o painel pode ser aberto.

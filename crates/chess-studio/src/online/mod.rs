@@ -32,7 +32,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 /// Id do Painel Partida online no dock.
-pub const PANEL_ID: &str = "Online";
+pub const PANEL_ID: &str = crate::dock::ids::ONLINE;
 
 /// O serviço da Partida online como recurso do Bevy (o `Mutex` só torna o recurso `Sync`:
 /// as consultas da rede não são; nunca há disputa).
@@ -128,7 +128,7 @@ impl Plugin for OnlinePlugin {
             .init_resource::<OnlineUi>()
             .add_systems(
                 Update,
-                (demo::apply_demo, drive_online)
+                (demo::apply_demo, demo::show_demo_panel, drive_online)
                     .chain()
                     .after(crate::play::PlaySet),
             )

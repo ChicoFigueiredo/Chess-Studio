@@ -296,6 +296,26 @@ const RUY_LONG: [&str; 11] = [
     "e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6", "b5a4", "g8f6", "e1g1", "f8e7", "f1e1",
 ];
 
+/// Nas capturas, o Painel Partida online aparece assim que o dock o conhece (o Painel novo
+/// entra no layout alguns quadros depois do primeiro).
+pub fn show_demo_panel(
+    ui: Res<OnlineUi>,
+    session: Res<Session>,
+    dock: Option<ResMut<crate::dock::Dock>>,
+    mut frames: Local<u32>,
+) {
+    if ui.demo.is_none() || !session.is_online() || *frames > 120 {
+        return;
+    }
+    *frames += 1;
+    if let Some(mut dock) = dock {
+        if !dock.layout.is_visible(PANEL_ID) {
+            dock.layout.set_visible(PANEL_ID, true);
+        }
+        dock.layout.activate(PANEL_ID);
+    }
+}
+
 /// Aplica a cena uma vez (capturas). Sem `--online-demo`, nada.
 pub fn apply_demo(
     capture: Option<Res<crate::capture::CaptureMode>>,

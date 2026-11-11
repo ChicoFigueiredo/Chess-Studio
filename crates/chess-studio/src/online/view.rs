@@ -246,7 +246,14 @@ fn state_block(ui: &mut egui::Ui, glyph: Option<&str>, title: &str, text: &str) 
 }
 
 /// Grade de ritmos: rótulo da categoria e os botões de alternância.
-fn pace_grid(ui: &mut egui::Ui, i18n: &I18n, id: &str, rows: &[(&str, &[Pace])], value: &mut Pace) {
+fn pace_grid(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    id: &str,
+    rows: &[(&str, &[Pace])],
+    value: &mut Pace,
+    days: u8,
+) {
     egui::Grid::new(id)
         .num_columns(2)
         .spacing([12.0, 8.0])
@@ -257,8 +264,9 @@ fn pace_grid(ui: &mut egui::Ui, i18n: &I18n, id: &str, rows: &[(&str, &[Pace])],
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
                     for pace in *paces {
+                        // Correspondência: o botão já diz os dias escolhidos.
                         let text = if *pace == Pace::Correspondence {
-                            i18n.t("online-pace-correspondence")
+                            days_label(i18n, days)
                         } else {
                             pace.short()
                         };
@@ -662,6 +670,7 @@ fn seek_tab(
         "online-seek-paces",
         &rows,
         &mut state.form.seek_pace,
+        state.form.days,
     );
     if state.form.seek_pace == Pace::Correspondence {
         ui.add_space(8.0);
@@ -743,6 +752,7 @@ fn challenge_tab(
         "online-challenge-paces",
         &rows,
         &mut state.form.challenge_pace,
+        state.form.days,
     );
     if state.form.challenge_pace == Pace::Correspondence {
         ui.add_space(8.0);
@@ -980,6 +990,7 @@ fn engine_tab(
         "online-engine-paces",
         &rows,
         &mut state.form.engine_pace,
+        state.form.days,
     );
     ui.add_space(12.0);
     let p = palette(ui);
