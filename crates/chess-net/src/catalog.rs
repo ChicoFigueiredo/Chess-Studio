@@ -1040,7 +1040,7 @@ static CATALOG: [Provider; 19] = [
             C::Analyze,
             &[A::None],
             K::FreeLimited,
-            S::Planned { stage: 3 },
+            S::Ready,
             "Stockfish remoto; profundidade 18 e 100 ms de pensar no acesso comum; sem SLA; \
              sem chave (conferido por consulta de leitura em 2026-11-11)",
         )],

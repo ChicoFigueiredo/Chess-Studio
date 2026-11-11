@@ -765,6 +765,7 @@ pub fn consent_line_key(provider: ProviderId, capability: Capability) -> Option<
         (ProviderId::ChessCom, Capability::Query) => "consent-sends-chesscom-query",
         // Como visitante e em texto puro: a conexão com o FICS não tem criptografia (#254).
         (ProviderId::Fics, Capability::Play) => "consent-sends-fics-play",
+        (ProviderId::ChessApi, Capability::Analyze) => "consent-sends-chessapi-analyze",
         (ProviderId::PlayStrategy, Capability::Query) => "consent-sends-playstrategy-query",
         _ => return None,
     })
@@ -1010,7 +1011,7 @@ mod tests {
         // Adaptadores distantes aparecem como "Em breve".
         // Partidas públicas prontas: o cartão liga; Partida online segue "numa próxima versão".
         assert_eq!(state_of(ProviderId::PlayStrategy), CardState::Off);
-        assert_eq!(state_of(ProviderId::ChessApi), CardState::Planned);
+        assert_eq!(state_of(ProviderId::ChessApi), CardState::Off);
         // Sem nada para fazer hoje, não há Switch: o Chessigma também espera.
         assert_eq!(state_of(ProviderId::Chessigma), CardState::Planned);
 

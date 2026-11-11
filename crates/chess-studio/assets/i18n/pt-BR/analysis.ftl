@@ -44,3 +44,23 @@ analysis-backend-label = Backend
 analysis-backend-auto = Automático
 analysis-backend-unsupported = indisponível neste sistema
 analysis-backend-active = Em uso: { $backend }
+analysis-locked-fair-play = Indisponível: a Trava de fair play está ligada. A análise (local e remota) volta quando a Partida online terminar.
+
+# Engine remota (#252, CX-11)
+remote-engine-entry = Stockfish (Chess-API.com) · Remota
+remote-badge = Remota · Chess-API.com
+remote-warning-title = Usar a Engine remota?
+remote-warning-lead = A Engine remota analisa no servidor do { $provider }, não neste computador. Para isso, a Posição que você está analisando sai da sua máquina e vai pela internet.
+remote-warning-sends-label = O que é enviado
+remote-warning-sends = Só a Posição (o FEN: onde estão as peças, de quem é a vez e os direitos de roque) e a profundidade pedida. Nunca nomes, histórico da Partida, Perfil local ou conta.
+remote-warning-footer = A Engine remota nunca é a padrão e só consulta o serviço enquanto você a mantiver escolhida. Para voltar, escolha outra Engine na lista. Ela não funciona durante uma Partida online contra uma pessoa (Trava de fair play).
+remote-warning-continue = Continuar
+remote-warning-cancel = Cancelar
+remote-active-note = A Posição analisada sai deste computador para o { $provider }.
+remote-act-turn-on = Ligar o Chess-API.com
+remote-problem-disabled = O Chess-API.com está desligado, então nada foi enviado. Ligue-o para usar a Engine remota.
+remote-problem-fairplay = Trava de fair play: a Engine remota fica bloqueada enquanto a Partida online contra uma pessoa estiver em andamento. Nada foi enviado.
+remote-problem-limit = O Chess-API.com pediu uma pausa. Tente de novo em { $seconds } s; a análise local continua disponível.
+remote-problem-invalid = A resposta da Engine remota não pôde ser usada, então nada foi mostrado. Tente de novo ou use uma Engine local.
+remote-problem-offline = A Engine remota não respondeu agora. Verifique a conexão e tente de novo; a análise local continua disponível.
+remote-problem-generic = A Engine remota não pôde analisar esta Posição. Tente de novo ou use uma Engine local.

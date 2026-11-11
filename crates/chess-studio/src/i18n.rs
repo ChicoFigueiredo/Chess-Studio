@@ -98,6 +98,10 @@ const PT_BR: &[(&str, &str)] = &[
         include_str!("../assets/i18n/pt-BR/ribbon.ftl"),
     ),
     (
+        "engineonline.ftl",
+        include_str!("../assets/i18n/pt-BR/engineonline.ftl"),
+    ),
+    (
         "connections.ftl",
         include_str!("../assets/i18n/pt-BR/connections.ftl"),
     ),

@@ -145,6 +145,7 @@ engine-section-title = Engine online
 engine-section-text = Joga como Engine no Lichess. Exige um usuário BOT, que é separado do seu usuário de jogador e não volta a ser comum. Esta autorização nunca se mistura com a de jogador.
 engine-none = Nenhuma Engine online autorizada.
 engine-act-authorize = Autorizar Engine online…
+engine-act-open-screen = Abrir a tela da Engine online
 engine-act-key = Usar chave pessoal…
 connections-requires-explorer = O Explorador de aberturas requer autorizar sua conexão do { $provider }.
 

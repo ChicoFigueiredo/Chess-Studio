@@ -37,11 +37,14 @@ use crate::i18n::I18n;
 use crate::load_control::{LoadControl, Notice, target_for};
 use crate::notation;
 use crate::presentation::GraphicsQuality;
+use crate::remote_engine::RemoteState;
 use crate::session::Session;
 use crate::training_ui::TrainingUi;
 
 /// Intervalo entre releituras da lista de Engines do gerenciador.
 const CHOICES_REFRESH: Duration = Duration::from_secs(2);
+/// Quanto a Posição fica parada antes de a Engine remota ser consultada.
+const REMOTE_SETTLE: Duration = Duration::from_millis(400);
 /// Hash padrão da análise (MB).
 const DEFAULT_HASH_MB: u32 = 128;
 
@@ -232,6 +235,8 @@ struct Launch {
     hash_mb: u32,
     /// Backend escolhido à mão (Lc0); `None` = automático.
     backend: Option<String>,
+    /// A Engine remota (a Posição sai da máquina); `path` não vale.
+    remote: bool,
 }
 
 /// Qual Posição está sendo analisada.
@@ -315,6 +320,18 @@ pub struct Analysis {
     backend_active: Option<String>,
     /// Aviso de que a GPU não subiu e a análise recuou para a CPU.
     backend_note: Option<String>,
+    /// A Engine remota (CX-11): escolha explícita da sessão, nunca a padrão.
+    remote: RemoteState,
+    /// A Posição remota só é pedida depois de parada por este tempo (não pedir a cada
+    /// Lance de uma navegação rápida).
+    remote_settle: Duration,
+    remote_since: Option<(TargetKey, Instant)>,
+    /// O usuário pediu, no painel, para ligar o Provedor da Engine remota (reabre o aviso).
+    remote_turn_on: bool,
+    /// O usuário escolheu a Engine remota na lista: o aviso deve abrir (nada foi enviado).
+    remote_ask: bool,
+    /// Cena de demonstração das capturas: o estado vem de fora e `drive` não o toca.
+    demo: bool,
 }
 
 impl Default for Analysis {
@@ -353,6 +370,12 @@ impl Default for Analysis {
             backends: Vec::new(),
             backend_active: None,
             backend_note: None,
+            remote: RemoteState::default(),
+            remote_settle: REMOTE_SETTLE,
+            remote_since: None,
+            remote_turn_on: false,
+            remote_ask: false,
+            demo: false,
         }
     }
 }
@@ -457,11 +480,60 @@ impl Analysis {
 
     /// Há uma Engine liberada (pelo consentimento ou escolhida no gerenciador) para analisar.
     pub fn engine_available(&self) -> bool {
-        self.default_engine.is_some() || self.engine.is_some()
+        self.default_engine.is_some() || self.engine.is_some() || self.remote.is_selected()
+    }
+
+    /// A Engine remota (Chess-API.com): escolha, consentimento e problemas.
+    pub fn remote(&self) -> &RemoteState {
+        &self.remote
+    }
+
+    pub fn remote_mut(&mut self) -> &mut RemoteState {
+        &mut self.remote
+    }
+
+    /// O painel pediu para ligar o Provedor da Engine remota (um só pedido por clique).
+    pub fn take_remote_turn_on(&mut self) -> bool {
+        std::mem::take(&mut self.remote_turn_on)
+    }
+
+    /// O usuário escolheu a Engine remota na lista (um só pedido por clique).
+    pub fn take_remote_ask(&mut self) -> bool {
+        std::mem::take(&mut self.remote_ask)
+    }
+
+    /// Cena de demonstração da Engine remota (capturas): dados fictícios, nenhum pedido.
+    pub fn demo_remote(
+        &mut self,
+        status: Status,
+        shown: Option<Shown>,
+        problem: Option<chess_providers::ProviderError>,
+    ) {
+        self.demo = true;
+        self.enabled = !matches!(status, Status::Off | Status::Locked(_));
+        self.remote.select();
+        self.ready = true;
+        self.view = shown;
+        self.remote.set_problem(problem);
+        self.status = status;
+    }
+
+    /// A Engine remota passa a ser a escolhida (depois do aviso e do consentimento).
+    pub fn choose_remote(&mut self) {
+        self.remote.select();
+        self.failure = None;
+    }
+
+    #[cfg(test)]
+    pub fn set_remote_settle(&mut self, settle: Duration) {
+        self.remote_settle = settle;
     }
 
     /// Nome da Engine para a barra de status: o que ela anunciou ou o nome do arquivo.
     pub fn engine_label(&self) -> Option<String> {
+        if self.remote.is_selected() {
+            return Some(chess_providers::REMOTE_ENGINE_NAME.to_owned());
+        }
         self.engine_name.clone().or_else(|| {
             let path = self.engine.as_ref().or(self.default_engine.as_ref())?;
             Some(path.file_stem()?.to_string_lossy().into_owned())
@@ -503,6 +575,7 @@ impl Analysis {
     /// Escolhe a Engine de análise (`None` = a padrão).
     pub fn set_engine(&mut self, path: Option<PathBuf>) {
         self.engine = path;
+        self.remote.deselect();
     }
 
     /// Engine padrão da análise: o caminho já liberado pelo consentimento, se houver.
@@ -519,6 +592,18 @@ impl Analysis {
     }
 
     fn launch(&self) -> Option<Launch> {
+        if self.remote.is_selected() {
+            // Sem a camada de rede (ainda não entregue ao serviço), não há Engine remota.
+            self.remote.api()?;
+            return Some(Launch {
+                path: PathBuf::new(),
+                options: Vec::new(),
+                threads: 0,
+                hash_mb: 0,
+                backend: None,
+                remote: true,
+            });
+        }
         let registered: Vec<PathBuf> = self.choices.iter().map(|c| c.path.clone()).collect();
         let path = crate::engine_consent::analysis_engine(
             self.engine.as_deref(),
@@ -537,6 +622,7 @@ impl Analysis {
             threads: self.threads,
             hash_mb: self.hash_mb,
             backend: self.backend.clone(),
+            remote: false,
         })
     }
 
@@ -568,7 +654,11 @@ impl Analysis {
         config.hardware = Some(host_hardware());
         self.backend_note = None;
         self.load.mark_unsent();
-        match GuardedAnalysis::start(fair, subject, config) {
+        let started = match self.remote.api().filter(|_| launch.remote) {
+            Some(api) => GuardedAnalysis::start_remote(fair, subject, api.clone()),
+            None => GuardedAnalysis::start(fair, subject, config),
+        };
+        match started {
             Ok(controller) => {
                 self.controller = Some(controller);
                 self.launched = Some(launch.clone());
@@ -615,8 +705,21 @@ impl Analysis {
                 AnalysisEvent::Failed(failure) => failed = Some(failure.message),
             }
         }
+        // A Engine remota nunca "morre": o problema vale para o pedido (e fica tipado para a
+        // tela oferecer ligar o Provedor ou dizer até quando esperar).
+        let problem = controller.remote_problem().cloned();
         if let Some(message) = failed {
-            self.shutdown();
+            let remote = problem.is_some();
+            self.remote.set_problem(problem);
+            if remote {
+                if let Some(controller) = &mut self.controller {
+                    controller.stop();
+                }
+                self.view = None;
+                self.target = None;
+            } else {
+                self.shutdown();
+            }
             self.failure = Some(message);
         }
     }
@@ -632,6 +735,9 @@ impl Analysis {
     /// Passo por quadro: aplica a política (bloqueio, Trava de fair play, pausa) e mantém a
     /// Engine de análise e a Posição analisada em dia. Nunca bloqueia.
     pub fn drive(&mut self, session: &Session, training: bool, fair: &FairPlay) {
+        if self.demo {
+            return;
+        }
         let subject = Subject::at(session.game(), notation::current_ply(session));
         let refused = subject.as_ref().map_or(fair.any(), |s| {
             fair.check(crate::fair_play::Computation::EngineAnalysis, s)
@@ -707,6 +813,24 @@ impl Analysis {
             multipv: self.multipv,
         };
         if self.target.as_ref().map(|t| &t.key) != Some(&key) {
+            if self.launched.as_ref().is_some_and(|l| l.remote) && !self.remote_settle.is_zero() {
+                // Engine remota: só consulta quando a Posição parou (navegação rápida não
+                // dispara um pedido por Lance).
+                let settled = matches!(
+                    &self.remote_since,
+                    Some((waiting, at)) if *waiting == key && at.elapsed() >= self.remote_settle
+                );
+                if !settled {
+                    if self.remote_since.as_ref().map(|(k, _)| k) != Some(&key) {
+                        self.remote_since = Some((key, Instant::now()));
+                    }
+                    self.view = None;
+                    self.status = Status::Starting;
+                    return;
+                }
+            }
+            self.remote_since = None;
+            self.remote.set_problem(None);
             self.view = None;
             self.preview = None;
             let Some(view) = session.game().review_at_ply(ply) else {
@@ -787,7 +911,7 @@ fn sync_hud_analysis(
 }
 
 /// Engines do gerenciador utilizáveis na análise.
-fn choices_from(manager: &EngineManager) -> Vec<Choice> {
+pub(crate) fn choices_from(manager: &EngineManager) -> Vec<Choice> {
     let limits = Limits::for_host();
     let dir = chess_uci::engines_dir();
     manager
@@ -990,6 +1114,9 @@ fn load_notice_ui(ui: &mut egui::Ui, i18n: &I18n, analysis: &Analysis) {
 
 fn status_line(ui: &mut egui::Ui, i18n: &I18n, analysis: &mut Analysis) {
     match &analysis.status {
+        Status::Locked(Lock::FairPlay) => {
+            ui.weak(i18n.t("analysis-locked-fair-play"));
+        }
         Status::Off | Status::Locked(_) => {
             ui.weak(i18n.t("analysis-status-off"));
         }
@@ -1009,6 +1136,28 @@ fn status_line(ui: &mut egui::Ui, i18n: &I18n, analysis: &mut Analysis) {
         }
         Status::NoEngine => {
             ui.colored_label(egui::Color32::YELLOW, i18n.t("analysis-status-no-engine"));
+        }
+        Status::Failed(_) if analysis.remote.is_selected() => {
+            let now = crate::net_service::NetService::now();
+            let problem = analysis.remote.problem().cloned();
+            let message = match &analysis.status {
+                Status::Failed(message) => message.clone(),
+                _ => String::new(),
+            };
+            let remedy = match &problem {
+                Some(error) => crate::remote_engine::problem_row(ui, i18n, error, now),
+                None => {
+                    ui.colored_label(crate::ui_theme::palette(ui).danger, message);
+                    ui.button(i18n.t("analysis-retry"))
+                        .clicked()
+                        .then_some(crate::remote_engine::Remedy::Retry)
+                }
+            };
+            match remedy {
+                Some(crate::remote_engine::Remedy::TurnOn) => analysis.remote_turn_on = true,
+                Some(_) => analysis.failure = None,
+                None => {}
+            }
         }
         Status::Failed(message) => {
             ui.colored_label(egui::Color32::LIGHT_RED, i18n.t("analysis-status-failed"));
@@ -1287,33 +1436,57 @@ fn backend_row(ui: &mut egui::Ui, i18n: &I18n, analysis: &mut Analysis) {
 }
 
 fn engine_picker(ui: &mut egui::Ui, i18n: &I18n, analysis: &mut Analysis) {
-    let current = analysis
-        .engine
-        .as_ref()
-        .and_then(|p| analysis.choices.iter().find(|c| &c.path == p))
-        .map_or_else(|| i18n.t("analysis-engine-default"), |c| c.name.clone());
+    let current = if analysis.remote.is_selected() {
+        i18n.t("remote-engine-entry")
+    } else {
+        analysis
+            .engine
+            .as_ref()
+            .and_then(|p| analysis.choices.iter().find(|c| &c.path == p))
+            .map_or_else(|| i18n.t("analysis-engine-default"), |c| c.name.clone())
+    };
     let mut picked: Option<Option<PathBuf>> = None;
+    let mut ask_remote = false;
     ui.horizontal(|ui| {
         ui.label(i18n.t("analysis-engine-label"));
         egui::ComboBox::from_id_salt("analysis_engine_picker")
             .selected_text(current)
             .show_ui(ui, |ui| {
                 if ui
-                    .selectable_label(analysis.engine.is_none(), i18n.t("analysis-engine-default"))
+                    .selectable_label(
+                        analysis.engine.is_none() && !analysis.remote.is_selected(),
+                        i18n.t("analysis-engine-default"),
+                    )
                     .clicked()
                 {
                     picked = Some(None);
                 }
                 for choice in &analysis.choices {
-                    let selected = analysis.engine.as_ref() == Some(&choice.path);
+                    let selected = !analysis.remote.is_selected()
+                        && analysis.engine.as_ref() == Some(&choice.path);
                     if ui.selectable_label(selected, &choice.name).clicked() {
                         picked = Some(Some(choice.path.clone()));
                     }
                 }
+                // A Engine remota é sempre uma escolha à parte, com o selo do Provedor.
+                ui.separator();
+                if ui
+                    .selectable_label(analysis.remote.is_selected(), i18n.t("remote-engine-entry"))
+                    .clicked()
+                    && !analysis.remote.is_selected()
+                {
+                    ask_remote = true;
+                }
             });
     });
+    if ask_remote {
+        analysis.remote_ask = true;
+    }
     if let Some(path) = picked {
         analysis.set_engine(path);
+    }
+    if analysis.remote.is_selected() {
+        crate::remote_engine::active_note(ui, i18n);
     }
     if let Some(name) = &analysis.engine_name
         && analysis.has_engine()
