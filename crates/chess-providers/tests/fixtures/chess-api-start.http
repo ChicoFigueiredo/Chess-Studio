@@ -1,0 +1,72 @@
+# Resposta REAL gravada em 2026-11-11 com curl -i (User-Agent generico, sem chave, sem autenticacao). Posicao inicial.
+# POST https://chess-api.com/v1 corpo: {"fen":"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1","depth":12,"variants":1}
+HTTP/2 200 
+server: nginx/1.18.0 (Ubuntu)
+date: Wed, 11 Nov 2026 16:23:36 GMT
+content-type: application/json; charset=utf-8
+content-length: 1263
+x-powered-by: Express
+access-control-allow-origin: *
+etag: W/"4ef-LWgLqMoIDg5oBRS1xRIc2ogMmk4"
+
+{
+  "text": "Move d2 → d4 (d4): [0.35]. The game is balanced. Depth 12.",
+  "captured": false,
+  "promotion": false,
+  "isCapture": false,
+  "isPromotion": false,
+  "isCastling": false,
+  "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+  "type": "bestmove",
+  "depth": 12,
+  "move": "d2d4",
+  "eval": 0.35,
+  "centipawns": "35",
+  "mate": null,
+  "continuationArr": [
+    "g8f6",
+    "c2c4",
+    "e7e6",
+    "b1c3",
+    "d7d5",
+    "c1g5",
+    "f8e7",
+    "g1f3",
+    "e8g8",
+    "e2e3",
+    "b8d7",
+    "a1c1",
+    "c7c6",
+    "c4d5",
+    "e6d5",
+    "f1d3",
+    "h7h6"
+  ],
+  "debug": "info depth 12 seldepth 21 multipv 1 score cp 35 nodes 315961 nps 26330083 hashfull 30 tbhits 0 time 12 pv d2d4 g8f6 c2c4 e7e6 b1c3 d7d5 c1g5 f8e7 g1f3 e8g8 e2e3 b8d7 a1c1 c7c6 c4d5 e6d5 f1d3 h7h6",
+  "winChance": 53.21736834106171,
+  "taskId": "xkn7vd3ry",
+  "turn": "w",
+  "color": "w",
+  "piece": "p",
+  "from": "d2",
+  "to": "d4",
+  "san": "d4",
+  "flags": "b",
+  "lan": "d2d4",
+  "fromNumeric": "42",
+  "toNumeric": "44",
+  "continuation": [
+    {
+      "from": "g8",
+      "to": "f6",
+      "fromNumeric": "78",
+      "toNumeric": "66"
+    },
+    {
+      "from": "c2",
+      "to": "c4",
+      "fromNumeric": "32",
+      "toNumeric": "34"
+    }
+  ]
+}
