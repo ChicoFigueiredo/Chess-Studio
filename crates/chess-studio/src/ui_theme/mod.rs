@@ -51,6 +51,12 @@ pub fn scene_background(mode: ThemeMode, system_dark: Option<bool>) -> Color {
     Color::srgba_u8(c.r(), c.g(), c.b(), c.a())
 }
 
+/// Cor das coordenadas do 2D técnico (ficam sobre o fundo da cena): `ink-muted` do Tema efetivo.
+pub fn scene_label_color(mode: ThemeMode, system_dark: Option<bool>) -> Color {
+    let c = Palette::of_theme(resolve_theme(mode, system_dark)).ink_muted;
+    Color::srgba_u8(c.r(), c.g(), c.b(), c.a())
+}
+
 /// Tema do sistema operacional, quando o Bevy sabe qual é.
 fn system_dark(window: Option<&Window>) -> Option<bool> {
     match window?.window_theme? {
@@ -145,6 +151,18 @@ mod tests {
                 rgb(scene_background(ThemeMode::Fixed(id), None)),
                 [p.r(), p.g(), p.b()],
                 "{key}"
+            );
+        }
+    }
+
+    #[test]
+    fn scene_labels_use_the_effective_themes_ink_muted() {
+        for key in ["feltro", "torneio"] {
+            let id = ThemeId::from_key(key).expect("tema");
+            let p = Palette::of_theme(id).ink_muted;
+            assert_eq!(
+                rgb(scene_label_color(ThemeMode::Fixed(id), None)),
+                [p.r(), p.g(), p.b()]
             );
         }
     }

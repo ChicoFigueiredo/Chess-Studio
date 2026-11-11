@@ -238,19 +238,25 @@ fn spawn_table(
     ));
 
     // Estúdio: piso neutro fosco que só recebe a sombra do tabuleiro.
+    // A cor (e o `unlit`) vêm do Tema: `presentation::apply_scene_background` (issue #206).
     let floor_mat = materials.add(StandardMaterial {
         base_color: Color::srgb(0.13, 0.14, 0.16),
-        perceptual_roughness: 0.95,
+        unlit: true,
         ..default()
     });
     commands.spawn((
         Name::new("studio_floor"),
+        StudioFloor,
         Mesh3d(meshes.add(Plane3d::default().mesh().size(120.0, 120.0))),
         MeshMaterial3d(floor_mat),
         Transform::from_xyz(0.0, TABLE_TOP - 0.7, 0.0),
         VisibleIn::PROFESSIONAL,
     ));
 }
+
+/// O piso do estúdio da Apresentação 3D profissional (o fundo visível atrás do tabuleiro).
+#[derive(Component)]
+pub struct StudioFloor;
 
 fn spawn_lights(mut commands: Commands) {
     for role in [LightRole::Key, LightRole::Fill, LightRole::Rim] {
