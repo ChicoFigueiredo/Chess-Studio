@@ -30,6 +30,8 @@ use std::collections::{HashMap, HashSet};
 
 #[path = "view_auth.rs"]
 mod auth_ui;
+#[path = "view_fide.rs"]
+mod fide_ui;
 
 /// Largura mínima, em pontos, a partir da qual os cartões vão em duas colunas.
 pub(super) const TWO_COLUMNS_FROM: f32 = 980.0;
@@ -107,6 +109,8 @@ pub(super) fn page(
         authorized,
         list,
         auth,
+        fide,
+        stored,
         ..
     } = &mut *state;
     let mut view = View {
@@ -125,6 +129,7 @@ pub(super) fn page(
         authorized,
         standings: &standings,
         auth,
+        fide,
         service,
         ops: &mut ops,
     };
@@ -151,6 +156,8 @@ pub(super) fn page(
         }
         ui.add_space(16.0);
         view.vault_banner(ui, p);
+        ui.add_space(16.0);
+        stored.show(ui, ctx, i18n, service);
         ui.add_space(16.0);
         toolbar(ui, i18n, filter, query);
         if groups.is_empty() {
@@ -231,6 +238,7 @@ struct View<'a> {
     /// A melhor situação das autorizações de cada Provedor (só os que têm alguma).
     standings: &'a HashMap<ProviderId, Standing>,
     auth: &'a mut Auth,
+    fide: &'a mut crate::fide_profile::FideProfile,
     service: &'a NetService,
     ops: &'a mut Vec<Op>,
 }
@@ -436,6 +444,9 @@ impl View<'_> {
         });
         ui.add_space(8.0);
         self.authorization_block(ui, provider, state, p);
+        if id == ProviderId::Fide {
+            self.fide_block(ui);
+        }
 
         let actions = model::card_actions(provider, state, linked);
         let mut open = self.expanded.contains(&id);

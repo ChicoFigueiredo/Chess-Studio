@@ -51,6 +51,9 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 | CX-HOM-29 | Limpar cache | não | UNVERIFIED |
 | CX-HOM-30 | Linguagem, Temas e janela estreita | não | UNVERIFIED |
 | CX-HOM-31 | Desligar tudo e apagar | não | UNVERIFIED |
+| CX-HOM-32 | Rating FIDE no Perfil local | sim | UNVERIFIED |
+| CX-HOM-33 | Limpar dados guardados | não | UNVERIFIED |
+| CX-HOM-34 | Apagar Partidas importadas por origem | não | UNVERIFIED |
 
 ## Itens
 
@@ -427,6 +430,44 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Esperado:** a barra diz **Rede: offline**. Nenhuma conexão sai (monitor de rede). Excluir o Perfil apaga antes qualquer autorização guardada no cofre; se o cofre recusar, o Perfil não é excluído. Na pasta `cofre`, não sobra segredo daquele Perfil.
 - **Com o serviço real:** confira nas preferências do Lichess que nenhuma autorização do Chess Studio sobrou.
 - **Evidência:** [`authorized_connections.rs`](../../crates/chess-store/tests/authorized_connections.rs), [`connections/auth_tests.rs`](../../crates/chess-studio/src/connections/auth_tests.rs).
+
+### CX-HOM-32. Rating FIDE no Perfil local
+
+- **Pré-condição:** um ID FIDE real (ou o de um amigo); CX-HOM-04 feito.
+- **Passos:**
+  1. No cartão da FIDE, busque o jogador pelo nome e clique em **Vincular este ID**. Com o Lichess desligado, responda **Ligar** ao diálogo.
+  2. Confira nome, federação, título e as caixas **Standard**, **Rápido** e **Blitz**, e a linha **FIDE, via Lichess, consultado ...**.
+  3. Clique em **Atualizar**.
+  4. Abra **Arquivo > Perfil local**.
+  5. Desligue o Lichess e a internet, feche e abra o app, e olhe de novo.
+  6. Inicie uma Partida competitiva e clique em **Atualizar**.
+- **Esperado:** os três ritmos são caixas separadas; um ritmo sem rating mostra **—**. O texto avisa que a data é a da consulta. **Atualizar** diz que atualizou ou que os ratings continuam os mesmos. Sem internet o último valor continua à vista, com a data. Na Partida competitiva a consulta funciona (não é bloqueada). **Agora não** no diálogo não envia nada.
+- **Com o serviço real:** compare com o site da FIDE. O Lichess pode estar um mês atrás; anote a diferença, se houver.
+- **Evidência:** [`fide_and_bulk.rs`](../../crates/chess-store/tests/fide_and_bulk.rs), [`fide_profile.rs`](../../crates/chess-studio/src/fide_profile.rs), [`lichess_queries.rs`](../../crates/chess-providers/tests/lichess_queries.rs), [`docs/evidencias/rating-fide-dados-origem/`](../evidencias/rating-fide-dados-origem/README.md).
+
+### CX-HOM-33. Limpar dados guardados
+
+- **Pré-condição:** CX-HOM-15 e CX-HOM-22 feitos (há cache e Partidas importadas).
+- **Passos:**
+  1. Na Central, clique em **Limpar dados guardados…** e leia a janela.
+  2. Clique em **Cancelar** e confira que nada mudou.
+  3. Repita e clique em **Limpar dados guardados**.
+  4. Abra a Biblioteca, as Partidas jogadas e o rating FIDE do Perfil local.
+- **Esperado:** a janela diz o que some e o que fica. Cancelar não apaga. Depois de limpar, o app diz quantas respostas apagou; as Partidas jogadas e importadas, os Exercícios, as Conexões e o último rating FIDE continuam.
+- **Com o serviço real:** não se aplica.
+- **Evidência:** [`stored_data.rs`](../../crates/chess-studio/src/connections/stored_data.rs).
+
+### CX-HOM-34. Apagar Partidas importadas por origem
+
+- **Pré-condição:** Partidas importadas de dois Provedores e de um arquivo (CX-HOM-22, 23 e 25) e ao menos uma Partida jogada no app.
+- **Passos:**
+  1. Na Biblioteca, abra a aba **Origens**.
+  2. Marque uma importação e clique em **Apagar marcadas…**; leia a janela e confirme.
+  3. Marque **Tudo de um Provedor** e confirme.
+  4. Se tiver uma Partida que veio de dois lugares, apague uma das origens.
+- **Esperado:** a janela traz a contagem e a lista do que será apagado. Marcar o Provedor cobre as importações dele. As Partidas jogadas não aparecem na aba e continuam. A Partida de duas origens fica, e a janela diz que ficou.
+- **Com o serviço real:** não se aplica.
+- **Evidência:** [`fide_and_bulk.rs`](../../crates/chess-store/tests/fide_and_bulk.rs), [`library_bulk.rs`](../../crates/chess-studio/src/library_bulk.rs).
 
 ## Fora deste roteiro
 

@@ -167,11 +167,24 @@ impl Lichess {
     /// Rating FIDE do jogador de ID `fide_id` (standard, rápido e blitz separados). ID
     /// inexistente: [`ProviderError::NoData`]. Validade do cache: [`ttl::FIDE`].
     pub fn fide_player(&self, fide_id: u64) -> Query<FideRating> {
-        let request = Request::get(
+        self.fide_player_request(fide_id, false)
+    }
+
+    /// Como [`Lichess::fide_player`], mas consulta o Lichess de novo mesmo com o cache ainda
+    /// válido (o botão "Atualizar"): a data da consulta passa a ser a de agora.
+    pub fn fide_player_refreshed(&self, fide_id: u64) -> Query<FideRating> {
+        self.fide_player_request(fide_id, true)
+    }
+
+    fn fide_player_request(&self, fide_id: u64, refresh: bool) -> Query<FideRating> {
+        let mut request = Request::get(
             PROVIDER,
             format!("https://{API_HOST}/api/fide/player/{fide_id}"),
         )
         .cache_for(ttl::FIDE);
+        if refresh {
+            request = request.refresh();
+        }
         fetch(&self.net, request, Missing::NoData, |fetched| {
             Ok(json::<WireFide>(PROVIDER, fetched)?.into())
         })
