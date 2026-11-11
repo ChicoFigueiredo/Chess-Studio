@@ -916,7 +916,7 @@ static CATALOG: [Provider; 19] = [
             S::Planned { stage: 5 },
             "Protocolo ICS (não HTTP); visitante primeiro; senha só com transporte seguro comprovado (CX-18)",
         )],
-        // ICS não passa pelo cliente HTTP: o adaptador da etapa 5 terá o seu transporte.
+        // ICS não passa pelo cliente HTTP: o endereço ICS está em `crate::ics_endpoints`.
         endpoints: &[],
         docs_url: "https://www.freechess.org/interfaces.html",
         terms_url: "https://www.freechess.org/",

@@ -50,6 +50,9 @@
 //! retorno da autorização pelo navegador ([`LoopbackCallback`]), só em `127.0.0.1`, para
 //! um único retorno, com prazo.
 //!
+//! O segundo transporte, além do HTTP, é a conexão ICS (TCP de texto do FICS,
+//! [`Net::connect_ics`]): o mesmo gate, só para os endereços de [`ics_endpoints`].
+//!
 //! O tempo vem de um [`Clock`] injetado ([`FakeClock`] nos testes); a suíte usa o servidor
 //! falso de [`testing`] (feature `testing`) e nunca chama serviço real (CX-17).
 
@@ -57,6 +60,8 @@ pub mod catalog;
 mod clock;
 mod error;
 mod guard;
+mod ics;
+mod ics_transport;
 mod limits;
 mod loopback;
 mod ndjson;
@@ -78,6 +83,10 @@ pub use catalog::{
 pub use clock::{Clock, FakeClock, SystemClock, Timestamp};
 pub use error::NetError;
 pub use guard::{FairPlayGuard, FairPlayHold};
+pub use ics::{
+    DEFAULT_ICS_MAX_LINE, IcsEndpoint, IcsEvent, IcsItem, IcsLink, IcsReader, IcsRequest,
+    MAX_ICS_COMMAND, ics_endpoint, ics_endpoints,
+};
 pub use limits::RetryPolicy;
 pub use loopback::{CallbackError, CallbackParams, LoopbackCallback};
 pub use ndjson::{NdjsonError, NdjsonItem, NdjsonReader};

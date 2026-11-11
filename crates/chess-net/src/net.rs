@@ -5,7 +5,10 @@
 //! própria com fila, criada no primeiro pedido; os pedidos de um Provedor saem um de cada vez
 //! (Lichess, PlayStrategy e Chess.com pedem acesso serial). O resultado volta por canal e a
 //! interface consulta [`Pending::try_take`] a cada quadro, sem bloquear. Fluxos NDJSON têm
-//! thread própria, para não ocupar a fila.
+//! thread própria, para não ocupar a fila. A conexão ICS (TCP de texto do FICS) passa pelo
+//! mesmo gate, em [`ics`].
+
+mod ics;
 
 use crate::LocalProfileId;
 use crate::catalog::{Capability, Endpoint, ProviderId, RateLimit, catalog};
@@ -790,6 +793,7 @@ impl Shared {
             None => None,
         };
         if let Some(entry) = &cached
+            && !request.refresh
             && entry.is_fresh(self.clock.now())
         {
             return Ok(from_entry(entry, self.clock.now(), Freshness::Cache));

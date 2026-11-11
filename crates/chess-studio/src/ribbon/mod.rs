@@ -255,8 +255,11 @@ fn apply_capture_options(state: &mut RibbonState) {
         state.backstage = Some(BackstagePage::Profiles);
     }
     // `--backstage-page connections`: a Central de Conexões aberta, para a evidência.
-    if option_value("--backstage-page").as_deref() == Some("connections") {
-        state.backstage = Some(BackstagePage::Connections);
+    match option_value("--backstage-page").as_deref() {
+        Some("connections") => state.backstage = Some(BackstagePage::Connections),
+        // `--backstage-page local-profile`: a página Perfil local (rating FIDE, #242).
+        Some("local-profile") => state.backstage = Some(BackstagePage::LocalProfile),
+        _ => {}
     }
 }
 

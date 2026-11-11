@@ -20,12 +20,14 @@ fn ms(n: u64) -> Duration {
 
 fn timeouts() -> Timeouts {
     Timeouts {
-        handshake: ms(1500),
-        ready: ms(1500),
-        search_slack: ms(100),
-        search_default: ms(300),
-        stop_grace: ms(300),
-        quit: ms(300),
+        // Folgas largas: aqui nenhum teste exercita o estouro, e com a máquina carregada
+        // um prazo curto mataria a Engine falsa (#236).
+        handshake: ms(10_000),
+        ready: ms(10_000),
+        search_slack: ms(2_000),
+        search_default: ms(5_000),
+        stop_grace: ms(5_000),
+        quit: ms(2_000),
     }
 }
 
@@ -66,7 +68,7 @@ fn wait_for(
     ctrl: &mut AnalysisController,
     mut pred: impl FnMut(&AnalysisEvent) -> bool,
 ) -> AnalysisEvent {
-    let deadline = Instant::now() + Duration::from_secs(8);
+    let deadline = Instant::now() + Duration::from_secs(30);
     while Instant::now() < deadline {
         while let Some(event) = ctrl.poll() {
             if pred(&event) {
@@ -87,7 +89,7 @@ fn trace_lines(path: &Path) -> Vec<String> {
 }
 
 fn wait_trace(path: &Path, pred: impl Fn(&[String]) -> bool) -> Vec<String> {
-    let deadline = Instant::now() + Duration::from_secs(8);
+    let deadline = Instant::now() + Duration::from_secs(30);
     loop {
         let lines = trace_lines(path);
         if pred(&lines) {

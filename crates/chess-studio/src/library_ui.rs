@@ -356,6 +356,8 @@ enum Tab {
     Games,
     Favorites,
     Exercises,
+    /// Apagar em lote as Partidas importadas por Origem (#242).
+    Imports,
 }
 
 /// De onde vêm as Partidas que a pessoa vai importar.
@@ -490,6 +492,7 @@ pub struct LibraryUi {
     pub(crate) online: crate::online_import_ui::OnlineState,
     pgn_files: Vec<PathBuf>,
     favorite_name: String,
+    bulk: crate::library_bulk::BulkUi,
     /// Banco em memória quando o app roda sem persistência (capturas).
     local: Option<Mutex<Store>>,
 }
@@ -531,6 +534,7 @@ impl Default for LibraryUi {
             online: crate::online_import_ui::OnlineState::default(),
             pgn_files: Vec::new(),
             favorite_name: String::new(),
+            bulk: crate::library_bulk::BulkUi::default(),
             local: None,
         }
     }
@@ -621,6 +625,20 @@ impl LibraryUi {
     }
 
     /// Atualiza o formulário da importação online com o estado do app e recolhe a thread.
+    /// Aba Importações: relê a lista de importações quando ela está à vista.
+    fn refresh_bulk(&mut self, handle: Option<&PersistenceHandle>) {
+        if self.tab == Tab::Imports {
+            self.bulk.refresh(&mut self.local, handle);
+        }
+    }
+
+    /// Aba Importações: executa o que a tela pediu e manda reler a Biblioteca se apagou.
+    fn apply_bulk(&mut self, handle: Option<&PersistenceHandle>) {
+        if self.bulk.apply(&mut self.local, handle) {
+            self.touch();
+        }
+    }
+
     fn sync_online(
         &mut self,
         net: Option<&crate::net_service::NetService>,
@@ -677,6 +695,7 @@ impl LibraryUi {
             Tab::Exercises => {
                 exercises_for(store, kind, &exercise_text).map(|e| (None, None, Some(e)))
             }
+            Tab::Imports => Ok((None, None, None)),
         });
         match data {
             Some(Ok((page, favorites, exercises))) => {
@@ -973,7 +992,7 @@ fn add_favorite(
     }
 }
 
-fn source_key(source: ImportSource) -> &'static str {
+pub(crate) fn source_key(source: ImportSource) -> &'static str {
     match source {
         ImportSource::QueenAlice => "library-import-source-queen-alice",
         ImportSource::ChessBase => "library-import-source-chessbase",
@@ -995,7 +1014,7 @@ fn pace_key(pace: Pace) -> &'static str {
     }
 }
 
-fn mode_key(mode: ImportMode) -> &'static str {
+pub(crate) fn mode_key(mode: ImportMode) -> &'static str {
     match mode {
         ImportMode::File => "library-mode-file",
         ImportMode::Manual => "library-mode-manual",
@@ -1273,11 +1292,13 @@ fn library_panel(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
                     handle,
                 );
                 lib.refresh(handle);
+                lib.refresh_bulk(handle);
                 draw(ui, i18n, &mut lib, &session, swapped, &mut actions);
                 // Pedida pelo Explorador (Partida de referência): abre depois de desenhar.
                 if let Some(id) = lib.pending_open.take() {
                     actions.push(Action::OpenImported(id));
                 }
+                lib.apply_bulk(handle);
             }
             let mut opened_played = false;
             for action in actions {
@@ -1334,6 +1355,7 @@ fn draw(
             Tab::Exercises,
             i18n.t("library-tab-exercises"),
         );
+        ui.selectable_value(&mut lib.tab, Tab::Imports, i18n.t("library-tab-imports"));
     });
     if lib.tab != previous {
         lib.touch();
@@ -1351,6 +1373,10 @@ fn draw(
         Tab::Games => draw_games(ui, i18n, lib, session, swapped, actions),
         Tab::Favorites => draw_favorites(ui, i18n, lib, session, swapped, actions),
         Tab::Exercises => draw_exercises(ui, i18n, lib, swapped, actions),
+        Tab::Imports => {
+            let ctx = ui.ctx().clone();
+            lib.bulk.draw(ui, &ctx, i18n);
+        }
     }
 }
 
@@ -2077,6 +2103,22 @@ fn library_demo(
             lib.position = "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2".into();
         }
         "favorites" => lib.tab = Tab::Favorites,
+        "imports" | "imports-confirm" => {
+            with_store(&mut lib.local, None, |store, _| {
+                crate::library_bulk::seed_demo(store);
+            });
+            lib.tab = Tab::Imports;
+            if script == "imports-confirm" {
+                let LibraryUi { bulk, local, .. } = &mut *lib;
+                bulk.demo_confirm(local, |groups, selection| {
+                    let lichess = Some("lichess".to_owned());
+                    selection.set_provider(&lichess, true);
+                    if let Some(g) = groups.iter().find(|g| g.provider.is_none()) {
+                        selection.set_batch(&crate::library_bulk::BatchKey::of(g), true);
+                    }
+                });
+            }
+        }
         "exercises" => {
             lib.tab = Tab::Exercises;
             lib.exercise_kind = Some(ExerciseKind::Mate);

@@ -5,6 +5,8 @@
 //!   (depois do botão de consentimento) e pelo gerenciador de Engines (ação explícita na UI);
 //! - a camada de rede por Provedor (`chess-net`), em que todo pedido passa pelo gate
 //!   (consentimento por Provedor, catálogo, Trava de fair play, limites) antes do transporte.
+//!   O gate tem dois transportes: HTTP (`transport.rs`, `ureq`) e ICS (`ics_transport.rs`,
+//!   TCP de texto do FICS, #237), cada um chamado só pelo seu gate (`net.rs` e `net/ics.rs`).
 //!
 //! Nenhum outro crate declara cliente HTTP nem abre socket. Teste estático: varre as fontes e
 //! os manifestos e falha se surgir um terceiro caminho de rede.
@@ -15,6 +17,11 @@
 //! de loopback, e o arquivo escuta só em `127.0.0.1`, porta efêmera, para um único retorno,
 //! com prazo, e não fala com Provedor nenhum (a troca do código passa pelo gate). Qualquer
 //! outro arquivo com socket continua reprovado.
+//!
+//! **Única conexão TCP crua de produção:** o transporte ICS do FICS, em
+//! `chess-net/src/ics_transport.rs` (#237). Só abre conexão (nunca escuta), num único ponto
+//! (`TcpStream::connect_timeout`), e só o gate do ICS o chama, depois do consentimento, do
+//! catálogo dos endereços ICS e da Trava de fair play.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -27,6 +34,10 @@ const HTTP_CRATES: [&str; 2] = ["chess-net", "chess-uci"];
 const SOCKET_DIR: &str = "chess-net/src/testing/";
 /// ...e no servidor de loopback do retorno da autorização (a única escuta de produção).
 const LOOPBACK_FILE: &str = "chess-net/src/loopback.rs";
+/// ...e o transporte ICS do FICS (a única conexão TCP crua de produção, #237).
+const ICS_TRANSPORT_FILE: &str = "chess-net/src/ics_transport.rs";
+/// O gate do ICS: o único arquivo que chega ao transporte ICS.
+const ICS_GATE_FILE: &str = "chess-net/src/net/ics.rs";
 /// ...e o "navegador" falso dos testes da Central, que só conecta ao retorno em `127.0.0.1`
 /// da autorização (nunca a um endereço de fora). Arquivo só de testes.
 const BROWSER_STUB_FILE: &str = "chess-studio/src/connections/auth_tests.rs";
@@ -129,15 +140,36 @@ fn only_the_engine_installer_and_the_provider_layer_speak_http() {
 }
 
 #[test]
-fn raw_sockets_exist_only_in_the_fake_server_and_the_oauth_loopback() {
+fn raw_sockets_exist_only_in_the_fake_server_the_oauth_loopback_and_the_ics_transport() {
     for socket in ["TcpStream", "UdpSocket", "TcpListener", "std::net::"] {
         for file in files_containing(socket) {
+            let ics =
+                file == ICS_TRANSPORT_FILE && socket != "TcpListener" && socket != "UdpSocket";
             assert!(
-                file.starts_with(SOCKET_DIR) || file == LOOPBACK_FILE || file == BROWSER_STUB_FILE,
-                "{socket} fora do servidor falso e do loopback da autorização: {file}"
+                file.starts_with(SOCKET_DIR)
+                    || file == LOOPBACK_FILE
+                    || file == BROWSER_STUB_FILE
+                    || ics,
+                "{socket} fora do servidor falso, do loopback da autorização e do transporte ICS: {file}"
             );
         }
     }
+    // O transporte ICS só abre conexão, num único ponto, e não é cliente HTTP.
+    let ics = fs::read_to_string(workspace_crates().join(ICS_TRANSPORT_FILE)).expect("ICS");
+    let code = non_test_part(&ics);
+    assert_eq!(
+        code.matches("TcpStream::connect_timeout(").count(),
+        1,
+        "um único ponto de conexão ICS"
+    );
+    assert!(
+        !code.contains("TcpStream::connect(") && !code.contains("bind("),
+        "o transporte ICS não escuta nem conecta por outro caminho"
+    );
+    assert!(
+        !code.contains("ureq"),
+        "o transporte ICS não é cliente HTTP"
+    );
     // O loopback só escuta (TcpListener) e só em 127.0.0.1: nunca abre conexão para fora.
     let loopback = fs::read_to_string(workspace_crates().join(LOOPBACK_FILE)).expect("loopback");
     let code = non_test_part(&loopback);
@@ -210,17 +242,41 @@ fn the_fake_server_is_enabled_only_for_tests() {
 }
 
 #[test]
-fn inside_the_provider_layer_only_the_gate_reaches_the_transport() {
-    let users: Vec<String> = production_sources()
+fn inside_the_provider_layer_only_the_gate_reaches_the_transports() {
+    let net_sources: Vec<(String, String)> = production_sources()
         .into_iter()
-        .filter(|(p, _)| p.starts_with("chess-net/src/") && p != "chess-net/src/transport.rs")
+        .filter(|(p, _)| p.starts_with("chess-net/src/"))
+        .collect();
+    let http_users: Vec<String> = net_sources
+        .iter()
+        .filter(|(p, _)| p != "chess-net/src/transport.rs" && p != ICS_TRANSPORT_FILE)
         .filter(|(_, s)| {
-            let code = non_test_part(s);
+            let code = non_test_part(s).replace("ics_transport::", "");
             code.contains("transport::") || code.contains("Http::new") || code.contains(".http.")
         })
-        .map(|(p, _)| p)
+        .map(|(p, _)| p.clone())
         .collect();
-    assert_eq!(users, vec!["chess-net/src/net.rs".to_owned()]);
+    assert_eq!(http_users, vec!["chess-net/src/net.rs".to_owned()]);
+    let ics_users: Vec<String> = net_sources
+        .iter()
+        .filter(|(p, _)| p != ICS_TRANSPORT_FILE)
+        .filter(|(_, s)| {
+            let code = non_test_part(s);
+            code.contains("ics_transport::") || code.contains("IcsSocket")
+        })
+        .map(|(p, _)| p.clone())
+        .collect();
+    assert_eq!(ics_users, vec![ICS_GATE_FILE.to_owned()]);
+    // O gate do ICS confere consentimento e catálogo, e de novo logo antes de conectar.
+    let gate = fs::read_to_string(workspace_crates().join(ICS_GATE_FILE)).expect("gate ICS");
+    let code = non_test_part(&gate);
+    let admit = code.find("fn admit_ics").expect("gate do ICS");
+    assert!(code[admit..].contains("is_enabled(") && code[admit..].contains("ics_endpoint("));
+    let connect = code.find("IcsSocket::connect(").expect("conexão ICS");
+    assert!(
+        code[..connect].contains("self.admit_ics("),
+        "o gate confere de novo logo antes de conectar"
+    );
 }
 
 #[test]
