@@ -188,6 +188,7 @@ pub struct ActionEnv<'w> {
     pub(crate) palette: ResMut<'w, crate::palette::PaletteState>,
     online_ui: Option<ResMut<'w, crate::online::OnlineUi>>,
     online: Option<Res<'w, crate::online::OnlineService>>,
+    engine_online_ui: Option<ResMut<'w, crate::engine_online::EngineOnlineUi>>,
 }
 
 fn presentation_id(p: Presentation) -> PresentationId {
@@ -295,6 +296,13 @@ impl ActionEnv<'_> {
             Action::ChallengeOnline => self.open_online(crate::online::Tab::Challenge),
             Action::PlayLichessEngine => self.open_online(crate::online::Tab::Engine),
             Action::OnlineGames => self.open_online(crate::online::Tab::Playing),
+            Action::OpenEngineOnline => {
+                if let Some(ui) = self.engine_online_ui.as_mut() {
+                    ui.open = true;
+                    ui.error = None;
+                }
+                self.palette.close();
+            }
             Action::OfferDraw => {
                 let side = self.session.snapshot().side_to_move;
                 self.session.command(Command::OfferDraw { side });
