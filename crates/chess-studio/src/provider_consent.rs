@@ -179,8 +179,7 @@ fn body(ui: &mut egui::Ui, ctx: &egui::Context, i18n: &I18n, ask: &Ask) -> Optio
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             let state = crate::connections::model::CardState::Off;
-            let key = crate::connections::model::sends_key(provider, state);
-            ui.label(i18n.t(key));
+            ui.label(crate::connections::model::sends_text(i18n, provider, state));
         });
     let hosts = crate::connections::model::hosts(provider);
     if !hosts.is_empty() {

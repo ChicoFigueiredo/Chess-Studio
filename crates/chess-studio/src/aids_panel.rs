@@ -22,6 +22,7 @@ pub struct AidsPanelPlugin;
 impl Plugin for AidsPanelPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<FileTools>()
+            .add_systems(Update, finish_pgn_save_as)
             .add_systems(EguiPrimaryContextPass, resume_banner);
         crate::dock::register_panel(
             app,
@@ -472,11 +473,13 @@ fn file_section(
             let dir = paths::documents_dir(paths::Platform::current(), &paths::process_env);
             tools.export(session, notes, &dir);
         }
-        let save_as = tools.pgn_pick.show_save(ui, i18n, || {
-            crate::file_picker::pgn_save_request(i18n, FileTools::suggested_file_name())
-        });
-        if let Some(path) = save_as {
-            tools.export_to(session, notes, &path);
+        if !tools.pgn_pick.is_unavailable() {
+            let save_as = tools.pgn_pick.show_save(ui, i18n, || {
+                crate::file_picker::pgn_save_request(i18n, FileTools::suggested_file_name())
+            });
+            if let Some(path) = save_as {
+                tools.export_to(session, notes, &path);
+            }
         }
         match &tools.pgn_result {
             Some(Ok(path)) => {
@@ -494,6 +497,21 @@ fn file_section(
             None => {}
         }
     });
+}
+
+/// Fecha o "Salvar como…" do PGN pedido fora de um botão (Ação do Ribbon): grava no destino
+/// escolhido assim que o diálogo do sistema responde.
+fn finish_pgn_save_as(
+    mut tools: ResMut<FileTools>,
+    session: Res<Session>,
+    notes: Option<Res<crate::study::StudyNotes>>,
+) {
+    if !tools.pgn_pick.is_busy() {
+        return;
+    }
+    let epoch = session.epoch();
+    let notes = notes.map(|n| n.export(epoch)).unwrap_or_default();
+    tools.finish_save_as(&session, &notes);
 }
 
 /// Partida retomada do banco volta pausada (DEC-42): um aviso central pede para retomar.

@@ -686,7 +686,7 @@ fn every_fics_text_exists_and_the_warning_is_honest() {
     for key in [
         "fics-guest-text",
         "fics-connect",
-        "fics-sends",
+        "consent-sends-fics-play",
         "fics-auth-guest",
     ] {
         let text = i18n.t(key).to_lowercase();

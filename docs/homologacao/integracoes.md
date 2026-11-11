@@ -62,12 +62,15 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 | CX-HOM-40 | Desafiar por nome e desafios recebidos | sim | UNVERIFIED |
 | CX-HOM-41 | Correspondência: lista, fechar e reabrir o app | sim | UNVERIFIED |
 | CX-HOM-42 | Trava de fair play na Partida online | sim | UNVERIFIED |
-| CX-HOM-43 | FICS na Central: aviso, ligar e desligar | não | UNVERIFIED |
-| CX-HOM-44 | FICS: entrar como visitante e sair | sim | UNVERIFIED |
-| CX-HOM-45 | FICS: buscar adversário, jogar e terminar | sim | UNVERIFIED |
-| CX-HOM-46 | FICS: desafios recebidos e variantes | sim | UNVERIFIED |
-| CX-HOM-47 | FICS: queda de conexão durante a Partida | sim | UNVERIFIED |
-| CX-HOM-48 | FICS: observar uma Partida | sim | UNVERIFIED |
+| CX-HOM-43 | Seletor de arquivo: escolher e Salvar como… | não (sistema) | UNVERIFIED |
+| CX-HOM-44 | Baixar problemas do Lichess pela rede | sim | UNVERIFIED |
+| CX-HOM-45 | Consentimento do Lichess cita tudo o que o app envia | não | UNVERIFIED |
+| CX-HOM-55 | FICS na Central: aviso, ligar e desligar | não | UNVERIFIED |
+| CX-HOM-56 | FICS: entrar como visitante e sair | sim | UNVERIFIED |
+| CX-HOM-57 | FICS: buscar adversário, jogar e terminar | sim | UNVERIFIED |
+| CX-HOM-58 | FICS: desafios recebidos e variantes | sim | UNVERIFIED |
+| CX-HOM-59 | FICS: queda de conexão durante a Partida | sim | UNVERIFIED |
+| CX-HOM-60 | FICS: observar uma Partida | sim | UNVERIFIED |
 
 ## Itens
 
@@ -558,7 +561,41 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Com o serviço real:** com o monitor de rede, nenhum pedido ao Explorador, à avaliação em cache ou aos finais sai nesses casos.
 - **Evidência:** [`fair_play.rs`](../../crates/chess-studio/src/fair_play.rs), [`online/tests.rs`](../../crates/chess-studio/src/online/tests.rs), [decisões PO-13 a PO-19](../decisoes/2026-11-11-partida-online.md).
 
-### CX-HOM-43. FICS na Central: aviso, ligar e desligar
+### CX-HOM-43. Seletor de arquivo: escolher e Salvar como…
+
+- **Pré-condição:** um computador com janela de escolha de arquivo do sistema (portal do desktop no Linux; nativa no Windows e no macOS). Repita, se puder, num sistema sem ela (Linux sem portal e sem `zenity`).
+- **Passos:**
+  1. Em **Importar arquivo** (Biblioteca) e em **Instalar problemas** (Treino > Pacotes), clique em **Escolher arquivo…**: escolha um arquivo, depois abra de novo e cancele.
+  2. No Painel Revisão, em **Exportar PGN**, clique em **Salvar como…**, mude a pasta e o nome, confirme. Repita escolhendo um arquivo que já existe (o sistema pergunta se substitui).
+  3. Termine uma Partida (xeque-mate ou abandono): no diálogo de fim, clique em **Salvar como…**; depois em **Exportar PGN** (vai para Documentos).
+  4. No Ribbon, aciona **Exportar PGN**: a janela de **Salvar como** abre com o nome `partida-AAAA-MM-DD-HHMMSS.pgn`.
+  5. Com a Súmula aberta e a notação oculta, confira o diálogo de fim e o Painel Revisão.
+  6. Sem janela de escolha no sistema: confira que os botões **Salvar como…** somem, o campo de caminho continua e **Exportar PGN** do Ribbon grava em Documentos.
+- **Esperado:** o caminho escolhido aparece no campo (itens 1) ou na mensagem **Partida salva em …** (itens 2 a 4); cancelar não muda nada; o arquivo sai com a extensão `.pgn` mesmo se você não a digitou. Com a notação oculta pela Súmula, o **Salvar como…** do fim de Partida fica desativado e o do Painel Revisão não aparece (o PGN revelaria a notação).
+- **Evidência:** [`file_picker.rs`](../../crates/chess-studio/src/file_picker.rs), [`fen_pgn.rs`](../../crates/chess-studio/src/fen_pgn.rs) (testes com seletor falso), [capturas](../evidencias/acabamento-etapa-5/README.md).
+
+### CX-HOM-44. Baixar problemas do Lichess pela rede
+
+- **Pré-condição:** internet; Lichess desligado na Central; Perfil local novo.
+- **Passos:**
+  1. Treino > Pacotes > **Baixar problemas do Lichess**: escolha poucos temas e uma quantidade pequena (200); clique em baixar. O diálogo **Ligar Lichess?** abre: confira que a lista **O que será enviado** cita o download de problemas; clique em **Ligar**.
+  2. Acompanhe o andamento; deixe terminar e abra o pacote em **Pacotes instalados** (**Origem: Lichess, licença CC0**).
+  3. Repita e **Cancele** no meio: nada é instalado.
+  4. Desligue a internet no meio de outro download: a mensagem manda conferir a internet e diz que nada foi instalado.
+  5. Se o Lichess mandar o arquivo para outro endereço (redirecionamento), observe o resultado.
+- **Esperado:** o arquivo vem do endereço de downloads do Lichess; só é aceito redirecionamento para outro endereço de download do próprio Lichess (até 3 saltos, sem porta nem parâmetros); qualquer outro destino mostra **O Lichess mandou o arquivo para um endereço que o Chess Studio não aceita, por segurança … nada foi instalado.** (decisão RD-1).
+- **Com o serviço real:** com o monitor de rede, as conexões vão só para `database.lichess.org` e nenhum dado do Perfil local sai. Anote se houve redirecionamento e para qual endereço: o comportamento real é UNVERIFIED até este passo.
+- **Evidência:** [`download.rs`](../../crates/chess-net/tests/download.rs) (redirecionamento com servidor falso), [`2026-11-11-acabamento-etapa-5.md`](../decisoes/2026-11-11-acabamento-etapa-5.md), [capturas de #238](../evidencias/baixar-problemas/README.md).
+
+### CX-HOM-45. Consentimento do Lichess cita tudo o que o app envia
+
+- **Passos:**
+  1. Com o Lichess desligado, abra o Explorador (ou **Baixar problemas**): o diálogo **Ligar Lichess?** abre.
+  2. Leia **O que será enviado** e **Para onde vai**; abra também o cartão do Lichess na Central (Detalhes).
+- **Esperado:** uma frase para cada uso: Explorador, avaliação em cache, finais, consulta de Partidas e IDs FIDE públicos, download de problemas e Partidas online (com a Conexão autorizada); nenhuma sigla técnica (sem "HTTP", "etapa" ou nome de endpoint). O mesmo texto vale no cartão da Central.
+- **Evidência:** teste `every_ready_network_service_has_a_consent_line` em [`connections/model.rs`](../../crates/chess-studio/src/connections/model.rs); [capturas](../evidencias/acabamento-etapa-5/README.md).
+
+### CX-HOM-55. FICS na Central: aviso, ligar e desligar
 
 - **Passos:**
   1. Arquivo > Conexões; em **Jogar online**, encontre o cartão **FICS** e abra **Detalhes**.
@@ -567,16 +604,16 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Esperado:** o cartão diz, antes de ligar, **Conexão sem criptografia** (texto puro), **Só como visitante** (nome GuestXXXX, sem rating, **nunca pede nem envia senha**), **Sem reconexão automática** e **Sem timeseal**. Não há campo de senha, chave nem botão de autorizar. **Como se identifica: Visitante, sem senha**; **O que é enviado** fala em texto puro e **nenhuma senha**. O diálogo **Ligar FICS?** mostra o mesmo texto e **freechess.org**. Desligado, nada sai: a barra de status não mostra conexão com o FICS.
 - **Evidência:** [`connections/model.rs`](../../crates/chess-studio/src/connections/model.rs) (`the_fics_card_plays_as_a_guest_never_asks_for_a_password_and_warns_of_plain_text`), [`online/fics_tests.rs`](../../crates/chess-studio/src/online/fics_tests.rs) (`with_the_fics_off_no_connection_is_ever_opened`), capturas em [`docs/evidencias/fics-visitante/`](../evidencias/fics-visitante/).
 
-### CX-HOM-44. FICS: entrar como visitante e sair
+### CX-HOM-56. FICS: entrar como visitante e sair
 
-- **Pré-condição:** FICS ligado (CX-HOM-43); internet.
+- **Pré-condição:** FICS ligado (CX-HOM-55); internet.
 - **Passos:**
   1. Na tela da Partida online, **FICS · visitante** > **Entrar como visitante**.
   2. Espere **No FICS como Guest…**; depois **Sair do FICS**.
 - **Esperado:** a entrada mostra **Entrando como visitante** e termina com o nome de visitante que o FICS deu. Nenhuma senha é pedida em momento algum. **Sair do FICS** encerra a conexão na hora.
 - **Com o serviço real (UNVERIFIED):** os textos de entrada do FICS real (`login:`, "Press return to enter the server as…", "Starting FICS session as…") são os que o app reconhece; até aqui só foram testados com transcrições **sintéticas**. Se a entrada não terminar em 60 s, o app diz que o FICS não confirmou a entrada a tempo; anote o que apareceu.
 
-### CX-HOM-45. FICS: buscar adversário, jogar e terminar
+### CX-HOM-57. FICS: buscar adversário, jogar e terminar
 
 - **Passos:**
   1. Conectado como visitante, **Buscar adversário** > Blitz 5+0 > **Buscar adversário**; uma vez, **Cancelar busca**, e busque de novo.
@@ -586,7 +623,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Esperado:** pareado, a tela fecha e a Partida vai ao tabuleiro com o Painel **Partida online** (selos **FICS · visitante** e **Ao vivo**, **sem rating**). Cada Lance aparece no destino com **Enviando …** até o FICS confirmar e nunca é reenviado. Durante a Partida a Trava de fair play desliga Engines, Explorador, finais e análise; só cai com o fim confirmado pelo FICS. A Partida está na Biblioteca com **Partida online · FICS (visitante) · Partida N**.
 - **Com o serviço real (UNVERIFIED):** o **formato do Lance enviado** (`e2e4`, `o-o`, `o-o-o`, `e7e8=q`) é aceito pelo FICS real; os textos de criação (`{Game N (…) Creating …}`), de fim, de empate e de abortar são reconhecidos. Um Lance recusado aparece como **O FICS recusou o Lance** e a peça volta.
 
-### CX-HOM-46. FICS: desafios recebidos e variantes
+### CX-HOM-58. FICS: desafios recebidos e variantes
 
 - **Passos:**
   1. Conectado como visitante, de outro cliente do FICS (outro visitante), desafie o nome mostrado em xadrez padrão (por exemplo `match GuestXXXX 3 0`) e, depois, numa variante (`match GuestXXXX 3 0 wild 1`).
@@ -594,7 +631,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Esperado:** o desafio aparece na aba **Desafios (1)** e no Painel (**1 desafio recebido no FICS**). O de variante diz que o app só joga xadrez padrão e não tem **Aceitar**. Uma Partida de variante que comece mesmo assim é recusada com aviso e não vai ao tabuleiro nem à Biblioteca.
 - **Com o serviço real (UNVERIFIED):** o texto do desafio (`Challenge: … unrated blitz 3 0.`) do FICS real é reconhecido.
 
-### CX-HOM-47. FICS: queda de conexão durante a Partida
+### CX-HOM-59. FICS: queda de conexão durante a Partida
 
 - **Passos:**
   1. Numa Partida de visitante, solte uma peça e desligue a internet logo em seguida (ou feche a conexão pelo sistema).
@@ -602,7 +639,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
   3. Religue a internet. No Painel, **Descartar a sessão**.
 - **Esperado:** o Painel e a tela avisam: **A conexão com o FICS caiu durante a Partida. No FICS, a Partida de visitante que cai é dada como perdida; o resultado não pôde ser confirmado e o app não reconecta sozinho.** O Lance sem confirmação volta e não é reenviado; o tabuleiro não aceita Lance. A Trava de fair play continua até **Descartar a sessão**; só então a Análise liga. Nada reconecta sozinho; **Entrar de novo como visitante** é outra sessão, outro nome. Na Biblioteca, a Partida fica sem resultado.
 
-### CX-HOM-48. FICS: observar uma Partida
+### CX-HOM-60. FICS: observar uma Partida
 
 - **Passos:**
   1. Conectado como visitante, aba **Observar**: digite o número de uma Partida em andamento no FICS (veja no site ou em outro cliente) e **Observar**.

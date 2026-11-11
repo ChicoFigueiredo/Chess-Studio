@@ -303,6 +303,7 @@ fn end_dialog(
     let mut review = false;
     let mut start_new = false;
     let mut export = false;
+    let mut saved_as = None;
     let modal =
         egui::Modal::new(egui::Id::new("end-game-dialog")).show(contexts.ctx_mut()?, |ui| {
             ui.set_min_width(300.0);
@@ -317,6 +318,16 @@ fn end_dialog(
                 export = ui
                     .add_enabled(!hide_notation, egui::Button::new(i18n.t("endgame-export")))
                     .clicked();
+                if !tools.pgn_pick.is_unavailable() {
+                    ui.add_enabled_ui(!hide_notation, |ui| {
+                        saved_as = tools.pgn_pick.show_save(ui, &i18n, || {
+                            crate::file_picker::pgn_save_request(
+                                &i18n,
+                                crate::fen_pgn::FileTools::suggested_file_name(),
+                            )
+                        });
+                    });
+                }
                 close = ui.button(i18n.t("endgame-close")).clicked();
             });
             match &tools.pgn_result {
@@ -335,6 +346,9 @@ fn end_dialog(
             &crate::paths::process_env,
         );
         tools.export(&session, &[], &dir);
+    }
+    if let Some(path) = saved_as {
+        tools.export_to(&session, &[], &path);
     }
     if review {
         session.set_review_ply(Some(0));

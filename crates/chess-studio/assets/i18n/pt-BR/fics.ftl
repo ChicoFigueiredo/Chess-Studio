@@ -15,7 +15,6 @@ fics-warning-drop = Sem reconexão automática: se a conexão cair durante a Par
 fics-warning-lag = Sem timeseal: o atraso da rede entra no tempo do seu relógio.
 
 # Central de Conexões
-fics-sends = Os seus Lances e os comandos de jogo (buscar adversário, aceitar desafio, empate, abandono, observar) para freechess.org, como visitante, em texto puro: a conexão não tem criptografia. Nenhuma senha, nada do seu Perfil local.
 fics-auth-guest = Visitante, sem senha (o FICS dá o nome)
 fics-card-how = Para jogar: Início > Nova Partida > Online, e escolha FICS.
 
