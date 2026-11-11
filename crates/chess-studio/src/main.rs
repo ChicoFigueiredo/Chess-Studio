@@ -19,6 +19,7 @@ mod camera;
 mod capture;
 mod captured;
 mod clock;
+mod connections;
 mod controls;
 mod coordinates;
 mod detached;
@@ -43,6 +44,7 @@ mod layout;
 mod library_ui;
 mod load_control;
 mod local_profiles;
+mod net_service;
 mod new_game;
 mod notation;
 mod openings;
@@ -57,6 +59,7 @@ mod pieces;
 mod play;
 mod presentation;
 mod profiles;
+mod provider_consent;
 mod ready;
 mod responsive;
 mod ribbon;
@@ -120,7 +123,8 @@ fn capture_script() -> capture::CaptureScript {
 /// A captura mostra o invólucro da interface: `--panel`, `--profile` ou qualquer opção que só
 /// faz sentido com ele (Ribbon, KeyTips, bastidores, Opções, Paleta, barra de avaliação).
 fn shell_requested() -> bool {
-    const FLAGS: [&str; 9] = [
+    const FLAGS: [&str; 10] = [
+        "--backstage-page",
         "--panel",
         "--keytips",
         "--backstage",
@@ -231,6 +235,13 @@ fn main() {
         controls::ControlsPlugin,
         local_profiles::LocalProfilesPlugin,
     ));
+    // Rede por Provedor: o `NetService` (dono do `chess-net`), o diálogo "Ligar <Provedor>?" e a
+    // Central de Conexões. Depois da persistência: o `rede.db` fica ao lado do banco.
+    app.add_plugins((
+        net_service::NetServicePlugin,
+        provider_consent::ProviderConsentPlugin,
+        connections::ConnectionsPlugin,
+    ));
     app.add_plugins(actions::ActionsPlugin);
     app.add_plugins((hud::HudPlugin, hud_draw::HudDrawPlugin));
     app.add_plugins(board2d_panel::Board2dPanelPlugin);
@@ -276,6 +287,27 @@ fn main() {
         let manager = std::env::args().any(|a| a == "--profile-manager");
         if picker || manager {
             app.insert_resource(local_profiles::LocalProfiles::sample(picker, manager));
+        }
+        // `--connections-demo`: Provedores ligados e Conexões de exemplo, para a evidência da
+        // Central e do indicador de rede (sem banco, nada disso persiste).
+        if std::env::args().any(|a| a == "--connections-demo") {
+            app.insert_resource(connections::ConnectionsUi::demo());
+            let net = app.world().resource::<net_service::NetService>();
+            for provider in [
+                chess_net::ProviderId::Lichess,
+                chess_net::ProviderId::ChessCom,
+            ] {
+                let _ = net.set_enabled(provider, true);
+            }
+        }
+        // `--consent-demo`: o diálogo "Ligar <Provedor>?" aberto, para a evidência.
+        if std::env::args().any(|a| a == "--consent-demo") {
+            app.world_mut()
+                .resource_mut::<provider_consent::ConsentDialog>()
+                .ask(
+                    chess_net::ProviderId::Lichess,
+                    Some("O teste da Conexão".to_owned()),
+                );
         }
         // `--captured-text`: o Painel Capturadas no estilo texto (a opção de Tabuleiro).
         if std::env::args().any(|a| a == "--captured-text") {

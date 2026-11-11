@@ -147,6 +147,14 @@ pub fn meta(action: Action) -> ActionMeta {
             "C"
         ),
         A::OpenOptions => item!("open-options", "gear", Command, File, "preferences", "O"),
+        A::OpenConnections => item!(
+            "open-connections",
+            "plugs-connected",
+            Command,
+            File,
+            "connections",
+            "X"
+        ),
         // Início.
         A::Undo => item!(
             "undo",

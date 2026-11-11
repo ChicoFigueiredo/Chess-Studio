@@ -372,6 +372,29 @@ ALTER TABLE exercises ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0 CHECK (hidden
 CREATE INDEX exercises_pack ON exercises (pack) WHERE pack IS NOT NULL;
 ";
 
+/// Versão 15: Conexões por nome ou ID público (CX-3, #214). Uma linha vincula um Perfil local a
+/// um Provedor (a chave do catálogo de `chess-net`); pode haver várias por Provedor, com
+/// apelido e uma padrão por Provedor e papel (jogador ou Engine). Nunca guarda segredo: a
+/// etapa 3 acrescenta só a referência ao Cofre.
+const V15_CONNECTIONS: &str = "
+CREATE TABLE connections (
+    id            INTEGER PRIMARY KEY,
+    profile_id    INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    provider      TEXT NOT NULL,
+    role          TEXT NOT NULL DEFAULT 'player' CHECK (role IN ('player', 'engine')),
+    kind          TEXT NOT NULL CHECK (kind IN ('public_name', 'public_id')),
+    identifier    TEXT NOT NULL,
+    nickname      TEXT NOT NULL DEFAULT '',
+    is_default    INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
+    created_at_ms INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX connections_identifier
+    ON connections (profile_id, provider, role, lower(identifier));
+CREATE UNIQUE INDEX connections_default
+    ON connections (profile_id, provider, role) WHERE is_default = 1;
+CREATE INDEX connections_by_profile ON connections (profile_id, provider);
+";
+
 /// Migrações em ordem; o índice + 1 é a versão resultante.
 const MIGRATIONS: &[&str] = &[
     V1_CORE,
@@ -388,6 +411,7 @@ const MIGRATIONS: &[&str] = &[
     V12_OPENING_EXPLORER,
     V13_IMPORT_ORIGIN,
     V14_EXERCISE_PACKS,
+    V15_CONNECTIONS,
 ];
 
 /// Versão de esquema desta build.

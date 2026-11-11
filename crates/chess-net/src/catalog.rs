@@ -488,10 +488,12 @@ static CATALOG: [Provider; 19] = [
         services: &[
             svc(
                 C::Explore,
+                // O gate só exige a Conexão quando todo método precisa de segredo; o Explorador
+                // continua aberto no gate até o Cofre (etapa 3) e responde `SignInRequired`.
                 &[A::None],
-                K::FreeNoSignup,
+                K::FreeWithSignup,
                 S::Planned { stage: 2 },
-                "Mestres, Lichess e jogador; mostra universo, filtros e data",
+                "Gratuito com cadastro: requer Conexão autorizada do Lichess (etapa 3); sem token o serviço responde 401 (medido em 2026-11-11). Mestres, Lichess e jogador",
             ),
             svc(
                 C::CachedEval,

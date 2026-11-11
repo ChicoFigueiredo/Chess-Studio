@@ -22,6 +22,8 @@ pub enum BackstagePage {
     Profiles,
     /// Perfil local (quem está jogando).
     LocalProfile,
+    /// Central de Conexões (#214): Provedores, Conexões e estado da rede.
+    Connections,
 }
 
 /// Uma entrada da navegação: abre uma página ou manda uma Ação (e fecha os bastidores).
@@ -32,13 +34,14 @@ pub enum Entry {
 }
 
 /// A ordem da navegação: Nova, Abrir PGN, Biblioteca, Perfis, Perfil local, Controles e Opções.
-pub const ENTRIES: [(Entry, &str); 7] = [
+pub const ENTRIES: [(Entry, &str); 8] = [
     (Entry::Run(Action::NewGame), "file-plus"),
     // "Abrir PGN" abre o Painel Biblioteca, onde a importação vive.
     (Entry::Run(Action::PanelLibrary), "folder-open"),
     (Entry::Run(Action::PanelLibrary), "books"),
     (Entry::Page(BackstagePage::Profiles), "users"),
     (Entry::Page(BackstagePage::LocalProfile), "user"),
+    (Entry::Page(BackstagePage::Connections), "plugs-connected"),
     (Entry::Run(Action::OpenControls), "keyboard"),
     (Entry::Run(Action::OpenOptions), "gear"),
 ];
@@ -50,6 +53,7 @@ fn label_id(index: usize) -> &'static str {
         (_, Entry::Run(action)) => meta(action).label,
         (_, Entry::Page(BackstagePage::Profiles)) => "backstage-profiles",
         (_, Entry::Page(BackstagePage::LocalProfile)) => "backstage-local-profile",
+        (_, Entry::Page(BackstagePage::Connections)) => "backstage-connections",
     }
 }
 
@@ -58,6 +62,7 @@ fn page_title_id(page: BackstagePage) -> &'static str {
     match page {
         BackstagePage::Profiles => "backstage-profiles",
         BackstagePage::LocalProfile => "backstage-local-profile",
+        BackstagePage::Connections => "connections-title",
     }
 }
 
@@ -86,6 +91,7 @@ pub(super) fn backstage_ui(
     mut profiles: ResMut<crate::profiles::InterfaceProfiles>,
     mut local: ResMut<crate::local_profiles::LocalProfiles>,
     training: Res<crate::training_ui::TrainingUi>,
+    mut central: crate::connections::CentralParams,
     mut requests: MessageWriter<ActionRequested>,
 ) -> Result {
     let Some(page) = ribbon.backstage else {
@@ -158,7 +164,11 @@ pub(super) fn backstage_ui(
                             .color(p.ink),
                     );
                     ui.add_space(16.0);
-                    ui.set_max_width(520.0);
+                    // A Central usa a largura toda (cartões em colunas); as demais, uma coluna.
+                    ui.set_max_width(match page {
+                        BackstagePage::Connections => ui.available_width(),
+                        _ => 520.0,
+                    });
                     match page {
                         BackstagePage::Profiles => {
                             crate::profiles::profiles_section(ui, &i18n, &mut profiles);
@@ -169,6 +179,15 @@ pub(super) fn backstage_ui(
                                 &i18n,
                                 &mut local,
                                 training.session_swapped(),
+                            );
+                        }
+                        BackstagePage::Connections => {
+                            crate::connections::section(
+                                ui,
+                                &ctx,
+                                &i18n,
+                                &mut central,
+                                local.active_name(),
                             );
                         }
                     }
@@ -260,6 +279,7 @@ mod tests {
                 "backstage-local-profile",
             ]
         );
+        assert_eq!(ids[5], "backstage-connections");
         assert_eq!(*ids.last().unwrap(), "action-open-options");
     }
 

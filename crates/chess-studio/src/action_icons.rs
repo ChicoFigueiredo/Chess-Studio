@@ -44,6 +44,7 @@ pub fn glyph(name: &str) -> &'static str {
         "hand-pointing" => icon::HAND_POINTING,
         "handshake" => icon::HANDSHAKE,
         "keyboard" => icon::KEYBOARD,
+        "plugs-connected" => icon::PLUGS_CONNECTED,
         "layout" => icon::LAYOUT,
         "lifebuoy" => icon::LIFEBUOY,
         "list-numbers" => icon::LIST_NUMBERS,

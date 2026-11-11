@@ -63,6 +63,8 @@ pub enum Action {
     ResumeGame,
     OpenControls,
     OpenOptions,
+    /// Abre a Central de Conexões nos bastidores (Arquivo > Conexões).
+    OpenConnections,
     Undo,
     Redo,
     Resign,
@@ -114,7 +116,7 @@ pub enum Action {
 }
 
 impl Action {
-    pub const ALL: [Action; 66] = [
+    pub const ALL: [Action; 67] = [
         Action::Select,
         Action::Adjust,
         Action::Orbit,
@@ -140,6 +142,7 @@ impl Action {
         Action::ResumeGame,
         Action::OpenControls,
         Action::OpenOptions,
+        Action::OpenConnections,
         Action::Undo,
         Action::Redo,
         Action::Resign,
@@ -209,6 +212,7 @@ impl Action {
             Action::ResumeGame => "resume-game",
             Action::OpenControls => "open-controls",
             Action::OpenOptions => "open-options",
+            Action::OpenConnections => "open-connections",
             Action::Undo => "undo",
             Action::Redo => "redo",
             Action::Resign => "resign",

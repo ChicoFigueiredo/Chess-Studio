@@ -161,6 +161,7 @@ fn the_status_bar_text_covers_its_inventory_surfaces() {
         scale_percent: 100,
         hovered: "e4".parse().ok(),
         view: Some(CameraView::Oblique),
+        network: crate::net_service::NetSummary::default(),
     };
     let text = status_text(&snapshot, &I18n::pt_br());
     assert_eq!(text.hover.as_deref(), Some("Casa: e4"));
