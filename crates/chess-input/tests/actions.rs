@@ -582,3 +582,20 @@ fn starting_a_game_is_always_possible_but_resuming_needs_another_unfinished_game
     };
     assert!(state(Action::ResumeGame, &ctx).is_enabled());
 }
+
+#[test]
+fn the_explorer_has_its_own_actions_and_the_panel_stays_reachable_in_a_competitive_game() {
+    assert_eq!(meta(Action::OpenExplorer).tab, Some(RibbonTab::Analysis));
+    assert_eq!(meta(Action::ImportOnline).tab, Some(RibbonTab::Library));
+    assert_eq!(Action::PanelExplorer.panel(), Some(("Explorer", false)));
+    for a in [Action::OpenExplorer, Action::PanelExplorer] {
+        assert!(state(a, &assisted()).is_enabled(), "{a:?}");
+        // O Painel explica a Trava em vez de sumir.
+        assert!(state(a, &fide()).is_enabled(), "{a:?}");
+    }
+    assert!(state(Action::ImportOnline, &assisted()).is_enabled());
+    assert_eq!(
+        state(Action::ImportOnline, &fide()).disabled_reason,
+        Some("reason-competitive-lock")
+    );
+}

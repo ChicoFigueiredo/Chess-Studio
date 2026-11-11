@@ -57,6 +57,7 @@ pub mod ids {
     pub const ANALYSIS: &str = "Analysis";
     pub const LIBRARY: &str = "Library";
     pub const OPENINGS: &str = "Openings";
+    pub const EXPLORER: &str = "Explorer";
     pub const SCORESHEET: &str = "Scoresheet";
     pub const BOARD2D: &str = "Board2d";
 }
@@ -1867,6 +1868,8 @@ mod tests {
             crate::clock::ClockPlugin,
             crate::training_ui::TrainingPlugin,
             crate::analysis::AnalysisPlugin,
+            crate::net_service::NetServicePlugin,
+            crate::explorer::ExplorerPlugin,
         ))
         .init_resource::<crate::aids::AidSettings>()
         .insert_resource(I18n::pt_br())

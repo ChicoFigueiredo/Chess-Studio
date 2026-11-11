@@ -136,6 +136,7 @@ fn every_dock_panel_has_a_toggle_action() {
         Action::PanelAnalysis,
         Action::PanelLibrary,
         Action::PanelOpenings,
+        Action::PanelExplorer,
         Action::PanelScoresheet,
         Action::PanelBoard2d,
         Action::PanelEngines,

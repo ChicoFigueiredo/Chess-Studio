@@ -215,7 +215,13 @@ impl FactoryProfile {
             ),
             FactoryProfile::StudyAnalysis => (
                 Presentation::Technical2d,
-                panels(&[PANEL_ANALYSIS, ids::OPENINGS, ids::NOTATION, PANEL_LIBRARY]),
+                panels(&[
+                    PANEL_ANALYSIS,
+                    ids::EXPLORER,
+                    ids::OPENINGS,
+                    ids::NOTATION,
+                    PANEL_LIBRARY,
+                ]),
                 AidSettings::training(),
                 RibbonSetup::factory(RibbonLayout::Classic, false),
             ),
@@ -775,9 +781,16 @@ mod tests {
         registry.register(stub(PANEL_ANALYSIS));
         registry.register(stub(PANEL_LIBRARY));
         registry.register(stub(ids::OPENINGS));
+        registry.register(stub(ids::EXPLORER));
         s.dock.reconcile(&registry);
         FactoryProfile::StudyAnalysis.profile().apply(&mut s);
-        let mut expected = vec![PANEL_ANALYSIS, PANEL_LIBRARY, ids::NOTATION, ids::OPENINGS];
+        let mut expected = vec![
+            PANEL_ANALYSIS,
+            PANEL_LIBRARY,
+            ids::NOTATION,
+            ids::OPENINGS,
+            ids::EXPLORER,
+        ];
         expected.sort();
         assert_eq!(visible_ids(&s.dock), expected);
     }

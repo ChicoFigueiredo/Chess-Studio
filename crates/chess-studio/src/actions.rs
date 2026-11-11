@@ -183,6 +183,7 @@ pub struct ActionEnv<'w> {
     ribbon: Option<ResMut<'w, crate::ribbon::RibbonState>>,
     resumable: Option<Res<'w, ResumableGame>>,
     persistence: Option<Res<'w, crate::persistence::PersistenceHandle>>,
+    library: Option<ResMut<'w, crate::library_ui::LibraryUi>>,
     pub(crate) palette: ResMut<'w, crate::palette::PaletteState>,
 }
 
@@ -339,6 +340,13 @@ impl ActionEnv<'_> {
             Action::HideAllPanels => self.toggle_hide_all(),
             Action::OpenLibrary => self.show_panel(crate::dock::ids::LIBRARY),
             Action::OpenOpenings => self.show_panel(crate::dock::ids::OPENINGS),
+            Action::OpenExplorer => self.show_panel(crate::dock::ids::EXPLORER),
+            Action::ImportOnline => {
+                self.show_panel(crate::dock::ids::LIBRARY);
+                if let Some(library) = self.library.as_mut() {
+                    library.show_online_import();
+                }
+            }
             Action::OpenTraining => self.show_panel(crate::dock::ids::TRAINING),
             Action::ExportPgn => self.export_pgn(),
             Action::UiZoomIn => self.appearance.scale = self.appearance.scale.zoom_in(),
@@ -963,6 +971,7 @@ mod tests {
             ids::ANALYSIS,
             ids::LIBRARY,
             ids::OPENINGS,
+            ids::EXPLORER,
             ids::SCORESHEET,
             ids::BOARD2D,
             "Engines",

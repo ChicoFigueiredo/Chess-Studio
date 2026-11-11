@@ -72,6 +72,10 @@ const PT_BR: &[(&str, &str)] = &[
         include_str!("../assets/i18n/pt-BR/openings.ftl"),
     ),
     (
+        "explorer.ftl",
+        include_str!("../assets/i18n/pt-BR/explorer.ftl"),
+    ),
+    (
         "options.ftl",
         include_str!("../assets/i18n/pt-BR/options.ftl"),
     ),
@@ -212,7 +216,7 @@ mod tests {
     /// Todo literal do código que parece um identificador de mensagem existe no .ftl.
     #[test]
     fn every_message_id_used_in_the_source_exists() {
-        const PREFIXES: [&str; 25] = [
+        const PREFIXES: [&str; 26] = [
             "app-",
             "presentation-",
             "quality-",
@@ -238,6 +242,7 @@ mod tests {
             "analysis-",
             "scoresheet-",
             "openings-",
+            "explorer-",
         ];
         let i18n = I18n::pt_br();
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");

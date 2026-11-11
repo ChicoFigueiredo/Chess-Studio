@@ -179,6 +179,15 @@ pub fn meta(action: Action) -> ActionMeta {
             "engine",
             "A"
         ),
+        // Explorador: aberturas e finais, no grupo próprio da aba Análise.
+        A::OpenExplorer => item!(
+            "open-explorer",
+            "compass",
+            Command,
+            Analysis,
+            "explorer",
+            "X"
+        ),
         // Biblioteca e Treino: Ações de abrir o que já existe (o Painel é alternado em Exibir).
         A::OpenLibrary => item!("open-library", "books", Command, Library, "library", "B"),
         A::OpenOpenings => item!(
@@ -188,6 +197,14 @@ pub fn meta(action: Action) -> ActionMeta {
             Library,
             "library",
             "A"
+        ),
+        A::ImportOnline => item!(
+            "import-online",
+            "cloud-arrow-down",
+            Command,
+            Library,
+            "library",
+            "I"
         ),
         A::ExportPgn => item!("export-pgn", "export", Command, Library, "library", "E"),
         A::OpenTraining => item!(
@@ -327,6 +344,7 @@ pub fn meta(action: Action) -> ActionMeta {
             "panels",
             "NO"
         ),
+        A::PanelExplorer => item!("panel-explorer", "compass", Toggle, View, "panels", "NX"),
         A::PanelTraining => item!("panel-training", "barbell", Toggle, View, "panels", "NT"),
         // Exibir: janelas dos Painéis.
         A::FloatPanel => item!(
@@ -501,6 +519,8 @@ impl Action {
             Action::PanelAnalysis => ("Analysis", true),
             Action::PanelLibrary => ("Library", true),
             Action::PanelOpenings => ("Openings", true),
+            // Sempre acessível: numa Partida competitiva o Painel explica a Trava de fair play.
+            Action::PanelExplorer => ("Explorer", false),
             Action::PanelScoresheet => ("Scoresheet", false),
             Action::PanelBoard2d => ("Board2d", false),
             Action::PanelEngines => ("Engines", false),
@@ -562,7 +582,7 @@ fn disabled_reason(action: Action, ctx: &ActionContext) -> Option<&'static str> 
             .then_some("reason-competitive-lock");
     }
     match action {
-        A::OpenLibrary | A::OpenOpenings if ctx.competitive_in_progress => {
+        A::OpenLibrary | A::OpenOpenings | A::ImportOnline if ctx.competitive_in_progress => {
             Some("reason-competitive-lock")
         }
         A::ResumeGame if !ctx.resumable_game => Some("reason-no-resumable-game"),

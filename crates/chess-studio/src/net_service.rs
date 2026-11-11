@@ -21,10 +21,11 @@ use crate::provider_consent::ConsentDialog;
 use crate::session::Session;
 use bevy::prelude::*;
 use chess_net::{
-    Clock, LocalProfileId, Net, NetConfig, NetError, NetworkStatus, ProviderId, SystemClock,
-    Timestamp,
+    Clock, ConnectionId, LocalProfileId, Net, NetConfig, NetError, NetworkStatus, ProviderId,
+    SystemClock, Timestamp,
 };
 use chess_providers::{ChessCom, Lichess};
+use chess_store::ConnectionRole;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -93,6 +94,10 @@ pub struct NetService {
     chesscom: ChessCom,
     /// Em disco (`rede.db`) ou em memória.
     persistent: bool,
+    /// Conexões autorizadas (com segredo no Cofre) por Provedor e papel, para o Perfil local
+    /// ativo. Ver [`NetService::authorized_connection`].
+    authorized:
+        std::sync::Mutex<std::collections::HashMap<(ProviderId, ConnectionRole), ConnectionId>>,
 }
 
 impl std::fmt::Debug for NetService {
@@ -136,6 +141,7 @@ impl NetService {
             chesscom: ChessCom::new(net.clone(), clock),
             net,
             persistent,
+            authorized: std::sync::Mutex::default(),
         }
     }
 
@@ -147,6 +153,42 @@ impl NetService {
     /// Consultas públicas do Chess.com.
     pub fn chesscom(&self) -> &ChessCom {
         &self.chesscom
+    }
+
+    /// A Conexão **autorizada** (com segredo no Cofre) do Provedor, no papel dado, para o Perfil
+    /// local ativo; `None` se não há. É o ponto único que os recursos que exigem autorização
+    /// (o Explorador online do Lichess) consultam, a cada quadro: é barato (um mapa em
+    /// memória). Hoje a Central ainda não cria Conexões autorizadas, então a resposta é
+    /// sempre `None`; o ticket do Cofre a preenche com
+    /// [`NetService::set_authorized_connection`] a partir do Cofre e do banco.
+    pub fn authorized_connection(
+        &self,
+        provider: ProviderId,
+        role: ConnectionRole,
+    ) -> Option<ConnectionId> {
+        self.authorized
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&(provider, role))
+            .copied()
+    }
+
+    #[allow(dead_code)] // costura para o ticket do Cofre (só os testes a chamam hoje)
+    /// Registra (ou, com `None`, remove) a Conexão autorizada do Provedor no papel dado.
+    pub fn set_authorized_connection(
+        &self,
+        provider: ProviderId,
+        role: ConnectionRole,
+        connection: Option<ConnectionId>,
+    ) {
+        let mut map = self
+            .authorized
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match connection {
+            Some(id) => map.insert((provider, role), id),
+            None => map.remove(&(provider, role)),
+        };
     }
 
     /// O `rede.db` que fica ao lado do banco das Partidas.
