@@ -43,6 +43,12 @@ pub enum ProviderError {
         provider: ProviderId,
         detail: String,
     },
+    /// O Provedor não oferece este recurso (o PlayStrategy não tem Explorador, por
+    /// exemplo): recusado antes de qualquer pedido.
+    NotOffered {
+        provider: ProviderId,
+        what: &'static str,
+    },
     /// O pedido foi cancelado por quem pediu.
     Cancelled,
     /// Qualquer outra falha da camada de rede (sem conexão, prazo, HTTP inesperado…).
@@ -179,6 +185,9 @@ impl fmt::Display for ProviderError {
                     f,
                     "A resposta de {provider} não tem o formato esperado ({detail})."
                 )
+            }
+            Self::NotOffered { provider, what } => {
+                write!(f, "{provider} não oferece {what}; nada foi enviado.")
             }
             Self::Cancelled => f.write_str("Consulta cancelada."),
             Self::Net(e) => e.fmt(f),

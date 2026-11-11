@@ -44,6 +44,19 @@ pub struct OnlineGame {
     pub days_per_move: Option<u32>,
 }
 
+/// Sufixo da chave do Provedor (`OnlineGame::provider`) numa Partida da **Engine online**:
+/// quem joga do lado local é uma Engine declarada (Bot API), nunca uma pessoa. A chave
+/// `"lichess-bot"` separa para sempre essa Partida das de pessoa (`"lichess"`).
+pub const ENGINE_GAME_SUFFIX: &str = "-bot";
+
+impl OnlineGame {
+    /// A Partida é da Engine online (Conexão de Engine, Bot API): não conta como Partida de
+    /// pessoa e nunca liga a Trava de fair play.
+    pub fn is_engine_game(&self) -> bool {
+        self.provider.ends_with(ENGINE_GAME_SUFFIX)
+    }
+}
+
 /// Um jogador como o Provedor o apresenta.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct OnlinePlayer {
