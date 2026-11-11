@@ -326,3 +326,79 @@ fn the_lichess_explorer_is_free_with_signup_and_says_it_needs_an_authorized_conn
             .contains("Conexão autorizada do Lichess (etapa 3)")
     );
 }
+
+// ---- Etapa 5 (#234): PlayStrategy como Provedor da família do Lichess; Chess-API.com ------------
+
+fn endpoint(id: ProviderId, host: &str, path: &str) -> &'static chess_net::Endpoint {
+    provider(id)
+        .endpoints
+        .iter()
+        .find(|e| e.host == host && e.path_prefix == path)
+        .unwrap_or_else(|| panic!("{id:?}: sem endereço {host}{path}"))
+}
+
+#[test]
+fn playstrategy_endpoints_mirror_the_lichess_family_and_only_the_authenticated_ones_take_the_token()
+{
+    let ps = ProviderId::PlayStrategy;
+    for (path, capability) in [
+        ("/api/stream/event", Capability::Play),
+        ("/api/board/", Capability::Play),
+        ("/api/challenge/", Capability::Play),
+        ("/api/account", Capability::Play),
+        ("/api/bot/", Capability::OnlineEngine),
+        ("/api/token", Capability::Query),
+    ] {
+        let e = endpoint(ps, "playstrategy.org", path);
+        assert_eq!(e.capability, capability, "{path}");
+        assert!(e.takes_token, "{path} recebe a Conexão");
+    }
+    for path in ["/api/games/user/", "/api/user/"] {
+        let e = endpoint(ps, "playstrategy.org", path);
+        assert_eq!(e.capability, Capability::Query, "{path}");
+        assert!(!e.takes_token, "{path} é público: nunca vê o token");
+    }
+    // Sem Explorador, avaliação em cache nem finais: nada que calcule.
+    assert!(
+        provider(ps)
+            .endpoints
+            .iter()
+            .all(|e| !e.capability.computes()),
+        "o PlayStrategy não oferece consulta que calcula"
+    );
+    assert!(provider(ps).service(Capability::OnlineEngine).is_some());
+}
+
+#[test]
+fn playstrategy_accepts_only_standard_chess_and_names_the_refused_variants() {
+    let ps = provider(ProviderId::PlayStrategy);
+    assert!(ps.accepts_variant("standard"));
+    assert!(ps.accepts_variant("fromPosition"));
+    for refused in [
+        "chess960",
+        "crazyhouse",
+        "shogi",
+        "xiangqi",
+        "draughts",
+        "oware",
+    ] {
+        assert!(!ps.accepts_variant(refused), "{refused}");
+        assert!(ps.variants.refused.contains(&refused), "{refused} nomeada");
+    }
+}
+
+#[test]
+fn chess_api_is_a_computing_engine_without_token_and_documents_that_no_key_is_needed() {
+    let api = provider(ProviderId::ChessApi);
+    let e = endpoint(ProviderId::ChessApi, "chess-api.com", "/v1");
+    assert_eq!(e.capability, Capability::Analyze);
+    assert!(
+        e.capability.computes(),
+        "calcula: a Trava de fair play recusa"
+    );
+    assert!(!e.takes_token, "sem chave: nenhum segredo sai");
+    let service = api.service(Capability::Analyze).expect("analisa");
+    assert_eq!(service.auth, &[AuthMethod::None]);
+    assert!(!service.requires_connection());
+    assert!(service.note.contains("sem chave"));
+}

@@ -82,7 +82,7 @@ pub struct Failure {
 }
 
 impl Failure {
-    pub(crate) fn new(kind: FailureKind, message: impl Into<String>) -> Self {
+    pub fn new(kind: FailureKind, message: impl Into<String>) -> Self {
         Self {
             kind,
             message: message.into(),

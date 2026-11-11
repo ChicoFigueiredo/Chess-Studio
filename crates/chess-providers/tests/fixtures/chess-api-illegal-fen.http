@@ -1,0 +1,16 @@
+# Resposta REAL gravada em 2026-11-11 com curl -i (User-Agent generico, sem chave, sem autenticacao). FEN ilegal de proposito (rei branco em xeque com as pretas a jogar): formato do erro.
+# POST https://chess-api.com/v1 corpo: {"fen":"7k/8/8/8/8/5q2/6K1/8 b - - 0 1","depth":12,"variants":1}
+HTTP/2 200 
+server: nginx/1.18.0 (Ubuntu)
+date: Wed, 11 Nov 2026 16:24:05 GMT
+content-type: application/json; charset=utf-8
+content-length: 121
+x-powered-by: Express
+access-control-allow-origin: *
+etag: W/"79-xy2N3owT0QDBScZ+pwX3rftLtg8"
+
+{
+  "type": "error",
+  "error": "INVALID_FEN_VALIDATION_ERROR",
+  "text": "Cannot evaluate given position - wrong FEN."
+}

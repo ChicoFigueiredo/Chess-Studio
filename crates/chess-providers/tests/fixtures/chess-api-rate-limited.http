@@ -1,0 +1,6 @@
+# Resposta SINTETICA (formato HTTP padrao de limite de uso; o servico nao documenta o corpo do 429). Nao gravada do servico real.
+HTTP/2 429
+content-type: application/json; charset=utf-8
+retry-after: 60
+
+{"type":"error","text":"Too many requests"}

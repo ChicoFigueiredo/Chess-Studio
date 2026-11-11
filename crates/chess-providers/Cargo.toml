@@ -12,6 +12,10 @@ publish.workspace = true
 chess-core.workspace = true
 # A Partida online (#230): o retrato do Provedor e a intenção enviada vão ao controlador.
 chess-game.workspace = true
+# A Engine online (#234): a Engine UCI local que joga pela Bot API (`EngineController`) e os
+# tipos do contrato de análise que a Engine remota reutiliza. Sem rede aqui: o download
+# fixado de Engine continua sendo só do `chess-uci`, pelo assistente.
+chess-uci.workspace = true
 # Toda saída de rede passa pelo gate do chess-net; este crate não abre conexão.
 chess-net.workspace = true
 # Segredos das Conexões (token da autorização do Lichess).

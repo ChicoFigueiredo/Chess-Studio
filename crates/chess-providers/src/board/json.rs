@@ -3,14 +3,13 @@
 //! 11/11/2026) e a tradução para o domínio. Campos fora do documentado são ignorados.
 
 use super::{Challenge, ChallengePlayer, GameInfo, OnlineTime, OpponentInfo};
+use crate::family::ProviderProfile;
 use chess_core::{CanonicalPosition, Color};
 use chess_game::{
     EndReason, GameResult, GameSetup, OnlineGame, OnlinePlayer, OnlineSetupError, Opponent,
     Outcome, ProviderClock, ProviderEnd, ProviderSnapshot, TimeControl, Variant,
 };
 use serde::Deserialize;
-
-pub(crate) const PROVIDER_KEY: &str = "lichess";
 
 fn color(text: &str) -> Option<Color> {
     match text {
@@ -29,11 +28,13 @@ pub(crate) struct VariantJson {
     pub key: String,
 }
 
-/// Xadrez padrão para o app: `standard` e `fromPosition` (regras padrão, outra Posição).
-pub(crate) fn variant(key: &str) -> Variant {
-    match key {
-        "standard" | "fromPosition" => Variant::Standard,
-        other => Variant::Other(other.to_owned()),
+/// Xadrez padrão para o app: as variantes que o catálogo aceita para o Provedor (no Lichess,
+/// `standard` e `fromPosition`: regras padrão, outra Posição).
+pub(crate) fn variant(profile: &ProviderProfile, key: &str) -> Variant {
+    if profile.accepts_variant(key) {
+        Variant::Standard
+    } else {
+        Variant::Other(key.to_owned())
     }
 }
 
@@ -104,10 +105,10 @@ pub(crate) struct OpponentGoneJson {
     pub claim_win_in_seconds: Option<u64>,
 }
 
-fn online_player(player: &PlayerJson) -> OnlinePlayer {
+fn online_player(profile: &ProviderProfile, player: &PlayerJson) -> OnlinePlayer {
     let name = match (&player.name, player.ai_level) {
         (Some(name), _) => name.clone(),
-        (None, Some(level)) => format!("Engine do Lichess (nível {level})"),
+        (None, Some(level)) => format!("{} (nível {level})", profile.provider_engine_name),
         (None, None) => "?".to_owned(),
     };
     OnlinePlayer {
@@ -118,21 +119,26 @@ fn online_player(player: &PlayerJson) -> OnlinePlayer {
 
 /// O setup da Partida online a partir do `gameFull`. Variante não padrão é recusada aqui,
 /// antes de criar a Partida.
-pub(crate) fn setup(full: &GameFull, local: Color) -> Result<GameSetup, OnlineSetupError> {
+pub(crate) fn setup(
+    profile: &ProviderProfile,
+    engine_game: bool,
+    full: &GameFull,
+    local: Color,
+) -> Result<GameSetup, OnlineSetupError> {
     let opponent = match local {
         Color::White => &full.black,
         Color::Black => &full.white,
     };
     let game = OnlineGame {
-        provider: PROVIDER_KEY.to_owned(),
+        provider: profile.game_key(engine_game),
         remote_id: full.id.clone(),
         local_color: local,
         opponent: match opponent.ai_level {
             Some(level) => Opponent::ProviderEngine { level },
             None => Opponent::Human,
         },
-        white: online_player(&full.white),
-        black: online_player(&full.black),
+        white: online_player(profile, &full.white),
+        black: online_player(profile, &full.black),
         rated: full.rated,
         days_per_move: full.days_per_turn,
     };
@@ -140,7 +146,7 @@ pub(crate) fn setup(full: &GameFull, local: Color) -> Result<GameSetup, OnlineSe
         .initial_fen
         .as_deref()
         .filter(|f| !f.is_empty() && *f != "startpos");
-    let setup = GameSetup::online(game, variant(&full.variant.key), fen)?;
+    let setup = GameSetup::online(game, variant(profile, &full.variant.key), fen)?;
     Ok(match &full.clock {
         Some(clock) => setup.with_time_control(TimeControl {
             base_ms: millis(clock.initial),
@@ -330,6 +336,8 @@ impl TryFrom<GameInfoJson> for GameInfo {
 pub(crate) struct ChallengePlayerJson {
     pub id: String,
     #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
     pub name: Option<String>,
     #[serde(default)]
     pub rating: Option<u32>,
@@ -340,6 +348,7 @@ impl From<ChallengePlayerJson> for ChallengePlayer {
         Self {
             name: j.name.unwrap_or_else(|| j.id.clone()),
             id: j.id,
+            title: j.title,
             rating: j.rating,
         }
     }

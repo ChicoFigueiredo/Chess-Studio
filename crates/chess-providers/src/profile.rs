@@ -4,7 +4,7 @@
 
 use crate::answer::{Query, fetch, json, valid_name};
 use crate::error::{Missing, ProviderError};
-use crate::lichess::{API_HOST, Lichess, PROVIDER};
+use crate::lichess::Lichess;
 use crate::ttl;
 use chess_net::Request;
 use serde::Deserialize;
@@ -135,10 +135,11 @@ impl Lichess {
             Ok(name) => name,
             Err(e) => return Query::failed(e),
         };
-        let request = Request::get(PROVIDER, format!("https://{API_HOST}/api/user/{name}"))
+        let provider = self.profile.id;
+        let request = Request::get(provider, self.profile.url(&format!("/api/user/{name}")))
             .cache_for(ttl::LICHESS_PROFILE);
-        fetch(&self.net, request, Missing::name(name), |fetched| {
-            let wire: WireProfile = json(PROVIDER, fetched)?;
+        fetch(&self.net, request, Missing::name(name), move |fetched| {
+            let wire: WireProfile = json(provider, fetched)?;
             Ok(LichessProfile {
                 id: wire.id,
                 username: wire.username,
@@ -167,30 +168,38 @@ impl Lichess {
     /// Rating FIDE do jogador de ID `fide_id` (standard, rápido e blitz separados). ID
     /// inexistente: [`ProviderError::NoData`]. Validade do cache: [`ttl::FIDE`].
     pub fn fide_player(&self, fide_id: u64) -> Query<FideRating> {
+        if !self.profile.has_fide {
+            return Query::failed(self.not_offered("o rating FIDE"));
+        }
+        let provider = self.profile.id;
         let request = Request::get(
-            PROVIDER,
-            format!("https://{API_HOST}/api/fide/player/{fide_id}"),
+            provider,
+            self.profile.url(&format!("/api/fide/player/{fide_id}")),
         )
         .cache_for(ttl::FIDE);
-        fetch(&self.net, request, Missing::NoData, |fetched| {
-            Ok(json::<WireFide>(PROVIDER, fetched)?.into())
+        fetch(&self.net, request, Missing::NoData, move |fetched| {
+            Ok(json::<WireFide>(provider, fetched)?.into())
         })
     }
 
     /// Busca jogadores da FIDE por nome (até o limite do Provedor). Sem resultados: lista
     /// vazia.
     pub fn fide_search(&self, text: &str) -> Query<Vec<FideRating>> {
+        if !self.profile.has_fide {
+            return Query::failed(self.not_offered("o rating FIDE"));
+        }
+        let provider = self.profile.id;
         let text = text.trim();
         if text.len() < 2 || text.len() > 60 {
             return Query::failed(ProviderError::invalid(
                 "a busca por nome vai de 2 a 60 caracteres",
             ));
         }
-        let request = Request::get(PROVIDER, format!("https://{API_HOST}/api/fide/player"))
+        let request = Request::get(provider, self.profile.url("/api/fide/player"))
             .query("q", text)
             .cache_for(ttl::FIDE);
-        fetch(&self.net, request, Missing::NoData, |fetched| {
-            let list: Vec<WireFide> = json(PROVIDER, fetched)?;
+        fetch(&self.net, request, Missing::NoData, move |fetched| {
+            let list: Vec<WireFide> = json(provider, fetched)?;
             Ok(list.into_iter().map(FideRating::from).collect())
         })
     }
