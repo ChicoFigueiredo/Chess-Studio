@@ -26,12 +26,13 @@ use bevy_egui::egui;
 use chess_core::{CanonicalPosition, Color as Side};
 use chess_game::{HistoryEntry, ReviewView};
 use chess_uci::{
-    AnalysisConfig, AnalysisController, AnalysisEvent, AnalysisLine, AnalysisUpdate, EngineConfig,
-    Hardware, Limits, LoadMode, OptionGroup, PositionSpec, Score,
+    AnalysisConfig, AnalysisEvent, AnalysisLine, AnalysisUpdate, EngineConfig, Hardware, Limits,
+    LoadMode, OptionGroup, PositionSpec, Score,
 };
 
 use crate::dock::{PanelAccess, PanelDef, ids};
 use crate::engine_manager::{DbLocation, EngineManager};
+use crate::fair_play::{FairPlay, GuardedAnalysis, Subject};
 use crate::i18n::I18n;
 use crate::load_control::{LoadControl, Notice, target_for};
 use crate::notation;
@@ -59,11 +60,21 @@ pub enum Lock {
     Competitive,
     /// Exercício de Treino na tela.
     Training,
+    /// Trava de fair play: Partida online contra pessoa em andamento (ADR-0007, PO-13).
+    FairPlay,
 }
 
+#[cfg(test)]
 pub fn lock_reason(competitive_in_progress: bool, training: bool) -> Option<Lock> {
+    lock_with(competitive_in_progress, false, training)
+}
+
+/// O bloqueio da análise, da Política local, da Trava de fair play e do Treino, nessa ordem.
+pub fn lock_with(competitive_in_progress: bool, fair_play: bool, training: bool) -> Option<Lock> {
     if competitive_in_progress {
         Some(Lock::Competitive)
+    } else if fair_play {
+        Some(Lock::FairPlay)
     } else if training {
         Some(Lock::Training)
     } else {
@@ -279,7 +290,8 @@ pub struct Analysis {
     /// A lista foi fixada de fora (benchmark): o gerenciador não a substitui.
     choices_pinned: bool,
     choices_at: Option<Instant>,
-    controller: Option<AnalysisController>,
+    /// A Engine de análise, sempre atrás da Trava de fair play.
+    controller: Option<GuardedAnalysis>,
     launched: Option<Launch>,
     failure: Option<String>,
     ready: bool,
@@ -539,7 +551,7 @@ impl Analysis {
         self.backend_active = None;
     }
 
-    fn start(&mut self, launch: &Launch) {
+    fn start(&mut self, launch: &Launch, fair: &FairPlay, subject: &Subject) {
         self.shutdown();
         let engine = launch
             .options
@@ -556,8 +568,13 @@ impl Analysis {
         config.hardware = Some(host_hardware());
         self.backend_note = None;
         self.load.mark_unsent();
-        self.controller = Some(AnalysisController::start(config));
-        self.launched = Some(launch.clone());
+        match GuardedAnalysis::start(fair, subject, config) {
+            Ok(controller) => {
+                self.controller = Some(controller);
+                self.launched = Some(launch.clone());
+            }
+            Err(_) => self.lock_now(Lock::FairPlay),
+        }
     }
 
     fn poll(&mut self) {
@@ -604,10 +621,23 @@ impl Analysis {
         }
     }
 
-    /// Passo por quadro: aplica a política (bloqueio, pausa) e mantém a Engine de análise
-    /// e a Posição analisada em dia. Nunca bloqueia.
-    pub fn drive(&mut self, session: &Session, training: bool) {
-        let lock = lock_reason(session.competitive_in_progress(), training);
+    /// Bloqueio: a análise some por completo e só volta quando o usuário a ligar de novo.
+    fn lock_now(&mut self, lock: Lock) {
+        self.enabled = false;
+        self.shutdown();
+        self.failure = None;
+        self.status = Status::Locked(lock);
+    }
+
+    /// Passo por quadro: aplica a política (bloqueio, Trava de fair play, pausa) e mantém a
+    /// Engine de análise e a Posição analisada em dia. Nunca bloqueia.
+    pub fn drive(&mut self, session: &Session, training: bool, fair: &FairPlay) {
+        let subject = Subject::at(session.game(), notation::current_ply(session));
+        let refused = subject.as_ref().map_or(fair.any(), |s| {
+            fair.check(crate::fair_play::Computation::EngineAnalysis, s)
+                .is_err()
+        });
+        let lock = lock_with(session.competitive_in_progress(), refused, training);
         match gate(
             lock,
             self.enabled,
@@ -615,12 +645,9 @@ impl Analysis {
             session.engine_turn(),
         ) {
             Gate::Locked(lock) => {
-                // UI-08: durante a Partida competitiva a análise some por completo e só
-                // volta quando o usuário a ligar de novo depois do resultado.
-                self.enabled = false;
-                self.shutdown();
-                self.failure = None;
-                self.status = Status::Locked(lock);
+                // UI-08 e ADR-0007: durante a Partida competitiva (ou online contra pessoa) a
+                // análise some por completo e só volta quando o usuário a ligar de novo.
+                self.lock_now(lock);
                 return;
             }
             Gate::Off => {
@@ -648,19 +675,25 @@ impl Analysis {
             self.status = Status::NoEngine;
             return;
         };
+        let Some(subject) = subject else {
+            return;
+        };
         if self.controller.is_none() || self.launched.as_ref() != Some(&launch) {
-            self.start(&launch);
+            self.start(&launch, fair, &subject);
+            if self.controller.is_none() {
+                return;
+            }
         }
         self.poll();
         if let Some(message) = &self.failure {
             self.status = Status::Failed(message.clone());
             return;
         }
-        self.follow_position(session);
+        self.follow_position(session, fair, &subject);
     }
 
     /// Envia a Posição mostrada à Engine quando ela muda.
-    fn follow_position(&mut self, session: &Session) {
+    fn follow_position(&mut self, session: &Session, fair: &FairPlay, subject: &Subject) {
         let ply = notation::current_ply(session);
         let snapshot = session.snapshot();
         let key = TargetKey {
@@ -695,7 +728,10 @@ impl Analysis {
                 total,
             });
             if let (true, Some(spec), Some(controller)) = (has_moves, spec, &mut self.controller) {
-                self.request = controller.analyze(spec, self.multipv);
+                match controller.analyze(fair, subject, spec, self.multipv) {
+                    Ok(request) => self.request = request,
+                    Err(_) => return self.lock_now(Lock::FairPlay),
+                }
             } else if let Some(controller) = &mut self.controller {
                 controller.stop();
                 self.request = 0;
@@ -809,6 +845,7 @@ fn drive_analysis(
     training: Option<Res<TrainingUi>>,
     manager: Option<Res<EngineManager>>,
     engine_ui: Option<Res<crate::engine::EngineUi>>,
+    fair: Res<FairPlay>,
     mut analysis: ResMut<Analysis>,
 ) {
     if let Some(ui) = engine_ui {
@@ -830,7 +867,7 @@ fn drive_analysis(
         }
     }
     let training = training.is_some_and(|t| t.session_swapped());
-    analysis.drive(&session, training);
+    analysis.drive(&session, training, &fair);
 }
 
 /// Evidência (`--screenshot … --panel --tabs analysis --analysis [--multipv 3]`): liga a
@@ -1298,6 +1335,10 @@ mod tests {
     use crate::new_game::NewGameConfig;
     use chess_game::PolicyKind;
 
+    fn unlocked() -> FairPlay {
+        FairPlay::new(chess_net::FairPlayGuard::new())
+    }
+
     fn competitive_session() -> Session {
         let mut session = Session::new();
         let config = NewGameConfig {
@@ -1392,7 +1433,7 @@ mod tests {
         let session = competitive_session();
         assert!(session.competitive_in_progress());
         let mut analysis = armed();
-        analysis.drive(&session, false);
+        analysis.drive(&session, false, &unlocked());
         assert_eq!(analysis.status(), &Status::Locked(Lock::Competitive));
         assert!(!analysis.is_enabled(), "desligada, não apenas escondida");
         assert!(
@@ -1402,7 +1443,7 @@ mod tests {
         assert!(analysis.shown().is_none());
         // Ligar à força não adianta: o próximo quadro desliga de novo.
         analysis.set_enabled(true);
-        analysis.drive(&session, false);
+        analysis.drive(&session, false, &unlocked());
         assert!(!analysis.is_enabled());
         assert!(!analysis.has_engine());
     }
@@ -1411,10 +1452,10 @@ mod tests {
     fn competitive_lock_clears_a_running_analysis_immediately() {
         let assisted = Session::new();
         let mut analysis = armed();
-        analysis.drive(&assisted, false);
+        analysis.drive(&assisted, false, &unlocked());
         assert!(analysis.has_engine(), "Assistido: a análise sobe");
         let competitive = competitive_session();
-        analysis.drive(&competitive, false);
+        analysis.drive(&competitive, false, &unlocked());
         assert!(!analysis.has_engine(), "competitiva: derrubada");
         assert!(!analysis.is_enabled());
     }
@@ -1423,7 +1464,7 @@ mod tests {
     fn the_result_releases_the_analysis_for_review() {
         let mut session = competitive_session();
         let mut analysis = armed();
-        analysis.drive(&session, false);
+        analysis.drive(&session, false, &unlocked());
         assert_eq!(analysis.status(), &Status::Locked(Lock::Competitive));
         session.resign_side_to_move();
         assert!(session.snapshot().outcome.is_some());
@@ -1432,10 +1473,10 @@ mod tests {
             "com resultado, revisão livre"
         );
         // Continua desligada até o usuário ligar; então roda.
-        analysis.drive(&session, false);
+        analysis.drive(&session, false, &unlocked());
         assert_eq!(analysis.status(), &Status::Off);
         analysis.set_enabled(true);
-        analysis.drive(&session, false);
+        analysis.drive(&session, false, &unlocked());
         assert!(analysis.has_engine());
         assert!(!matches!(analysis.status(), Status::Locked(_)));
     }
@@ -1459,7 +1500,7 @@ mod tests {
     fn training_exercise_locks_the_analysis_too() {
         let session = Session::new();
         let mut analysis = armed();
-        analysis.drive(&session, true);
+        analysis.drive(&session, true, &unlocked());
         assert_eq!(analysis.status(), &Status::Locked(Lock::Training));
         assert!(!analysis.has_engine());
     }
@@ -1470,7 +1511,7 @@ mod tests {
         let mut analysis = Analysis::default();
         analysis.set_default_engine(None);
         analysis.set_enabled(true);
-        analysis.drive(&session, false);
+        analysis.drive(&session, false, &unlocked());
         assert_eq!(analysis.status(), &Status::NoEngine);
         assert!(!analysis.has_engine());
     }
@@ -1481,14 +1522,14 @@ mod tests {
         let mut analysis = armed();
         let deadline = Instant::now() + Duration::from_secs(5);
         while !matches!(analysis.status(), Status::Failed(_)) && Instant::now() < deadline {
-            analysis.drive(&session, false);
+            analysis.drive(&session, false, &unlocked());
             std::thread::sleep(Duration::from_millis(10));
         }
         assert!(matches!(analysis.status(), Status::Failed(_)));
         assert!(!analysis.has_engine());
         // "Tentar de novo" limpa a falha e sobe outra instância.
         analysis.failure = None;
-        analysis.drive(&session, false);
+        analysis.drive(&session, false, &unlocked());
         assert!(analysis.has_engine());
     }
 
@@ -1504,10 +1545,10 @@ mod tests {
         );
         assert!(session.engine_turn(), "a Engine adversária joga de brancas");
         let mut analysis = armed();
-        analysis.drive(&session, false);
+        analysis.drive(&session, false, &unlocked());
         assert_eq!(analysis.status(), &Status::Paused);
         analysis.set_pause_while_thinking(false);
-        analysis.drive(&session, false);
+        analysis.drive(&session, false, &unlocked());
         assert!(analysis.has_engine(), "sem a opção, analisa mesmo assim");
         assert_ne!(analysis.status(), &Status::Paused);
     }
@@ -1550,7 +1591,7 @@ mod tests {
     fn running() -> (Analysis, Session) {
         let session = Session::new();
         let mut analysis = armed();
-        analysis.drive(&session, false);
+        analysis.drive(&session, false, &unlocked());
         assert!(analysis.has_engine());
         analysis.ready = true;
         analysis.status = Status::Running;
@@ -1599,7 +1640,7 @@ mod tests {
         frames(&mut analysis, 12.0, 40.0);
         assert!(analysis.load_level() > chess_uci::Level::Full);
         analysis.set_enabled(false);
-        analysis.drive(&session, false);
+        analysis.drive(&session, false, &unlocked());
         analysis.frame(16.0, GraphicsQuality::Balanced);
         assert_eq!(analysis.load_level(), chess_uci::Level::Full);
     }

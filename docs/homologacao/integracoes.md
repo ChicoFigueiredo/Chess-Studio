@@ -54,6 +54,14 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 | CX-HOM-32 | Rating FIDE no Perfil local | sim | UNVERIFIED |
 | CX-HOM-33 | Limpar dados guardados | não | UNVERIFIED |
 | CX-HOM-34 | Apagar Partidas importadas por origem | não | UNVERIFIED |
+| CX-HOM-35 | Partida online: sem Conexão e Conexão de Engine | não | UNVERIFIED |
+| CX-HOM-36 | Partida online contra a Engine do Lichess | sim | UNVERIFIED |
+| CX-HOM-37 | Buscar adversário, jogar e terminar | sim | UNVERIFIED |
+| CX-HOM-38 | Intenção enviada, recusa e queda de conexão | sim | UNVERIFIED |
+| CX-HOM-39 | Empate, abandono, abortar e adversário ausente | sim | UNVERIFIED |
+| CX-HOM-40 | Desafiar por nome e desafios recebidos | sim | UNVERIFIED |
+| CX-HOM-41 | Correspondência: lista, fechar e reabrir o app | sim | UNVERIFIED |
+| CX-HOM-42 | Trava de fair play na Partida online | sim | UNVERIFIED |
 
 ## Itens
 
@@ -310,7 +318,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Esperado:** na Partida competitiva, o Explorador mostra **Indisponível durante a Partida**, a avaliação em cache diz **Indisponível durante a Partida.**, a Biblioteca e a importação ficam desabilitadas com o motivo, e a barra de status mostra **Trava de fair play**. Nenhuma consulta sai. Ao terminar a Partida, tudo volta. Na Partida Assistida, a trava não liga.
 - **Com o serviço real:** com o monitor de rede, confirme que nenhum pedido ao Lichess sai durante a Partida competitiva, nem com o Painel reaberto, nem pelo menu.
 - **Evidência:** [`guard.rs`](../../crates/chess-net/src/guard.rs), [`gate.rs`](../../crates/chess-net/tests/gate.rs), [`net_service.rs`](../../crates/chess-studio/src/net_service.rs).
-- **Limite conhecido:** a trava só segue Partidas competitivas locais. A Partida online contra uma pessoa ainda não tem interface (ver [`2026-11-11-partida-online.md`](../decisoes/2026-11-11-partida-online.md)).
+- **Limite conhecido:** este item cobre a Partida competitiva local. A Partida online contra uma pessoa tem o item próprio, CX-HOM-39.
 
 ### CX-HOM-22. Importar Partidas do Lichess
 
@@ -468,10 +476,85 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Esperado:** a janela traz a contagem e a lista do que será apagado. Marcar o Provedor cobre as importações dele. As Partidas jogadas não aparecem na aba e continuam. A Partida de duas origens fica, e a janela diz que ficou.
 - **Com o serviço real:** não se aplica.
 - **Evidência:** [`fide_and_bulk.rs`](../../crates/chess-store/tests/fide_and_bulk.rs), [`library_bulk.rs`](../../crates/chess-studio/src/library_bulk.rs).
+### CX-HOM-35. Partida online: sem Conexão e Conexão de Engine
+
+- **Pré-condição:** Perfil local do roteiro sem Conexão do Lichess autorizada.
+- **Passos:**
+  1. Início > Nova Partida > **Online (Lichess)** (ou a Paleta: "Buscar adversário").
+  2. Clique em **Abrir a Central**.
+  3. Autorize só a **Engine online** (Conexão de Engine) e repita o passo 1.
+- **Esperado:** a tela **Partida online no Lichess** explica **Autorize o Lichess para jogar** e leva à Central. Com só a Conexão de Engine, continua pedindo a Conexão do jogador: a de Engine nunca joga como pessoa. Nada sai para o Lichess.
+- **Evidência:** [`online/tests.rs`](../../crates/chess-studio/src/online/tests.rs) (`only_the_authorized_player_connection_plays_never_the_engine_one`).
+
+### CX-HOM-36. Partida online contra a Engine do Lichess
+
+- **Pré-condição:** Lichess ligado e a Conexão do jogador autorizada.
+- **Passos:**
+  1. Início > grupo **Online (Lichess)** > **Contra a Engine do Lichess**.
+  2. Nível 1, cor Brancas, ritmo Rápida 10+5; **Jogar**.
+  3. Jogue alguns Lances pelo tabuleiro 3D e pelo 2D, arrastando e com dois cliques. Promova um peão se der.
+  4. Ligue a Análise.
+  5. Abandone (confirme) ou jogue até o fim.
+- **Esperado:** a Partida aparece no tabuleiro do seu lado, com o Painel **Partida online** (selos **Lichess**, **Ao vivo**, **Sem rating**), os relógios do Lichess no Painel Relógio e no relógio 3D, os nomes do Lichess no Painel Relógio e a Notação. Cada Lance aparece com a peça no destino e **Enviando …** até o Lichess confirmar. A Análise roda (contra a Engine do Lichess não há Trava). O fim vem do Lichess; a Partida fica na Biblioteca com **Partida online · Lichess · lichess.org/…**.
+- **Com o serviço real:** confira no site que a Partida tem os mesmos Lances.
+
+### CX-HOM-37. Buscar adversário, jogar e terminar
+
+- **Passos:**
+  1. Início > **Buscar adversário**; Rápida 10+5, sem rating; **Buscar adversário**.
+  2. Espere (o tempo de espera conta em números que não pulam) e, uma vez, **Cancelar busca**; busque de novo.
+  3. Jogue a Partida até o fim (mate, tempo ou abandono de alguém).
+  4. Depois do fim, **Analisar** e **Ver na Biblioteca** no Painel Partida online.
+- **Esperado:** a busca mostra **Procurando adversário** e some ao cancelar. Pareado, a Partida vai ao tabuleiro sozinha. Blitz não aparece na busca (o Lichess só busca a partir do rápido). Durante a Partida, Engines, Explorador, finais e análise ficam desligados e a barra de status mostra **Trava de fair play**. O resultado e o motivo são os do Lichess; só então a Análise liga. A Partida está na Biblioteca com a Origem.
+
+### CX-HOM-38. Intenção enviada, recusa e queda de conexão
+
+- **Passos:**
+  1. Numa Partida online contra pessoa, faça um Lance e observe o Painel até a confirmação.
+  2. Desligue a internet por ~20 s no meio da Partida (de preferência logo depois de soltar uma peça) e religue.
+  3. Faça o adversário terminar a Partida (abandono) enquanto você está sem internet, e religue.
+- **Esperado:** o Lance fica no destino com **Enviando …** até o Lichess confirmar. Sem internet, o selo vira **Reconectando em … s** e o Painel diz que nenhum Lance é reenviado. Ao voltar, o tabuleiro fica como o Lichess diz: se o Lance não chegou, a peça volta e o aviso pede para jogar de novo; nunca há Lance duplicado. Se a Partida terminou sem você, o resultado aparece ao reconectar.
+
+### CX-HOM-39. Empate, abandono, abortar e adversário ausente
+
+- **Passos:**
+  1. Logo no começo, **Abortar** (antes de cada lado jogar).
+  2. Em outra Partida, **Propor empate**; peça ao adversário para propor e use **Aceitar** e **Recusar**.
+  3. **Abandonar** e responda **Continuar jogando**; depois **Abandonar** de novo e confirme.
+  4. Peça ao adversário para fechar o navegador e espere.
+- **Esperado:** nada muda até o Lichess confirmar. A Partida abortada fica sem resultado. **Abandonar** sempre pede confirmação. Com o adversário fora, aparece **O adversário saiu da Partida** e **Reclamar vitória** só fica disponível quando o Lichess permitir.
+
+### CX-HOM-40. Desafiar por nome e desafios recebidos
+
+- **Passos:**
+  1. **Desafiar** um usuário seu de teste, em Blitz 3+2; depois **Cancelar desafio**; desafie de novo e aceite no outro usuário.
+  2. Do outro usuário, desafie você: em xadrez padrão e em Chess960.
+  3. Com uma Partida competitiva local em andamento, peça outro desafio.
+- **Esperado:** o desafio aparece como **Aguardando resposta** e some ao cancelar. O desafio recebido traz um aviso discreto no canto (**… desafia você**, com **Ver**), que nunca aparece durante outra Partida competitiva (o desafio espera na aba **Desafiar**). **Recusar** usa o motivo escolhido. O de Chess960 diz que o app só joga xadrez padrão e não tem **Aceitar**.
+
+### CX-HOM-41. Correspondência: lista, fechar e reabrir o app
+
+- **Passos:**
+  1. **Buscar adversário** > Correspondência, 3 dias por Lance (ou desafie seu usuário de teste em correspondência).
+  2. Quando a Partida começar, faça um Lance e feche o app.
+  3. Do outro usuário, responda no site.
+  4. Abra o app.
+  5. **Atualizar** no aviso; depois **Partidas em andamento** > **Abrir**.
+- **Esperado:** ao abrir, nada sai para a rede: só o aviso **Partidas online em andamento** com **Atualizar**. A lista mostra de quem é a vez e quanto falta. **Abrir** traz o Lance que o adversário fez com o app fechado, na mesma Partida (sem duplicar na Biblioteca). Uma Partida terminada enquanto o app estava fechado mostra o resultado ao atualizar.
+
+### CX-HOM-42. Trava de fair play na Partida online
+
+- **Passos:**
+  1. Numa Partida online contra pessoa em tempo real: tente ligar a Análise, abrir o Explorador, ver a avaliação em cache, a aba Finais, a Biblioteca do Explorador e o Painel Aberturas; revise Lances anteriores.
+  2. Abra outra Partida da Biblioteca com a Partida online ainda em andamento.
+  3. Com uma correspondência em andamento fora do tabuleiro: estude outra abertura com a Análise; depois cole o FEN da Posição atual da correspondência num tabuleiro de estudo.
+- **Esperado:** em tempo real nada calcula, em Posição nenhuma, enquanto o Lichess não confirmar o fim (abandonar ou fechar o Painel não solta). Destinos legais, último Lance e coordenadas continuam. Na correspondência, outras Partidas e Posições ficam livres; a Posição da Partida (e o que se joga a partir dela) mostra **Posição de uma Partida em andamento** e nada é consultado.
+- **Com o serviço real:** com o monitor de rede, nenhum pedido ao Explorador, à avaliação em cache ou aos finais sai nesses casos.
+- **Evidência:** [`fair_play.rs`](../../crates/chess-studio/src/fair_play.rs), [`online/tests.rs`](../../crates/chess-studio/src/online/tests.rs), [decisões PO-13 a PO-19](../decisoes/2026-11-11-partida-online.md).
 
 ## Fora deste roteiro
 
-A **Partida online** (domínio e Board API do Lichess, #230) não tem interface. Só os testes automatizados a cobrem: [`online_game.rs`](../../crates/chess-game/tests/online_game.rs), [`online_property.rs`](../../crates/chess-game/tests/online_property.rs), [`board_session.rs`](../../crates/chess-providers/tests/board_session.rs), [`board_actions.rs`](../../crates/chess-providers/tests/board_actions.rs). O roteiro dela entra junto com a interface.
+Chat, premove e reclamar empate por ausência não existem no app (ver [`2026-11-11-partida-online.md`](../decisoes/2026-11-11-partida-online.md)).
 
 ## O que falta
 

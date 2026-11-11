@@ -839,6 +839,14 @@ pub fn notice(
             &i18n.t("explorer-fairplay-text"),
             |_| {},
         ),
+        Notice::FairPlayPosition => notice_block(
+            ui,
+            icon::SHIELD_CHECK,
+            p.accent,
+            &i18n.t("explorer-fairplay-position-title"),
+            &i18n.t("explorer-fairplay-position-text"),
+            |_| {},
+        ),
         Notice::Training => notice_block(
             ui,
             icon::BARBELL,
@@ -1064,7 +1072,7 @@ pub fn cloud_row(
                         actions.push(UiAction::TurnOn(*provider));
                     }
                 }
-                CloudRow::Notice(Notice::FairPlay) => {
+                CloudRow::Notice(Notice::FairPlay | Notice::FairPlayPosition) => {
                     muted(ui, i18n.t("explorer-cloud-fairplay"));
                 }
                 CloudRow::Notice(Notice::Limited { .. }) => {

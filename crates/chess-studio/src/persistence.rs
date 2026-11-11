@@ -446,7 +446,8 @@ impl Persistence {
         self.store.append_events(id, &events)?;
         self.current = Some(id);
         self.persisted = game.events().len();
-        let session = Session::from_game(game);
+        let mut session = Session::from_game(game);
+        session.set_online_store_id(Some(id));
         self.epoch = session.epoch();
         self.was_paused = session.snapshot().paused;
         Ok(Some((session, opened.abrupt_close)))
@@ -529,6 +530,21 @@ impl Persistence {
     /// Grava o que a [`Session`] fez desde a última chamada: troca de Partida (Nova
     /// Partida, FEN) e Eventos novos. Barato quando nada mudou.
     pub fn sync(&mut self, session: &Session) {
+        // Partida online: quem grava os Eventos é o serviço online, só com o que o Provedor
+        // confirmou (ADR-0007). Aqui só se acompanha qual Partida está no tabuleiro.
+        if session.is_online() {
+            if session.epoch() != self.epoch {
+                if session.online_store_id().is_some() && self.current != session.online_store_id()
+                {
+                    self.close();
+                    self.current = session.online_store_id();
+                }
+                self.epoch = session.epoch();
+                self.persisted = session.game().events().len();
+                self.was_paused = false;
+            }
+            return;
+        }
         if session.epoch() != self.epoch {
             self.close();
             self.epoch = session.epoch();

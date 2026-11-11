@@ -1093,6 +1093,7 @@ fn the_online_explorer_asks_only_with_an_authorized_connection_and_then_with_its
                 at: NetService::now(),
                 lock: None,
                 authorization: Authorization::lichess_now(&env.service),
+                subject: None,
             };
             explorer.drive(&input, &env.service);
             std::thread::sleep(Duration::from_millis(3));

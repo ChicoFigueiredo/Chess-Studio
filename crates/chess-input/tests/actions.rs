@@ -554,12 +554,76 @@ fn the_new_game_group_opens_the_home_tab_with_the_dialog_as_the_big_button() {
             Action::NewGame,
             Action::NewGameVsEngine,
             Action::NewGameTwoPlayers,
-            Action::ResumeGame
+            Action::ResumeGame,
+            Action::NewGameOnline
         ]
     );
     for a in &new_game {
         assert_eq!(meta(*a).tab, Some(RibbonTab::Home), "{a:?}");
     }
+}
+
+#[test]
+fn the_online_group_lives_in_home_and_waits_for_the_game_in_progress() {
+    let online: Vec<Action> = Action::ALL
+        .into_iter()
+        .filter(|a| meta(*a).group == Some("ribbon-group-online"))
+        .collect();
+    assert_eq!(
+        online,
+        [
+            Action::SeekOnline,
+            Action::ChallengeOnline,
+            Action::PlayLichessEngine,
+            Action::OnlineGames
+        ]
+    );
+    let starting = [
+        Action::NewGameOnline,
+        Action::SeekOnline,
+        Action::ChallengeOnline,
+        Action::PlayLichessEngine,
+    ];
+    for a in starting {
+        assert!(state(a, &assisted()).is_enabled(), "{a:?}");
+        let busy = ActionContext {
+            online_realtime_in_progress: true,
+            ..assisted()
+        };
+        assert_eq!(
+            state(a, &busy).disabled_reason,
+            Some("reason-online-in-progress"),
+            "{a:?}"
+        );
+        assert_eq!(
+            state(a, &fide()).disabled_reason,
+            Some("reason-competitive-lock"),
+            "{a:?}"
+        );
+    }
+    // A lista de Partidas em andamento fica sempre à mão.
+    let busy = ActionContext {
+        online_realtime_in_progress: true,
+        ..fide()
+    };
+    assert!(state(Action::OnlineGames, &busy).is_enabled());
+    // Online, relógio e Pausa são do Provedor.
+    let online_game = ActionContext {
+        online: true,
+        competitive: true,
+        competitive_in_progress: true,
+        game_running: true,
+        has_clock: true,
+        ..assisted()
+    };
+    for a in [Action::ClockPress, Action::PauseClock] {
+        assert_eq!(
+            state(a, &online_game).disabled_reason,
+            Some("reason-online-provider"),
+            "{a:?}"
+        );
+    }
+    assert_eq!(Action::PanelOnline.panel(), Some(("Online", false)));
 }
 
 #[test]

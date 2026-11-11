@@ -733,16 +733,30 @@ fn played_draft(
     if plies == 0 {
         return Draft::hidden(LibrarySource::Played, id.0, profile, signature);
     }
-    let (white, black, opponent) = match setup.engine() {
-        Some(seat) => {
+    let online = setup.online_game();
+    let (white, black, opponent) = match (online, setup.engine()) {
+        // Partida online: os nomes e a Origem vêm do Provedor (ADR-0007).
+        (Some(online), _) => {
+            let opponent = match online.local_color {
+                chess_core::Color::White => online.black.name.clone(),
+                chess_core::Color::Black => online.white.name.clone(),
+            };
+            (
+                online.white.name.clone(),
+                online.black.name.clone(),
+                Some(opponent),
+            )
+        }
+        (None, Some(seat)) => {
             let engine = format!("Engine {}", seat.elo);
             match seat.color {
                 chess_core::Color::White => (engine.clone(), "Você".to_owned(), Some(engine)),
                 chess_core::Color::Black => ("Você".to_owned(), engine.clone(), Some(engine)),
             }
         }
-        None => ("Brancas".to_owned(), "Pretas".to_owned(), None),
+        (None, None) => ("Brancas".to_owned(), "Pretas".to_owned(), None),
     };
+    let event = online.map(online_origin);
     let wall = game
         .events()
         .iter()
@@ -774,6 +788,7 @@ fn played_draft(
     let body = join_body(&[
         Some(&white),
         Some(&black),
+        event.as_deref(),
         Some(&date),
         Some(&result),
         reason.as_deref(),
@@ -787,7 +802,7 @@ fn played_draft(
         signature,
         white: Some(white),
         black: Some(black),
-        event: None,
+        event,
         date: Some(date),
         result,
         reason,
@@ -795,11 +810,23 @@ fn played_draft(
         opponent,
         ply_count: plies as i64,
         opening,
-        finished: snapshot.outcome.is_some(),
+        // Abortada não tem resultado, mas terminou (PO-06).
+        finished: snapshot.is_over(),
         sort_ms: updated_ms,
         body,
         positions,
         moves,
+    }
+}
+
+/// A Origem de uma Partida online, na linha da Biblioteca: Provedor e endereço da Partida.
+fn online_origin(online: &chess_game::OnlineGame) -> String {
+    match online.provider.as_str() {
+        "lichess" => format!(
+            "Partida online · Lichess · lichess.org/{}",
+            online.remote_id
+        ),
+        other => format!("Partida online · {other} · {}", online.remote_id),
     }
 }
 

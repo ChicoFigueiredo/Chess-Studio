@@ -20,3 +20,4 @@ openings-source-note = Nomes: conjunto lichess-org/chess-openings (CC0). Estatí
 openings-locked-training = Indisponível durante um Exercício de Treino.
 openings-locked-competitive = Indisponível em Partida competitiva em andamento.
 openings-error = Não foi possível consultar a Biblioteca: { $error }
+openings-locked-fairplay = Trava de fair play: esta Posição é de uma Partida online em andamento. Outras Posições continuam livres.

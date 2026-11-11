@@ -838,10 +838,21 @@ fn clock_panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
         let side = side_of_slot(user, slot);
         let ms = reading.remaining(side);
         let running = reading.running == Some(side) && !reading.paused;
-        let name = i18n.t(match side {
-            Side::White => "clock-white",
-            Side::Black => "clock-black",
+        // Partida online: nomes e ratings do Provedor; o tempo também é dele (PO-07).
+        let online = session.game().setup().online_game().map(|o| match side {
+            Side::White => &o.white,
+            Side::Black => &o.black,
         });
+        let name = match online {
+            Some(player) => match player.rating {
+                Some(rating) => format!("{} ({rating})", player.name),
+                None => player.name.clone(),
+            },
+            None => i18n.t(match side {
+                Side::White => "clock-white",
+                Side::Black => "clock-black",
+            }),
+        };
         clock_card(
             ui,
             p,
@@ -867,6 +878,11 @@ fn clock_panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
     }
     if reading.paused {
         ui.colored_label(p.warning, i18n.t("clock-paused"));
+    }
+    if session.is_online() {
+        // Sem botão nem Infrações: o relógio é do Lichess.
+        ui.small(i18n.t("clock-online"));
+        return;
     }
     if session.is_competitive() {
         ui.small(i18n.t_with(

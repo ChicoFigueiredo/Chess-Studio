@@ -148,7 +148,13 @@ fn aids_panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
         );
         ui.strong(i18n.t("aid-heading"));
         if allowed.restricted() {
-            ui.weak(i18n.t("aid-restricted"));
+            // Partida online: destinos legais seguem (só mostram regras, ADR-0007).
+            let key = if session.is_online() {
+                "aid-restricted-online"
+            } else {
+                "aid-restricted"
+            };
+            ui.weak(i18n.t(key));
         }
         aid_controls(ui, i18n, &mut edited, &allowed);
         if edited != *aids {

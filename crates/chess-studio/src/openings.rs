@@ -157,6 +157,8 @@ pub struct OpeningsUi {
     preview: Option<String>,
     /// Banco em memória quando não há persistência (testes e demonstrações).
     local: Option<Mutex<Store>>,
+    /// A Trava de fair play recusou a estatística desta Posição (PO-13).
+    fair_locked: bool,
 }
 
 pub struct OpeningsPlugin;
@@ -189,6 +191,10 @@ fn openings_panel(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
     let swapped = world
         .get_resource::<TrainingUi>()
         .is_some_and(TrainingUi::session_swapped);
+    // Sem o ponto único da Trava de fair play, nada se consulta.
+    let Some(fair) = world.get_resource::<crate::fair_play::FairPlay>().cloned() else {
+        return;
+    };
     world.resource_scope(|world, mut state: Mut<OpeningsUi>| {
         world.resource_scope(|world, mut session: Mut<Session>| {
             match availability(session.competitive_in_progress(), swapped, hides) {
@@ -207,7 +213,11 @@ fn openings_panel(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
                 }
             }
             let handle = world.get_resource::<PersistenceHandle>();
-            state.refresh(&session, handle, false);
+            state.refresh(&session, handle, false, &fair);
+            if state.fair_locked {
+                ui.weak(i18n.t("openings-locked-fairplay"));
+                return;
+            }
             let mut actions = Vec::new();
             draw(ui, i18n, &state, &session, &mut actions);
             for action in actions {
@@ -218,7 +228,7 @@ fn openings_panel(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
                         notation::navigate(&mut session, ply);
                         state.preview = None;
                     }
-                    Action::Reindex => state.refresh(&session, handle, true),
+                    Action::Reindex => state.refresh(&session, handle, true, &fair),
                 }
             }
         });
@@ -228,12 +238,30 @@ fn openings_panel(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
 impl OpeningsUi {
     /// Consulta o livro e o índice quando a Posição mudou, a cada [`AUTO_REFRESH`] ou sob
     /// demanda (`rebuild`: refaz o índice do zero antes).
-    fn refresh(&mut self, session: &Session, handle: Option<&PersistenceHandle>, rebuild: bool) {
+    fn refresh(
+        &mut self,
+        session: &Session,
+        handle: Option<&PersistenceHandle>,
+        rebuild: bool,
+        fair: &crate::fair_play::FairPlay,
+    ) {
         let ply = notation::current_ply(session);
         let total = session.snapshot().history.len();
         let Some(view) = session.game().review_at_ply(ply) else {
             return;
         };
+        let Some(subject) = crate::fair_play::Subject::at(session.game(), ply) else {
+            return;
+        };
+        // A Trava vale a cada quadro, antes do cache.
+        self.fair_locked = fair
+            .check(crate::fair_play::Computation::LibraryStats, &subject)
+            .is_err();
+        if self.fair_locked {
+            self.stats.clear();
+            self.key = None;
+            return;
+        }
         let fen = view.position.to_fen();
         let key = QueryKey {
             epoch: session.epoch(),
@@ -253,11 +281,20 @@ impl OpeningsUi {
         self.dirty = false;
         self.opening = opening_at(OpeningBook::embedded(), session, ply);
         let result = with_store(&mut self.local, handle, |store, profile| {
-            if rebuild {
-                store.rebuild_opening_index()?;
+            if rebuild && let Err(err) = store.rebuild_opening_index() {
+                return Ok(Err(err));
             }
-            store.opening_stats(profile, &fen)
+            crate::fair_play::opening_stats(fair, &subject, store, profile, &fen)
         });
+        let result = match result {
+            Some(Err(_locked)) => {
+                self.fair_locked = true;
+                self.stats.clear();
+                return;
+            }
+            Some(Ok(stats)) => Some(stats),
+            None => None,
+        };
         match result {
             Some(Ok(stats)) => {
                 self.error = None;

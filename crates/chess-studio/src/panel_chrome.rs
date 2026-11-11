@@ -75,6 +75,7 @@ pub fn panel_icon(id: &str) -> &'static str {
         ids::EXPLORER => icon::COMPASS,
         ids::SCORESHEET => icon::SCROLL,
         ids::BOARD2D => icon::SQUARES_FOUR,
+        ids::ONLINE => icon::GLOBE,
         _ => icon::APP_WINDOW,
     }
 }

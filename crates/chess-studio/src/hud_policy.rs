@@ -8,9 +8,14 @@
 //! | Assistido (qualquer momento)         | nada                                        | tudo                          |
 //! | Competitiva em andamento             | destinos, fantasmas, setas de sugestão, casas atacadas, ameaças, linha da Engine, dicas | xeque, seleção, último Lance |
 //! | Competitiva com resultado ou revisão | nada                                        | tudo                          |
+//! | Online contra pessoa em andamento    | fantasmas, setas de sugestão, casas atacadas, ameaças, linha da Engine, dicas | destinos legais, xeque, seleção, último Lance |
+//! | Online contra a Engine do Provedor   | nada (sem Trava de fair play, PO-08)        | tudo                          |
+//!
+//! Além da Política, a Trava de fair play do app ([`crate::fair_play`]) tira tudo o que
+//! calcula ([`Allowance::without_computation`]) quando recusa a Posição mostrada.
 
 use crate::session::Session;
-use chess_game::PolicyKind;
+use chess_game::{Opponent, PolicyKind};
 
 /// Em que ponto está a Partida exibida.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -81,9 +86,30 @@ impl Allowance {
         last_move: true,
     };
 
+    /// Partida online contra pessoa em andamento: só o que mostra regras (ADR-0007).
+    pub const ONLINE_LIVE: Allowance = Allowance {
+        destinations: true,
+        ..Allowance::COMPETITIVE_LIVE
+    };
+
+    /// Sem nada que calcula (Trava de fair play): ficam os Auxílios que só mostram regras.
+    pub fn without_computation(self) -> Allowance {
+        Allowance {
+            ghosts: false,
+            suggestion_arrows: false,
+            attacked_squares: false,
+            threats: false,
+            engine_line: false,
+            hints: false,
+            ..self
+        }
+    }
+
     pub fn for_game(policy: PolicyKind, stage: GameStage) -> Allowance {
         if policy == PolicyKind::Assisted || stage != GameStage::InProgress {
             Allowance::ALL
+        } else if policy == PolicyKind::Online {
+            Allowance::ONLINE_LIVE
         } else {
             Allowance::COMPETITIVE_LIVE
         }
@@ -98,8 +124,35 @@ impl Allowance {
 /// O que a Política da Partida atual permite mostrar agora.
 pub fn allowance(session: &Session) -> Allowance {
     let snapshot = session.snapshot();
-    let stage = GameStage::of(snapshot.outcome.is_some(), session.review().is_some());
+    // Partida online abortada não tem resultado, mas terminou (PO-06).
+    let stage = GameStage::of(snapshot.is_over(), session.review().is_some());
+    let against_provider_engine = session
+        .game()
+        .setup()
+        .online_game()
+        .is_some_and(|o| o.opponent != Opponent::Human);
+    if against_provider_engine {
+        return Allowance::ALL;
+    }
     Allowance::for_game(snapshot.policy, stage)
+}
+
+/// O que a Política permite **e** a Trava de fair play deixa calcular agora, para a Posição
+/// mostrada. É o que o HUD e os Auxílios usam.
+pub fn effective(session: &Session, fair: &crate::fair_play::FairPlay) -> Allowance {
+    let allowed = allowance(session);
+    if !fair.any() {
+        return allowed;
+    }
+    let refused = crate::fair_play::Subject::shown(session).is_none_or(|subject| {
+        fair.check(crate::fair_play::Computation::Hint, &subject)
+            .is_err()
+    });
+    if refused {
+        allowed.without_computation()
+    } else {
+        allowed
+    }
 }
 
 #[cfg(test)]
@@ -146,6 +199,21 @@ mod tests {
         assert!(a.check && a.selection && a.last_move);
         assert!(a.restricted());
         assert!(!Allowance::ALL.restricted());
+    }
+
+    #[test]
+    fn online_live_keeps_only_the_aids_that_show_rules() {
+        let a = Allowance::for_game(PolicyKind::Online, InProgress);
+        assert_eq!(a, Allowance::ONLINE_LIVE);
+        assert!(a.destinations && a.check && a.selection && a.last_move);
+        assert!(!a.hints && !a.engine_line && !a.suggestion_arrows && !a.ghosts);
+        assert!(!a.attacked_squares && !a.threats);
+        assert_eq!(
+            Allowance::for_game(PolicyKind::Online, Finished),
+            Allowance::ALL
+        );
+        let stripped = Allowance::ALL.without_computation();
+        assert!(stripped.destinations && stripped.last_move && !stripped.hints);
     }
 
     #[test]

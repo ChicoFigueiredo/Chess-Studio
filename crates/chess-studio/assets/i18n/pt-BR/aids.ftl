@@ -14,6 +14,7 @@ aid-last-move = Destaque do último lance
 aid-check = Indicação de xeque
 
 aid-restricted = Partida competitiva em andamento: destinos, fantasmas e dicas ficam vedados. Xeque, seleção e último lance seguem o Perfil.
+aid-restricted-online = Partida online contra uma pessoa: a Trava de fair play veda dicas, fantasmas e tudo o que calcula. Destinos legais, xeque, seleção e último Lance seguem o Perfil.
 
 aid-explanation-label = Explicação de erro
 aid-explanation-immediate = Imediata
