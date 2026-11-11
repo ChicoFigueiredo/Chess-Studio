@@ -165,8 +165,9 @@ fn migration_14_applies_on_a_v13_database_and_preserves_everything() {
     .unwrap();
     conn.execute(
         "INSERT INTO imported_games (profile_id, source, result, start_fen, ply_count,
-                                     variation_count, tree_json, imported_at_ms)
-         VALUES (1, 'a.pgn', '1-0', 'x', 3, 0, '{}', 99)",
+                                     variation_count, tree_json, imported_at_ms,
+                                     retrieved_at_ms)
+         VALUES (1, 'a.pgn', '1-0', 'x', 3, 0, '{}', 99, 99)",
         [],
     )
     .unwrap();
