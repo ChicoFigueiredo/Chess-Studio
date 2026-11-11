@@ -62,11 +62,14 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 | CX-HOM-40 | Desafiar por nome e desafios recebidos | sim | UNVERIFIED |
 | CX-HOM-41 | Correspondência: lista, fechar e reabrir o app | sim | UNVERIFIED |
 | CX-HOM-42 | Trava de fair play na Partida online | sim | UNVERIFIED |
-| CX-HOM-43 | Engine remota: escolher, aviso e consentimento | sim | UNVERIFIED |
-| CX-HOM-44 | Engine remota: análise, limite e Provedor desligado | sim | UNVERIFIED |
-| CX-HOM-45 | Engine remota sob a Trava de fair play | sim | UNVERIFIED |
-| CX-HOM-46 | Engine online: ligar, esperar, jogar e parar | sim | UNVERIFIED |
-| CX-HOM-47 | Engine online: limites, conta BOT e falha da Engine | sim | UNVERIFIED |
+| CX-HOM-43 | Seletor de arquivo: escolher e Salvar como… | não (sistema) | UNVERIFIED |
+| CX-HOM-44 | Baixar problemas do Lichess pela rede | sim | UNVERIFIED |
+| CX-HOM-45 | Consentimento do Lichess cita tudo o que o app envia | não | UNVERIFIED |
+| CX-HOM-49 | Engine remota: escolher, aviso e consentimento | sim | UNVERIFIED |
+| CX-HOM-50 | Engine remota: análise, limite e Provedor desligado | sim | UNVERIFIED |
+| CX-HOM-51 | Engine remota sob a Trava de fair play | sim | UNVERIFIED |
+| CX-HOM-52 | Engine online: ligar, esperar, jogar e parar | sim | UNVERIFIED |
+| CX-HOM-53 | Engine online: limites, conta BOT e falha da Engine | sim | UNVERIFIED |
 
 ## Itens
 
@@ -557,7 +560,40 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Com o serviço real:** com o monitor de rede, nenhum pedido ao Explorador, à avaliação em cache ou aos finais sai nesses casos.
 - **Evidência:** [`fair_play.rs`](../../crates/chess-studio/src/fair_play.rs), [`online/tests.rs`](../../crates/chess-studio/src/online/tests.rs), [decisões PO-13 a PO-19](../decisoes/2026-11-11-partida-online.md).
 
-### CX-HOM-43. Engine remota: escolher, aviso e consentimento
+### CX-HOM-43. Seletor de arquivo: escolher e Salvar como…
+
+- **Pré-condição:** um computador com janela de escolha de arquivo do sistema (portal do desktop no Linux; nativa no Windows e no macOS). Repita, se puder, num sistema sem ela (Linux sem portal e sem `zenity`).
+- **Passos:**
+  1. Em **Importar arquivo** (Biblioteca) e em **Instalar problemas** (Treino > Pacotes), clique em **Escolher arquivo…**: escolha um arquivo, depois abra de novo e cancele.
+  2. No Painel Revisão, em **Exportar PGN**, clique em **Salvar como…**, mude a pasta e o nome, confirme. Repita escolhendo um arquivo que já existe (o sistema pergunta se substitui).
+  3. Termine uma Partida (xeque-mate ou abandono): no diálogo de fim, clique em **Salvar como…**; depois em **Exportar PGN** (vai para Documentos).
+  4. No Ribbon, aciona **Exportar PGN**: a janela de **Salvar como** abre com o nome `partida-AAAA-MM-DD-HHMMSS.pgn`.
+  5. Com a Súmula aberta e a notação oculta, confira o diálogo de fim e o Painel Revisão.
+  6. Sem janela de escolha no sistema: confira que os botões **Salvar como…** somem, o campo de caminho continua e **Exportar PGN** do Ribbon grava em Documentos.
+- **Esperado:** o caminho escolhido aparece no campo (itens 1) ou na mensagem **Partida salva em …** (itens 2 a 4); cancelar não muda nada; o arquivo sai com a extensão `.pgn` mesmo se você não a digitou. Com a notação oculta pela Súmula, o **Salvar como…** do fim de Partida fica desativado e o do Painel Revisão não aparece (o PGN revelaria a notação).
+- **Evidência:** [`file_picker.rs`](../../crates/chess-studio/src/file_picker.rs), [`fen_pgn.rs`](../../crates/chess-studio/src/fen_pgn.rs) (testes com seletor falso), [capturas](../evidencias/acabamento-etapa-5/README.md).
+
+### CX-HOM-44. Baixar problemas do Lichess pela rede
+
+- **Pré-condição:** internet; Lichess desligado na Central; Perfil local novo.
+- **Passos:**
+  1. Treino > Pacotes > **Baixar problemas do Lichess**: escolha poucos temas e uma quantidade pequena (200); clique em baixar. O diálogo **Ligar Lichess?** abre: confira que a lista **O que será enviado** cita o download de problemas; clique em **Ligar**.
+  2. Acompanhe o andamento; deixe terminar e abra o pacote em **Pacotes instalados** (**Origem: Lichess, licença CC0**).
+  3. Repita e **Cancele** no meio: nada é instalado.
+  4. Desligue a internet no meio de outro download: a mensagem manda conferir a internet e diz que nada foi instalado.
+  5. Se o Lichess mandar o arquivo para outro endereço (redirecionamento), observe o resultado.
+- **Esperado:** o arquivo vem do endereço de downloads do Lichess; só é aceito redirecionamento para outro endereço de download do próprio Lichess (até 3 saltos, sem porta nem parâmetros); qualquer outro destino mostra **O Lichess mandou o arquivo para um endereço que o Chess Studio não aceita, por segurança … nada foi instalado.** (decisão RD-1).
+- **Com o serviço real:** com o monitor de rede, as conexões vão só para `database.lichess.org` e nenhum dado do Perfil local sai. Anote se houve redirecionamento e para qual endereço: o comportamento real é UNVERIFIED até este passo.
+- **Evidência:** [`download.rs`](../../crates/chess-net/tests/download.rs) (redirecionamento com servidor falso), [`2026-11-11-acabamento-etapa-5.md`](../decisoes/2026-11-11-acabamento-etapa-5.md), [capturas de #238](../evidencias/baixar-problemas/README.md).
+
+### CX-HOM-45. Consentimento do Lichess cita tudo o que o app envia
+
+- **Passos:**
+  1. Com o Lichess desligado, abra o Explorador (ou **Baixar problemas**): o diálogo **Ligar Lichess?** abre.
+  2. Leia **O que será enviado** e **Para onde vai**; abra também o cartão do Lichess na Central (Detalhes).
+- **Esperado:** uma frase para cada uso: Explorador, avaliação em cache, finais, consulta de Partidas e IDs FIDE públicos, download de problemas e Partidas online (com a Conexão autorizada); nenhuma sigla técnica (sem "HTTP", "etapa" ou nome de endpoint). O mesmo texto vale no cartão da Central.
+- **Evidência:** teste `every_ready_network_service_has_a_consent_line` em [`connections/model.rs`](../../crates/chess-studio/src/connections/model.rs); [capturas](../evidencias/acabamento-etapa-5/README.md).
+### CX-HOM-49. Engine remota: escolher, aviso e consentimento
 
 - **Passos:**
   1. Com o Chess-API.com **desligado** na Central, abra o Painel **Análise** e abra a lista **Engine**.
@@ -569,7 +605,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Com o serviço real:** no monitor de rede, nada vai ao `chess-api.com` antes do **Ligar**.
 - **Evidência:** [`remote_engine.rs`](../../crates/chess-studio/src/remote_engine.rs), [`remote_engine_tests.rs`](../../crates/chess-studio/src/remote_engine_tests.rs).
 
-### CX-HOM-44. Engine remota: análise, limite e Provedor desligado
+### CX-HOM-50. Engine remota: análise, limite e Provedor desligado
 
 - **Passos:**
   1. Com a Engine remota escolhida, ligue a análise na Posição inicial e depois navegue rápido pelos Lances de uma Partida.
@@ -580,7 +616,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Com o serviço real:** o Lance devolvido é sempre legal na Posição (o app recusa e não mostra o ilegal).
 - **Evidência:** [`remote_engine_tests.rs`](../../crates/chess-studio/src/remote_engine_tests.rs).
 
-### CX-HOM-45. Engine remota sob a Trava de fair play
+### CX-HOM-51. Engine remota sob a Trava de fair play
 
 - **Passos:**
   1. Com a Engine remota escolhida e a análise ligada, comece uma Partida online contra pessoa (tempo real).
@@ -590,18 +626,18 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Com o serviço real:** no monitor de rede, nenhum pedido ao `chess-api.com` durante a Partida.
 - **Evidência:** [`fair_play.rs`](../../crates/chess-studio/src/fair_play.rs), [`remote_engine_tests.rs`](../../crates/chess-studio/src/remote_engine_tests.rs).
 
-### CX-HOM-46. Engine online: ligar, esperar, jogar e parar
+### CX-HOM-52. Engine online: ligar, esperar, jogar e parar
 
 - **Passos:**
-  1. Em **Conexões** > Lichess > **Engine online**, autorize a Conexão de Engine com um usuário BOT de teste (ver CX-HOM-47) e clique em **Abrir a tela da Engine online**.
+  1. Em **Conexões** > Lichess > **Engine online**, autorize a Conexão de Engine com um usuário BOT de teste (ver CX-HOM-53) e clique em **Abrir a tela da Engine online**.
   2. Com uma Engine instalada, escolha-a e não clique em Ligar; feche e reabra o app.
   3. Clique em **Ligar a Engine online**; do site, com outro usuário, desafie o BOT em blitz, sem rating.
   4. Durante a Partida, clique em **Parar**; depois ligue de novo e clique em **Parar já…**.
 - **Esperado:** a tela abre parada e nada sai para o Lichess até **Ligar** (reabrir o app volta a **Parada**). Ligada, mostra **Esperando desafios**; o desafio aceito vira **Jogando 1** com a Partida na lista (adversário, cor, Lances, quem pensa). **Parar** muda para **Parando** e a Engine fecha sozinha quando a Partida termina; desafios novos nesse meio-tempo são recusados. **Parar já…** pede confirmação e abandona a Partida em andamento. A Partida terminada fica na Biblioteca como Partida da Engine, e a Trava de fair play nunca liga.
-- **Com o serviço real:** a Partida joga Lances legais a cada vez (ver CX-HOM-47 para a falha da Engine).
+- **Com o serviço real:** a Partida joga Lances legais a cada vez (ver CX-HOM-53 para a falha da Engine).
 - **Evidência:** [`engine_online/tests.rs`](../../crates/chess-studio/src/engine_online/tests.rs), [`docs/evidencias/engine-remota-online`](../evidencias/engine-remota-online).
 
-### CX-HOM-47. Engine online: limites, conta BOT e falha da Engine
+### CX-HOM-53. Engine online: limites, conta BOT e falha da Engine
 
 - **Passos:**
   1. Ligue com só **Blitz**, **Só sem rating**, **Só pessoas**, **1** Partida ao mesmo tempo e máximo **1**; desafie com bullet, depois com rating, depois de outro BOT, depois em Chess960, e por fim com blitz sem rating.

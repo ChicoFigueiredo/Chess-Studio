@@ -235,6 +235,7 @@ training-download-error-paused = O Lichess pediu uma pausa. Tente de novo em alg
 training-download-error-offline = Não foi possível falar com o Lichess. Confira a internet e tente de novo; nada foi instalado.
 training-download-error-http = O Lichess respondeu com o erro { $status }. Tente de novo mais tarde; nada foi instalado.
 training-download-error-format = O arquivo que chegou não é uma lista de problemas válida. Tente de novo mais tarde; nada foi instalado.
+training-download-error-redirect = O Lichess mandou o arquivo para um endereço que o Chess Studio não aceita, por segurança. Tente de novo mais tarde; nada foi instalado.
 training-download-error-other = Não foi possível baixar os problemas: { $reason } Nada foi instalado.
 training-download-pack-name = Lichess: { $themes }
 training-download-pack-name-level = Lichess: { $themes } ({ $level })

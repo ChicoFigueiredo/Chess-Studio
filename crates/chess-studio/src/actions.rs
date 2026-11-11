@@ -174,6 +174,7 @@ pub struct ActionEnv<'w> {
     scoresheet: Option<Res<'w, crate::scoresheet::ScoresheetUi>>,
     notes: Option<Res<'w, crate::study::StudyNotes>>,
     file_tools: Option<ResMut<'w, crate::fen_pgn::FileTools>>,
+    i18n_res: Option<Res<'w, crate::i18n::I18n>>,
     controls_ui: ResMut<'w, ControlsUi>,
     options_ui: ResMut<'w, crate::options::OptionsUi>,
     training: Res<'w, crate::training_ui::TrainingUi>,
@@ -481,8 +482,9 @@ impl ActionEnv<'_> {
         }
     }
 
-    /// "Exportar PGN": grava na pasta Documentos; o resultado aparece no Painel Revisão
-    /// (que a Ação mostra), onde a exportação já vivia.
+    /// "Exportar PGN": abre o "Salvar como…" do sistema (#255); sem diálogo no sistema, grava
+    /// na pasta Documentos. O resultado aparece no Painel Revisão (que a Ação mostra), onde a
+    /// exportação já vivia, com o "Exportar para Documentos".
     fn export_pgn(&mut self) {
         let Some(tools) = self.file_tools.as_mut() else {
             return;
@@ -493,11 +495,17 @@ impl ActionEnv<'_> {
             .as_ref()
             .map(|n| n.export(epoch))
             .unwrap_or_default();
-        let dir = crate::paths::documents_dir(
-            crate::paths::Platform::current(),
-            &crate::paths::process_env,
-        );
-        tools.export(&self.session, &notes, &dir);
+        let asked = self
+            .i18n_res
+            .as_deref()
+            .is_some_and(|i18n| tools.start_save_as(i18n));
+        if !asked {
+            let dir = crate::paths::documents_dir(
+                crate::paths::Platform::current(),
+                &crate::paths::process_env,
+            );
+            tools.export(&self.session, &notes, &dir);
+        }
         self.show_panel(crate::dock::ids::REVIEW);
     }
 
