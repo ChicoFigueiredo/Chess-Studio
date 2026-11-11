@@ -332,7 +332,9 @@ impl Auth {
 /// O abridor de páginas do navegador: o de verdade em produção; os testes põem um gravador
 /// (nenhum teste abre navegador).
 #[derive(Clone)]
-pub(crate) struct Opener(Arc<dyn Fn(&str, bool) -> bool + Send + Sync>);
+pub(crate) struct Opener(Arc<OpenFn>);
+
+type OpenFn = dyn Fn(&str, bool) -> bool + Send + Sync;
 
 impl Opener {
     pub fn new(open: impl Fn(&str, bool) -> bool + Send + Sync + 'static) -> Self {

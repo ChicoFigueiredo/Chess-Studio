@@ -3,7 +3,7 @@
 //! nenhum pedido sai e os nomes de jogadores são fictícios.
 //!
 //! Cenas: `library`, `masters` (como ficará com a Conexão autorizada), `signin`, `off`,
-//! `limited`, `stale`, `nodata`, `locked`, `endgame`, `endgame-off`, `toomany` e `cloud`.
+//! `limited`, `stale`, `nodata`, `locked`, `lichess-filters`, `endgame`, `endgame-off`, `toomany` e `cloud`.
 
 use super::ExplorerUi;
 use super::driver::{CloudRow, EndgamesView, OpeningsView};
@@ -165,7 +165,7 @@ fn scene(name: &str) -> Option<Scene> {
     let table = |t: OpeningsTable| OpeningsView::Table(t);
     let notice = |n: Notice| OpeningsView::Notice(n);
     Some(match name {
-        "masters" => Scene {
+        "masters" | "lichess-filters" => Scene {
             openings: Some(table(masters_table(How::Queried(Age::Minutes(3))))),
             ..Scene::default()
         },
@@ -297,6 +297,12 @@ pub fn apply_demo(
         "masters" | "stale" | "limited" | "nodata" | "signin" | "off" => {
             state.explorer.source = Source::Masters;
         }
+        // A fonte Lichess com ritmos e faixas de rating marcados (os filtros do Painel).
+        "lichess-filters" => {
+            state.explorer.source = Source::Lichess;
+            state.explorer.paces = vec![chess_store::Pace::Blitz, chess_store::Pace::Rapid];
+            state.explorer.ratings = vec![1800, 2000, 2200];
+        }
         "endgame" | "endgame-off" | "toomany" => {
             state.explorer.tab = Tab::Endgames;
             if name != "toomany" {
@@ -307,7 +313,15 @@ pub fn apply_demo(
     }
     if matches!(
         name.as_str(),
-        "endgame" | "cloud" | "masters" | "stale" | "signin" | "toomany" | "nodata" | "limited"
+        "endgame"
+            | "cloud"
+            | "masters"
+            | "lichess-filters"
+            | "stale"
+            | "signin"
+            | "toomany"
+            | "nodata"
+            | "limited"
     ) {
         // A cena usa dados prontos; o Provedor aparece ligado como na Central.
         if let Some(net) = net {

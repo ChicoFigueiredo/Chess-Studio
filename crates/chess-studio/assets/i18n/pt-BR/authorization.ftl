@@ -38,6 +38,7 @@ vault-field-password = Senha-mestra
 vault-field-new = Nova senha-mestra
 vault-field-confirm = Repita a senha-mestra
 vault-hint-password = Pelo menos 8 caracteres
+vault-hint-unlock = Digite a senha-mestra
 vault-hint-confirm = Digite a mesma senha de novo
 vault-understood = Entendi que não há como recuperar a senha
 vault-submit-create = Criar cofre

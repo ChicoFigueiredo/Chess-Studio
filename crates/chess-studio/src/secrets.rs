@@ -85,6 +85,7 @@ impl VolatileKeyring {
     }
 
     /// Contas com segredo, em ordem (os testes conferem que nada sobrou).
+    #[cfg(test)]
     pub fn accounts(&self) -> Vec<String> {
         let mut out: Vec<String> = self
             .entries

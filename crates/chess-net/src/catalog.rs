@@ -511,7 +511,7 @@ static CATALOG: [Provider; 19] = [
                 &[A::OAuth2Pkce, A::PersonalToken],
                 K::FreeWithSignup,
                 S::Ready,
-                "Gratuito com cadastro: requer Conexão autorizada do Lichess; sem token o serviço responde 401 (medido em 2026-11-11). Mestres, Lichess e jogador",
+                "Gratuito com cadastro: requer Conexão autorizada do Lichess (etapa 3); sem token o serviço responde 401 (medido em 2026-11-11). Mestres, Lichess e jogador",
             ),
             svc(
                 C::CachedEval,

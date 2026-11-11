@@ -931,6 +931,7 @@ fn vault_dialog_body(
             });
     }
     let busy = dialog.is_busy();
+    let unlocking = dialog.mode == VaultMode::Unlock;
     let error = dialog.error.map(|key| i18n.t(key));
     let mut enter = false;
     ui.add_enabled_ui(!busy, |ui| {
@@ -942,7 +943,13 @@ fn vault_dialog_body(
                 ui,
                 egui::Id::new(("vault-field", id)),
                 text,
-                &i18n.t("vault-hint-password"),
+                &i18n.t(if id == "confirm" {
+                    "vault-hint-confirm"
+                } else if unlocking || id == "current" {
+                    "vault-hint-unlock"
+                } else {
+                    "vault-hint-password"
+                }),
                 err,
             );
             response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))

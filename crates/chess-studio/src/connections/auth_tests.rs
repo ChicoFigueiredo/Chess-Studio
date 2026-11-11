@@ -69,8 +69,10 @@ fn env_with(keyring: VolatileKeyring, lichess_on: bool) -> Env {
         service.set_enabled(LICHESS, true).unwrap();
     }
     let opened = Arc::new(Mutex::new(Vec::new()));
-    let mut ui = ConnectionsUi::default();
-    ui.opener = Opener::recording(opened.clone(), true);
+    let ui = ConnectionsUi {
+        opener: Opener::recording(opened.clone(), true),
+        ..ConnectionsUi::default()
+    };
     Env {
         clock,
         server,
@@ -1082,7 +1084,7 @@ fn the_online_explorer_asks_only_with_an_authorized_connection_and_then_with_its
     let mut explorer = Explorer::default();
     explorer.source = Source::Masters;
     let start = Instant::now();
-    let mut drive = |env: &mut Env, explorer: &mut Explorer, from_ms: u64, frames: u64| {
+    let drive = |env: &mut Env, explorer: &mut Explorer, from_ms: u64, frames: u64| {
         for i in 0..frames {
             env.frame();
             let input = Input {

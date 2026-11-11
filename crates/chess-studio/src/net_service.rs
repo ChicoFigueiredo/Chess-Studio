@@ -180,6 +180,7 @@ impl NetService {
 
     /// Serviço sobre uma rede já aberta (testes com servidor falso e relógio falso). O Cofre é
     /// falso e novo; para escolher o Cofre, use [`NetService::with_vault`].
+    #[cfg(test)]
     pub fn from_net(net: Net, clock: Arc<dyn Clock>, persistent: bool) -> Self {
         let opened = secrets::volatile_vault(secrets::VolatileKeyring::new(), "cofre-falso");
         Self::with_vault(net, clock, persistent, opened)
