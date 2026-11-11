@@ -8,10 +8,12 @@ Revisão defensiva, feita em 11/11/2026 sobre o `main` em `c723e7f`, do que o V4
 |---|---|---|
 | Alta | 0 | — |
 | Média | 3 (SEC-01 a SEC-03) | corrigidos neste PR, cada um com teste que falhava antes |
-| Baixa | 5 (SEC-04 a SEC-08) | issues [#278](https://github.com/ChicoFigueiredo/Chess-Studio/issues/278) a [#282](https://github.com/ChicoFigueiredo/Chess-Studio/issues/282), com `ready-for-agent` |
+| Baixa | 6 (SEC-04 a SEC-09) | issues [#278](https://github.com/ChicoFigueiredo/Chess-Studio/issues/278) a [#282](https://github.com/ChicoFigueiredo/Chess-Studio/issues/282) e [#285](https://github.com/ChicoFigueiredo/Chess-Studio/issues/285), com `ready-for-agent` |
 | Informativa | 8 (INF-01 a INF-08) | registradas aqui; nenhuma ação pedida |
 
 Nenhum caminho leva o token a outro host ou Provedor, a disco fora do Cofre, a erro, a captura ou a PGN exportado; nada vindo de um Provedor vira comando de Engine, comando ICS fora do formato ou caminho de arquivo. Os três achados médios são um vazamento do token no log mais detalhado (só com `RUST_LOG=trace`) e duas formas de um servidor hostil esgotar a memória (bomba de descompressão nos problemas, despejo de linhas no FICS).
+
+Fora da contagem: as brechas da Trava de fair play achadas pela [auditoria do V4](../integracoes/auditoria-v4.md) (Engine adversária local, busca por Posição na Biblioteca e Engine online sem consultar a Trava) já estão na [#261](https://github.com/ChicoFigueiredo/Chess-Studio/issues/261). São regra de produto que o próprio usuário contornaria, não entrada de um atacante, e não se repetem aqui.
 
 ## Método
 
@@ -19,7 +21,7 @@ Para cada área, primeiro a leitura do código (não dos relatórios), depois a 
 
 Severidade:
 
-- **Alta:** segredo exposto a terceiros, execução de código, token para outro host, autorização ou Trava de fair play contornadas.
+- **Alta:** segredo exposto a terceiros, execução de código, token para outro host, autorização contornada.
 - **Média:** segredo exposto em configuração realista fora do padrão; um servidor (ou alguém no caminho de um canal sem cifra) derruba, congela ou esgota a memória do app no build distribuído.
 - **Baixa:** negação de serviço que exige processo local; pânico só no perfil de desenvolvimento; defesa em profundidade; custo de CPU sem teto que só um Provedor autenticado por TLS pode explorar.
 - **Informativa:** risco aceito, já registrado no modelo de ameaça, ou observação sem ação.
@@ -56,6 +58,7 @@ Severidade:
 | SEC-06 | O `game_id` do Provedor entra no caminho da URL sem `is_id` (os ids de desafio passam); e `parse_https` aceita `..` e `%2e`, então o catálogo classifica pelo prefixo um caminho que o servidor normaliza para outro. O host não muda e quem forja é o próprio Provedor. | [#280](https://github.com/ChicoFigueiredo/Chess-Studio/issues/280) |
 | SEC-07 | Custo sem teto de entradas hostis: `ClockReported` e vaivém de proposta de empate sem Lance (no FICS, quem está no caminho enche o banco da Partida), fluxos NDJSON com fila sem teto e `Link::poll` que drena tudo na interface, deduplicação quadrática do Explorador, Engine remota que valida a linha inteira antes de cortar, busca do rastreador do FICS, lista de meses do Chess.com sem teto. | [#281](https://github.com/ChicoFigueiredo/Chess-Studio/issues/281) |
 | SEC-08 | Higiene na interface: Esc no diálogo da senha-mestra e troca de Perfil não esquecem o estado do `egui` dos campos de segredo; token colado no campo de nome público fica em claro; erro de importação mostra texto cru do `serde_json`; nomes e textos do Provedor sem filtro de caracteres de formatação (bidi). | [#282](https://github.com/ChicoFigueiredo/Chess-Studio/issues/282) |
+| SEC-09 | `cargo deny check advisories` falha: `zvariant`, `zbus_names` e `zvariant_derive` (pilha do cofre do sistema no Linux, `keyring` → `zbus` 5) estão sem manutenção (RUSTSEC-2026-0370 a 0372; foram incorporados ao `zbus` 6, sem versão segura ainda). Não são vulnerabilidades; `cargo deny check licenses` passa. | [#285](https://github.com/ChicoFigueiredo/Chess-Studio/issues/285) |
 
 ## Informativos
 
