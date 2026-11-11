@@ -2132,6 +2132,7 @@ dependencies = [
  "chess-game",
  "chess-net",
  "chess-store",
+ "chess-uci",
  "chess-vault",
  "getrandom 0.4.3",
  "serde",

@@ -45,7 +45,7 @@ pub use event::{
 };
 pub use game::Game;
 pub use online::{
-    Desync, OnlineGame, OnlinePlayer, OnlineSetupError, OnlineView, Opponent, ProviderClock,
+    Desync, ENGINE_GAME_SUFFIX, OnlineGame, OnlinePlayer, OnlineSetupError, OnlineView, Opponent, ProviderClock,
     ProviderEnd, ProviderSnapshot, SentMove, Variant,
 };
 pub use outcome::{EndReason, GameResult, Outcome};

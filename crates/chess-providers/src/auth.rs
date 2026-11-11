@@ -18,11 +18,12 @@
 //! (form-urlencoded, sem `client_secret`), `GET /api/account` responde os escopos do token no
 //! cabeçalho `X-OAuth-Scopes`, revogação em `DELETE /api/token` com o token como `Bearer`.
 
+use crate::family::ProviderProfile;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chess_net::{
     CallbackError, CallbackParams, Clock, ConnectionId, Fetched, LocalProfileId, LoopbackCallback,
-    Net, NetError, ProviderId, Request, Secret, Timestamp,
+    Net, NetError, Request, Secret, Timestamp,
 };
 use chess_vault::{SecretVault, VaultError, VaultStatus};
 use serde::Deserialize;
@@ -35,12 +36,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 use zeroize::{Zeroize, Zeroizing};
 
-const PROVIDER: ProviderId = ProviderId::Lichess;
 /// Identificador do app no Lichess (cliente público: qualquer texto que identifique o app).
 pub const CLIENT_ID: &str = "chess-studio";
-const AUTHORIZE_URL: &str = "https://lichess.org/oauth";
-const TOKEN_URL: &str = "https://lichess.org/api/token";
-const ACCOUNT_URL: &str = "https://lichess.org/api/account";
 /// Caminho do retorno no servidor de loopback.
 const CALLBACK_PATH: &str = "/chess-studio/retorno";
 /// Prazo padrão para concluir a autorização no navegador.
@@ -64,6 +61,14 @@ impl ConnectionRole {
         match self {
             Self::Player => "board:play",
             Self::Engine => "bot:play",
+        }
+    }
+
+    /// O escopo do papel no Provedor do perfil.
+    pub fn scope_in(self, profile: &ProviderProfile) -> &'static str {
+        match self {
+            Self::Player => profile.player_scope,
+            Self::Engine => profile.engine_scope,
         }
     }
 
@@ -179,6 +184,15 @@ impl fmt::Display for AuthError {
             Self::Net(e) => e.fmt(f),
             Self::Cancelled => f.write_str("Autorização cancelada."),
         }
+    }
+}
+
+impl AuthError {
+    /// A mensagem com o nome do Provedor do perfil no lugar de «Lichess» (a [`fmt::Display`]
+    /// fala do Lichess, o padrão). Para a interface mostrar o erro de outro Provedor da
+    /// família, o PlayStrategy.
+    pub fn describe(&self, profile: &ProviderProfile) -> String {
+        self.to_string().replace("Lichess", profile.name)
     }
 }
 
@@ -321,6 +335,7 @@ pub struct Revocation {
 /// conferir e revogar. Barato de clonar.
 #[derive(Clone)]
 pub struct LichessAuth {
+    profile: ProviderProfile,
     net: Net,
     vault: SecretVault,
     clock: Arc<dyn Clock>,
@@ -443,12 +458,29 @@ struct Pending {
 impl LichessAuth {
     /// `clock` é o relógio injetado (o mesmo da `Net`): nele corre o prazo do navegador.
     pub fn new(net: Net, vault: SecretVault, clock: Arc<dyn Clock>) -> Self {
+        Self::with_profile(ProviderProfile::LICHESS, net, vault, clock)
+    }
+
+    /// A mesma autorização para outro Provedor da família (o PlayStrategy): endereços,
+    /// escopos e Provedor vêm do perfil; o fluxo é o mesmo (OAuth2 PKCE S256).
+    pub fn with_profile(
+        profile: ProviderProfile,
+        net: Net,
+        vault: SecretVault,
+        clock: Arc<dyn Clock>,
+    ) -> Self {
         Self {
+            profile,
             net,
             vault,
             clock,
             deadline: DEFAULT_DEADLINE,
         }
+    }
+
+    /// O perfil do Provedor desta autorização.
+    pub fn provider_profile(&self) -> &ProviderProfile {
+        &self.profile
     }
 
     /// Prazo para o usuário concluir no navegador (padrão: [`DEFAULT_DEADLINE`]).
@@ -465,7 +497,7 @@ impl LichessAuth {
         connection: ConnectionId,
         role: ConnectionRole,
     ) -> Result<AuthFlow, AuthError> {
-        if !self.net.is_enabled(PROVIDER) {
+        if !self.net.is_enabled(self.profile.id) {
             return Err(AuthError::Disabled);
         }
         vault_ready(&self.vault)?;
@@ -477,14 +509,15 @@ impl LichessAuth {
         let verifier = random_text::<32>()?;
         let expected_state = random_text::<32>()?;
         let url = format!(
-            "{AUTHORIZE_URL}?{}",
+            "{}?{}",
+            self.profile.url(self.profile.authorize_path),
             form(&[
                 ("response_type", "code"),
                 ("client_id", CLIENT_ID),
                 ("redirect_uri", &redirect_uri),
                 ("code_challenge_method", "S256"),
                 ("code_challenge", &pkce_challenge(&verifier)),
-                ("scope", role.scope()),
+                ("scope", role.scope_in(&self.profile)),
                 ("state", &expected_state),
             ])
         );
@@ -586,7 +619,7 @@ impl LichessAuth {
             ("redirect_uri", &pending.redirect_uri),
             ("client_id", CLIENT_ID),
         ]));
-        let request = Request::post(PROVIDER, TOKEN_URL)
+        let request = Request::post(self.profile.id, self.profile.url(self.profile.token_path))
             .accept("application/json")
             .timeout(REQUEST_TIMEOUT)
             .body(
@@ -613,10 +646,16 @@ impl LichessAuth {
         token: Secret,
         cancel: &AtomicBool,
     ) -> Result<LichessAccount, AuthError> {
-        let staged = self.vault.stage(profile, PROVIDER, connection, token);
+        let staged = self.vault.stage(profile, self.profile.id, connection, token);
         let account = self.account(connection)?;
-        let wrong = !account.scopes.iter().any(|s| s == role.scope())
-            || account.scopes.iter().any(|s| s == role.other().scope());
+        let wrong = !account
+            .scopes
+            .iter()
+            .any(|s| s == role.scope_in(&self.profile))
+            || account
+                .scopes
+                .iter()
+                .any(|s| s == role.other().scope_in(&self.profile));
         if wrong {
             return Err(AuthError::WrongScopes {
                 role,
@@ -635,7 +674,7 @@ impl LichessAuth {
         let fetched = self
             .net
             .fetch(
-                Request::get(PROVIDER, ACCOUNT_URL)
+                Request::get(self.profile.id, self.profile.url(self.profile.account_path))
                     .accept("application/json")
                     .timeout(REQUEST_TIMEOUT)
                     .connection(connection),
@@ -672,7 +711,7 @@ impl LichessAuth {
         role: ConnectionRole,
         token: Secret,
     ) -> AuthTask<Result<LichessAccount, AuthError>> {
-        if !self.net.is_enabled(PROVIDER) {
+        if !self.net.is_enabled(self.profile.id) {
             return AuthTask::ready(Err(AuthError::Disabled));
         }
         if let Err(e) = vault_ready(&self.vault) {
@@ -704,7 +743,7 @@ impl LichessAuth {
             let remote = auth
                 .net
                 .fetch(
-                    Request::delete(PROVIDER, TOKEN_URL)
+                    Request::delete(auth.profile.id, auth.profile.url(auth.profile.token_path))
                         .timeout(REQUEST_TIMEOUT)
                         .connection(connection),
                 )

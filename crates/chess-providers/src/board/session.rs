@@ -14,6 +14,7 @@
 //! - Contra pessoa, a sessão segura a Trava de fair play da camada de rede do começo até o
 //!   Provedor confirmar o fim. Descartar a sessão solta a trava dela.
 
+use super::engine::{EngineSide, Step};
 use super::json::{self, Ending, GameFull, OpponentGoneJson, StateJson};
 use super::link::{self, Link, LinkItem, LinkStatus};
 use super::{BoardError, GameInfo, LichessBoard};
@@ -42,7 +43,7 @@ pub enum BoardAction {
 }
 
 impl BoardAction {
-    fn path(self, game: &str) -> String {
+    fn path(self, api: &str, game: &str) -> String {
         let tail = match self {
             Self::Resign => "resign",
             Self::Abort => "abort",
@@ -51,7 +52,7 @@ impl BoardAction {
             Self::ClaimVictory => "claim-victory",
             Self::DeclineTakeback => "takeback/no",
         };
-        format!("/api/board/game/{game}/{tail}")
+        format!("/api/{api}/game/{game}/{tail}")
     }
 }
 
@@ -97,6 +98,12 @@ pub enum SessionNotice {
     Closed(BoardError),
     /// O controlador recusou o retrato por outro motivo (não deveria acontecer).
     Rejected(Rejection),
+    /// Partida da Engine online: a Engine propôs um Lance ilegal; o núcleo de regras o
+    /// recusou e **nada foi enviado**.
+    EngineMoveRejected { uci: String },
+    /// Partida da Engine online: a Engine falhou (processo morreu, não achou Lance ou propôs
+    /// Lances ilegais em sequência). Com a política padrão a sessão abandona a Partida.
+    EngineFailed { detail: String },
 }
 
 /// Resultado de uma consulta da sessão.
@@ -116,6 +123,9 @@ pub struct OnlineGameSession {
     game_id: String,
     local_color: Color,
     expects_human: bool,
+    /// `board` (pessoa) ou `bot` (Engine online): o prefixo dos caminhos da Partida.
+    api: &'static str,
+    engine: Option<EngineSide>,
     game: Option<Game>,
     link: Link,
     /// Instante (mono) e relógio no começo desta sessão: o tempo do domínio continua o do log.
@@ -155,14 +165,23 @@ fn refused(error: &NetError) -> bool {
 }
 
 impl OnlineGameSession {
-    fn new(board: LichessBoard, game_id: String, local_color: Color, expects_human: bool) -> Self {
-        let link = board.link(board.get(&format!("/api/board/game/stream/{game_id}")));
+    fn new(
+        board: LichessBoard,
+        game_id: String,
+        local_color: Color,
+        expects_human: bool,
+        engine: Option<EngineSide>,
+    ) -> Self {
+        let api = if engine.is_some() { "bot" } else { "board" };
+        let link = board.link(board.get(&format!("/api/{api}/game/stream/{game_id}")));
         let opened_at = board.clock.now();
         let mut session = Self {
             board,
             game_id,
             local_color,
             expects_human,
+            api,
+            engine,
             game: None,
             link,
             base_mono: 0,
@@ -186,22 +205,32 @@ impl OnlineGameSession {
             info.game_id.clone(),
             info.color,
             info.opponent.ai_level.is_none(),
+            None,
         )
     }
 
+    pub(crate) fn open_engine(board: LichessBoard, info: &GameInfo, engine: EngineSide) -> Self {
+        Self::new(board, info.game_id.clone(), info.color, false, Some(engine))
+    }
+
     pub(crate) fn resume(board: LichessBoard, game: Game) -> Result<Self, BoardError> {
+        Self::resume_with(board, game, None)
+    }
+
+    pub(crate) fn resume_with(
+        board: LichessBoard,
+        game: Game,
+        engine: Option<EngineSide>,
+    ) -> Result<Self, BoardError> {
+        let key = board.profile.game_key(engine.is_some());
         let info = game
             .setup()
             .online_game()
-            .filter(|o| o.provider == json::PROVIDER_KEY)
+            .filter(|o| o.provider == key)
             .cloned()
             .ok_or(BoardError::WrongGame)?;
-        let mut session = Self::new(
-            board,
-            info.remote_id,
-            info.local_color,
-            info.opponent == Opponent::Human,
-        );
+        let human = info.opponent == Opponent::Human && engine.is_none();
+        let mut session = Self::new(board, info.remote_id, info.local_color, human, engine);
         session.base_mono = game.events().last().map_or(0, |e| e.at.mono_ms);
         session.game = Some(game);
         session.sync_hold();
@@ -265,13 +294,17 @@ impl OnlineGameSession {
             self.hold = None;
         } else if self.hold.is_none() {
             self.hold = Some(self.board.net.fair_play_guard().hold(format!(
-                "Partida online contra pessoa no Lichess ({})",
+                "Partida online contra pessoa no {} ({})",
+                self.board.profile.name,
                 self.game_id
             )));
         }
     }
 
     fn close(&mut self, error: BoardError, out: &mut SessionPoll) {
+        if let Some(engine) = &mut self.engine {
+            engine.stop();
+        }
         self.link.close();
         self.closed = true;
         out.notices.push(SessionNotice::Closed(error));
@@ -301,8 +334,69 @@ impl OnlineGameSession {
         }
         self.poll_sends(&mut out);
         self.poll_requests(&mut out);
+        self.drive_engine(&mut out);
         self.sync_hold();
         out
+    }
+
+    /// Partida da Engine online: a Engine local propõe, o núcleo de regras valida e o Lance
+    /// sai uma vez.
+    fn drive_engine(&mut self, out: &mut SessionPoll) {
+        if self.closed || self.engine.is_none() {
+            return;
+        }
+        let Some(game) = self.game.as_ref() else {
+            return;
+        };
+        let at = self.at();
+        let idle = self.sends.is_empty() && self.unconfirmed.is_none();
+        let local = self.local_color;
+        let steps = match self.engine.as_mut() {
+            Some(engine) => engine.step(game, local, at, idle),
+            None => return,
+        };
+        for step in steps {
+            match step {
+                Step::Play(mv) => {
+                    if let Err(error) = self.submit(mv) {
+                        out.notices.push(SessionNotice::EngineFailed {
+                            detail: error.to_string(),
+                        });
+                    }
+                }
+                Step::Rejected { uci } => out.notices.push(SessionNotice::EngineMoveRejected { uci }),
+                Step::Failed { detail } => {
+                    let resign = self
+                        .engine
+                        .as_ref()
+                        .is_some_and(|e| e.policy().resign_if_engine_fails);
+                    out.notices.push(SessionNotice::EngineFailed { detail });
+                    if resign && !self.over() {
+                        self.send_request(BoardAction::Resign);
+                    }
+                }
+                Step::AnswerDraw { accept } => self.send_request(if accept {
+                    BoardAction::AcceptDraw
+                } else {
+                    BoardAction::DeclineDraw
+                }),
+            }
+        }
+    }
+
+    /// Esta é uma Partida da Engine online (Bot API): nunca conta como Partida de pessoa.
+    pub fn is_engine_game(&self) -> bool {
+        self.engine.is_some()
+    }
+
+    /// A Engine está pensando num Lance.
+    pub fn engine_thinking(&self) -> bool {
+        self.engine.as_ref().is_some_and(EngineSide::thinking)
+    }
+
+    /// A Engine falhou nesta Partida (ver [`SessionNotice::EngineFailed`]).
+    pub fn engine_failed(&self) -> bool {
+        self.engine.as_ref().is_some_and(EngineSide::has_failed)
     }
 
     fn retry(&mut self, not_before: Option<Timestamp>, out: &mut SessionPoll) {
@@ -350,7 +444,12 @@ impl OnlineGameSession {
             return self.close(BoardError::WrongGame, out);
         }
         if self.game.is_none() {
-            match json::setup(full, self.local_color) {
+            match json::setup(
+                &self.board.profile,
+                self.engine.is_some(),
+                full,
+                self.local_color,
+            ) {
                 Ok(setup) => {
                     self.game = Some(Game::new(setup));
                     self.base_mono = 0;
@@ -363,7 +462,7 @@ impl OnlineGameSession {
                 Err(e) => {
                     return self.close(
                         BoardError::Provider(ProviderError::malformed(
-                            crate::lichess::PROVIDER,
+                            self.board.profile.id,
                             e.to_string(),
                         )),
                         out,
@@ -465,7 +564,7 @@ impl OnlineGameSession {
         let pending = self
             .board
             .net
-            .fetch(self.board.post(&action.path(&self.game_id), None));
+            .fetch(self.board.post(&action.path(self.api, &self.game_id), None));
         self.requests.push((action, pending));
     }
 
@@ -532,6 +631,16 @@ impl OnlineGameSession {
     /// O jogador soltou a peça: intenção enviada, validada pelo núcleo de regras e enviada
     /// ao Lichess **uma vez**. Só vira Lance quando o Provedor confirma.
     pub fn play(&mut self, mv: Move) -> Result<(), BoardError> {
+        if self.engine.is_some() {
+            return Err(BoardError::NotAllowed(
+                "numa Partida da Engine online quem joga é a Engine",
+            ));
+        }
+        self.submit(mv)
+    }
+
+    /// Intenção enviada + o único `POST` do Lance (de pessoa ou da Engine).
+    fn submit(&mut self, mv: Move) -> Result<(), BoardError> {
         if self.closed {
             return Err(BoardError::NotAllowed("a sessão parou"));
         }
@@ -540,7 +649,7 @@ impl OnlineGameSession {
             .as_mut()
             .ok_or(BoardError::NotAllowed("a Partida ainda não começou"))?;
         game.send_move(mv).map_err(BoardError::Rejected)?;
-        let path = format!("/api/board/game/{}/move/{mv}", self.game_id);
+        let path = format!("/api/{}/game/{}/move/{mv}", self.api, self.game_id);
         let pending = self.board.net.fetch(self.board.post(&path, None));
         self.sends.push((mv, pending));
         Ok(())
@@ -592,6 +701,11 @@ impl OnlineGameSession {
 
     /// Reclama a vitória por abandono do adversário, só depois do prazo do Lichess.
     pub fn claim_victory(&mut self) -> Result<(), BoardError> {
+        if self.engine.is_some() {
+            return Err(BoardError::NotAllowed(
+                "a Engine online não reclama vitória por abandono",
+            ));
+        }
         let allowed = self
             .opponent_gone
             .and_then(|g| g.claim_from)

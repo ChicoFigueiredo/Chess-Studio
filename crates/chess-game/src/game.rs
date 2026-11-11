@@ -244,7 +244,7 @@ impl Game {
     pub fn online_human_in_progress(&self) -> bool {
         self.setup
             .online_game()
-            .is_some_and(|o| o.opponent == Opponent::Human)
+            .is_some_and(|o| o.opponent == Opponent::Human && !o.is_engine_game())
             && !self.state.is_over()
     }
 }

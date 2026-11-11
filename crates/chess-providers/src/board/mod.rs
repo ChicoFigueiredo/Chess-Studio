@@ -35,18 +35,21 @@
 //! # }
 //! ```
 
+mod engine;
 mod json;
 mod link;
 mod session;
 
+pub use engine::{DrawResponse, EnginePolicy, MoveEngine};
 pub use link::{Backoff, LinkStatus};
+pub(crate) use engine::EngineSide;
 pub use session::{BoardAction, Gap, OnlineGameSession, OpponentGone, SessionNotice, SessionPoll};
 
 use crate::ProviderError;
 use crate::answer::{self, Query};
 use crate::auth::{ConnectionRole, form};
 use crate::error::Missing;
-use crate::lichess::{API_HOST, PROVIDER};
+use crate::family::ProviderProfile;
 use chess_core::Color;
 use chess_net::{Clock, ConnectionId, Net, Request, Stream, StreamEvent, Timestamp};
 use link::{Jitter, Link, LinkItem};
@@ -63,6 +66,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 pub enum BoardError {
     /// A Conexão é de Engine (`bot:play`): ela nunca joga como pessoa.
     EngineConnection,
+    /// A Conexão é de jogador (`board:play`): ela nunca joga como Engine online.
+    PlayerConnection,
     /// Só xadrez padrão: a Partida não foi criada.
     UnsupportedVariant(String),
     /// A Board API só busca adversário em ritmo rápido (rapid) ou mais lento; blitz e mais
@@ -86,6 +91,10 @@ impl fmt::Display for BoardError {
             Self::EngineConnection => f.write_str(
                 "Esta é uma Conexão de Engine: ela não joga como pessoa. Use a Conexão do jogador.",
             ),
+            Self::PlayerConnection => f.write_str(
+                "Esta é a Conexão do jogador: ela não joga como Engine. Use a Conexão de Engine \
+                 (conta BOT).",
+            ),
             Self::UnsupportedVariant(v) => write!(
                 f,
                 "A variante «{v}» não é aceita: o app só joga xadrez padrão. Nada foi criado."
@@ -100,6 +109,14 @@ impl fmt::Display for BoardError {
             Self::Rejected(r) => r.fmt(f),
             Self::Provider(e) => e.fmt(f),
         }
+    }
+}
+
+impl BoardError {
+    /// A mensagem com o nome do Provedor do perfil no lugar de «Lichess» (a [`fmt::Display`]
+    /// fala do Lichess, o padrão).
+    pub fn describe(&self, profile: &ProviderProfile) -> String {
+        self.to_string().replace("Lichess", profile.name)
     }
 }
 
@@ -212,6 +229,8 @@ pub struct GameInfo {
 pub struct ChallengePlayer {
     pub id: String,
     pub name: String,
+    /// Título (`BOT` para uma Engine online, `GM`…).
+    pub title: Option<String>,
     pub rating: Option<u32>,
 }
 
@@ -242,6 +261,10 @@ pub enum DeclineReason {
     Casual,
     Standard,
     Variant,
+    /// A Engine online não joga contra outras Engines (contas BOT).
+    NoBot,
+    /// A Engine online só joga contra outras Engines.
+    OnlyBot,
 }
 
 impl DeclineReason {
@@ -256,6 +279,8 @@ impl DeclineReason {
             Self::Casual => "casual",
             Self::Standard => "standard",
             Self::Variant => "variant",
+            Self::NoBot => "noBot",
+            Self::OnlyBot => "onlyBot",
         }
     }
 }
@@ -281,6 +306,7 @@ pub enum ConnectionEvent {
 /// Cliente da Board API do Lichess, por uma Conexão de jogador. Barato de clonar.
 #[derive(Clone)]
 pub struct LichessBoard {
+    pub(crate) profile: ProviderProfile,
     pub(crate) net: Net,
     pub(crate) clock: Arc<dyn Clock>,
     pub(crate) connection: ConnectionId,
@@ -334,19 +360,47 @@ impl LichessBoard {
         connection: ConnectionId,
         role: ConnectionRole,
     ) -> Result<Self, BoardError> {
+        Self::with_profile(ProviderProfile::LICHESS, net, clock, connection, role)
+    }
+
+    /// A Board API de outro Provedor da família do Lichess (o PlayStrategy), pela Conexão de
+    /// jogador dele.
+    pub fn with_profile(
+        profile: ProviderProfile,
+        net: Net,
+        clock: Arc<dyn Clock>,
+        connection: ConnectionId,
+        role: ConnectionRole,
+    ) -> Result<Self, BoardError> {
         if role != ConnectionRole::Player {
             return Err(BoardError::EngineConnection);
         }
+        Ok(Self::build(profile, net, clock, connection))
+    }
+
+    /// Sem conferir o papel: quem chama (aqui, `LichessBoard` e `LichessBot`) já o conferiu.
+    pub(crate) fn build(
+        profile: ProviderProfile,
+        net: Net,
+        clock: Arc<dyn Clock>,
+        connection: ConnectionId,
+    ) -> Self {
         let mut hasher = RandomState::new().build_hasher();
         hasher.write_u64(0xb0a2d);
-        Ok(Self {
+        Self {
+            profile,
             net,
             clock,
             connection,
             backoff: Backoff::default(),
             seeds: Arc::new(Mutex::new(Jitter::new(hasher.finish()))),
             seeking: Arc::default(),
-        })
+        }
+    }
+
+    /// O perfil do Provedor deste cliente.
+    pub fn provider_profile(&self) -> &ProviderProfile {
+        &self.profile
     }
 
     /// Espera entre reconexões dos fluxos.
@@ -368,16 +422,13 @@ impl LichessBoard {
             .next()
     }
 
-    pub(crate) fn url(path: &str) -> String {
-        format!("https://{API_HOST}{path}")
-    }
-
     pub(crate) fn get(&self, path: &str) -> Request {
-        Request::get(PROVIDER, Self::url(path)).connection(self.connection)
+        Request::get(self.profile.id, self.profile.url(path)).connection(self.connection)
     }
 
     pub(crate) fn post(&self, path: &str, body: Option<String>) -> Request {
-        let request = Request::post(PROVIDER, Self::url(path)).connection(self.connection);
+        let request =
+            Request::post(self.profile.id, self.profile.url(path)).connection(self.connection);
         match body {
             Some(body) => request.body("application/x-www-form-urlencoded", body.into_bytes()),
             None => request,
@@ -450,6 +501,7 @@ impl LichessBoard {
             return Err(BoardError::SeekInProgress);
         }
         let slot = SeekSlot(self.seeking.clone());
+        let provider = self.profile.id;
         let refs: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (*k, v.as_str())).collect();
         let request = self.post("/api/board/seek", Some(form(&refs)));
         let kind = if live {
@@ -459,7 +511,7 @@ impl LichessBoard {
                 &self.net,
                 request,
                 Missing::NoData,
-                |fetched| Ok(answer::json::<json::IdJson>(PROVIDER, fetched)?.id),
+                move |fetched| Ok(answer::json::<json::IdJson>(provider, fetched)?.id),
             ))
         };
         Ok(Seeking {
@@ -526,19 +578,22 @@ impl LichessBoard {
         let pairs = Self::challenge_pairs(spec);
         let refs: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (*k, v.as_str())).collect();
         let username = username.to_owned();
+        let provider = self.profile.id;
         answer::fetch(
             &self.net,
             self.post(&format!("/api/challenge/{username}"), Some(form(&refs))),
             Missing::name(&username),
-            |fetched| answer::json::<Challenge>(PROVIDER, fetched),
+            move |fetched| answer::json::<Challenge>(provider, fetched),
         )
     }
 
     /// Aceita um desafio recebido. Só xadrez padrão: outra variante é recusada antes da rede.
     pub fn accept_challenge(&self, challenge: &Challenge) -> Query<()> {
-        if let chess_game::Variant::Other(variant) = json::variant(&challenge.variant) {
+        if let chess_game::Variant::Other(variant) =
+            json::variant(&self.profile, &challenge.variant)
+        {
             return Query::failed(ProviderError::VariantRefused {
-                provider: PROVIDER,
+                provider: self.profile.id,
                 variant,
             });
         }
@@ -585,18 +640,20 @@ impl LichessBoard {
         let mut pairs = Self::challenge_pairs(spec);
         pairs.push(("level", level.to_string()));
         let refs: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (*k, v.as_str())).collect();
-        self.post_query("/api/challenge/ai", Some(form(&refs)), |fetched| {
-            Ok(answer::json::<json::IdJson>(PROVIDER, fetched)?.id)
+        let provider = self.profile.id;
+        self.post_query("/api/challenge/ai", Some(form(&refs)), move |fetched| {
+            Ok(answer::json::<json::IdJson>(provider, fetched)?.id)
         })
     }
 
     /// Partidas em andamento da Conexão (para retomar a correspondência).
     pub fn playing(&self) -> Query<Vec<GameInfo>> {
+        let provider = self.profile.id;
         answer::fetch(
             &self.net,
             self.get("/api/account/playing").query("nb", "50"),
             Missing::NoData,
-            |fetched| Ok(answer::json::<json::PlayingJson>(PROVIDER, fetched)?.now_playing),
+            move |fetched| Ok(answer::json::<json::PlayingJson>(provider, fetched)?.now_playing),
         )
     }
 
