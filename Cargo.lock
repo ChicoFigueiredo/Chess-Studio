@@ -1953,6 +1953,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "chess-providers"
+version = "0.1.0"
+dependencies = [
+ "chess-core",
+ "chess-net",
+ "chess-store",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "chess-store"
 version = "0.1.0"
 dependencies = [

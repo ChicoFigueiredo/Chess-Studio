@@ -1,0 +1,22 @@
+# Resposta REAL gravada em 2026-11-11 com curl -i (User-Agent generico, sem autenticacao).
+# FIDE por id (1503014).
+# URL: https://lichess.org/api/fide/player/1503014
+HTTP/2 200 
+date: Wed, 11 Nov 2026 13:12:13 GMT
+content-type: application/json
+server: cloudflare
+vary: Origin
+vary: accept-encoding
+cache-control: public, max-age=3600
+access-control-allow-origin: *
+access-control-allow-headers: Origin, Authorization, If-Modified-Since, Cache-Control, Content-Type
+access-control-allow-methods: OPTIONS, GET, POST, PUT, DELETE
+strict-transport-security: max-age=63072000; includeSubDomains; preload
+x-frame-options: DENY
+permissions-policy: interest-cohort=()
+last-modified: Wed, 11 Nov 2026 13:12:13 GMT
+cf-cache-status: HIT
+cf-ray: a58d8c1adfbf1ab6-GRU
+alt-svc: h3=":443"; ma=86400
+
+{"id":1503014,"name":"Carlsen, Magnus","federation":"NOR","year":1990,"title":"GM","standard":2823,"rapid":2801,"blitz":2860,"gender":"M","photo":{"small":"https://image.lichess.org/display?fmt=webp&h=100&op=thumbnail&path=v6JPXmWyYhTI.webp&w=100&sig=78e9187109f632629c22b5e5b6997976e06a1cf9","medium":"https://image.lichess.org/display?fmt=webp&h=500&op=thumbnail&path=v6JPXmWyYhTI.webp&w=500&sig=4b2b5199cfc1d9ff87810d7c10af8a74fe85256e","credit":"Brigham Aldrich"}}

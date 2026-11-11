@@ -1,0 +1,22 @@
+# Resposta REAL gravada em 2026-11-11 com curl -i (User-Agent generico, sem autenticacao).
+# Pretas jogam e dao mate em 1 (confere o ponto de vista do placar).
+# URL: https://lichess.org/api/cloud-eval?fen=rnbqkbnr/pppp1ppp/8/4p3/6P1/5P2/PPPPP2P/RNBQKBNR%20b%20KQkq%20g3%200%202&multiPv=1
+HTTP/2 200 
+date: Wed, 11 Nov 2026 13:15:03 GMT
+content-type: application/json
+server: cloudflare
+vary: Origin
+vary: accept-encoding
+cache-control: public, max-age=86400
+access-control-allow-origin: *
+access-control-allow-headers: Origin, Authorization, If-Modified-Since, Cache-Control, Content-Type
+access-control-allow-methods: OPTIONS, GET, POST, PUT, DELETE
+strict-transport-security: max-age=63072000; includeSubDomains; preload
+x-frame-options: DENY
+permissions-policy: interest-cohort=()
+last-modified: Wed, 11 Nov 2026 13:15:03 GMT
+cf-cache-status: MISS
+cf-ray: a58d903fdbccf38c-GRU
+alt-svc: h3=":443"; ma=86400
+
+{"fen":"rnbqkbnr/pppp1ppp/8/4p3/6P1/5P2/PPPPP2P/RNBQKBNR b KQkq g3 0 2","knodes":235,"depth":245,"pvs":[{"moves":"d8h4","mate":-1}]}
