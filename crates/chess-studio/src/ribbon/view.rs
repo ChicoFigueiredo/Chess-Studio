@@ -12,7 +12,7 @@ use super::model::{
     Group, KeyTipLevel, LAYOUTS_GROUP, RibbonView, board_tab_visible, groups, split_overflow,
     visible_tabs_for,
 };
-use super::{RibbonActionContext, RibbonMode, RibbonState, set_top_inset};
+use super::{KeyTipSpot, RibbonActionContext, RibbonMode, RibbonState, set_top_inset};
 use crate::actions::ActionRequested;
 use crate::controls::{Controls, trigger_label};
 use crate::focus::ViewState;
@@ -35,10 +35,17 @@ use egui::{
 const STRIP_H: f32 = 28.0;
 const TABS_H: f32 = 32.0;
 /// Corpo do Ribbon clássico (`ribbon-classic-h`) e simples (`ribbon-simple-h`).
-const CLASSIC_H: f32 = 92.0;
+const CLASSIC_H: f32 = 96.0;
 const SIMPLE_H: f32 = 40.0;
-const BIG_H: f32 = 66.0;
-const SMALL_H: f32 = 22.0;
+/// Alvo mínimo de clique dos botões pequenos: pilhas de até três de 24px (72px) mais o rótulo
+/// do grupo de 16px dão os 88px de conteúdo do corpo clássico.
+const SMALL_H: f32 = crate::ui_theme::MIN_TARGET;
+const STACK_H: f32 = 3.0 * SMALL_H;
+const BIG_H: f32 = STACK_H;
+const GROUP_LABEL_H: f32 = 16.0;
+/// Largura do botão grande: de 56 a 80px, o rótulo em até duas linhas.
+const BIG_MIN_W: f32 = 56.0;
+const BIG_MAX_W: f32 = 80.0;
 
 /// Formas do botão de Ação.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -59,7 +66,7 @@ struct Env<'a> {
     /// Ações clicadas neste quadro.
     out: Vec<Action>,
     /// Retângulos dos itens do corpo, para os KeyTips.
-    rects: Vec<(Action, Rect)>,
+    rects: Vec<(Action, Rect, KeyTipSpot)>,
     register: bool,
     /// Layouts de Tela do Perfil local (#186) e os pedidos feitos neste quadro.
     sets: &'a ScreenLayouts,
@@ -109,6 +116,26 @@ fn body_font() -> FontId {
     FontId::proportional(13.0)
 }
 
+/// Rótulo do botão grande: `ribbon-label` (12/14), centralizado, em até duas linhas; o que
+/// passar disso termina em reticências.
+fn big_label(ui: &Ui, text: &str) -> std::sync::Arc<egui::Galley> {
+    let mut job = egui::text::LayoutJob::simple(
+        text.to_owned(),
+        FontId::proportional(12.0),
+        Color32::PLACEHOLDER,
+        BIG_MAX_W - 12.0,
+    );
+    job.halign = Align::Center;
+    job.wrap.max_rows = 2;
+    job.wrap.overflow_character = Some('…');
+    ui.painter().layout_job(job)
+}
+
+/// Largura do botão grande para o rótulo medido.
+fn big_width(label: &egui::Galley) -> f32 {
+    (label.size().x + 12.0).clamp(BIG_MIN_W, BIG_MAX_W)
+}
+
 /// Largura de um botão pequeno com ícone e rótulo.
 fn small_width(ui: &Ui, icon: Option<&str>, text: &str) -> f32 {
     let job = icon_job(ui.ctx(), icon, text, body_font(), Color32::PLACEHOLDER);
@@ -148,12 +175,8 @@ fn action_button(
                 icon_font(&ctx, 32.0),
                 Color32::PLACEHOLDER,
             );
-            let text_galley = ui.painter().layout_no_wrap(
-                label.clone(),
-                FontId::proportional(12.0),
-                Color32::PLACEHOLDER,
-            );
-            let width = text_galley.size().x.max(36.0) + 16.0;
+            let text_galley = big_label(ui, &label);
+            let width = big_width(&text_galley);
             let (response, rect, look) = button_core(
                 ui,
                 vec2(width.max(extra.min_width), BIG_H),
@@ -164,11 +187,13 @@ fn action_button(
                 .align_size_within_rect(icon_galley.size(), rect.shrink2(vec2(0.0, 5.0)))
                 .min;
             ui.painter().galley(icon_pos, icon_galley, look.text);
+            // `rect.min` do galley não é a origem quando o texto é centralizado.
             let text_pos = Align2::CENTER_BOTTOM
-                .align_size_within_rect(text_galley.size(), rect.shrink2(vec2(0.0, 4.0)))
-                .min;
+                .align_size_within_rect(text_galley.rect.size(), rect.shrink2(vec2(0.0, 4.0)))
+                .min
+                - text_galley.rect.min.to_vec2();
             ui.painter().galley(text_pos, text_galley, look.text);
-            (response, rect)
+            (response, rect, KeyTipSpot::BigIcon)
         }
         Form::Small | Form::IconOnly => {
             let text = match (form, extra.text) {
@@ -189,13 +214,18 @@ fn action_button(
                 .align_size_within_rect(galley.size(), rect)
                 .min;
             ui.painter().galley(pos, galley, look.text);
-            (response, rect)
+            let spot = if form == Form::Small {
+                KeyTipSpot::Leading
+            } else {
+                KeyTipSpot::Below
+            };
+            (response, rect, spot)
         }
     };
-    let (response, rect) = response;
+    let (response, rect, spot) = response;
 
     if env.register {
-        env.rects.push((action, rect));
+        env.rects.push((action, rect, spot));
     }
     if enabled && response.clicked() {
         env.out.push(action);
@@ -288,7 +318,7 @@ fn panel_checkbox(ui: &mut Ui, env: &mut Env<'_>, action: Action) -> Response {
         })
         .inner;
     if env.register {
-        env.rects.push((action, response.rect));
+        env.rects.push((action, response.rect, KeyTipSpot::Leading));
     }
     if enabled && checked != before {
         env.out.push(action);
@@ -478,8 +508,10 @@ fn classic_group(ui: &mut Ui, env: &mut Env<'_>, group: &Group) {
     let panels = is_panels_group(group);
     let sets = is_layouts_group(group);
     ui.vertical(|ui| {
-        ui.spacing_mut().item_spacing = vec2(2.0, 2.0);
-        let row = ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
+        let row = ui.horizontal_top(|ui| {
+            // Toda linha de grupo tem a mesma altura: o rótulo fica na mesma linha de base.
+            ui.set_min_height(STACK_H);
             if sets {
                 layouts_classic(ui, env);
                 return;
@@ -488,7 +520,7 @@ fn classic_group(ui: &mut Ui, env: &mut Env<'_>, group: &Group) {
                 ui.spacing_mut().item_spacing.x = PANEL_COLUMN_GAP;
                 for chunk in group.actions.chunks(PANEL_ROWS) {
                     ui.vertical(|ui| {
-                        ui.spacing_mut().item_spacing = vec2(2.0, 2.0);
+                        ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
                         // Três caixas cabem na altura do corpo, como três botões pequenos.
                         ui.spacing_mut().interact_size.y = SMALL_H;
                         for action in chunk {
@@ -508,7 +540,7 @@ fn classic_group(ui: &mut Ui, env: &mut Env<'_>, group: &Group) {
                     })
                     .fold(0.0, f32::max);
                 ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing = vec2(2.0, 2.0);
+                    ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
                     for action in chunk {
                         let extra = Extra {
                             min_width: width,
@@ -521,9 +553,9 @@ fn classic_group(ui: &mut Ui, env: &mut Env<'_>, group: &Group) {
         });
         let caption = ui
             .painter()
-            .layout_no_wrap(label, FontId::proportional(11.5), p.ink_muted);
+            .layout_no_wrap(label, FontId::proportional(12.0), p.ink_muted);
         let width = row.response.rect.width().max(caption.size().x);
-        let (rect, _) = ui.allocate_exact_size(vec2(width, 16.0), Sense::hover());
+        let (rect, _) = ui.allocate_exact_size(vec2(width, GROUP_LABEL_H), Sense::hover());
         let pos = Align2::CENTER_CENTER
             .align_size_within_rect(caption.size(), rect)
             .min;
@@ -540,7 +572,7 @@ fn classic_group_width(ui: &Ui, env: &Env<'_>, group: &Group) -> f32 {
         return panels_classic_width(ui, env, group);
     }
     let big = meta(group.actions[0]);
-    let mut width = small_width(ui, None, &env.i18n.t(big.label)).max(52.0);
+    let mut width = big_width(&big_label(ui, &env.i18n.t(big.label)));
     for chunk in group.actions[1..].chunks(3) {
         let column = chunk
             .iter()
@@ -1046,18 +1078,45 @@ fn palette_of(ctx: &egui::Context) -> &'static Palette {
 
 // --- KeyTips ---
 
-/// Selos dos KeyTips: `ink` sobre `surface-1` invertido, presos à borda inferior do item.
-/// Camada em `Order::Tooltip`, sobre os retângulos que o Ribbon registrou neste quadro.
+/// Metade da altura do rótulo de uma aba: o selo começa logo abaixo dela.
+const TAB_LABEL_HALF_H: f32 = 9.0;
+/// Selo do KeyTip: altura de 18px e largura mínima de 20px.
+const KEYTIP_H: f32 = 18.0;
+const KEYTIP_MIN_W: f32 = 20.0;
+
+/// Retângulo do selo para um item. `tab` é o selo de uma aba: fica logo abaixo do rótulo
+/// (centralizado no item). Nos botões grandes o selo cobre o ícone, nos pequenos o ícone ou a
+/// caixa à esquerda, e nos só de ícone fica preso à borda de baixo; nunca cobre o rótulo.
+pub(super) fn keytip_badge_rect(spot: Option<KeyTipSpot>, item: Rect, size: Vec2) -> Rect {
+    let min = match spot {
+        // Aba.
+        None => pos2(
+            item.center().x - size.x / 2.0,
+            item.center().y + TAB_LABEL_HALF_H,
+        ),
+        Some(KeyTipSpot::BigIcon) => pos2(item.center().x - size.x / 2.0, item.top() + 11.0),
+        Some(KeyTipSpot::Leading) => pos2(item.left() + 2.0, item.center().y - size.y / 2.0),
+        Some(KeyTipSpot::Below) => pos2(item.center().x - size.x / 2.0, item.bottom() - 4.0),
+    };
+    Rect::from_min_size(min, size)
+}
+
+/// Selos dos KeyTips em `eval` (12/16 negrito): `ink` sobre `surface-1` invertido. Camada em
+/// `Order::Tooltip`, sobre os retângulos que o Ribbon registrou neste quadro.
 fn paint_keytips(ctx: &egui::Context, p: &Palette, ribbon: &RibbonState, level: KeyTipLevel) {
     let painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Tooltip,
         Id::new("chess-studio/keytips"),
     ));
-    let badge = |at: Rect, text: &str| {
-        let galley = painter.layout_no_wrap(text.to_owned(), strong_font(ctx, 11.0), p.surface_1);
-        let size = galley.size() + vec2(8.0, 2.0);
-        let min = pos2(at.center().x - size.x / 2.0, at.max.y - size.y * 0.5);
-        let rect = Rect::from_min_size(min, size);
+    let badge = |at: Rect, spot: Option<KeyTipSpot>, text: &str| {
+        let galley = painter.layout_no_wrap(text.to_owned(), strong_font(ctx, 12.0), p.surface_1);
+        let size = vec2((galley.size().x + 8.0).max(KEYTIP_MIN_W), KEYTIP_H);
+        let rect = keytip_badge_rect(spot, at, size);
+        painter.rect_filled(
+            rect.translate(vec2(0.0, 1.0)),
+            CornerRadius::same(3),
+            p.scrim,
+        );
         painter.rect_filled(rect, CornerRadius::same(3), p.ink);
         painter.galley(
             Align2::CENTER_CENTER
@@ -1071,17 +1130,61 @@ fn paint_keytips(ctx: &egui::Context, p: &Palette, ribbon: &RibbonState, level: 
         KeyTipLevel::Off => {}
         KeyTipLevel::Tabs => {
             for (view, rect) in &ribbon.registered.tabs {
-                badge(*rect, view.keytip());
+                badge(*rect, None, view.keytip());
             }
         }
         KeyTipLevel::Actions(_) => {
             let typed = ribbon.keytips.typed();
-            for (action, rect) in &ribbon.registered.actions {
+            for (action, rect, spot) in &ribbon.registered.actions {
                 let tip = meta(*action).keytip;
                 if !tip.is_empty() && tip.starts_with(typed) {
-                    badge(*rect, tip);
+                    badge(*rect, Some(*spot), tip);
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SIZE: Vec2 = vec2(20.0, KEYTIP_H);
+
+    #[test]
+    fn a_tab_keytip_sits_right_below_the_label() {
+        let tab = Rect::from_min_size(pos2(100.0, 0.0), vec2(80.0, TABS_H));
+        let label = Rect::from_center_size(tab.center(), vec2(50.0, 16.0));
+        let badge = keytip_badge_rect(None, tab, SIZE);
+        assert!(!badge.intersects(label), "{badge:?} cobre {label:?}");
+        assert!(badge.top() - label.bottom() <= 2.0, "logo abaixo do rótulo");
+        assert_eq!(badge.center().x, tab.center().x);
+    }
+
+    #[test]
+    fn a_big_button_keytip_covers_the_icon_and_never_the_label() {
+        let button = Rect::from_min_size(pos2(0.0, 0.0), vec2(64.0, BIG_H));
+        // Ícone de 32px no alto; o rótulo de até duas linhas (28px) preso à base, com 4px.
+        let icon = Rect::from_min_size(pos2(16.0, 5.0), vec2(32.0, 32.0));
+        let label = Rect::from_min_max(pos2(0.0, BIG_H - 4.0 - 28.0), pos2(64.0, BIG_H - 4.0));
+        let badge = keytip_badge_rect(Some(KeyTipSpot::BigIcon), button, SIZE);
+        assert!(badge.intersects(icon));
+        assert!(!badge.intersects(label), "{badge:?} cobre {label:?}");
+    }
+
+    #[test]
+    fn a_small_button_keytip_stays_over_the_icon_side() {
+        let button = Rect::from_min_size(pos2(0.0, 0.0), vec2(120.0, SMALL_H));
+        // Ícone de 16px com 8px de respiro; o rótulo começa depois dele.
+        let label = Rect::from_min_max(pos2(30.0, 4.0), pos2(116.0, 20.0));
+        let badge = keytip_badge_rect(Some(KeyTipSpot::Leading), button, SIZE);
+        assert!(button.contains_rect(badge));
+        assert!(!badge.intersects(label), "{badge:?} cobre {label:?}");
+    }
+
+    #[test]
+    fn the_group_row_fits_three_24px_buttons_and_the_caption() {
+        assert_eq!(SMALL_H, 24.0);
+        assert_eq!(STACK_H + GROUP_LABEL_H + 8.0, CLASSIC_H);
     }
 }

@@ -250,21 +250,125 @@ pub fn tab_button_closable(
     sense: egui::Sense,
     close_tip: Option<&str>,
 ) -> (egui::Response, bool) {
-    let p = palette_of(ui.visuals());
+    tab_button_fitted(ui, id, glyph, title, active, hidden, sense, close_tip, None)
+}
+
+/// Largura mínima de uma aba inativa encolhida (`min-width` do PanelTabs).
+pub const TAB_MIN_WIDTH: f32 = 56.0;
+
+/// Largura natural de uma aba: ícone, nome, respiros e o vão do X.
+pub fn tab_natural_width(
+    ui: &egui::Ui,
+    glyph: Option<&str>,
+    title: &str,
+    active: bool,
+    closable: bool,
+) -> f32 {
+    let galley = tab_galley(ui, glyph, title, active, None);
+    galley.size().x + 2.0 * token("space-2", 8.0) + if closable { CLOSE_SIZE + 4.0 } else { 0.0 }
+}
+
+fn tab_galley(
+    ui: &egui::Ui,
+    glyph: Option<&str>,
+    title: &str,
+    active: bool,
+    max_text_width: Option<f32>,
+) -> std::sync::Arc<egui::Galley> {
     let size = Tokens::embedded().text("body").map_or(14.0, |t| t.size);
     let font = if active {
         crate::ui_theme::strong_font(ui.ctx(), size)
     } else {
         egui::FontId::proportional(size)
     };
-    let job = crate::ui_theme::icon_job(ui.ctx(), glyph, title, font, egui::Color32::PLACEHOLDER);
-    let galley = ui.painter().layout_job(job);
+    let mut job =
+        crate::ui_theme::icon_job(ui.ctx(), glyph, title, font, egui::Color32::PLACEHOLDER);
+    if let Some(width) = max_text_width {
+        job.wrap = egui::text::TextWrapping {
+            max_width: width.max(0.0),
+            max_rows: 1,
+            break_anywhere: true,
+            overflow_character: Some('…'),
+        };
+    }
+    ui.painter().layout_job(job)
+}
+
+/// Reparte a largura disponível entre as abas de um grupo (PanelTabs): cabendo tudo, cada uma
+/// fica com a largura natural; sem espaço, a aba ativa (`active`) mantém a sua e as inativas
+/// encolhem por igual (nenhuma abaixo de `min`), cortando o nome com reticências. Se nem assim
+/// couber, o `egui_tiles` rola as abas; a ativa e os botões da direita continuam visíveis.
+pub fn fit_tab_widths(
+    natural: &[f32],
+    active: Option<usize>,
+    available: f32,
+    min: f32,
+) -> Vec<f32> {
+    if natural.iter().sum::<f32>() <= available {
+        return natural.to_vec();
+    }
+    let fixed = active.and_then(|i| natural.get(i)).copied().unwrap_or(0.0);
+    let budget = (available - fixed).max(0.0);
+    let inactive = |i: usize| Some(i) != active;
+    // Nível comum `level`: cada inativa ocupa `min(natural, level)`; acha o maior que cabe.
+    let used = |level: f32| -> f32 {
+        natural
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| inactive(*i))
+            .map(|(_, w)| w.min(level).max(min.min(*w)))
+            .sum()
+    };
+    let (mut lo, mut hi) = (min, natural.iter().copied().fold(min, f32::max));
+    for _ in 0..24 {
+        let mid = (lo + hi) / 2.0;
+        if used(mid) <= budget {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    natural
+        .iter()
+        .enumerate()
+        .map(|(i, w)| {
+            if inactive(i) {
+                w.min(lo).max(min.min(*w))
+            } else {
+                *w
+            }
+        })
+        .collect()
+}
+
+/// Como [`tab_button_closable`], mas com `max_width` (largura total da aba, incluindo o X):
+/// acima disso o nome é cortado com reticências.
+#[allow(clippy::too_many_arguments)]
+pub fn tab_button_fitted(
+    ui: &mut egui::Ui,
+    id: egui::Id,
+    glyph: Option<&str>,
+    title: &str,
+    active: bool,
+    hidden: bool,
+    sense: egui::Sense,
+    close_tip: Option<&str>,
+    max_width: Option<f32>,
+) -> (egui::Response, bool) {
+    let p = palette_of(ui.visuals());
     let pad = token("space-2", 8.0);
     let close_slot = if close_tip.is_some() {
         CLOSE_SIZE + 4.0
     } else {
         0.0
     };
+    let galley = tab_galley(
+        ui,
+        glyph,
+        title,
+        active,
+        max_width.map(|w| w - 2.0 * pad - close_slot),
+    );
     let (_, rect) = ui.allocate_space(egui::vec2(
         galley.size().x + 2.0 * pad + close_slot,
         ui.available_height(),
@@ -612,5 +716,69 @@ mod tests {
         tab_frame(&ctx, Some(body), Some(true), true);
         let (_, closed) = tab_frame(&ctx, Some(body), Some(false), true);
         assert!(!closed, "o corpo da aba não fecha");
+    }
+
+    #[test]
+    fn tabs_that_fit_keep_their_natural_width() {
+        let w = fit_tab_widths(&[100.0, 120.0, 90.0], Some(0), 400.0, 56.0);
+        assert_eq!(w, vec![100.0, 120.0, 90.0]);
+    }
+
+    #[test]
+    fn without_room_inactive_tabs_shrink_and_the_active_one_keeps_its_width() {
+        let natural = [100.0, 140.0, 120.0, 160.0];
+        let w = fit_tab_widths(&natural, Some(1), 400.0, 56.0);
+        assert_eq!(w[1], 140.0, "a aba ativa não encolhe");
+        assert!((w.iter().sum::<f32>() - 400.0).abs() < 0.5, "{w:?}");
+        for (i, width) in w.iter().enumerate() {
+            assert!(*width >= 56.0 && *width <= natural[i] + 0.01, "{w:?}");
+        }
+        // A mais larga encolhe mais que a mais estreita, nunca abaixo do mínimo.
+        assert!(w[3] <= natural[3] && w[0] <= natural[0]);
+    }
+
+    #[test]
+    fn tabs_never_shrink_below_the_minimum_even_when_nothing_fits() {
+        let w = fit_tab_widths(&[100.0, 140.0, 120.0, 160.0], Some(0), 150.0, 56.0);
+        assert_eq!(w[0], 100.0);
+        assert!(w[1..].iter().all(|x| (*x - 56.0).abs() < 0.01), "{w:?}");
+    }
+
+    #[test]
+    fn a_narrow_tab_title_is_cut_with_an_ellipsis() {
+        let ctx = egui::Context::default();
+        ctx.set_fonts(crate::ui_theme::font_definitions());
+        let mut width = 0.0;
+        let mut natural = 0.0;
+        for _ in 0..3 {
+            let mut full = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(screen()),
+                    ..Default::default()
+                },
+                |ui| {
+                    egui::CentralPanel::default().show(ui, |ui| {
+                        natural = tab_natural_width(ui, None, "Súmula da Partida", false, true);
+                        let (r, _) = tab_button_fitted(
+                            ui,
+                            egui::Id::new("t"),
+                            None,
+                            "Súmula da Partida",
+                            false,
+                            false,
+                            egui::Sense::click(),
+                            Some("Fechar"),
+                            Some(TAB_MIN_WIDTH),
+                        );
+                        width = r.rect.width();
+                    });
+                },
+            );
+            full.textures_delta.clear();
+        }
+        assert!(
+            width <= TAB_MIN_WIDTH + 0.5 && width < natural,
+            "{width} {natural}"
+        );
     }
 }

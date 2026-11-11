@@ -13,6 +13,8 @@ mod tokens;
 mod widgets;
 
 pub use appearance::{Appearance, Density, ThemeMode, UiScale, resolve_theme};
+#[cfg(test)]
+pub(crate) use fonts::definitions as font_definitions;
 pub use gallery::GalleryMode;
 // API para a galeria de Temas (ticket seguinte) e para os componentes com estilos novos.
 #[allow(unused_imports)]

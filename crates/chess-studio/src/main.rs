@@ -254,7 +254,14 @@ fn main() {
     ));
     // `--gallery`: janela com todos os widgets do design system nos dois Temas e Densidades.
     if args.iter().any(|a| a == "--gallery") {
-        app.insert_resource(ui_theme::GalleryMode::default());
+        app.insert_resource(
+            option_value("--gallery-scroll")
+                .and_then(|v| v.parse::<f32>().ok())
+                .map_or_else(
+                    ui_theme::GalleryMode::default,
+                    ui_theme::GalleryMode::scrolled,
+                ),
+        );
     }
     if let Some(dir) = capture {
         if let Err(err) = std::fs::create_dir_all(&dir) {

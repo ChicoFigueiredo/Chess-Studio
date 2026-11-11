@@ -234,8 +234,17 @@ pub fn button_look(p: &Palette, variant: ButtonVariant, state: VisualState) -> L
     }
 }
 
-/// Aparência do botão de alternância (`ToggleButton.md`): ligado em `accent-subtle`.
+/// Aparência do botão de alternância (`ToggleButton.md`): ligado em `accent-subtle`; ligado e
+/// desabilitado em `surface-4` com contorno `border-strong` e texto `ink-disabled`.
 pub fn toggle_look(p: &Palette, on: bool, state: VisualState) -> Look {
+    if on && state == VisualState::Disabled {
+        // Ligado e desabilitado continua mostrando o estado, sem `accent`.
+        return Look {
+            fill: p.surface_4,
+            stroke: hairline(p.border_strong),
+            text: p.ink_disabled,
+        };
+    }
     if !on || state == VisualState::Disabled {
         return button_look(p, ButtonVariant::Secondary, state);
     }
@@ -398,6 +407,9 @@ pub fn cs_toggle_button(ui: &mut Ui, on: &mut bool, label: &str) -> Response {
     response
 }
 
+/// Alvo mínimo de clique (Checkbox, Slider e botões pequenos do Ribbon clássico), em pontos.
+pub const MIN_TARGET: f32 = 24.0;
+
 /// Corpo comum de caixa, rádio e Switch: uma linha de `control-h` com o controle à esquerda e o
 /// rótulo clicável à direita. `paint` recebe o retângulo do controle e o estado.
 fn control_row(
@@ -413,7 +425,7 @@ fn control_row(
         egui::TextStyle::Body.resolve(ui.style()),
         Color32::PLACEHOLDER,
     );
-    let height = ui.spacing().interact_size.y.max(control.y);
+    let height = ui.spacing().interact_size.y.max(control.y).max(MIN_TARGET);
     let label_w = if label.is_empty() {
         0.0
     } else {
@@ -455,6 +467,72 @@ fn control_row(
     })
 }
 
+/// Cores do Switch num estado.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SwitchLook {
+    pub track: Color32,
+    pub stroke: Stroke,
+    pub thumb: Color32,
+}
+
+/// Aparência do Switch (`Switch.md`). Ligado: trilho `accent` e botão `on-accent`. Desligado:
+/// trilho com contorno `border-strong` e botão `ink-muted`. Desabilitado e ligado: trilho
+/// `ink-disabled` e botão `surface-1` (a posição do botão mostra o estado, não a cor).
+pub fn switch_look(p: &Palette, on: bool, state: VisualState) -> SwitchLook {
+    use VisualState::*;
+    match (on, state) {
+        (true, Disabled) => SwitchLook {
+            track: p.ink_disabled,
+            stroke: Stroke::NONE,
+            thumb: p.surface_1,
+        },
+        (true, s) => SwitchLook {
+            track: match s {
+                Hover => p.accent_hover,
+                Pressed => p.accent_pressed,
+                _ => p.accent,
+            },
+            stroke: Stroke::NONE,
+            thumb: p.on_accent,
+        },
+        (false, Disabled) => SwitchLook {
+            track: p.surface_2,
+            stroke: hairline(p.border),
+            thumb: p.ink_disabled,
+        },
+        (false, _) => SwitchLook {
+            track: Color32::TRANSPARENT,
+            stroke: hairline(p.border_strong),
+            thumb: p.ink_muted,
+        },
+    }
+}
+
+/// Cores da caixa de seleção num estado: caixa, contorno e visto.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CheckLook {
+    pub fill: Color32,
+    pub stroke: Stroke,
+    pub mark: Color32,
+}
+
+/// Aparência da caixa (`Checkbox.md`). `filled` vale para ligada e para parcial. Desabilitada e
+/// ligada: caixa `ink-disabled` com o visto em `surface-1`, para o estado continuar visível.
+pub fn check_look(p: &Palette, filled: bool, state: VisualState) -> CheckLook {
+    use VisualState::*;
+    let (fill, stroke, mark) = match (filled, state) {
+        (true, Disabled) => (p.ink_disabled, Stroke::NONE, p.surface_1),
+        (true, Hover) => (p.accent_hover, Stroke::NONE, p.on_accent),
+        (true, Pressed) => (p.accent_pressed, Stroke::NONE, p.on_accent),
+        (true, Rest) => (p.accent, Stroke::NONE, p.on_accent),
+        (false, Hover) => (p.surface_3, hairline(p.border_strong), p.on_accent),
+        (false, Pressed) => (p.surface_4, hairline(p.border_strong), p.on_accent),
+        (false, Rest) => (p.surface_2, hairline(p.border_strong), p.on_accent),
+        (false, Disabled) => (p.surface_2, hairline(p.border), p.surface_1),
+    };
+    CheckLook { fill, stroke, mark }
+}
+
 /// Switch (`Switch.md`): liga uma preferência que vale na hora. Trilho `accent` ligado, com o
 /// botão em `on-accent`; desligado, trilho com contorno `border-strong`.
 #[allow(dead_code)] // API do tema; o Ribbon e as Opções passam a usar
@@ -476,31 +554,13 @@ pub fn cs_switch(ui: &mut Ui, on: &mut bool, label: &str) -> Response {
         let t = ui
             .ctx()
             .animate_bool_with_time(response.id, value, ui.style().animation_time);
-        let disabled = state == VisualState::Disabled;
-        let (fill, stroke) = match (value, disabled) {
-            (true, false) => (
-                match state {
-                    VisualState::Hover => p.accent_hover,
-                    VisualState::Pressed => p.accent_pressed,
-                    _ => p.accent,
-                },
-                Stroke::NONE,
-            ),
-            (true, true) => (p.ink_disabled, Stroke::NONE),
-            (false, false) => (Color32::TRANSPARENT, hairline(p.border_strong)),
-            (false, true) => (Color32::TRANSPARENT, hairline(p.border)),
-        };
+        let look = switch_look(p, value, state);
         let corner = CornerRadius::same((rect.height() / 2.0) as u8);
         ui.painter()
-            .rect(rect, corner, fill, stroke, StrokeKind::Inside);
+            .rect(rect, corner, look.track, look.stroke, StrokeKind::Inside);
         let r = rect.height() / 2.0 - 3.0;
         let x = egui::lerp((rect.left() + r + 3.0)..=(rect.right() - r - 3.0), t);
-        let thumb = match (value, disabled) {
-            (true, false) => p.on_accent,
-            (true, true) => p.surface_2,
-            (false, false) => p.ink_muted,
-            (false, true) => p.ink_disabled,
-        };
+        let thumb = look.thumb;
         ui.painter()
             .circle_filled(pos2(x, rect.center().y), r, thumb);
     });
@@ -546,21 +606,10 @@ pub fn cs_checkbox_tri(ui: &mut Ui, value: &mut CheckState, label: &str) -> Resp
     let current = *value;
     let mut response = control_row(ui, label, Vec2::splat(box_size), |ui, rect, state, _| {
         let p = palette(ui);
-        let disabled = state == VisualState::Disabled;
-        let filled = current != CheckState::Off;
-        let (fill, stroke) = match (filled, disabled, state) {
-            (true, false, VisualState::Hover) => (p.accent_hover, Stroke::NONE),
-            (true, false, VisualState::Pressed) => (p.accent_pressed, Stroke::NONE),
-            (true, false, _) => (p.accent, Stroke::NONE),
-            (true, true, _) => (p.ink_disabled, Stroke::NONE),
-            (false, false, VisualState::Hover) => (p.surface_3, hairline(p.border_strong)),
-            (false, false, VisualState::Pressed) => (p.surface_4, hairline(p.border_strong)),
-            (false, false, _) => (p.surface_2, hairline(p.border_strong)),
-            (false, true, _) => (Color32::TRANSPARENT, hairline(p.border)),
-        };
+        let look = check_look(p, current != CheckState::Off, state);
         ui.painter()
-            .rect(rect, radius_m(), fill, stroke, StrokeKind::Inside);
-        let mark = Stroke::new(2.0, if disabled { p.surface_2 } else { p.on_accent });
+            .rect(rect, radius_m(), look.fill, look.stroke, StrokeKind::Inside);
+        let mark = Stroke::new(2.0, look.mark);
         let at = |x: f32, y: f32| {
             pos2(
                 rect.left() + rect.width() * x,
@@ -695,6 +744,11 @@ pub fn cs_dropdown_placeholder<T: PartialEq + Clone>(
     response
 }
 
+/// Contorno do campo com erro: `danger` de 2px (`TextField.md`).
+pub fn error_stroke(p: &Palette) -> Stroke {
+    Stroke::new(2.0, p.danger)
+}
+
 /// Campo de texto (`TextField.md`). `hint` é um exemplo real, nunca o rótulo. Com `error`, o
 /// contorno vira `danger` e a mensagem aparece logo abaixo, com ícone.
 pub fn cs_text_field(ui: &mut Ui, text: &mut String, hint: &str, error: Option<&str>) -> Response {
@@ -708,12 +762,8 @@ pub fn cs_text_field(ui: &mut Ui, text: &mut String, hint: &str, error: Option<&
     );
     let corner = radius_m();
     if error.is_some() {
-        ui.painter().rect_stroke(
-            response.rect,
-            corner,
-            Stroke::new(1.5, p.danger),
-            StrokeKind::Inside,
-        );
+        ui.painter()
+            .rect_stroke(response.rect, corner, error_stroke(p), StrokeKind::Inside);
     }
     paint_focus_ring(ui, response.rect, corner, &response);
     if let Some(message) = error {
@@ -722,7 +772,7 @@ pub fn cs_text_field(ui: &mut Ui, text: &mut String, hint: &str, error: Option<&
                 ui.ctx(),
                 Some(icon::WARNING_CIRCLE),
                 message,
-                egui::TextStyle::Body.resolve(ui.style()),
+                FontId::proportional(12.0),
                 p.danger,
             ));
         });
@@ -730,11 +780,31 @@ pub fn cs_text_field(ui: &mut Ui, text: &mut String, hint: &str, error: Option<&
     response
 }
 
+/// Raio do botão do Slider para uma área de clique de `height` (o mesmo cálculo do `egui`).
+fn slider_handle_radius(height: f32) -> f32 {
+    height / 2.5
+}
+
+/// Centro do botão do Slider: `fraction` (0 a 1) do valor sobre o trilho de `rect`.
+pub fn slider_thumb_center(rect: Rect, fraction: f32) -> egui::Pos2 {
+    let r = slider_handle_radius(rect.height());
+    pos2(
+        egui::lerp(
+            (rect.left() + r)..=(rect.right() - r),
+            fraction.clamp(0.0, 1.0),
+        ),
+        rect.center().y,
+    )
+}
+
 /// Slider (`Slider.md`): trilho preenchido até o valor em `accent`. O valor atual fica no
-/// rótulo, que o chamador monta ("Escala da interface · 125%").
+/// rótulo, que o chamador monta ("Escala da interface · 125%"). A área de clique tem 24px de
+/// altura e o anel de foco envolve o botão, não o trilho.
 pub fn cs_slider(ui: &mut Ui, value: &mut f32, range: RangeInclusive<f32>, step: f32) -> Response {
     let p = palette(ui);
+    let (lo, hi) = (*range.start(), *range.end());
     ui.scope(|ui| {
+        ui.spacing_mut().interact_size.y = ui.spacing().interact_size.y.max(MIN_TARGET);
         let v = ui.visuals_mut();
         v.selection.bg_fill = p.accent;
         v.slider_trailing_fill = true;
@@ -747,12 +817,165 @@ pub fn cs_slider(ui: &mut Ui, value: &mut f32, range: RangeInclusive<f32>, step:
         let response = ui.add(
             egui::Slider::new(value, range)
                 .step_by(f64::from(step))
+                .handle_shape(egui::style::HandleShape::Circle)
                 .show_value(false),
         );
-        paint_focus_ring(ui, response.rect, radius_m(), &response);
+        if response.has_focus() && focus_visible(ui.ctx()) {
+            let fraction = if hi > lo {
+                (*value - lo) / (hi - lo)
+            } else {
+                0.0
+            };
+            let center = slider_thumb_center(response.rect, fraction);
+            let r = slider_handle_radius(response.rect.height());
+            ui.painter()
+                .circle_stroke(center, r + 3.5, Stroke::new(2.0, p.focus_ring));
+        }
         response
     })
     .inner
+}
+
+/// Aparência do cartão de escolha (`Backstage.md`): contorno `border-strong`; o escolhido em
+/// `accent-subtle` com contorno `accent` de 2px.
+pub fn card_look(p: &Palette, selected: bool, state: VisualState) -> Look {
+    if selected {
+        return Look {
+            fill: p.accent_subtle,
+            stroke: Stroke::new(2.0, p.accent),
+            text: p.accent_ink,
+        };
+    }
+    Look {
+        fill: match state {
+            VisualState::Hover => p.surface_3,
+            VisualState::Pressed => p.surface_4,
+            _ => p.surface_1,
+        },
+        stroke: hairline(p.border_strong),
+        text: p.ink,
+    }
+}
+
+/// Largura do cartão de escolha, em pontos.
+pub const CARD_WIDTH: f32 = 180.0;
+
+/// Cartão de escolha: uma opção de página com título e, se houver, uma linha de detalhe. Devolve
+/// a resposta; o chamador decide o que o clique faz e passa `selected`.
+pub fn cs_choice_card(ui: &mut Ui, selected: bool, title: &str, detail: Option<&str>) -> Response {
+    let p = palette(ui);
+    let pad = 12.0;
+    let title_galley = ui.painter().layout(
+        title.to_owned(),
+        strong_font(ui.ctx(), 14.0),
+        Color32::PLACEHOLDER,
+        CARD_WIDTH - 2.0 * pad,
+    );
+    let detail_galley = detail.map(|d| {
+        ui.painter().layout(
+            d.to_owned(),
+            FontId::proportional(12.0),
+            Color32::PLACEHOLDER,
+            CARD_WIDTH - 2.0 * pad,
+        )
+    });
+    // Cartões com detalhe têm a altura de título mais duas linhas, para ficarem lado a lado
+    // com a mesma altura mesmo quando o detalhe cabe numa linha só.
+    let height = 2.0 * pad
+        + title_galley.size().y
+        + detail_galley
+            .as_ref()
+            .map_or(0.0, |g| 4.0 + g.size().y.max(2.0 * 14.5));
+    let (rect, response) =
+        ui.allocate_exact_size(vec2(CARD_WIDTH, height.max(MIN_TARGET)), Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::WidgetType::RadioButton, true, selected, title)
+    });
+    if ui.is_rect_visible(rect) {
+        let state = visual_state(&response, true);
+        let look = card_look(p, selected, state);
+        let corner = radius_m();
+        ui.painter()
+            .rect(rect, corner, look.fill, look.stroke, StrokeKind::Inside);
+        let mut y = rect.top() + pad;
+        let x = rect.left() + pad;
+        let title_h = title_galley.size().y;
+        ui.painter().galley(pos2(x, y), title_galley, look.text);
+        y += title_h + 4.0;
+        if let Some(g) = detail_galley {
+            ui.painter().galley(pos2(x, y), g, p.ink_muted);
+        }
+        paint_focus_ring(ui, rect, corner, &response);
+    }
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// Largura de uma casa decimal tabular na fonte: a do maior dígito (0 a 9).
+pub fn digit_cell_width(painter: &egui::Painter, font: &FontId) -> f32 {
+    "0123456789"
+        .chars()
+        .map(|c| {
+            painter
+                .layout_no_wrap(c.to_string(), font.clone(), Color32::PLACEHOLDER)
+                .size()
+                .x
+        })
+        .fold(0.0, f32::max)
+}
+
+/// Texto com números tabulares já medido: cada dígito ocupa a mesma largura (a do maior
+/// algarismo da fonte), então o relógio, a Notação e a avaliação não "dançam" ao mudar. O egui
+/// não aplica a feature `tnum` da Inter (os dígitos da Inter embutida têm larguras diferentes),
+/// por isso a largura é fixada aqui, dígito a dígito.
+pub struct Tabular {
+    glyphs: Vec<(std::sync::Arc<egui::Galley>, f32)>,
+    pub size: Vec2,
+}
+
+impl Tabular {
+    /// Mede `text`; os dígitos ganham a largura de `digit_cell_width`.
+    pub fn new(painter: &egui::Painter, text: &str, font: &FontId, color: Color32) -> Self {
+        let cell = digit_cell_width(painter, font);
+        let glyphs: Vec<_> = text
+            .chars()
+            .map(|c| {
+                let galley = painter.layout_no_wrap(c.to_string(), font.clone(), color);
+                let advance = if c.is_ascii_digit() {
+                    cell
+                } else {
+                    galley.size().x
+                };
+                (galley, advance)
+            })
+            .collect();
+        let width = glyphs.iter().map(|(_, a)| a).sum();
+        let height = glyphs.iter().map(|(g, _)| g.size().y).fold(0.0, f32::max);
+        Self {
+            glyphs,
+            size: vec2(width, height),
+        }
+    }
+
+    /// Pinta com o canto superior esquerdo em `pos`; cada glifo fica centrado na sua casa.
+    pub fn paint(&self, painter: &egui::Painter, pos: egui::Pos2, color: Color32) {
+        let mut x = pos.x;
+        for (galley, advance) in &self.glyphs {
+            let offset = (advance - galley.size().x) / 2.0;
+            painter.galley(pos2(x + offset, pos.y), galley.clone(), color);
+            x += advance;
+        }
+    }
+}
+
+/// Texto com números tabulares no `Ui` (ver [`Tabular`]). Devolve a resposta do retângulo, que
+/// sente cliques (como um rótulo selecionável do egui) para aceitar menu de contexto.
+pub fn tabular_text(ui: &mut Ui, text: &str, font: FontId, color: Color32) -> Response {
+    let run = Tabular::new(ui.painter(), text, &font, color);
+    let (rect, response) = ui.allocate_exact_size(run.size, Sense::click());
+    if ui.is_rect_visible(rect) {
+        run.paint(ui.painter(), rect.min, color);
+    }
+    response
 }
 
 /// Conteúdo do tooltip de uma Ação (`Tooltip.md`): título, descrição e atalho.
@@ -1007,5 +1230,148 @@ mod tests {
         run(vec![click(true)], &mut on);
         run(vec![click(false)], &mut on);
         assert!(on, "o clique liga o Switch");
+    }
+
+    #[test]
+    fn disabled_on_toggle_keeps_the_state_without_accent() {
+        for theme in ThemeKind::ALL {
+            let pal = p(theme);
+            let look = toggle_look(pal, true, VisualState::Disabled);
+            assert_eq!(look.fill, pal.surface_4);
+            assert_eq!(look.stroke.color, pal.border_strong);
+            assert_eq!(look.text, pal.ink_disabled);
+            assert_ne!(look.stroke.color, pal.accent);
+            // Desligado e desabilitado continua o secundário apagado.
+            assert_eq!(
+                toggle_look(pal, false, VisualState::Disabled),
+                button_look(pal, ButtonVariant::Secondary, VisualState::Disabled)
+            );
+        }
+    }
+
+    #[test]
+    fn switch_colors_per_state() {
+        for theme in ThemeKind::ALL {
+            let pal = p(theme);
+            let on = switch_look(pal, true, VisualState::Rest);
+            assert_eq!((on.track, on.thumb), (pal.accent, pal.on_accent));
+            let off = switch_look(pal, false, VisualState::Rest);
+            assert_eq!(off.thumb, pal.ink_muted, "botão desligado em ink-muted");
+            assert_eq!(off.stroke.color, pal.border_strong);
+            let disabled_on = switch_look(pal, true, VisualState::Disabled);
+            assert_eq!(disabled_on.track, pal.ink_disabled);
+            assert_eq!(disabled_on.thumb, pal.surface_1);
+            let disabled_off = switch_look(pal, false, VisualState::Disabled);
+            assert_eq!(disabled_off.thumb, pal.ink_disabled);
+        }
+    }
+
+    #[test]
+    fn disabled_checked_checkbox_is_ink_disabled_with_a_surface_1_mark() {
+        for theme in ThemeKind::ALL {
+            let pal = p(theme);
+            let look = check_look(pal, true, VisualState::Disabled);
+            assert_eq!(look.fill, pal.ink_disabled);
+            assert_eq!(look.mark, pal.surface_1);
+            assert_ne!(look.fill, pal.accent);
+            let enabled = check_look(pal, true, VisualState::Rest);
+            assert_eq!((enabled.fill, enabled.mark), (pal.accent, pal.on_accent));
+            let off = check_look(pal, false, VisualState::Rest);
+            assert_eq!(off.stroke.color, pal.border_strong);
+        }
+    }
+
+    #[test]
+    fn text_field_error_outline_is_2px_danger() {
+        for theme in ThemeKind::ALL {
+            let stroke = error_stroke(p(theme));
+            assert_eq!(stroke.width, 2.0);
+            assert_eq!(stroke.color, p(theme).danger);
+        }
+    }
+
+    #[test]
+    fn choice_card_selected_is_accent_subtle_with_an_accent_outline() {
+        let pal = p(ThemeKind::Dark);
+        let on = card_look(pal, true, VisualState::Rest);
+        assert_eq!(on.fill, pal.accent_subtle);
+        assert_eq!(on.stroke.color, pal.accent);
+        let off = card_look(pal, false, VisualState::Rest);
+        assert_eq!(off.stroke.color, pal.border_strong);
+        assert_eq!(off.fill, pal.surface_1);
+        assert_eq!(
+            card_look(pal, false, VisualState::Hover).fill,
+            pal.surface_3
+        );
+    }
+
+    #[test]
+    fn checkbox_row_and_slider_have_a_24px_click_area_even_when_the_density_is_tighter() {
+        for density in Density::ALL {
+            let (row, slider) = frame(ThemeKind::Dark, density, |ui| {
+                ui.spacing_mut().interact_size.y = 10.0;
+                let mut on = false;
+                let mut v = 5.0_f32;
+                let row = cs_checkbox(ui, &mut on, "Auxílios").rect.height();
+                let slider = cs_slider(ui, &mut v, 0.0..=10.0, 1.0).rect.height();
+                (row, slider)
+            });
+            assert!(row >= MIN_TARGET, "{density:?}: caixa {row}");
+            assert!(slider >= MIN_TARGET, "{density:?}: slider {slider}");
+        }
+    }
+
+    #[test]
+    fn slider_thumb_runs_from_one_handle_radius_inside_each_end() {
+        let rect = Rect::from_min_size(pos2(10.0, 0.0), vec2(200.0, 24.0));
+        let r = slider_handle_radius(24.0);
+        assert_eq!(slider_thumb_center(rect, 0.0).x, 10.0 + r);
+        assert_eq!(slider_thumb_center(rect, 1.0).x, 210.0 - r);
+        assert_eq!(slider_thumb_center(rect, 0.5).y, 12.0);
+    }
+
+    #[test]
+    fn tabular_text_has_the_same_width_for_any_digits() {
+        frame(ThemeKind::Dark, Density::Comfortable, |ui| {
+            let font = strong_font(ui.ctx(), 32.0);
+            let width = |ui: &Ui, text: &str| {
+                Tabular::new(ui.painter(), text, &font, Color32::WHITE)
+                    .size
+                    .x
+            };
+            let reference = width(ui, "00:00");
+            for text in ["11:11", "88:88", "04:59", "12:07"] {
+                assert!(
+                    (width(ui, text) - reference).abs() < 0.01,
+                    "{text}: {} != {reference}",
+                    width(ui, text)
+                );
+            }
+        });
+    }
+
+    /// Medição (#204): a Inter embutida tem dígitos de larguras diferentes e o egui não aplica
+    /// `tnum`; por isso `Tabular` fixa a largura. Se este teste falhar, a fonte passou a ter
+    /// dígitos tabulares e o `Tabular` deixa de ser necessário.
+    #[test]
+    fn the_embedded_inter_digits_are_not_tabular_by_default() {
+        frame(ThemeKind::Dark, Density::Comfortable, |ui| {
+            for font in [FontId::proportional(32.0), strong_font(ui.ctx(), 32.0)] {
+                let widths: Vec<f32> = "0123456789"
+                    .chars()
+                    .map(|c| {
+                        ui.painter()
+                            .layout_no_wrap(c.to_string(), font.clone(), Color32::WHITE)
+                            .size()
+                            .x
+                    })
+                    .collect();
+                let (min, max) = widths
+                    .iter()
+                    .fold((f32::MAX, 0.0_f32), |(lo, hi), w| (lo.min(*w), hi.max(*w)));
+                eprintln!("DIGITOS {font:?}: {widths:?}");
+                assert!(max - min > 0.5, "{font:?}: {widths:?}");
+            }
+        });
     }
 }
