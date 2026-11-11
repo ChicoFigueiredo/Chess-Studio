@@ -77,7 +77,7 @@ pub use catalog::{
 };
 pub use clock::{Clock, FakeClock, SystemClock, Timestamp};
 pub use error::NetError;
-pub use guard::FairPlayGuard;
+pub use guard::{FairPlayGuard, FairPlayHold};
 pub use limits::RetryPolicy;
 pub use loopback::{CallbackError, CallbackParams, LoopbackCallback};
 pub use ndjson::{NdjsonError, NdjsonItem, NdjsonReader};

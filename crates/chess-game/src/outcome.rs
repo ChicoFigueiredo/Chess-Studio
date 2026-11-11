@@ -49,6 +49,12 @@ pub enum EndReason {
     EliminatedByInfraction,
     /// Eliminação Imediata, mas o adversário não podia dar mate (DEC-35).
     EliminatedByInfractionDraw,
+    /// Partida online: o adversário saiu e o Provedor deu a vitória (ou o empate) a quem
+    /// ficou.
+    Disconnection,
+    /// Partida online encerrada pelo Provedor por outro motivo (fair play, sem início,
+    /// fim desconhecido), com resultado.
+    EndedByProvider,
 }
 
 impl EndReason {
@@ -64,6 +70,8 @@ impl EndReason {
                 | Self::SecondIllegalMoveDraw
                 | Self::EliminatedByInfraction
                 | Self::EliminatedByInfractionDraw
+                | Self::Disconnection
+                | Self::EndedByProvider
         )
     }
 }

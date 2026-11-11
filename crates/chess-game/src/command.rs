@@ -1,6 +1,7 @@
 //! Intenções enviadas à Partida. Cobre todo o P0; o que a Política ativa ou o
 //! escopo do ticket ainda não suporta volta como [`crate::Rejection`] tipada.
 
+use crate::online::ProviderSnapshot;
 use chess_core::{Color, Move, Piece, Square};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,6 +52,11 @@ pub enum Command {
     EngineMove {
         uci: String,
     },
+    /// Retrato vindo do Provedor numa Partida online (ADR-0007): Lances confirmados (com
+    /// os relógios dos dois lados), relógio atualizado, proposta de empate recebida ou
+    /// retirada e resultado decidido pelo Provedor. Entra só o que falta; o instante do
+    /// Comando é o da chegada do retrato, e o tempo restante é o do Provedor.
+    Provider(ProviderSnapshot),
 }
 
 /// Nome do Comando, sem payload (usado em [`crate::Rejection`]).
@@ -74,6 +80,7 @@ pub enum CommandKind {
     Undo,
     Redo,
     EngineMove,
+    Provider,
 }
 
 impl Command {
@@ -96,6 +103,7 @@ impl Command {
             Self::Undo => CommandKind::Undo,
             Self::Redo => CommandKind::Redo,
             Self::EngineMove { .. } => CommandKind::EngineMove,
+            Self::Provider(_) => CommandKind::Provider,
         }
     }
 }

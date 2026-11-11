@@ -10,6 +10,8 @@ publish.workspace = true
 
 [dependencies]
 chess-core.workspace = true
+# A Partida online (#230): o retrato do Provedor e a intenção enviada vão ao controlador.
+chess-game.workspace = true
 # Toda saída de rede passa pelo gate do chess-net; este crate não abre conexão.
 chess-net.workspace = true
 # Segredos das Conexões (token da autorização do Lichess).

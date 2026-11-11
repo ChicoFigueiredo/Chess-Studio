@@ -247,6 +247,14 @@ _Evitar_: chaveiro, keystore
 Partida jogada por um Provedor, que decide Lances, relógio e resultado. O Lance local é uma intenção enviada até o Provedor confirmar. Não usa as Políticas de arbitragem locais. Pode ser em tempo real ou por correspondência.
 _Evitar_: jogo online, partida remota
 
+**Intenção enviada** (_en_: `SentMove`):
+Lance do jogador local numa Partida online enviado uma vez ao Provedor e ainda não confirmado. Fica fora do log; vira Lance concluído quando o Provedor confirma o mesmo Lance e é descartada se ele registrar outro ou recusar.
+_Evitar_: premove, lance pendente
+
+**Retrato** (_en_: `ProviderSnapshot`):
+Estado completo de uma Partida online como o Provedor o informa: Lances desde o início, relógios, proposta de empate e fim. O controlador aplica só o que falta; retrato repetido ou atrasado nunca regride a Partida, e retrato com outra história é dessincronização, nunca reescrita.
+_Evitar_: sync, espelho
+
 **Trava de fair play** (_en_: `FairPlayGuard`):
 Bloqueio, durante uma Partida online contra uma pessoa, de tudo o que calcula para aquela Partida: Engines, avaliação em cache, finais exatos, Explorador e análise. Vale na camada de serviço e só cai quando o Provedor confirma o fim.
 _Evitar_: modo anti-trapaça, bloqueio de engine

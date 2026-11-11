@@ -24,6 +24,7 @@ pub(crate) fn policy_for(kind: PolicyKind) -> &'static dyn ArbitrationPolicy {
         PolicyKind::Assisted => &Assisted,
         PolicyKind::FideSimulation => &fide::FIDE_SIMULATION,
         PolicyKind::SuddenElimination => &fide::SUDDEN_ELIMINATION,
+        PolicyKind::Online => &crate::online::PROVIDER_RULES,
     }
 }
 

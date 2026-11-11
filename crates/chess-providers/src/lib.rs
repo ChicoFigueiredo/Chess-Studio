@@ -84,6 +84,7 @@
 
 mod answer;
 mod auth;
+mod board;
 mod chesscom;
 mod dates;
 mod error;
@@ -100,6 +101,12 @@ pub use answer::{Answer, Query};
 pub use auth::{
     AuthError, AuthFlow, AuthState, AuthTask, CLIENT_ID, ConnectionRole, DEFAULT_DEADLINE,
     LichessAccount, LichessAuth, Revocation, pkce_challenge,
+};
+pub use board::{
+    Backoff, BoardAction, BoardError, CORRESPONDENCE_DAYS, Challenge, ChallengePlayer,
+    ChallengeSpec, ConnectionEvent, ConnectionEvents, DeclineReason, GameInfo, Gap, LichessBoard,
+    LinkStatus, OnlineGameSession, OnlineTime, OpponentGone, OpponentInfo, Seek, SeekState,
+    Seeking, SessionNotice, SessionPoll,
 };
 pub use chesscom::{ChessCom, ChessComProfile, MonthGames};
 pub use dates::{Day, YearMonth};

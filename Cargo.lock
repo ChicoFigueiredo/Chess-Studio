@@ -2129,6 +2129,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "chess-core",
+ "chess-game",
  "chess-net",
  "chess-store",
  "chess-vault",

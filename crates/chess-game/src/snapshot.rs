@@ -2,6 +2,7 @@
 
 use crate::clock::{ClockReading, ClockView};
 use crate::event::DrawBasis;
+use crate::online::OnlineView;
 use crate::outcome::Outcome;
 use crate::setup::{GameSetup, PolicyKind};
 use crate::state::{GameState, PendingPromotion};
@@ -90,8 +91,11 @@ pub struct Snapshot {
     /// Infrações concluídas pelas brancas e pelas pretas.
     pub infractions_white: u8,
     pub infractions_black: u8,
-    /// Empate reclamável agora pelo lado da vez (para a UI e para a Engine, B9).
+    /// Empate reclamável agora pelo lado da vez (para a UI e para a Engine, B9). Nunca
+    /// numa Partida online (reclamar é pedido ao Provedor).
     pub claimable_draw: Option<DrawBasis>,
+    /// Partida online: intenção enviada, dessincronização e aborto (ADR-0007).
+    pub online: Option<OnlineView>,
 }
 
 impl Snapshot {
@@ -145,7 +149,7 @@ impl Snapshot {
             && state.made.is_none()
             && state.provisional_release.is_none()
             && state.pending_promotion.is_none();
-        let claimable_draw = (state.outcome.is_none() && quiet)
+        let claimable_draw = (state.outcome.is_none() && quiet && !state.online)
             .then(|| {
                 if state.occurrences(&position.repetition_key()) >= 3 {
                     Some(DrawBasis::ThreefoldRepetition)
@@ -200,7 +204,17 @@ impl Snapshot {
             infractions_white: state.infractions[0],
             infractions_black: state.infractions[1],
             claimable_draw,
+            online: state.online.then_some(OnlineView {
+                sent_move: None,
+                desync: None,
+                aborted: state.aborted,
+            }),
         }
+    }
+
+    /// A Partida terminou: com resultado ou abortada pelo Provedor.
+    pub fn is_over(&self) -> bool {
+        self.outcome.is_some() || self.online.as_ref().is_some_and(|o| o.aborted)
     }
 
     /// Relógio em `ts` (atalho para `clock.at(ts)`); `None` sem controle de tempo.
@@ -211,7 +225,7 @@ impl Snapshot {
     /// Destinos legais da peça em `from` (para Auxílios visuais), sem repetições e
     /// em ordem de casa. Vazio se não há peça do lado da vez.
     pub fn legal_destinations(&self, from: Square) -> Vec<Square> {
-        if self.outcome.is_some() {
+        if self.is_over() {
             return Vec::new();
         }
         let mut dests: Vec<Square> = self

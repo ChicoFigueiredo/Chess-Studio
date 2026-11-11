@@ -205,6 +205,12 @@ fn arbitration(game: &Game) -> String {
         PolicyKind::SuddenElimination => {
             "Sudden Elimination (custom training rule, not FIDE)".to_owned()
         }
+        PolicyKind::Online => format!(
+            "Online ({})",
+            game.setup()
+                .online_game()
+                .map_or("provider", |o| o.provider.as_str())
+        ),
         _ => "Assisted".to_owned(),
     }
 }
