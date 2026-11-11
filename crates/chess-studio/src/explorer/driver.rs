@@ -18,6 +18,7 @@ use chess_providers::{
     CloudEval, ExplorerPosition, LichessFilter, MastersFilter, PlayerFilter, ProviderError,
     Tablebase,
 };
+use chess_store::ConnectionRole;
 use std::time::Instant;
 
 /// O que muda a cada quadro.
@@ -138,6 +139,10 @@ impl Explorer {
     pub fn drive(&mut self, input: &Input<'_>, service: &NetService) {
         self.openings.poll();
         self.tablebase.poll();
+        // O Explorador do Lichess só responde com uma Conexão autorizada: o pedido a nomeia.
+        service.lichess().use_connection(
+            service.authorized_connection(ProviderId::Lichess, ConnectionRole::Player),
+        );
         self.retry_after_pause(input);
         // A Trava vale antes de tudo: nem um pedido sai, e o que estava a caminho é cancelado.
         if input.lock.is_some() {
@@ -394,10 +399,31 @@ mod tests {
         t0: Instant,
     }
 
+    /// Cofre falso: entrega um token para qualquer Conexão registrada.
+    #[derive(Debug)]
+    struct FakeVault;
+
+    impl chess_net::AuthorizationSource for FakeVault {
+        fn authorization(
+            &self,
+            _profile: chess_net::LocalProfileId,
+            provider: ProviderId,
+            _connection: chess_net::ConnectionId,
+        ) -> Option<chess_net::Authorization> {
+            Some(chess_net::Authorization::bearer(
+                provider,
+                &chess_net::Secret::new("token-de-teste"),
+            ))
+        }
+    }
+
     fn env(lichess_on: bool) -> Env {
         let clock = Arc::new(FakeClock::new(T0));
         let server = FakeServer::with_clock(clock.clone());
-        let mut config = NetConfig::in_memory().clock(clock.clone()).jitter_seed(7);
+        let mut config = NetConfig::in_memory()
+            .clock(clock.clone())
+            .jitter_seed(7)
+            .vault(Arc::new(FakeVault));
         for host in [
             "lichess.org",
             "explorer.lichess.org",
@@ -411,6 +437,12 @@ mod tests {
             net.set_enabled(ProviderId::Lichess, true).unwrap();
         }
         let service = NetService::from_net(net, clock.clone(), false);
+        // Uma Conexão autorizada do Lichess no Cofre falso (a Central ainda não cria nenhuma).
+        service.set_authorized_connection(
+            ProviderId::Lichess,
+            ConnectionRole::Player,
+            Some(chess_net::ConnectionId(1)),
+        );
         Env {
             clock,
             server,
@@ -419,13 +451,13 @@ mod tests {
         }
     }
 
-    fn input(env: &Env, fen: &'static str, after_ms: u64, auth: Authorization) -> Input<'static> {
+    fn input(env: &Env, fen: &'static str, after_ms: u64, _auth: Authorization) -> Input<'static> {
         Input {
             fen,
             now: env.t0 + Duration::from_millis(after_ms),
             at: env.clock.now(),
             lock: None,
-            authorization: auth,
+            authorization: Authorization::lichess_now(&env.service),
         }
     }
 
@@ -478,6 +510,8 @@ mod tests {
     #[test]
     fn without_an_authorized_connection_the_online_sources_ask_for_sign_in_and_send_nothing() {
         let env = env(true);
+        env.service
+            .set_authorized_connection(ProviderId::Lichess, ConnectionRole::Player, None);
         let mut explorer = masters_explorer();
         for source in [Source::Masters, Source::Lichess, Source::Player] {
             explorer.source = source;

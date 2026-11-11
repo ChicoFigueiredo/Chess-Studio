@@ -84,10 +84,14 @@ pub enum Authorization {
 }
 
 impl Authorization {
-    /// A autorização do Lichess neste momento do app. Troca-se por uma consulta ao Cofre
-    /// quando a Conexão autorizada existir.
-    pub const fn lichess_now() -> Self {
-        Authorization::NotAvailable
+    /// Há Conexão autorizada do Lichess (papel jogador) para o Perfil local ativo?
+    pub fn lichess_now(service: &crate::net_service::NetService) -> Self {
+        match service
+            .authorized_connection(ProviderId::Lichess, chess_store::ConnectionRole::Player)
+        {
+            Some(_) => Authorization::Granted,
+            None => Authorization::NotAvailable,
+        }
     }
 }
 
@@ -398,6 +402,8 @@ pub fn notice_for(error: &ProviderError) -> Notice {
         ProviderError::Net(NetError::NotAuthorized { provider, .. }) => {
             Notice::SignInRequired(*provider)
         }
+        // O Provedor recusou a autorização (token vencido ou revogado): autorizar de novo.
+        ProviderError::ConnectionRejected { provider, .. } => Notice::SignInRequired(*provider),
         ProviderError::NoData => Notice::NoData,
         ProviderError::TooManyPieces { pieces, .. } => Notice::TooManyPieces { pieces: *pieces },
         ProviderError::Net(NetError::Unreachable { .. } | NetError::Timeout { .. }) => {

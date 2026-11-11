@@ -169,7 +169,7 @@ impl ExplorerUi {
         };
         let now = Instant::now();
         let at = NetService::now();
-        let authorization = Authorization::lichess_now();
+        let authorization = Authorization::lichess_now(net);
         let input = Input {
             fen: &here.fen,
             now,
