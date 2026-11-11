@@ -43,6 +43,8 @@ pub enum OpError {
     InvalidName,
     NameTaken,
     Busy,
+    /// O Cofre não apagou as autorizações do Perfil: nada foi removido.
+    Vault,
     Other,
 }
 
@@ -52,6 +54,7 @@ impl OpError {
             OpError::InvalidName => "lp-error-name",
             OpError::NameTaken => "lp-error-taken",
             OpError::Busy => "lp-error-busy",
+            OpError::Vault => "lp-error-vault",
             OpError::Other => "lp-error-other",
         }
     }
@@ -218,6 +221,7 @@ fn run_ops(
     mut state: ResMut<LocalProfiles>,
     handle: Option<Res<PersistenceHandle>>,
     training: Res<TrainingUi>,
+    net: Option<Res<crate::net_service::NetService>>,
     mut applied: Applied,
 ) {
     if state.ops.is_empty() {
@@ -230,7 +234,8 @@ fn run_ops(
         return;
     };
     for op in ops {
-        if let Err(error) = execute(&mut persistence, &training, &mut applied, op) {
+        let vault = net.as_deref().map(crate::net_service::NetService::vault);
+        if let Err(error) = execute(&mut persistence, &training, &mut applied, vault, op) {
             state.error = Some(error);
         }
     }
@@ -244,6 +249,7 @@ fn execute(
     persistence: &mut Persistence,
     training: &TrainingUi,
     applied: &mut Applied,
+    vault: Option<&chess_vault::SecretVault>,
     op: Op,
 ) -> Result<(), OpError> {
     let fail = |e: StoreError| OpError::from(&e);
@@ -263,12 +269,34 @@ fn execute(
         }
         Op::Create(name) => {
             let id = persistence.create_profile(&name).map_err(fail)?;
-            return execute(persistence, training, applied, Op::Switch(id));
+            return execute(persistence, training, applied, vault, Op::Switch(id));
         }
         Op::Rename(id, name) => persistence.rename_profile(id, &name).map_err(fail)?,
-        Op::Delete(id) => persistence.delete_profile(id).map_err(fail)?,
+        Op::Delete(id) => delete_profile(persistence, vault, id)?,
     }
     Ok(())
+}
+
+/// Exclui o Perfil local `id`. Antes, os segredos dele saem do Cofre: o `id` das Conexões é a
+/// chave deles, e um segredo órfão sobraria para sempre. Se o Cofre recusar, o Perfil fica. O
+/// Perfil em uso nunca é excluído (troque antes).
+fn delete_profile(
+    persistence: &mut Persistence,
+    vault: Option<&chess_vault::SecretVault>,
+    id: ProfileId,
+) -> Result<(), OpError> {
+    match vault {
+        Some(vault) if id != persistence.profile() => {
+            let (store, _) = persistence.store_and_profile();
+            crate::secrets::forget_profile(store, vault, id).map_err(|error| match error {
+                crate::secrets::ForgetError::Vault(_) => OpError::Vault,
+                crate::secrets::ForgetError::Store(_) => OpError::Other,
+            })
+        }
+        _ => persistence
+            .delete_profile(id)
+            .map_err(|e| OpError::from(&e)),
+    }
 }
 
 /// Seção da janela principal: perfil em uso, troca rápida e acesso ao gerenciador.
@@ -505,6 +533,57 @@ mod tests {
         assert!(state.picker_open);
         assert_eq!(state.list().len(), 2);
         assert_eq!(state.active(), Some(p.profile()));
+    }
+
+    #[test]
+    fn deleting_a_local_profile_deletes_its_secrets_first_and_keeps_it_if_the_vault_refuses() {
+        use crate::secrets::{VolatileKeyring, net_id, net_profile, volatile_vault_with};
+        use chess_net::{ProviderId, Secret};
+        use chess_store::{ConnectionKind, ConnectionRole};
+        use std::sync::Arc;
+        let keyring = Arc::new(VolatileKeyring::new());
+        let opened = volatile_vault_with(keyring.clone(), "teste-perfil", None);
+        let mut p = persistence();
+        let ana = p.create_profile("Ana").unwrap();
+        // Uma Conexão autorizada da Ana, com segredo no Cofre.
+        let id = {
+            let (store, _) = p.store_and_profile();
+            let id = store
+                .begin_authorization(
+                    ana,
+                    "lichess",
+                    ConnectionRole::Player,
+                    ConnectionKind::AuthorizedBrowser,
+                )
+                .unwrap();
+            opened
+                .vault
+                .store(
+                    net_profile(ana),
+                    ProviderId::Lichess,
+                    net_id(id),
+                    Secret::new("lio_SEGREDO"),
+                )
+                .unwrap();
+            id
+        };
+        assert_eq!(keyring.accounts().len(), 1);
+        // O Cofre recusa: o Perfil local fica, com a Conexão.
+        keyring.set_failing(true);
+        assert_eq!(
+            delete_profile(&mut p, Some(&opened.vault), ana),
+            Err(OpError::Vault)
+        );
+        assert!(p.profiles().iter().any(|info| info.id == ana));
+        // O perfil em uso nunca se exclui.
+        keyring.set_failing(false);
+        let current = p.profile();
+        assert!(delete_profile(&mut p, Some(&opened.vault), current).is_err());
+        // Com o Cofre de volta, o segredo sai e só então o Perfil.
+        delete_profile(&mut p, Some(&opened.vault), ana).unwrap();
+        assert!(keyring.accounts().is_empty());
+        assert!(opened.vault.reference(net_id(id)).is_none());
+        assert!(!p.profiles().iter().any(|info| info.id == ana));
     }
 
     #[test]

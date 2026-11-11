@@ -7,13 +7,14 @@
 //! - gratuitos primeiro, agrupados por categoria (jogar, dados, Engines, importação, ratings);
 //!   dentro de cada categoria, o que já funciona, depois "Em breve", por último "Requer
 //!   aprovação";
-//! - "Autorizado" só existe com uma Conexão autorizada (o Cofre chega no #224); "Ligado" nunca
-//!   se apresenta como conectado;
+//! - "Autorizado" só existe com uma Conexão autorizada de verdade (segredo no Cofre, aberto, e
+//!   não recusada pelo Provedor); "Ligado" nunca se apresenta como conectado;
 //! - Provedor sem API ou sem aprovação nunca mostra campo de segredo nem botão de autorização;
 //! - o cartão mostra uma ação principal; as demais vão no menu "⋯";
 //! - nenhum texto da tela vem do catálogo: as notas técnicas de `chess-net` são para quem
 //!   desenvolve, e a interface usa os textos próprios em Fluent.
 
+use crate::secrets::Standing;
 use chess_net::{
     AuthMethod, Capability, Category, Cost, Operation, Provider, ProviderId, ProviderState,
     ServiceStatus, Timestamp, catalog,
@@ -151,6 +152,11 @@ pub enum CardState {
     Linked,
     /// Ligado e com uma Conexão **autorizada**: o único estado que pode dizer isso.
     Authorized,
+    /// A autorização existe, mas o Provedor a recusou (expirada ou revogada) ou o segredo
+    /// sumiu: reautorizar. Os dados locais ficam.
+    Expired,
+    /// A autorização existe, mas o cofre do Chess Studio está bloqueado.
+    Locked,
     /// O Provedor pediu uma pausa.
     Limited,
     /// A última tentativa falhou.
@@ -194,6 +200,8 @@ impl CardState {
             Self::On => "connections-state-on",
             Self::Linked => "connections-state-linked",
             Self::Authorized => "connections-state-authorized",
+            Self::Expired => "connections-state-expired",
+            Self::Locked => "connections-state-locked",
             Self::Limited => "connections-state-limited",
             Self::Failing => "connections-state-failing",
             Self::ManualImport => "connections-state-manual",
@@ -210,6 +218,8 @@ impl CardState {
             Self::On => "connections-hint-on",
             Self::Linked => "connections-hint-linked",
             Self::Authorized => "connections-hint-authorized",
+            Self::Expired => "connections-hint-expired",
+            Self::Locked => "connections-hint-locked",
             Self::Limited => "connections-hint-limited",
             Self::Failing => "connections-hint-failing",
             Self::ManualImport => "connections-hint-manual",
@@ -275,6 +285,23 @@ pub fn card_state(
     has_connection: bool,
     authorized: bool,
 ) -> CardState {
+    card_state_with(
+        provider,
+        net,
+        has_connection,
+        authorized.then_some(Standing::Active),
+    )
+}
+
+/// Como [`card_state`], com a situação da melhor autorização do Provedor (`None`: nenhuma
+/// Conexão autorizada). Só o Provedor ligado mostra "Autorizado"; a autorização recusada ou com
+/// o cofre bloqueado aparece como tal.
+pub fn card_state_with(
+    provider: &Provider,
+    net: &ProviderState,
+    has_connection: bool,
+    auth: Option<Standing>,
+) -> CardState {
     if !provider.uses_network() {
         let services = provider.services;
         if services
@@ -296,9 +323,13 @@ pub fn card_state(
     match net {
         ProviderState::Limited { .. } => CardState::Limited,
         ProviderState::Failing { .. } => CardState::Failing,
-        ProviderState::Available if authorized => CardState::Authorized,
-        ProviderState::Available if has_connection => CardState::Linked,
-        ProviderState::Available => CardState::On,
+        ProviderState::Available => match auth {
+            Some(Standing::Active) => CardState::Authorized,
+            Some(Standing::Locked) => CardState::Locked,
+            Some(Standing::Expired | Standing::Unusable) => CardState::Expired,
+            None if has_connection => CardState::Linked,
+            None => CardState::On,
+        },
         ProviderState::Disabled => {
             if has_use_today(provider)
                 && earliest_stage(provider).is_none_or(|stage| stage < PLANNED_FROM_STAGE)
@@ -328,10 +359,16 @@ pub enum CardAction {
     Link,
     Test,
     ClearCache,
-    /// Autorizar pelo navegador (chega com o Cofre, #224).
+    /// Autorizar pelo navegador.
     Authorize,
-    /// Inserir uma chave pessoal (chega com o Cofre, #224).
+    /// Autorizar de novo a Conexão expirada ou recusada pelo Provedor.
+    Reauthorize,
+    /// Desbloquear o cofre do Chess Studio (as autorizações voltam).
+    Unlock,
+    /// Inserir uma chave pessoal (fluxo avançado).
     EnterKey,
+    /// Abrir a entrada de Engine online, separada da de jogador.
+    EngineOnline,
     OpenDocs,
     OpenTerms,
 }
@@ -384,6 +421,21 @@ pub fn can_link(provider: &Provider, state: CardState) -> bool {
         )
 }
 
+/// O Provedor tem autorização pelo navegador e chave pessoal que o app sabe fazer (hoje só o
+/// Lichess; os outros mostram as ações desabilitadas, com o motivo).
+pub fn can_authorize(provider: &Provider) -> bool {
+    provider.id == ProviderId::Lichess
+}
+
+/// O Provedor tem Engine online com autorização própria, separada da do jogador.
+pub fn has_online_engine(provider: &Provider) -> bool {
+    can_authorize(provider)
+        && provider
+            .services
+            .iter()
+            .any(|s| s.capability == Capability::OnlineEngine)
+}
+
 /// As ações do cartão: uma principal (a que a pessoa mais provavelmente quer agora) e o resto no
 /// menu. Cartões menores só levam instruções e termos no menu.
 pub fn card_actions(provider: &Provider, state: CardState, has_connection: bool) -> Actions {
@@ -410,16 +462,24 @@ pub fn card_actions(provider: &Provider, state: CardState, has_connection: bool)
         return out;
     }
     let linkable = can_link(provider, state);
-    out.primary = if linkable && has_connection && can_test(provider.id) {
-        Some(ready(CardAction::Test))
-    } else if linkable && !has_connection {
-        Some(ready(CardAction::Link))
-    } else if !provider.uses_network() && docs {
-        Some(ready(CardAction::OpenDocs))
-    } else {
-        None
+    let authorizes = can_authorize(provider) && !state.is_informational();
+    let testable = linkable && has_connection && can_test(provider.id);
+    out.primary = match state {
+        // A autorização é o que o Lichess mais precisa: ela vem antes de vincular um nome.
+        CardState::Authorized if testable => Some(ready(CardAction::Test)),
+        CardState::Expired if authorizes => Some(ready(CardAction::Reauthorize)),
+        CardState::Locked if authorizes => Some(ready(CardAction::Unlock)),
+        CardState::Authorized | CardState::Expired | CardState::Locked => None,
+        _ if authorizes => Some(ready(CardAction::Authorize)),
+        _ if testable => Some(ready(CardAction::Test)),
+        _ if linkable && !has_connection => Some(ready(CardAction::Link)),
+        _ if !provider.uses_network() && docs => Some(ready(CardAction::OpenDocs)),
+        _ => None,
     };
     let primary = out.primary.map(|spec| spec.action);
+    if testable && primary != Some(CardAction::Test) {
+        out.menu.push(ready(CardAction::Test));
+    }
     if linkable && primary != Some(CardAction::Link) {
         out.menu.push(ready(CardAction::Link));
     }
@@ -427,13 +487,19 @@ pub fn card_actions(provider: &Provider, state: CardState, has_connection: bool)
         out.menu.push(ready(CardAction::ClearCache));
     }
     if !state.is_informational() {
-        if has_auth(provider, &[AuthMethod::OAuth2Pkce]) {
+        if has_auth(provider, &[AuthMethod::PersonalToken, AuthMethod::ApiKey]) {
+            out.menu.push(if can_authorize(provider) {
+                ready(CardAction::EnterKey)
+            } else {
+                soon(CardAction::EnterKey, "connections-reason-key")
+            });
+        }
+        if has_auth(provider, &[AuthMethod::OAuth2Pkce]) && !can_authorize(provider) {
             out.menu
                 .push(soon(CardAction::Authorize, "connections-reason-authorize"));
         }
-        if has_auth(provider, &[AuthMethod::PersonalToken, AuthMethod::ApiKey]) {
-            out.menu
-                .push(soon(CardAction::EnterKey, "connections-reason-key"));
+        if has_online_engine(provider) {
+            out.menu.push(ready(CardAction::EngineOnline));
         }
     }
     if docs && primary != Some(CardAction::OpenDocs) {
@@ -451,9 +517,9 @@ pub enum FieldKind {
     PublicName,
     PublicId,
     Nickname,
-    /// Campo de segredo (chave): só existe com o Cofre (#224), e nunca em Provedor sem API ou
-    /// sob aprovação. Hoje nenhum cartão o mostra.
-    #[allow(dead_code)] // reservado ao Cofre
+    /// Campo de segredo (chave pessoal): mascarado, nunca em log nem em área de transferência.
+    /// Só no formulário da chave pessoal do Lichess (nunca no de vincular nome), e nunca em
+    /// Provedor sem API ou sob aprovação.
     Secret,
 }
 
@@ -466,7 +532,8 @@ pub fn connection_kind(provider: &Provider) -> ConnectionKind {
     }
 }
 
-/// Todos os campos de entrada do cartão (o formulário de vincular). Nunca `Secret` por enquanto.
+/// Os campos do formulário de vincular nome ou ID público. Nunca `Secret`: a chave pessoal tem
+/// o próprio formulário ([`key_fields`]).
 pub fn card_fields(provider: &Provider, state: CardState) -> Vec<FieldKind> {
     if !can_link(provider, state) {
         return Vec::new();
@@ -474,10 +541,19 @@ pub fn card_fields(provider: &Provider, state: CardState) -> Vec<FieldKind> {
     vec![
         match connection_kind(provider) {
             ConnectionKind::PublicId => FieldKind::PublicId,
-            ConnectionKind::PublicName => FieldKind::PublicName,
+            _ => FieldKind::PublicName,
         },
         FieldKind::Nickname,
     ]
+}
+
+/// Os campos do formulário da chave pessoal: só o campo de segredo, mascarado.
+pub fn key_fields(provider: &Provider, state: CardState) -> Vec<FieldKind> {
+    if can_authorize(provider) && !state.is_informational() && !state.is_compact() {
+        vec![FieldKind::Secret]
+    } else {
+        Vec::new()
+    }
 }
 
 /// Id Fluent do nome do serviço, como substantivo ("Explorador", "Finais exatos").
@@ -536,7 +612,7 @@ pub enum Face {
 }
 
 /// O que o Provedor permite **agora**: vincular nome, testar e os serviços prontos ou de
-/// importação manual. O que ainda não existe fica em [`later`].
+/// importação manual (o Explorador do Lichess, só depois de autorizar). O que ainda não existe fica em [`later`].
 pub fn face(provider: &Provider, state: CardState) -> Face {
     match state {
         CardState::Planned => return Face::Note("connections-face-planned"),
@@ -548,7 +624,7 @@ pub fn face(provider: &Provider, state: CardState) -> Face {
     if can_link(provider, state) {
         out.push(match connection_kind(provider) {
             ConnectionKind::PublicId => "connections-do-link-id",
-            ConnectionKind::PublicName => "connections-do-link",
+            _ => "connections-do-link",
         });
         if can_test(provider.id) {
             out.push("connections-do-test");
@@ -557,6 +633,10 @@ pub fn face(provider: &Provider, state: CardState) -> Face {
     for service in provider.services {
         let key = match (service.capability, service.status) {
             (Capability::IdentityOnly, _) => continue,
+            // O Explorador do Lichess só responde a quem autorizou a conexão.
+            (Capability::Explore, ServiceStatus::Ready) if state != CardState::Authorized => {
+                "connections-do-explore-after"
+            }
             (capability, ServiceStatus::Ready | ServiceStatus::ManualImport) => {
                 verb_key(capability, service.status)
             }
@@ -654,15 +734,19 @@ pub fn hosts(provider: &Provider) -> Vec<&'static str> {
 
 /// Ids Fluent dos métodos de identificação do Provedor.
 pub fn auth_keys(provider: &Provider) -> Vec<&'static str> {
+    let ready = can_authorize(provider);
     provider
         .auth_methods()
         .into_iter()
         .map(|method| match method {
             AuthMethod::None => "connections-auth-none",
             AuthMethod::PublicId => "connections-auth-public-id",
-            AuthMethod::OAuth2Pkce => "connections-auth-oauth",
-            AuthMethod::PersonalToken => "connections-auth-key-personal",
-            AuthMethod::ApiKey => "connections-auth-key",
+            AuthMethod::OAuth2Pkce if ready => "connections-auth-oauth",
+            AuthMethod::OAuth2Pkce => "connections-auth-oauth-soon",
+            AuthMethod::PersonalToken if ready => "connections-auth-key-personal",
+            AuthMethod::PersonalToken => "connections-auth-key-personal-soon",
+            AuthMethod::ApiKey if ready => "connections-auth-key",
+            AuthMethod::ApiKey => "connections-auth-key-soon",
             AuthMethod::UsernamePasswordApprovedProtocol => "connections-auth-protocol",
             AuthMethod::ManualImportOnly => "connections-auth-manual",
             AuthMethod::PartnerApproval => "connections-auth-partner",
@@ -931,21 +1015,47 @@ mod tests {
     }
 
     #[test]
-    fn authorize_and_enter_key_stay_in_the_menu_and_disabled_with_a_reason() {
+    fn authorizing_is_the_lichess_primary_action_and_other_providers_keep_it_disabled() {
         let lichess = provider(ProviderId::Lichess);
-        let actions = card_actions(lichess, CardState::Off, false);
-        for wanted in [CardAction::Authorize, CardAction::EnterKey] {
-            let spec = actions.menu.iter().find(|a| a.action == wanted).unwrap();
-            assert!(!spec.enabled);
-            assert!(spec.reason_key.is_some());
+        for state in [CardState::Off, CardState::On, CardState::Linked] {
+            let actions = card_actions(lichess, state, state == CardState::Linked);
+            assert_eq!(
+                actions.primary.map(|s| s.action),
+                Some(CardAction::Authorize),
+                "{state:?}"
+            );
+            for wanted in [CardAction::EnterKey, CardAction::EngineOnline] {
+                let spec = actions.menu.iter().find(|a| a.action == wanted).unwrap();
+                assert!(spec.enabled, "{wanted:?}");
+            }
         }
-        // Nenhum cartão do catálogo oferece um desses dois habilitado, e todo item
-        // desabilitado do menu explica o motivo.
+        // Expirada: reautorizar. Bloqueada: desbloquear. Autorizada: testar.
+        let primary = |state, linked| {
+            card_actions(lichess, state, linked)
+                .primary
+                .map(|s| s.action)
+        };
+        assert_eq!(
+            primary(CardState::Expired, true),
+            Some(CardAction::Reauthorize)
+        );
+        assert_eq!(primary(CardState::Locked, true), Some(CardAction::Unlock));
+        assert_eq!(primary(CardState::Authorized, true), Some(CardAction::Test));
+        // Nenhum outro Provedor do catálogo oferece autorizar ou chave habilitados, e todo item
+        // desabilitado explica o motivo.
         for p in catalog() {
             let state = card_state(p, &ProviderState::Available, false, false);
             let actions = card_actions(p, state, true);
             for spec in actions.primary.iter().chain(&actions.menu) {
-                if matches!(spec.action, CardAction::Authorize | CardAction::EnterKey) {
+                if p.id != ProviderId::Lichess
+                    && matches!(
+                        spec.action,
+                        CardAction::Authorize
+                            | CardAction::Reauthorize
+                            | CardAction::EnterKey
+                            | CardAction::EngineOnline
+                    )
+                {
                     assert!(!spec.enabled, "{}", p.name);
                 }
                 assert!(spec.enabled || spec.reason_key.is_some(), "{}", p.name);
@@ -954,18 +1064,43 @@ mod tests {
     }
 
     #[test]
+    fn the_secret_field_exists_only_in_the_lichess_key_form() {
+        for p in catalog() {
+            for state in [CardState::Off, CardState::On, CardState::Authorized] {
+                let fields = key_fields(p, state);
+                assert_eq!(
+                    fields.contains(&FieldKind::Secret),
+                    p.id == ProviderId::Lichess && !state.is_informational(),
+                    "{} {state:?}",
+                    p.name
+                );
+            }
+        }
+    }
+
+    #[test]
     fn a_card_has_one_primary_action_and_the_rest_in_the_menu() {
         let lichess = provider(ProviderId::Lichess);
         let none = card_actions(lichess, CardState::On, false);
-        assert_eq!(none.primary.map(|s| s.action), Some(CardAction::Link));
-        assert!(!none.menu.iter().any(|a| a.action == CardAction::Link));
+        assert_eq!(none.primary.map(|s| s.action), Some(CardAction::Authorize));
+        assert!(none.menu.iter().any(|a| a.action == CardAction::Link));
         assert!(none.menu.iter().any(|a| a.action == CardAction::ClearCache));
         let linked = card_actions(lichess, CardState::Linked, true);
-        assert_eq!(linked.primary.map(|s| s.action), Some(CardAction::Test));
+        assert_eq!(
+            linked.primary.map(|s| s.action),
+            Some(CardAction::Authorize)
+        );
+        assert!(linked.menu.iter().any(|a| a.action == CardAction::Test));
         assert!(
             linked.menu.iter().any(|a| a.action == CardAction::Link),
             "vincular outro nome fica no menu"
         );
+        // Sem autorização no Provedor, a ação principal é vincular, e depois testar.
+        let chesscom = provider(ProviderId::ChessCom);
+        let first = card_actions(chesscom, CardState::On, false);
+        assert_eq!(first.primary.map(|s| s.action), Some(CardAction::Link));
+        let linked = card_actions(chesscom, CardState::Linked, true);
+        assert_eq!(linked.primary.map(|s| s.action), Some(CardAction::Test));
         // Provedor só de arquivo: a ação principal abre as instruções.
         let twic = card_actions(provider(ProviderId::Twic), CardState::ManualImport, false);
         assert_eq!(twic.primary.map(|s| s.action), Some(CardAction::OpenDocs));
@@ -1095,14 +1230,30 @@ mod tests {
         let Face::Can(now) = face(lichess, CardState::Off) else {
             panic!("o Lichess permite algo agora");
         };
-        assert_eq!(now, ["connections-do-link", "connections-do-test"]);
+        // O que já funciona: o Explorador só depois de autorizar, o resto já.
+        assert_eq!(
+            now,
+            [
+                "connections-do-link",
+                "connections-do-test",
+                "connections-do-explore-after",
+                "connections-do-cached-eval",
+                "connections-do-endgames",
+                "connections-do-query",
+            ]
+        );
+        let Face::Can(authorized) = face(lichess, CardState::Authorized) else {
+            panic!("o Lichess autorizado permite explorar");
+        };
+        assert!(authorized.contains(&"connections-do-explore"));
+        assert!(!authorized.contains(&"connections-do-explore-after"));
         // O FIDE vincula um ID, não um nome.
         let Face::Can(fide) = face(provider(ProviderId::Fide), CardState::ManualImport) else {
             panic!("o FIDE permite vincular e testar");
         };
         assert_eq!(fide[0], "connections-do-link-id");
         let later = later(lichess);
-        assert!(later.contains(&"connections-do-explore"));
+        assert!(!later.contains(&"connections-do-explore"), "já funciona");
         assert!(later.contains(&"connections-do-play"));
         assert!(!later.contains(&"connections-do-link"));
         let Face::Can(twic) = face(provider(ProviderId::Twic), CardState::ManualImport) else {
@@ -1159,9 +1310,12 @@ mod tests {
     /// não usa jargão interno nem as palavras proibidas do glossário.
     #[test]
     fn no_interface_text_uses_stage_jargon_or_the_banned_words() {
-        let source = include_str!("../../assets/i18n/pt-BR/connections.ftl");
+        let files = [
+            include_str!("../../assets/i18n/pt-BR/connections.ftl"),
+            include_str!("../../assets/i18n/pt-BR/authorization.ftl"),
+        ];
         let mut checked = 0;
-        for line in source.lines() {
+        for line in files.iter().flat_map(|source| source.lines()) {
             let trimmed = line.trim_start();
             if trimmed.is_empty() || trimmed.starts_with('#') {
                 continue;
@@ -1176,13 +1330,15 @@ mod tests {
                 "login",
                 "credencial",
                 "pkce",
+                "oauth",
+                "escopo",
                 "planejad",
             ] {
                 assert!(!lower.contains(banned), "{banned:?} em: {line}");
             }
             checked += 1;
         }
-        assert!(checked > 100, "o arquivo foi lido ({checked} linhas)");
+        assert!(checked > 200, "os arquivos foram lidos ({checked} linhas)");
     }
 
     #[test]

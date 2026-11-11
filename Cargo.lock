@@ -2170,6 +2170,7 @@ dependencies = [
  "chess-store",
  "chess-training",
  "chess-uci",
+ "chess-vault",
  "egui-phosphor",
  "egui_tiles",
  "fluent-bundle",
@@ -2179,6 +2180,7 @@ dependencies = [
  "sysinfo",
  "unic-langid",
  "wgpu-types",
+ "zeroize",
 ]
 
 [[package]]

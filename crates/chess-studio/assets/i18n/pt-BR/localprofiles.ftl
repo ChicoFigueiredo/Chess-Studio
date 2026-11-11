@@ -26,4 +26,5 @@ lp-create = Criar e usar
 lp-error-name = O nome do perfil precisa ter de 1 a 40 letras.
 lp-error-taken = Já existe um perfil com esse nome.
 lp-error-busy = Termine o Exercício em curso antes de trocar de perfil.
+lp-error-vault = Não foi possível apagar as autorizações guardadas deste perfil, então nada foi removido. Tente de novo.
 lp-error-other = Não foi possível concluir. Tente de novo.

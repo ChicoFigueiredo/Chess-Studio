@@ -7,6 +7,7 @@
 //! consulta, Conexões vinculadas) fica em "Detalhes". Os Provedores que ainda não funcionam
 //! vão em cartões menores, depois dos que funcionam.
 
+use super::auth::{Auth, Slot, VaultMode};
 use super::model::{
     self, ActionSpec, Age, CardAction, CardState, CostFilter, Face, FieldKind, Tier,
 };
@@ -15,6 +16,7 @@ use crate::i18n::I18n;
 use crate::net_service::NetService;
 use crate::persistence::PersistenceHandle;
 use crate::provider_consent::ConsentDialog;
+use crate::secrets::Standing;
 use crate::ui_theme::{
     ButtonVariant, CardEmphasis, CsButton, MenuItem, Palette, StatusTone, cs_card_frame,
     cs_detail_row, cs_disclosure, cs_overflow_menu, cs_status_badge, cs_switch, cs_text_field,
@@ -25,6 +27,9 @@ use chess_net::{Provider, ProviderId, ProviderState, Timestamp};
 use chess_store::{Connection, ConnectionId};
 use egui_phosphor::regular as icon;
 use std::collections::{HashMap, HashSet};
+
+#[path = "view_auth.rs"]
+mod auth_ui;
 
 /// Largura mínima, em pontos, a partir da qual os cartões vão em duas colunas.
 pub(super) const TWO_COLUMNS_FROM: f32 = 980.0;
@@ -71,13 +76,17 @@ pub(super) fn page(
     handle: Option<&PersistenceHandle>,
     profile_name: Option<&str>,
 ) {
-    state.refresh(handle);
+    state.sync(service, handle);
     let status = service.net().status();
     let last = model::last_queries(&service.net().recent_operations());
     let now = NetService::now();
     let mut ops = Vec::new();
     let p = palette(ui);
     let groups = model::groups(state.filter, &state.query);
+    let standings: HashMap<ProviderId, Standing> = ProviderId::ALL
+        .into_iter()
+        .filter_map(|id| state.provider_standing(id).map(|standing| (id, standing)))
+        .collect();
     // A rolagem inicial vale por alguns quadros: no primeiro, o egui ainda não sabe a altura.
     let scroll = match state.scroll {
         Some((pixels, frames)) if frames > 0 => {
@@ -97,6 +106,7 @@ pub(super) fn page(
         confirm_remove,
         authorized,
         list,
+        auth,
         ..
     } = &mut *state;
     let mut view = View {
@@ -113,6 +123,8 @@ pub(super) fn page(
         renaming,
         confirm_remove,
         authorized,
+        standings: &standings,
+        auth,
         service,
         ops: &mut ops,
     };
@@ -137,6 +149,8 @@ pub(super) fn page(
                     .text_style(egui::TextStyle::Small),
             );
         }
+        ui.add_space(16.0);
+        view.vault_banner(ui, p);
         ui.add_space(16.0);
         toolbar(ui, i18n, filter, query);
         if groups.is_empty() {
@@ -171,6 +185,7 @@ pub(super) fn page(
         }
         ui.add_space(24.0);
     });
+    view.vault_dialog();
     state.apply(ops, service, dialog, handle);
 }
 
@@ -213,6 +228,9 @@ struct View<'a> {
     renaming: &'a mut Option<RenameForm>,
     confirm_remove: &'a mut Option<ConnectionId>,
     authorized: &'a HashSet<ProviderId>,
+    /// A melhor situação das autorizações de cada Provedor (só os que têm alguma).
+    standings: &'a HashMap<ProviderId, Standing>,
+    auth: &'a mut Auth,
     service: &'a NetService,
     ops: &'a mut Vec<Op>,
 }
@@ -277,6 +295,7 @@ impl View<'_> {
             .iter()
             .filter(|c| c.provider == provider.key())
             .filter(|c| c.role == chess_store::ConnectionRole::Player)
+            .filter(|c| !c.is_pending())
             .collect();
         found.sort_by_key(|c| !c.is_default);
         found
@@ -287,8 +306,12 @@ impl View<'_> {
         let id = provider.id;
         let linked = !self.connections_of(id).is_empty();
         let net = self.status.state(id).clone();
-        let authorized = self.authorized.contains(&id);
-        let state = model::card_state(provider, &net, linked, authorized);
+        let standing = self
+            .standings
+            .get(&id)
+            .copied()
+            .or_else(|| self.authorized.contains(&id).then_some(Standing::Active));
+        let state = model::card_state_with(provider, &net, linked, standing);
         let emphasis = if state.is_compact() {
             CardEmphasis::Quiet
         } else {
@@ -412,6 +435,7 @@ impl View<'_> {
             ui.label(RichText::new(phrase).color(p.ink));
         });
         ui.add_space(8.0);
+        self.authorization_block(ui, provider, state, p);
 
         let actions = model::card_actions(provider, state, linked);
         let mut open = self.expanded.contains(&id);
@@ -497,9 +521,23 @@ impl View<'_> {
                 ui.label(RichText::new(line).color(p.ink));
             }
         });
+        if !model::requirements(provider).is_empty() && state != CardState::Authorized {
+            cs_detail_row(ui, &i18n.t("connections-detail-requires"), |ui| {
+                let text = i18n.t_with(
+                    "connections-requires-explorer",
+                    &[("provider", provider.name)],
+                );
+                ui.label(status_line(
+                    self.ctx,
+                    icon::LOCK_KEY,
+                    p.ink_muted,
+                    &text,
+                    p.ink,
+                ));
+            });
+        }
         let later = model::later(provider);
         if !later.is_empty() {
-            let needs_authorization = !model::requirements(provider).is_empty();
             cs_detail_row(ui, &i18n.t("connections-detail-later"), |ui| {
                 ui.label(
                     RichText::new(i18n.t_with(
@@ -508,19 +546,6 @@ impl View<'_> {
                     ))
                     .color(p.ink),
                 );
-                if needs_authorization {
-                    let text = i18n.t_with(
-                        "connections-requires-authorize",
-                        &[("provider", provider.name)],
-                    );
-                    ui.label(status_line(
-                        self.ctx,
-                        icon::LOCK_KEY,
-                        p.ink_muted,
-                        &text,
-                        p.ink_muted,
-                    ));
-                }
             });
         }
         if provider.uses_network() {
@@ -650,7 +675,10 @@ impl View<'_> {
             (CardAction::Test, ..) => i18n.t("connections-act-test"),
             (CardAction::ClearCache, ..) => i18n.t("connections-act-clear-cache"),
             (CardAction::Authorize, ..) => i18n.t("connections-act-authorize"),
+            (CardAction::Reauthorize, ..) => i18n.t("connections-act-reauthorize"),
+            (CardAction::Unlock, ..) => i18n.t("connections-act-unlock"),
             (CardAction::EnterKey, ..) => i18n.t("connections-act-key"),
+            (CardAction::EngineOnline, ..) => i18n.t("connections-act-engine"),
             (CardAction::OpenDocs, ..) => i18n.t("connections-act-docs"),
             (CardAction::OpenTerms, ..) => i18n.t("connections-act-terms"),
         }
@@ -661,8 +689,10 @@ impl View<'_> {
             CardAction::Link => icon::LINK_SIMPLE,
             CardAction::Test => icon::PLAY,
             CardAction::ClearCache => icon::BROOM,
-            CardAction::Authorize => icon::SEAL_CHECK,
+            CardAction::Authorize | CardAction::Reauthorize => icon::SEAL_CHECK,
+            CardAction::Unlock => icon::LOCK_SIMPLE_OPEN,
             CardAction::EnterKey => icon::KEY,
+            CardAction::EngineOnline => icon::ROBOT,
             CardAction::OpenDocs | CardAction::OpenTerms => icon::ARROW_SQUARE_OUT,
         }
     }
@@ -671,11 +701,15 @@ impl View<'_> {
     fn action_button(&mut self, ui: &mut Ui, provider: &Provider, spec: ActionSpec) {
         let has_connection = !self.connections_of(provider.id).is_empty();
         let label = self.action_label(provider, spec.action, has_connection);
+        // Uma autorização por vez: enquanto uma espera, "Autorizar" fica parado.
+        let waiting = matches!(spec.action, CardAction::Authorize | CardAction::Reauthorize)
+            && self.auth.is_busy(provider.id);
+        let enabled = spec.enabled && !waiting;
         let button = CsButton::new(&label)
             .icon(Self::action_icon(spec.action))
             .variant(ButtonVariant::Secondary)
-            .enabled(spec.enabled);
-        if ui.add(button).clicked() && spec.enabled {
+            .enabled(enabled);
+        if ui.add(button).clicked() && enabled {
             self.perform(provider, spec.action);
         }
     }
@@ -739,10 +773,19 @@ impl View<'_> {
             }
             CardAction::Test => {
                 self.expanded.insert(id);
-                self.ops.push(Op::Test {
-                    provider: id,
-                    feature: self.i18n.t("connections-test-feature"),
-                });
+                // Com uma Conexão autorizada em uso, "Testar" pergunta ao Lichess quem ela é.
+                let authorized = self
+                    .connections_of(id)
+                    .into_iter()
+                    .find(|c| c.is_default && c.is_authorized())
+                    .map(|c| c.id);
+                match authorized {
+                    Some(connection) => self.ops.push(Op::TestAuthorized(connection)),
+                    None => self.ops.push(Op::Test {
+                        provider: id,
+                        feature: self.i18n.t("connections-test-feature"),
+                    }),
+                }
             }
             CardAction::ClearCache => {
                 self.expanded.insert(id);
@@ -750,8 +793,33 @@ impl View<'_> {
             }
             CardAction::OpenDocs => self.ops.push(Op::OpenDocs(id)),
             CardAction::OpenTerms => self.ops.push(Op::OpenTerms(id)),
-            // Chegam com o Cofre (#224): hoje o menu os mostra desabilitados.
-            CardAction::Authorize | CardAction::EnterKey => {}
+            CardAction::Authorize => {
+                self.expanded.insert(id);
+                self.ops.push(Op::Authorize(Slot::player(id)));
+            }
+            CardAction::Reauthorize => {
+                self.expanded.insert(id);
+                let expired = self
+                    .connections_of(id)
+                    .into_iter()
+                    .find(|c| c.is_authorized())
+                    .map(|c| c.id);
+                match expired {
+                    Some(connection) => self.ops.push(Op::Reauthorize(connection)),
+                    None => self.ops.push(Op::Authorize(Slot::player(id))),
+                }
+            }
+            CardAction::Unlock => self.ops.push(Op::OpenVaultDialog(VaultMode::Unlock)),
+            CardAction::EnterKey => {
+                self.ops.push(Op::OpenKeyForm {
+                    slot: Slot::player(id),
+                    renew: None,
+                });
+            }
+            CardAction::EngineOnline => {
+                self.expanded.insert(id);
+                self.auth.engine_open.insert(id);
+            }
         }
     }
 
@@ -849,6 +917,9 @@ impl View<'_> {
             ui.add_space(4.0);
             self.link_form(ui, provider, state, p);
         }
+        if model::has_online_engine(provider) {
+            self.engine_section(ui, provider, p);
+        }
     }
 
     fn connection_row(
@@ -874,6 +945,10 @@ impl View<'_> {
         p: &Palette,
     ) {
         let i18n = self.i18n;
+        if connection.is_authorized() {
+            self.authorized_inner(ui, provider, connection, p);
+            return;
+        }
         let editing = self
             .renaming
             .as_ref()
@@ -1177,6 +1252,8 @@ pub(super) fn state_look(state: CardState) -> (StatusTone, &'static str) {
         CardState::On => (StatusTone::Success, icon::CHECK_CIRCLE),
         CardState::Linked => (StatusTone::Success, icon::LINK_SIMPLE),
         CardState::Authorized => (StatusTone::Success, icon::SEAL_CHECK),
+        CardState::Expired => (StatusTone::Warning, icon::CLOCK_COUNTDOWN),
+        CardState::Locked => (StatusTone::Warning, icon::LOCK_SIMPLE),
         CardState::Limited => (StatusTone::Warning, icon::TIMER),
         CardState::Failing => (StatusTone::Danger, icon::WARNING_CIRCLE),
         CardState::ManualImport => (StatusTone::Info, icon::FILE_ARROW_DOWN),
@@ -1257,6 +1334,159 @@ mod tests {
         found
     }
 
+    /// Desenha uma cena de demonstração (cofre falso) e devolve os textos visíveis e se algo foi
+    /// pedido para a área de transferência.
+    fn render_scene(
+        theme: &str,
+        width: f32,
+        scene: super::super::demo::Scene,
+    ) -> (Vec<(String, f32)>, bool) {
+        let theme = ThemeId::from_key(theme).expect("tema");
+        let ctx = test_context(theme, Density::Comfortable);
+        let i18n = I18n::pt_br();
+        let super::super::demo::Scene { mut ui, service } = scene;
+        ui.expanded.extend(ProviderId::ALL);
+        let mut dialog = ConsentDialog::default();
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                vec2(width, 6000.0),
+            )),
+            ..Default::default()
+        };
+        let (mut found, mut copied) = (Vec::new(), false);
+        for _ in 0..2 {
+            found.clear();
+            let mut out = ctx.run_ui(raw.clone(), |ui_| {
+                let ctx = ui_.ctx().clone();
+                page(
+                    ui_,
+                    &ctx,
+                    &i18n,
+                    &mut ui,
+                    &service,
+                    &mut dialog,
+                    None,
+                    Some("Perfil de teste"),
+                );
+            });
+            out.textures_delta.clear();
+            copied |= out
+                .platform_output
+                .commands
+                .iter()
+                .any(|c| matches!(c, egui::OutputCommand::CopyText(_)));
+            for clipped in &out.shapes {
+                texts(&clipped.shape, &mut found);
+            }
+        }
+        (found, copied)
+    }
+
+    /// Todas as cenas de demonstração da autorização.
+    const SCENES: [&str; 15] = [
+        "authorized",
+        "waiting",
+        "expired",
+        "locked",
+        "refused",
+        "timeout",
+        "wrong-key",
+        "key-form",
+        "engine",
+        "disconnect",
+        "vault-banner",
+        "vault-create",
+        "vault-unlock",
+        "vault-change",
+        "vault-working",
+    ];
+
+    #[test]
+    fn every_authorization_scene_draws_in_plain_language_without_banned_words() {
+        let banned = [
+            "token",
+            "oauth",
+            "pkce",
+            "escopo",
+            "401",
+            "403",
+            "login",
+            "credencial",
+            "etapa",
+            "conta ",
+        ];
+        for scene in SCENES {
+            for theme in ["dark", "light"] {
+                let built = super::super::demo::scene(scene).expect(scene);
+                let (found, _) = render_scene(theme, 1200.0, built);
+                assert!(found.len() > 30, "{scene}: desenhou");
+                for (text, right) in &found {
+                    let lower = text.to_lowercase();
+                    for word in banned {
+                        assert!(
+                            !lower.contains(word),
+                            "{word:?} em {text:?} ({scene}, {theme})"
+                        );
+                    }
+                    assert!(*right <= 1201.0, "{text:?} passa da borda ({scene})");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_scenes_show_what_the_issue_asks_to_see() {
+        let all = |name: &str| -> Vec<String> {
+            let (found, _) = render_scene("dark", 1200.0, super::super::demo::scene(name).unwrap());
+            found.into_iter().map(|(t, _)| t).collect()
+        };
+        let has = |list: &[String], needle: &str| list.iter().any(|t| t.contains(needle));
+        let authorized = all("authorized");
+        assert!(has(&authorized, "Autorizado"));
+        assert!(has(&authorized, "O que esta autorização permite"));
+        assert!(has(&authorized, "Jogar Partidas pelo tabuleiro"));
+        assert!(has(&authorized, "Segredos guardados no cofre do sistema"));
+        let waiting = all("waiting");
+        assert!(has(&waiting, "Esperando você autorizar no navegador"));
+        assert!(has(&waiting, "Cancelar"));
+        assert!(has(&waiting, "nunca vê a sua senha"));
+        assert!(has(&all("expired"), "Autorização expirada"));
+        assert!(has(&all("expired"), "Autorizar de novo"));
+        assert!(has(&all("locked"), "Cofre bloqueado"));
+        assert!(has(
+            &all("vault-banner"),
+            "Sem cofre para guardar autorizações"
+        ));
+        let create = all("vault-create");
+        assert!(has(&create, "Não há como recuperar esta senha"));
+        assert!(has(&create, "Entendi que não há como recuperar a senha"));
+        assert!(has(&all("vault-unlock"), "Desbloquear o cofre"));
+        assert!(has(&all("vault-change"), "Trocar a senha-mestra"));
+        assert!(has(&all("key-form"), "Chave pessoal do Lichess"));
+        assert!(has(&all("engine"), "Engine online"));
+        assert!(has(
+            &all("wrong-key"),
+            "Esta chave não serve para o jogador"
+        ));
+        assert!(has(&all("refused"), "Você recusou a autorização"));
+        assert!(has(&all("timeout"), "O tempo para autorizar acabou"));
+    }
+
+    #[test]
+    fn the_master_password_dialog_never_draws_the_password_or_copies_anything() {
+        let mut scene = super::super::demo::scene("vault-create").unwrap();
+        let dialog = scene.ui.auth.vault_dialog.as_mut().unwrap();
+        dialog.password = zeroize::Zeroizing::new("senha-secreta-de-teste".to_owned());
+        dialog.confirm = zeroize::Zeroizing::new("senha-secreta-de-teste".to_owned());
+        let (found, copied) = render_scene("dark", 1200.0, scene);
+        assert!(!copied, "nada vai para a área de transferência");
+        assert!(
+            found.iter().all(|(t, _)| !t.contains("senha-secreta")),
+            "o campo é mascarado"
+        );
+    }
+
     const BANNED: [&str; 8] = [
         "etapa",
         "401",
@@ -1298,10 +1528,10 @@ mod tests {
             assert!(!text.contains("Conectado"), "{text}");
             assert!(!text.contains("Autorizado"), "{text}");
         }
-        // Com uma Conexão autorizada de verdade, e só então, aparece "Autorizado".
-        let found = render("dark", Density::Comfortable, 1600.0, false, |state, _| {
-            state.authorized.insert(ProviderId::Lichess);
-        });
+        // Com uma Conexão autorizada de verdade (segredo no Cofre), e só então, aparece
+        // "Autorizado".
+        let scene = super::super::demo::scene("authorized").expect("cena");
+        let (found, _) = render_scene("dark", 1600.0, scene);
         assert!(found.iter().any(|(t, _)| t.contains("Autorizado")));
     }
 
@@ -1331,6 +1561,8 @@ mod tests {
             CardState::On,
             CardState::Linked,
             CardState::Authorized,
+            CardState::Expired,
+            CardState::Locked,
             CardState::Limited,
             CardState::Failing,
             CardState::ManualImport,

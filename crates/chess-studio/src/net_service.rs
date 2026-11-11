@@ -18,16 +18,18 @@
 
 use crate::local_profiles::LocalProfiles;
 use crate::provider_consent::ConsentDialog;
+use crate::secrets::{self, OpenedVault};
 use crate::session::Session;
 use bevy::prelude::*;
 use chess_net::{
     Clock, ConnectionId, LocalProfileId, Net, NetConfig, NetError, NetworkStatus, ProviderId,
     SystemClock, Timestamp,
 };
-use chess_providers::{ChessCom, Lichess};
+use chess_providers::{ChessCom, Lichess, LichessAuth};
 use chess_store::ConnectionRole;
+use chess_vault::{SecretVault, VaultError};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// Nome do arquivo do banco da rede, ao lado do banco das Partidas.
 pub const NET_DB_FILE: &str = "rede.db";
@@ -85,6 +87,19 @@ pub enum Readiness {
     NoNetworkService,
 }
 
+/// A leitura de fundo dos segredos do Cofre do sistema (`SecretVault::preload`): o cofre do
+/// sistema pode demorar ou pedir desbloqueio ao usuário, então ela roda fora da interface e o
+/// gate de rede só confia em segredos já lidos.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Preload {
+    /// Ainda lendo.
+    Loading,
+    /// Terminou: os segredos estão em memória.
+    Ready,
+    /// O cofre do sistema não respondeu ou recusou: as autorizações não podem ser usadas agora.
+    Failed(VaultError),
+}
+
 /// Dono do [`Net`] do app. Um só por aplicativo.
 #[derive(Resource)]
 pub struct NetService {
@@ -94,6 +109,16 @@ pub struct NetService {
     chesscom: ChessCom,
     /// Em disco (`rede.db`) ou em memória.
     persistent: bool,
+    /// O Cofre dos segredos das Conexões (o mesmo que o gate de rede consulta).
+    vault: SecretVault,
+    /// Autorizar, conferir e revogar Conexões do Lichess (usa o Cofre e a rede).
+    auth: LichessAuth,
+    /// Por que o Cofre real não abriu (a Central explica); `None` se abriu.
+    vault_error: Option<VaultError>,
+    /// A leitura de fundo do Cofre.
+    preload: Arc<Mutex<Preload>>,
+    /// Mantém vivo o diretório temporário do Cofre falso (capturas, testes).
+    _scratch: Option<secrets::ScratchDir>,
     /// Conexões autorizadas (com segredo no Cofre) por Provedor e papel, para o Perfil local
     /// ativo. Ver [`NetService::authorized_connection`].
     authorized:
@@ -116,8 +141,16 @@ impl NetService {
                 // Falha aqui reaparece como erro do SQLite ao abrir o arquivo.
                 let _ = std::fs::create_dir_all(parent);
             }
-            match Net::open(NetConfig::at_path(path)) {
-                Ok(net) => return Self::from_net(net, Arc::new(SystemClock), true),
+            // O Cofre real mora ao lado do banco. A leitura dos segredos roda em thread de
+            // fundo: o cofre do sistema pode pedir desbloqueio e a interface nunca espera.
+            let opened = secrets::open_vault(&secrets::vault_dir_beside(path));
+            let config = NetConfig::at_path(path).vault(Arc::new(opened.vault.clone()));
+            match Net::open(config) {
+                Ok(net) => {
+                    let service = Self::with_vault(net, Arc::new(SystemClock), true, opened);
+                    service.start_preload();
+                    return service;
+                }
                 Err(err) => warn!(
                     "banco da rede {} indisponível, a rede segue sem persistência: {err}",
                     path.display()
@@ -127,22 +160,109 @@ impl NetService {
         Self::in_memory()
     }
 
-    /// Rede sem banco em disco (capturas, testes): nada persiste.
+    /// Rede sem banco em disco (capturas, testes): nada persiste e o Cofre é **falso** (cofre do
+    /// sistema em memória, diretório temporário): nunca o cofre real do usuário.
     pub fn in_memory() -> Self {
-        // `in_memory` não depende de disco: só falharia com o SQLite embarcado quebrado.
-        let net = Net::open(NetConfig::in_memory()).expect("SQLite em memória indisponível");
-        Self::from_net(net, Arc::new(SystemClock), false)
+        Self::in_memory_with(secrets::volatile_vault(
+            secrets::VolatileKeyring::new(),
+            "cofre-falso",
+        ))
     }
 
-    /// Serviço sobre uma rede já aberta (testes com servidor falso e relógio falso).
+    /// Como [`NetService::in_memory`], com o Cofre falso escolhido (sem cofre do sistema, com
+    /// outro custo de Argon2id...).
+    pub fn in_memory_with(opened: OpenedVault) -> Self {
+        let config = NetConfig::in_memory().vault(Arc::new(opened.vault.clone()));
+        // `in_memory` não depende de disco: só falharia com o SQLite embarcado quebrado.
+        let net = Net::open(config).expect("SQLite em memória indisponível");
+        Self::with_vault(net, Arc::new(SystemClock), false, opened)
+    }
+
+    /// Serviço sobre uma rede já aberta (testes com servidor falso e relógio falso). O Cofre é
+    /// falso e novo; para escolher o Cofre, use [`NetService::with_vault`].
     pub fn from_net(net: Net, clock: Arc<dyn Clock>, persistent: bool) -> Self {
+        let opened = secrets::volatile_vault(secrets::VolatileKeyring::new(), "cofre-falso");
+        Self::with_vault(net, clock, persistent, opened)
+    }
+
+    /// Serviço sobre uma rede já aberta e o Cofre dado (o mesmo que está em `NetConfig::vault`).
+    pub fn with_vault(
+        net: Net,
+        clock: Arc<dyn Clock>,
+        persistent: bool,
+        opened: OpenedVault,
+    ) -> Self {
+        let OpenedVault {
+            vault,
+            scratch,
+            error,
+            real,
+        } = opened;
         Self {
             lichess: Lichess::new(net.clone(), clock.clone()),
-            chesscom: ChessCom::new(net.clone(), clock),
+            chesscom: ChessCom::new(net.clone(), clock.clone()),
+            auth: LichessAuth::new(net.clone(), vault.clone(), clock),
             net,
             persistent,
+            vault,
+            vault_error: error,
+            // Só o Cofre real tem o que ler em fundo; o falso já nasce pronto.
+            preload: Arc::new(Mutex::new(if real {
+                Preload::Loading
+            } else {
+                Preload::Ready
+            })),
+            _scratch: scratch,
             authorized: std::sync::Mutex::default(),
         }
+    }
+
+    /// O Cofre dos segredos das Conexões.
+    pub fn vault(&self) -> &SecretVault {
+        &self.vault
+    }
+
+    /// Autorizar, conferir e revogar Conexões do Lichess.
+    pub fn auth(&self) -> &LichessAuth {
+        &self.auth
+    }
+
+    /// Por que o Cofre real não pôde ser aberto, se não pôde.
+    pub fn vault_error(&self) -> Option<&VaultError> {
+        self.vault_error.as_ref()
+    }
+
+    /// Situação da leitura de fundo dos segredos.
+    pub fn preload(&self) -> Preload {
+        self.preload
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Lê os segredos do Cofre numa thread de fundo (cofre do sistema: pode pedir desbloqueio).
+    /// Enquanto lê, [`NetService::preload`] é [`Preload::Loading`] e nenhuma Conexão vale como
+    /// autorizada.
+    fn start_preload(&self) {
+        let (vault, state) = (self.vault.clone(), self.preload.clone());
+        let work = move || {
+            let outcome = match vault.preload() {
+                Ok(_) => Preload::Ready,
+                Err(error) => Preload::Failed(error),
+            };
+            *state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = outcome;
+        };
+        // Sem a thread, a leitura nunca termina e nada fica autorizado: falha para o lado seguro.
+        let _ = std::thread::Builder::new()
+            .name("chess-studio-cofre".to_owned())
+            .spawn(work);
+    }
+
+    /// Os segredos já foram lidos: o gate de rede pode consultar o Cofre sem esperar o sistema.
+    pub fn vault_loaded(&self) -> bool {
+        self.preload() == Preload::Ready
     }
 
     /// Consultas públicas do Lichess (perfil, FIDE, Explorador...).
@@ -158,9 +278,9 @@ impl NetService {
     /// A Conexão **autorizada** (com segredo no Cofre) do Provedor, no papel dado, para o Perfil
     /// local ativo; `None` se não há. É o ponto único que os recursos que exigem autorização
     /// (o Explorador online do Lichess) consultam, a cada quadro: é barato (um mapa em
-    /// memória). Hoje a Central ainda não cria Conexões autorizadas, então a resposta é
-    /// sempre `None`; o ticket do Cofre a preenche com
-    /// [`NetService::set_authorized_connection`] a partir do Cofre e do banco.
+    /// memória). A Central a mantém em dia a partir do banco e do Cofre
+    /// ([`NetService::set_authorized_connection`]): ao autorizar, desconectar, trocar de Perfil
+    /// local e bloquear o Cofre.
     pub fn authorized_connection(
         &self,
         provider: ProviderId,
@@ -173,7 +293,6 @@ impl NetService {
             .copied()
     }
 
-    #[allow(dead_code)] // costura para o ticket do Cofre (só os testes a chamam hoje)
     /// Registra (ou, com `None`, remove) a Conexão autorizada do Provedor no papel dado.
     pub fn set_authorized_connection(
         &self,

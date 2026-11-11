@@ -76,6 +76,10 @@ const PT_BR: &[(&str, &str)] = &[
         include_str!("../assets/i18n/pt-BR/explorer.ftl"),
     ),
     (
+        "authorization.ftl",
+        include_str!("../assets/i18n/pt-BR/authorization.ftl"),
+    ),
+    (
         "options.ftl",
         include_str!("../assets/i18n/pt-BR/options.ftl"),
     ),
