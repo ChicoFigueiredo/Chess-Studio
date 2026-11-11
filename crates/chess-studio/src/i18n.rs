@@ -100,6 +100,10 @@ const PT_BR: &[(&str, &str)] = &[
         "profiledata.ftl",
         include_str!("../assets/i18n/pt-BR/profiledata.ftl"),
     ),
+    (
+        "filepicker.ftl",
+        include_str!("../assets/i18n/pt-BR/filepicker.ftl"),
+    ),
 ];
 
 /// Tradutor do idioma ativo. Chave ausente devolve a própria chave (visível, nunca pânico).

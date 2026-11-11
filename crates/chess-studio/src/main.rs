@@ -34,6 +34,7 @@ mod explorer;
 mod fen_pgn;
 mod fide_panel;
 mod fide_profile;
+mod file_picker;
 mod focus;
 mod framing;
 mod highlight;

@@ -483,6 +483,7 @@ pub struct LibraryUi {
     status: Option<String>,
     detail: Option<Detail>,
     import_path: String,
+    import_pick: crate::file_picker::FilePickButton,
     import_source: ImportSource,
     import_job: Option<ImportJob>,
     import_result: Option<Result<ImportOutcome, String>>,
@@ -526,6 +527,7 @@ impl Default for LibraryUi {
             status: None,
             detail: None,
             import_path: String::new(),
+            import_pick: crate::file_picker::FilePickButton::default(),
             import_source: ImportSource::Other,
             import_job: None,
             import_result: None,
@@ -1132,6 +1134,12 @@ fn draw_file_import(
             .hint_text(i18n.t("library-import-hint"))
             .desired_width(f32::INFINITY),
     );
+    let typed = lib.import_path.clone();
+    if let Some(file) = lib.import_pick.show_open(ui, i18n, || {
+        crate::file_picker::pgn_open_request(i18n, &typed)
+    }) {
+        lib.import_path = file.display().to_string();
+    }
     let busy = lib.import_job.is_some();
     let ready = !lib.import_path.trim().is_empty() && !busy;
     ui.add_enabled_ui(ready, |ui| {

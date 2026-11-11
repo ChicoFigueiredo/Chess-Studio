@@ -184,4 +184,4 @@ training-section-pack = Pacote: { $name }
 training-exercise-rating = dificuldade { $rating }
 training-list-shown = Mostrando { $shown } de { $total }; use o filtro para ver os demais.
 training-list-none = Nenhum Exercício atende ao filtro.
-training-packs-suggestions = Arquivos .csv nos documentos:
+training-packs-suggestions = Arquivos .csv e .csv.zst nos documentos:
