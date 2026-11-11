@@ -43,6 +43,12 @@ impl Plugin for UiThemePlugin {
     }
 }
 
+/// Fundo da cena (3D e 2D técnico): o `surface-0` do Tema efetivo.
+pub fn scene_background(mode: ThemeMode, system_dark: Option<bool>) -> Color {
+    let c = Palette::of_theme(resolve_theme(mode, system_dark)).surface_0;
+    Color::srgba_u8(c.r(), c.g(), c.b(), c.a())
+}
+
 /// Tema do sistema operacional, quando o Bevy sabe qual é.
 fn system_dark(window: Option<&Window>) -> Option<bool> {
     match window?.window_theme? {
@@ -117,4 +123,42 @@ pub fn apply_to_context(
         state.applied = Some((theme, appearance.density));
     }
     ctx.set_zoom_factor(appearance.scale.factor());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rgb(c: Color) -> [u8; 3] {
+        let s = c.to_srgba();
+        [s.red, s.green, s.blue].map(|v| (v * 255.0).round() as u8)
+    }
+
+    #[test]
+    fn the_scene_background_is_the_effective_themes_surface_0() {
+        for key in ["feltro", "torneio", "dark", "light"] {
+            let id = ThemeId::from_key(key).expect("tema");
+            let p = Palette::of_theme(id).surface_0;
+            assert_eq!(
+                rgb(scene_background(ThemeMode::Fixed(id), None)),
+                [p.r(), p.g(), p.b()],
+                "{key}"
+            );
+        }
+    }
+
+    #[test]
+    fn feltro_and_torneio_have_different_backgrounds_and_the_system_one_follows_the_os() {
+        let bg = |key: &str| {
+            rgb(scene_background(
+                ThemeMode::Fixed(ThemeId::from_key(key).expect("tema")),
+                Some(true),
+            ))
+        };
+        assert_ne!(bg("feltro"), bg("torneio"));
+        assert_ne!(
+            rgb(scene_background(ThemeMode::System, Some(true))),
+            rgb(scene_background(ThemeMode::System, Some(false)))
+        );
+    }
 }

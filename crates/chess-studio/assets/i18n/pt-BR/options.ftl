@@ -17,7 +17,8 @@ options-cat-profile = Perfil local
 
 # Aparência
 opt-theme = Tema
-opt-theme-hint = Claro, escuro ou o mesmo do sistema operacional.
+opt-theme-hint = Escolha um Tema ou siga o do sistema operacional. Vale na hora; o tabuleiro e as peças não mudam.
+opt-theme-following = Seguindo o sistema: agora { $theme }.
 opt-density = Densidade
 opt-density-hint = Tamanho dos controles: Confortável (32 px) ou Compacta (24 px).
 opt-scale = Escala da interface · { $percent }%

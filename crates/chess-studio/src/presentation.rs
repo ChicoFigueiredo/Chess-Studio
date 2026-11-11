@@ -54,14 +54,6 @@ impl Presentation {
     pub fn is_3d(self) -> bool {
         self != Presentation::Technical2d
     }
-
-    fn background(self) -> Color {
-        match self {
-            Presentation::Professional3d => Color::srgb(0.07, 0.075, 0.085),
-            Presentation::ImmersiveTable => Color::srgb(0.12, 0.115, 0.11),
-            Presentation::Technical2d => Color::srgb(0.15, 0.14, 0.13),
-        }
-    }
 }
 
 /// Qualidade gráfica. Nenhum preset toca na geometria de picking (matemática pura de
@@ -272,6 +264,7 @@ impl Plugin for PresentationPlugin {
                 (
                     apply_visibility,
                     apply_presentation,
+                    apply_scene_background,
                     detect_gpu_support,
                     apply_quality,
                     show_new_entities,
@@ -320,6 +313,25 @@ pub(crate) fn apply_visibility(
     }
 }
 
+/// O fundo da cena (3D e 2D técnico) é o `surface-0` do Tema efetivo (issue #206). Só o
+/// `ClearColor`: tabuleiro, peças e iluminação não mudam com o Tema, e as câmeras seguem
+/// idênticas em `Msaa` e `Hdr`.
+fn apply_scene_background(
+    appearance: Option<Res<crate::ui_theme::Appearance>>,
+    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
+    mut clear: ResMut<ClearColor>,
+) {
+    let mode = appearance.map_or_else(Default::default, |a| a.theme);
+    let system_dark = windows.single().ok().and_then(|w| match w.window_theme? {
+        bevy::window::WindowTheme::Dark => Some(true),
+        bevy::window::WindowTheme::Light => Some(false),
+    });
+    let want = crate::ui_theme::scene_background(mode, system_dark);
+    if clear.0 != want {
+        clear.0 = want;
+    }
+}
+
 #[allow(clippy::type_complexity)]
 fn apply_presentation(
     presentation: Res<Presentation>,
@@ -327,7 +339,6 @@ fn apply_presentation(
         Single<&mut Camera, With<MainCamera>>,
         Single<&mut Camera, With<TechnicalCamera>>,
     )>,
-    mut clear: ResMut<ClearColor>,
     mut lights: Query<(&LightRole, &mut DirectionalLight, &mut Transform)>,
     mut ambient: ResMut<GlobalAmbientLight>,
 ) {
@@ -337,7 +348,6 @@ fn apply_presentation(
     let p = *presentation;
     cameras.p0().is_active = p.is_3d();
     cameras.p1().is_active = !p.is_3d();
-    clear.0 = p.background();
 
     // Iluminação: (iluminância, cor, posição) por papel.
     for (role, mut light, mut transform) in &mut lights {

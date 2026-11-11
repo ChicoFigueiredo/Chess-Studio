@@ -13,6 +13,7 @@
 // Dado de registro (tabela do PR #164), conferido pelos testes.
 #[allow(dead_code)]
 mod inventory;
+mod theme_gallery;
 
 use crate::aids::{AidProfile, AidSettings, ErrorExplanation};
 use crate::camera::CameraRig;
@@ -697,13 +698,13 @@ fn category_ui(
 }
 
 fn appearance(ui: &mut egui::Ui, i18n: &I18n, env: &mut OptionsEnv) {
-    let system = i18n.t(ThemeMode::SYSTEM_LABEL_KEY);
-    let themes: Vec<_> = ThemeMode::all()
-        .into_iter()
-        .map(|m| (m, m.label(&system)))
-        .collect();
-    let theme = env.appearance.theme;
-    if let Some(v) = dropdown_row(ui, i18n, OptionId::Theme, "opt-theme", &theme, &themes) {
+    let mode = env.appearance.theme;
+    let effective = crate::ui_theme::resolve_theme(mode, Some(ui.visuals().dark_mode));
+    let mut picked = None;
+    block_row(ui, i18n, OptionId::Theme, |ui| {
+        picked = theme_gallery::theme_gallery(ui, i18n, mode, effective);
+    });
+    if let Some(v) = picked {
         env.apply(OptionChange::Theme(v));
     }
 
