@@ -1,2 +1,2 @@
-3d-profissional-padrao: 10.03 ms/quadro (100 quadros/s)
-carregamento da cena: 0.90 s
+3d-profissional-padrao: 8.23 ms/quadro (122 quadros/s)
+carregamento da cena: 0.81 s

@@ -79,6 +79,21 @@ connections-err-timeout = o Provedor não respondeu no prazo.
 connections-err-unreachable = sem conexão com o Provedor.
 connections-err-http = o Provedor respondeu com erro.
 connections-err-other = a última consulta não deu certo.
+connections-err-malformed = a resposta do Provedor veio em formato inesperado.
+connections-test-not-turned-on = o Provedor continua desligado.
+
+connections-test-needs-connection = Vincule um nome ou ID público antes de testar.
+connections-test-feature = O teste da Conexão
+connections-test-running = Testando a Conexão padrão…
+connections-test-waiting = Esperando você decidir se liga o Provedor.
+connections-test-confirmed = Teste às { $time }: nome confirmado, { $name }. Origem: { $source }.
+connections-test-confirmed-id = Teste às { $time }: ID confirmado, { $name }. Origem: { $source } (o dado FIDE vem do Lichess).
+connections-test-not-found = Teste às { $time }: nome não encontrado em { $source }.
+connections-test-not-found-id = Teste às { $time }: ID não encontrado. Origem: { $source }.
+connections-test-limited = Teste às { $time }: { $source } pediu uma pausa; limitado até { $until }.
+connections-test-invalid = Teste às { $time }: o ID FIDE precisa ser um número.
+connections-test-failed = Teste às { $time }: não deu certo, { $detail }
+connections-requirement = { $capability }: { $note }
 connections-limited-until = O Provedor pediu uma pausa.
 
 connections-switch = Ligado
@@ -86,7 +101,7 @@ connections-switch-soon = Chega na etapa { $stage }.
 connections-switch-error = Não foi possível gravar a escolha. Tente de novo.
 
 connections-act-link = Vincular nome ou ID público
-connections-act-test = Testar (etapa { $stage })
+connections-act-test = Testar
 connections-act-clear-cache = Limpar cache
 connections-act-authorize = Autorizar (etapa 3)
 connections-act-key = Inserir chave (etapa 3)

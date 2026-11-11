@@ -1989,6 +1989,7 @@ dependencies = [
  "chess-net",
  "chess-openings",
  "chess-pgn",
+ "chess-providers",
  "chess-store",
  "chess-training",
  "chess-uci",

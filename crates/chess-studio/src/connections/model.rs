@@ -275,6 +275,25 @@ pub struct ActionSpec {
     pub enabled: bool,
     /// Desabilitada porque chega numa etapa futura.
     pub soon_stage: Option<u8>,
+    /// Id Fluent do motivo de estar desabilitada agora (tooltip).
+    pub reason_key: Option<&'static str>,
+}
+
+/// O Provedor cujo adaptador responde ao "Testar" da Conexão por nome ou ID público. O FIDE
+/// não tem API própria: o dado vem do Lichess (ver [`test_via`]).
+pub fn can_test(provider: ProviderId) -> bool {
+    matches!(
+        provider,
+        ProviderId::Lichess | ProviderId::ChessCom | ProviderId::Fide
+    )
+}
+
+/// O Provedor que de fato recebe o pedido do teste (e que precisa estar ligado).
+pub fn test_via(provider: ProviderId) -> ProviderId {
+    match provider {
+        ProviderId::Fide => ProviderId::Lichess,
+        other => other,
+    }
 }
 
 fn has_auth(provider: &Provider, wanted: &[AuthMethod]) -> bool {
@@ -294,26 +313,36 @@ pub fn can_link(provider: &Provider, state: CardState) -> bool {
 }
 
 /// As ações do cartão conforme o método de identificação e o estado.
-pub fn card_actions(provider: &Provider, state: CardState) -> Vec<ActionSpec> {
+pub fn card_actions(
+    provider: &Provider,
+    state: CardState,
+    has_connection: bool,
+) -> Vec<ActionSpec> {
     let ready = |action| ActionSpec {
         action,
         enabled: true,
         soon_stage: None,
+        reason_key: None,
     };
     let soon = |action, stage| ActionSpec {
         action,
         enabled: false,
         soon_stage: Some(stage),
+        reason_key: None,
     };
     let mut out = Vec::new();
     if can_link(provider, state) {
         out.push(ready(CardAction::Link));
     }
+    if can_test(provider.id) && can_link(provider, state) {
+        out.push(ActionSpec {
+            action: CardAction::Test,
+            enabled: has_connection,
+            soon_stage: None,
+            reason_key: (!has_connection).then_some("connections-test-needs-connection"),
+        });
+    }
     if provider.uses_network() {
-        out.push(soon(
-            CardAction::Test,
-            earliest_stage(provider).unwrap_or(2).max(2),
-        ));
         out.push(ready(CardAction::ClearCache));
     }
     if !state.is_informational() {
@@ -428,6 +457,17 @@ pub fn planned(provider: &Provider) -> Vec<(u8, Vec<&'static str>)> {
     }
     out.sort_by_key(|(stage, _)| *stage);
     out
+}
+
+/// Serviços que custam mais que o Provedor e dizem que exigem uma Conexão autorizada (o
+/// Explorador do Lichess): o nome da capacidade e a frase do catálogo.
+pub fn requirements(provider: &Provider) -> Vec<(&'static str, &'static str)> {
+    provider
+        .services
+        .iter()
+        .filter(|s| s.cost > provider.cost() && s.note.contains("Conexão autorizada"))
+        .map(|s| (capability_key(s.capability), s.note))
+        .collect()
 }
 
 /// Ids Fluent dos métodos de identificação do Provedor.
@@ -643,7 +683,7 @@ mod tests {
                 let fields = card_fields(p, state);
                 assert!(!fields.contains(&FieldKind::Secret), "{}", p.name);
                 if state.is_informational() {
-                    let actions = card_actions(p, state);
+                    let actions = card_actions(p, state, true);
                     for spec in &actions {
                         assert!(
                             !matches!(spec.action, CardAction::Authorize | CardAction::EnterKey),
@@ -652,8 +692,13 @@ mod tests {
                             spec.action
                         );
                     }
-                    // E nenhuma chamada de rede: nem Testar nem Limpar cache.
-                    assert!(!actions.iter().any(|a| matches!(a.action, CardAction::Test)));
+                    // E nenhuma chamada própria de rede: só o FIDE testa (pelo Lichess).
+                    assert_eq!(
+                        actions.iter().any(|a| matches!(a.action, CardAction::Test)),
+                        p.id == ProviderId::Fide,
+                        "{}",
+                        p.name
+                    );
                     assert!(
                         !actions
                             .iter()
@@ -668,7 +713,7 @@ mod tests {
     #[test]
     fn authorize_and_enter_key_are_disabled_until_stage_three() {
         let lichess = provider(ProviderId::Lichess);
-        let actions = card_actions(lichess, CardState::Off);
+        let actions = card_actions(lichess, CardState::Off, false);
         for wanted in [CardAction::Authorize, CardAction::EnterKey] {
             let spec = actions.iter().find(|a| a.action == wanted).unwrap();
             assert!(!spec.enabled);
@@ -676,7 +721,7 @@ mod tests {
         }
         // Nenhum cartão do catálogo oferece um desses dois habilitado.
         for p in catalog() {
-            for spec in card_actions(p, card_state(p, &ProviderState::Available, false)) {
+            for spec in card_actions(p, card_state(p, &ProviderState::Available, false), true) {
                 if matches!(spec.action, CardAction::Authorize | CardAction::EnterKey) {
                     assert!(!spec.enabled, "{}", p.name);
                 }
@@ -713,6 +758,53 @@ mod tests {
             card_fields(provider(ProviderId::Fide), CardState::ManualImport),
             [FieldKind::PublicId, FieldKind::Nickname]
         );
+    }
+
+    #[test]
+    fn test_exists_only_for_the_adapters_and_needs_a_linked_connection() {
+        let lichess = provider(ProviderId::Lichess);
+        let find = |has| {
+            card_actions(lichess, CardState::Off, has)
+                .into_iter()
+                .find(|a| a.action == CardAction::Test)
+                .unwrap()
+        };
+        assert!(!find(false).enabled);
+        assert_eq!(
+            find(false).reason_key,
+            Some("connections-test-needs-connection")
+        );
+        assert!(find(true).enabled);
+        for id in [
+            ProviderId::PlayStrategy,
+            ProviderId::Fics,
+            ProviderId::Chessigma,
+        ] {
+            let p = provider(id);
+            let state = state_of(id);
+            assert!(
+                !card_actions(p, state, true)
+                    .iter()
+                    .any(|a| a.action == CardAction::Test)
+            );
+        }
+        // O FIDE testa pelo Lichess.
+        assert_eq!(test_via(ProviderId::Fide), ProviderId::Lichess);
+        assert_eq!(test_via(ProviderId::ChessCom), ProviderId::ChessCom);
+    }
+
+    #[test]
+    fn the_lichess_explorer_requirement_is_shown_from_the_catalog() {
+        let found = requirements(provider(ProviderId::Lichess));
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].0, "connections-cap-explore");
+        assert!(found[0].1.contains("Gratuito com cadastro"));
+        assert!(
+            found[0]
+                .1
+                .contains("Conexão autorizada do Lichess (etapa 3)")
+        );
+        assert!(requirements(provider(ProviderId::ChessCom)).is_empty());
     }
 
     #[test]

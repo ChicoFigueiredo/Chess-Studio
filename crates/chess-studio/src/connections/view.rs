@@ -77,6 +77,7 @@ pub fn section(
         list: &state.list,
         forms: &mut state.forms,
         notes: &state.notes,
+        tests: &state.tests,
         service,
         ops: &mut ops,
     };
@@ -95,7 +96,7 @@ pub fn section(
             }
             ui.add_space(16.0);
         });
-    state.apply(ops, service, handle);
+    state.apply(ops, service, &mut params.dialog, handle);
 }
 
 /// Os três filtros de custo, como cartões de escolha com a contagem.
@@ -132,6 +133,7 @@ struct View<'a> {
     list: &'a [Connection],
     forms: &'a mut HashMap<ProviderId, LinkForm>,
     notes: &'a HashMap<ProviderId, super::Note>,
+    tests: &'a HashMap<ProviderId, super::probe::TestState>,
     service: &'a crate::net_service::NetService,
     ops: &'a mut Vec<Op>,
 }
@@ -202,6 +204,7 @@ impl View<'_> {
                 ui.add_space(4.0);
                 self.actions(ui, provider, state);
                 self.note(ui, id, p);
+                self.test_result(ui, id, p);
                 self.connections(ui, provider, state, p);
             });
     }
@@ -268,6 +271,15 @@ impl View<'_> {
             &[("cost", &i18n.t(model::cost_key(provider.cost())))],
         );
         ui.label(small(cost, p.ink_muted));
+        for (cap, note) in model::requirements(provider) {
+            ui.label(small(
+                i18n.t_with(
+                    "connections-requirement",
+                    &[("capability", &i18n.t(cap)), ("note", note)],
+                ),
+                p.ink,
+            ));
+        }
         let auth = i18n.t_with(
             "connections-identifies",
             &[("list", &list(model::auth_keys(provider)))],
@@ -355,7 +367,8 @@ impl View<'_> {
     }
 
     fn actions(&mut self, ui: &mut Ui, provider: &Provider, state: CardState) {
-        let specs = model::card_actions(provider, state);
+        let has_connection = !self.connections_of(provider.id).is_empty();
+        let specs = model::card_actions(provider, state, has_connection);
         if specs.is_empty() {
             return;
         }
@@ -369,10 +382,9 @@ impl View<'_> {
 
     fn action_button(&mut self, ui: &mut Ui, provider: &Provider, spec: ActionSpec) {
         let i18n = self.i18n;
-        let stage = spec.soon_stage.unwrap_or(2).to_string();
         let label = match spec.action {
             CardAction::Link => i18n.t("connections-act-link"),
-            CardAction::Test => i18n.t_with("connections-act-test", &[("stage", &stage)]),
+            CardAction::Test => i18n.t("connections-act-test"),
             CardAction::ClearCache => i18n.t("connections-act-clear-cache"),
             CardAction::Authorize => i18n.t("connections-act-authorize"),
             CardAction::EnterKey => i18n.t("connections-act-key"),
@@ -399,6 +411,9 @@ impl View<'_> {
                 i18n.t_with("connections-soon-stage", &[("stage", &stage.to_string())]),
             );
         }
+        if let Some(reason) = spec.reason_key {
+            response = response.on_hover_text(i18n.t(reason));
+        }
         if !(spec.enabled && response.clicked()) {
             return;
         }
@@ -409,11 +424,68 @@ impl View<'_> {
                     self.forms.insert(id, LinkForm::default());
                 }
             }
+            CardAction::Test => self.ops.push(Op::Test {
+                provider: id,
+                feature: i18n.t("connections-test-feature"),
+            }),
             CardAction::ClearCache => self.ops.push(Op::ClearCache(id)),
             CardAction::OpenDocs => self.ops.push(Op::OpenDocs(id)),
             CardAction::OpenTerms => self.ops.push(Op::OpenTerms(id)),
-            CardAction::Test | CardAction::Authorize | CardAction::EnterKey => {}
+            CardAction::Authorize | CardAction::EnterKey => {}
         }
+    }
+
+    /// O resultado do último "Testar": confirmado, não encontrado, limitado ou falha, com a hora.
+    fn test_result(&self, ui: &mut Ui, id: ProviderId, p: &Palette) {
+        use super::probe::{Outcome, TestState, clock_text};
+        let i18n = self.i18n;
+        let Some(state) = self.tests.get(&id) else {
+            return;
+        };
+        let (text, color) = match state {
+            TestState::AwaitingConsent { .. } => (i18n.t("connections-test-waiting"), p.ink_muted),
+            TestState::Running { .. } => (i18n.t("connections-test-running"), p.ink_muted),
+            TestState::Done(report) => {
+                let time = clock_text(report.at);
+                let source = report.source.info().name;
+                let fide = id == ProviderId::Fide;
+                let base = [("time", time.as_str()), ("source", source)];
+                match &report.outcome {
+                    Outcome::Confirmed(name) => {
+                        let key = if fide {
+                            "connections-test-confirmed-id"
+                        } else {
+                            "connections-test-confirmed"
+                        };
+                        let args = [base[0], base[1], ("name", name.as_str())];
+                        (i18n.t_with(key, &args), p.success)
+                    }
+                    Outcome::NotFound => {
+                        let key = if fide {
+                            "connections-test-not-found-id"
+                        } else {
+                            "connections-test-not-found"
+                        };
+                        (i18n.t_with(key, &base), p.warning)
+                    }
+                    Outcome::Limited(until) => {
+                        let until = clock_text(*until);
+                        let args = [base[0], base[1], ("until", until.as_str())];
+                        (i18n.t_with("connections-test-limited", &args), p.warning)
+                    }
+                    Outcome::InvalidId => (
+                        i18n.t_with("connections-test-invalid", &base[..1]),
+                        p.warning,
+                    ),
+                    Outcome::Failed(detail_key) => {
+                        let detail = i18n.t(detail_key);
+                        let args = [base[0], ("detail", detail.as_str())];
+                        (i18n.t_with("connections-test-failed", &args), p.danger)
+                    }
+                }
+            }
+        };
+        ui.label(small(text, color));
     }
 
     fn note(&self, ui: &mut Ui, id: ProviderId, p: &Palette) {

@@ -300,6 +300,15 @@ fn main() {
                 let _ = net.set_enabled(provider, true);
             }
         }
+        // `--consent-demo`: o diálogo "Ligar <Provedor>?" aberto, para a evidência.
+        if std::env::args().any(|a| a == "--consent-demo") {
+            app.world_mut()
+                .resource_mut::<provider_consent::ConsentDialog>()
+                .ask(
+                    chess_net::ProviderId::Lichess,
+                    Some("O teste da Conexão".to_owned()),
+                );
+        }
         // `--captured-text`: o Painel Capturadas no estilo texto (a opção de Tabuleiro).
         if std::env::args().any(|a| a == "--captured-text") {
             app.insert_resource(captured::CapturedStyle::Text);

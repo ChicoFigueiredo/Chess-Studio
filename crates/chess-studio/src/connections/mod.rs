@@ -10,10 +10,12 @@
 
 mod browser;
 pub mod model;
+mod probe;
 mod view;
 
 use crate::net_service::NetService;
 use crate::persistence::PersistenceHandle;
+use crate::provider_consent::{ConsentDialog, ProviderConsentAnswered};
 use crate::training_ui::with_store;
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
@@ -22,6 +24,7 @@ use chess_store::{
     Connection, ConnectionId, ConnectionKind, NewConnection, ProfileId, Store, StoreError,
 };
 use model::CostFilter;
+use probe::{Target, TestState};
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -42,6 +45,11 @@ pub(crate) enum Op {
     },
     SetDefault(ConnectionId),
     Remove(ConnectionId),
+    /// Testa a Conexão padrão do cartão; `feature` é o nome do recurso na frase do diálogo.
+    Test {
+        provider: ProviderId,
+        feature: String,
+    },
 }
 
 /// Formulário de vincular, aberto num cartão.
@@ -80,6 +88,8 @@ pub struct ConnectionsUi {
     pub(crate) query: String,
     pub(crate) forms: HashMap<ProviderId, LinkForm>,
     pub(crate) notes: HashMap<ProviderId, Note>,
+    /// O teste de Conexão de cada cartão (em andamento ou o último resultado).
+    pub(crate) tests: HashMap<ProviderId, TestState>,
     /// As Conexões do Perfil local ativo.
     pub(crate) list: Vec<Connection>,
     loaded_for: Option<ProfileId>,
@@ -93,6 +103,7 @@ pub struct ConnectionsUi {
 pub struct CentralParams<'w> {
     pub(crate) ui: ResMut<'w, ConnectionsUi>,
     pub(crate) service: Res<'w, NetService>,
+    pub(crate) dialog: ResMut<'w, ConsentDialog>,
     persistence: Option<Res<'w, PersistenceHandle>>,
 }
 
@@ -145,6 +156,7 @@ impl ConnectionsUi {
         &mut self,
         ops: Vec<Op>,
         service: &NetService,
+        dialog: &mut ConsentDialog,
         handle: Option<&PersistenceHandle>,
     ) {
         for op in ops {
@@ -197,8 +209,64 @@ impl ConnectionsUi {
                     });
                     self.dirty = true;
                 }
+                Op::Test { provider, feature } => {
+                    self.start_test(provider, feature, service, dialog);
+                }
             }
         }
+    }
+
+    /// Testa a Conexão padrão do Provedor. Provedor desligado: abre o diálogo "Ligar
+    /// <Provedor>?" e espera a resposta; ligado: consulta já, sem bloquear.
+    fn start_test(
+        &mut self,
+        provider: ProviderId,
+        feature: String,
+        service: &NetService,
+        dialog: &mut ConsentDialog,
+    ) {
+        let Some(connection) = self.of_provider_default(provider) else {
+            return;
+        };
+        let target = match connection.kind {
+            ConnectionKind::PublicId => Target::FideId(connection.identifier.clone()),
+            ConnectionKind::PublicName => Target::Name(connection.identifier.clone()),
+        };
+        let now = NetService::now();
+        let via = model::test_via(provider);
+        let state = if service.is_enabled(via) {
+            match probe::start(service, provider, &target, now) {
+                Ok(query) => TestState::Running {
+                    card: provider,
+                    query: Box::new(std::sync::Mutex::new(query)),
+                },
+                Err(report) => TestState::Done(report),
+            }
+        } else {
+            dialog.ask(via, Some(feature));
+            if dialog.current() != Some(via) {
+                // Outro diálogo está aberto: a pessoa tenta de novo depois.
+                return;
+            }
+            TestState::AwaitingConsent {
+                card: provider,
+                target,
+            }
+        };
+        self.tests.insert(provider, state);
+    }
+
+    /// Avança os testes: respostas do diálogo e consultas que terminaram (a cada quadro).
+    pub(crate) fn poll(&mut self, service: &NetService, answers: &[ProviderConsentAnswered]) {
+        probe::advance(&mut self.tests, service, answers, NetService::now());
+    }
+
+    fn of_provider_default(&self, provider: ProviderId) -> Option<&Connection> {
+        self.list
+            .iter()
+            .filter(|c| c.provider == provider.key())
+            .filter(|c| c.role == chess_store::ConnectionRole::Player)
+            .find(|c| c.is_default)
     }
 
     fn link(
@@ -258,7 +326,19 @@ pub struct ConnectionsPlugin;
 
 impl Plugin for ConnectionsPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<ConnectionsUi>();
+        app.init_resource::<ConnectionsUi>()
+            .add_systems(Update, poll_tests);
+    }
+}
+
+fn poll_tests(
+    mut ui: ResMut<ConnectionsUi>,
+    service: Res<NetService>,
+    mut answers: MessageReader<ProviderConsentAnswered>,
+) {
+    let answered: Vec<ProviderConsentAnswered> = answers.read().copied().collect();
+    if !ui.tests.is_empty() {
+        ui.poll(&service, &answered);
     }
 }
 
@@ -280,6 +360,7 @@ mod tests {
                 nickname: String::new(),
             }],
             service,
+            &mut ConsentDialog::default(),
             None,
         );
         ui.refresh(None);
@@ -309,10 +390,20 @@ mod tests {
         assert_eq!(list.len(), 2);
         assert_eq!(list[0].identifier, "hikaru", "a padrão vem primeiro");
         let second = list[1].id;
-        ui.apply(vec![Op::SetDefault(second)], &service, None);
+        ui.apply(
+            vec![Op::SetDefault(second)],
+            &service,
+            &mut ConsentDialog::default(),
+            None,
+        );
         ui.refresh(None);
         assert_eq!(ui.of_provider(ProviderId::ChessCom)[0].id, second);
-        ui.apply(vec![Op::Remove(second)], &service, None);
+        ui.apply(
+            vec![Op::Remove(second)],
+            &service,
+            &mut ConsentDialog::default(),
+            None,
+        );
         ui.refresh(None);
         let left = ui.of_provider(ProviderId::ChessCom);
         assert_eq!(left.len(), 1);
@@ -344,22 +435,34 @@ mod tests {
         ui.apply(
             vec![Op::SetEnabled(ProviderId::Lichess, true)],
             &service,
+            &mut ConsentDialog::default(),
             None,
         );
         assert!(service.is_enabled(ProviderId::Lichess));
         ui.apply(
             vec![Op::SetEnabled(ProviderId::Lichess, false)],
             &service,
+            &mut ConsentDialog::default(),
             None,
         );
         assert!(!service.is_enabled(ProviderId::Lichess));
         // Provedor sem serviço de rede não liga: a tela explica.
-        ui.apply(vec![Op::SetEnabled(ProviderId::Twic, true)], &service, None);
+        ui.apply(
+            vec![Op::SetEnabled(ProviderId::Twic, true)],
+            &service,
+            &mut ConsentDialog::default(),
+            None,
+        );
         assert_eq!(
             ui.notes[&ProviderId::Twic],
             Note::plain("connections-switch-error")
         );
-        ui.apply(vec![Op::ClearCache(ProviderId::Lichess)], &service, None);
+        ui.apply(
+            vec![Op::ClearCache(ProviderId::Lichess)],
+            &service,
+            &mut ConsentDialog::default(),
+            None,
+        );
         assert_eq!(
             ui.notes[&ProviderId::Lichess],
             Note::plain("connections-cache-cleared-none")

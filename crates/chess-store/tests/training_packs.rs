@@ -171,7 +171,7 @@ fn migration_14_applies_on_a_v13_database_and_preserves_everything() {
         [],
     )
     .unwrap();
-    migrations::migrate(&mut conn).unwrap();
+    migrations::migrate_to(&mut conn, 14).unwrap();
     assert_eq!(migrations::current_version(&conn).unwrap(), 14);
     let (origin, pack, hidden): (String, Option<String>, i64) = conn
         .query_row(

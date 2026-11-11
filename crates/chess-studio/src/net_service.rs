@@ -24,7 +24,9 @@ use chess_net::{
     Clock, LocalProfileId, Net, NetConfig, NetError, NetworkStatus, ProviderId, SystemClock,
     Timestamp,
 };
+use chess_providers::{ChessCom, Lichess};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// Nome do arquivo do banco da rede, ao lado do banco das Partidas.
 pub const NET_DB_FILE: &str = "rede.db";
@@ -86,6 +88,9 @@ pub enum Readiness {
 #[derive(Resource)]
 pub struct NetService {
     net: Net,
+    /// Adaptadores tipados de dados públicos (#221) sobre a mesma rede.
+    lichess: Lichess,
+    chesscom: ChessCom,
     /// Em disco (`rede.db`) ou em memória.
     persistent: bool,
 }
@@ -107,12 +112,7 @@ impl NetService {
                 let _ = std::fs::create_dir_all(parent);
             }
             match Net::open(NetConfig::at_path(path)) {
-                Ok(net) => {
-                    return Self {
-                        net,
-                        persistent: true,
-                    };
-                }
+                Ok(net) => return Self::from_net(net, Arc::new(SystemClock), true),
                 Err(err) => warn!(
                     "banco da rede {} indisponível, a rede segue sem persistência: {err}",
                     path.display()
@@ -126,10 +126,27 @@ impl NetService {
     pub fn in_memory() -> Self {
         // `in_memory` não depende de disco: só falharia com o SQLite embarcado quebrado.
         let net = Net::open(NetConfig::in_memory()).expect("SQLite em memória indisponível");
+        Self::from_net(net, Arc::new(SystemClock), false)
+    }
+
+    /// Serviço sobre uma rede já aberta (testes com servidor falso e relógio falso).
+    pub fn from_net(net: Net, clock: Arc<dyn Clock>, persistent: bool) -> Self {
         Self {
+            lichess: Lichess::new(net.clone(), clock.clone()),
+            chesscom: ChessCom::new(net.clone(), clock),
             net,
-            persistent: false,
+            persistent,
         }
+    }
+
+    /// Consultas públicas do Lichess (perfil, FIDE, Explorador...).
+    pub fn lichess(&self) -> &Lichess {
+        &self.lichess
+    }
+
+    /// Consultas públicas do Chess.com.
+    pub fn chesscom(&self) -> &ChessCom {
+        &self.chesscom
     }
 
     /// O `rede.db` que fica ao lado do banco das Partidas.
