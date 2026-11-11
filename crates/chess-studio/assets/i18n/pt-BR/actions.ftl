@@ -210,6 +210,7 @@ reason-engine-consent = Autorize uma Engine antes de usar a Análise.
 reason-training-lock = Indisponível durante um Exercício de Treino.
 reason-competitive-lock = Indisponível numa Partida competitiva em andamento.
 reason-online-in-progress = Termine antes a Partida online em andamento.
+reason-fair-play-engine = Trava de fair play: a Engine não joga enquanto houver uma Partida online contra uma pessoa em andamento.
 reason-online-provider = Numa Partida online, o relógio é o do Provedor (Lichess ou FICS).
 reason-no-docked-panel = Não há Painel encaixado para flutuar ou destacar.
 reason-no-resumable-game = Não há outra Partida não terminada para retomar.

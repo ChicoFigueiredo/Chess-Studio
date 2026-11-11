@@ -188,6 +188,7 @@ pub struct ActionEnv<'w> {
     pub(crate) palette: ResMut<'w, crate::palette::PaletteState>,
     online_ui: Option<ResMut<'w, crate::online::OnlineUi>>,
     online: Option<Res<'w, crate::online::OnlineService>>,
+    fair: Option<Res<'w, crate::fair_play::FairPlay>>,
 }
 
 fn presentation_id(p: Presentation) -> PresentationId {
@@ -247,6 +248,13 @@ impl ActionEnv<'_> {
                 .online
                 .as_ref()
                 .is_some_and(|o| o.with(|play| play.realtime_in_progress())),
+            // FP-01: o serviço recusaria a Engine adversária (Partida online contra pessoa em
+            // andamento, no tabuleiro ou fora dele).
+            fair_play_engine_lock: self.session.game().online_human_in_progress()
+                || self.fair.as_ref().is_some_and(|fair| {
+                    fair.check_anywhere(crate::fair_play::Computation::OpponentEngine)
+                        .is_err()
+                }),
         }
     }
 
@@ -805,6 +813,11 @@ mod tests {
                 competitive: true,
                 competitive_in_progress: true,
                 presentation: PresentationId::Technical2d,
+                ..ActionContext::default()
+            },
+            ActionContext {
+                online_realtime_in_progress: true,
+                fair_play_engine_lock: true,
                 ..ActionContext::default()
             },
         ];

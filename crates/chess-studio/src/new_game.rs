@@ -14,6 +14,7 @@
 use crate::aids::{AidProfile, AidSettings};
 use crate::camera::CameraRig;
 use crate::engine::{EngineUi, MAX_ELO, MIN_ELO};
+use crate::fair_play::{Computation, FairPlay, FairPlayLocked, LockScope};
 use crate::i18n::I18n;
 use crate::session::Session;
 use bevy::prelude::*;
@@ -196,6 +197,26 @@ impl Plugin for NewGamePlugin {
     }
 }
 
+/// A Trava de fair play recusa a Engine adversária desta Nova Partida (FP-01)? Sem o ponto
+/// único da Trava, recusa.
+fn engine_refusal(fair: Option<&FairPlay>, draft: &NewGameConfig) -> Option<FairPlayLocked> {
+    if draft.opponent != Opponent::Engine {
+        return None;
+    }
+    match fair {
+        Some(fair) => fair
+            .check_game(
+                Computation::OpponentEngine,
+                &chess_game::Game::new(draft.to_setup()),
+            )
+            .err(),
+        None => Some(FairPlayLocked {
+            computation: Computation::OpponentEngine,
+            scope: LockScope::Everything,
+        }),
+    }
+}
+
 fn policy_key(policy: PolicyKind) -> &'static str {
     match policy {
         PolicyKind::FideSimulation => "newgame-policy-fide",
@@ -223,7 +244,9 @@ fn new_game_window(
     mut rig: ResMut<CameraRig>,
     capture: Option<Res<crate::capture::CaptureMode>>,
     online: Option<ResMut<crate::online::OnlineUi>>,
+    fair: Option<Res<FairPlay>>,
 ) -> Result {
+    let fair = fair.as_deref();
     if !dialog.open || capture.as_ref().is_some_and(|c| !c.show_new_game) {
         return Ok(());
     }
@@ -235,6 +258,7 @@ fn new_game_window(
         dialog.draft.aid_profile = aids.profile();
     }
     let mut draft = dialog.draft.clone();
+    let refusal = engine_refusal(fair, &draft);
     let mut start = false;
     let mut cancel = false;
     let mut go_online = false;
@@ -262,8 +286,18 @@ fn new_game_window(
                 go_online = true;
             }
             ui.separator();
+            // Trava de fair play (FP-01): contra a Engine, só com a licença.
+            if let Some(locked) = refusal {
+                let p = crate::ui_theme::palette(ui);
+                ui.colored_label(p.warning, i18n.t("engine-fairplay-title"));
+                ui.label(i18n.t(locked.message_key()));
+            }
             ui.horizontal(|ui| {
-                if ui.button(i18n.t("newgame-start")).clicked() {
+                let button = ui.add_enabled(
+                    refusal.is_none(),
+                    egui::Button::new(i18n.t("newgame-start")),
+                );
+                if button.clicked() {
                     start = true;
                 }
                 if ui.button(i18n.t("newgame-cancel")).clicked() {
@@ -272,23 +306,36 @@ fn new_game_window(
             });
         });
     if start {
-        let engine_config = engine_ui.engine_config();
+        let engine_config = engine_ui
+            .engine_config()
+            .filter(|_| draft.opponent == Opponent::Engine);
         if draft.opponent == Opponent::Engine && engine_config.is_none() {
             // Sem Engine não há Partida contra ela: abre o assistente (B10) e fica na tela.
             engine_ui.request_wizard();
         } else {
-            let view = draft.initial_view();
-            if draft.opponent == Opponent::Engine {
-                engine_ui.set_choice(draft.user_side, draft.engine_elo);
+            // Contra a Engine, o serviço pede a licença da Trava de fair play (FP-01):
+            // recusada, nada muda e a tela continua aberta, com o motivo.
+            let started = match (engine_config, fair) {
+                (Some(engine), Some(fair)) => session.start_vs_engine(&draft, engine, fair).is_ok(),
+                (Some(_), None) => false,
+                (None, _) => {
+                    session.start(&draft);
+                    true
+                }
+            };
+            if started {
+                let view = draft.initial_view();
+                if draft.opponent == Opponent::Engine {
+                    engine_ui.set_choice(draft.user_side, draft.engine_elo);
+                }
+                if let Some(profile) = AidSettings::for_profile(draft.aid_profile) {
+                    // Ajuste explícito do usuário: a persistência grava a preferência.
+                    aids.set_if_neq(profile);
+                }
+                rig.pose = view.pose();
+                rig.view = Some(view);
+                dialog.open = false;
             }
-            if let Some(profile) = AidSettings::for_profile(draft.aid_profile) {
-                // Ajuste explícito do usuário: a persistência grava a preferência.
-                aids.set_if_neq(profile);
-            }
-            session.start(&draft, engine_config);
-            rig.pose = view.pose();
-            rig.view = Some(view);
-            dialog.open = false;
         }
     } else if cancel {
         dialog.open = false;

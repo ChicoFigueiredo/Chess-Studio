@@ -22,6 +22,7 @@ engine-online-needs-connection = Falta autorizar a Conexão de Engine do Lichess
 engine-online-provider-off = O Lichess está desligado. Ligue-o na Central de Conexões para a Engine responder a desafios.
 engine-online-open-center = Abrir a Central
 engine-online-already = A Engine online já está ligada.
+engine-online-fairplay = A Engine online não liga agora. { $why }
 
 # Limites
 engine-online-settings = Limites
@@ -77,6 +78,8 @@ engine-online-act-engine-start-failed = A Engine não iniciou e a Partida foi ab
 engine-online-act-request-failed = Um pedido ao Lichess falhou: { $why }
 engine-online-act-session-closed = Uma Partida parou de ser acompanhada: { $why }
 engine-online-act-store-failed = Não foi possível guardar uma Partida na Biblioteca.
+engine-online-act-fairplay-declined = Desafio de { $name } recusado: Trava de fair play (há uma Partida online contra uma pessoa em andamento).
+engine-online-act-fairplay-resigned = A Partida com { $name } começou sob a Trava de fair play: a Engine não joga e a Partida é abandonada.
 engine-online-decline-later = já há Partidas demais ou o limite foi atingido
 engine-online-decline-pace = ritmo fora dos aceitos
 engine-online-decline-rated = só aceita Partidas sem rating

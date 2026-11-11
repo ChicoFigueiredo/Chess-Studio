@@ -223,6 +223,10 @@ pub fn body(
             Unavailable::ProviderOff => i18n.t("engine-online-provider-off"),
             Unavailable::AlreadyRunning => i18n.t("engine-online-already"),
             Unavailable::Bot(error) => crate::online::board_error_text(i18n, error),
+            Unavailable::FairPlay(locked) => i18n.t_with(
+                "engine-online-fairplay",
+                &[("why", &i18n.t(locked.message_key()))],
+            ),
         };
         ui.colored_label(p.danger, text);
     }
@@ -600,6 +604,14 @@ fn activity_text(i18n: &I18n, item: &Activity) -> (StatusTone, String) {
         Activity::StoreFailed(_) => (
             StatusTone::Warning,
             i18n.t("engine-online-act-store-failed"),
+        ),
+        Activity::FairPlayDeclined { name } => (
+            StatusTone::Warning,
+            i18n.t_with("engine-online-act-fairplay-declined", &[("name", name)]),
+        ),
+        Activity::FairPlayResigned { opponent } => (
+            StatusTone::Warning,
+            i18n.t_with("engine-online-act-fairplay-resigned", &[("name", opponent)]),
         ),
     }
 }

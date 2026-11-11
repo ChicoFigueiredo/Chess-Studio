@@ -802,7 +802,7 @@ mod tests {
 
     fn assisted_with_e4() -> Session {
         let mut session = Session::new();
-        session.start(&NewGameConfig::default(), None);
+        session.start(&NewGameConfig::default());
         session.command(Command::Release {
             from: "e2".parse().unwrap(),
             to: "e4".parse().unwrap(),
@@ -812,17 +812,14 @@ mod tests {
 
     fn competitive() -> Session {
         let mut session = Session::new();
-        session.start(
-            &NewGameConfig {
-                policy: PolicyKind::FideSimulation,
-                time: Some(TimeControl {
-                    base_ms: 600_000,
-                    increment_ms: 5_000,
-                }),
-                ..NewGameConfig::default()
-            },
-            None,
-        );
+        session.start(&NewGameConfig {
+            policy: PolicyKind::FideSimulation,
+            time: Some(TimeControl {
+                base_ms: 600_000,
+                increment_ms: 5_000,
+            }),
+            ..NewGameConfig::default()
+        });
         session
     }
 

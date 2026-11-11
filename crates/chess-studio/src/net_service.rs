@@ -25,8 +25,8 @@ use crate::secrets::{self, OpenedVault};
 use crate::session::Session;
 use bevy::prelude::*;
 use chess_net::{
-    Clock, ConnectionId, FairPlayHold, LocalProfileId, Net, NetConfig, NetError, NetworkStatus,
-    ProviderId, SystemClock, Timestamp,
+    Clock, ConnectionId, LocalProfileId, Net, NetConfig, NetError, NetworkStatus, ProviderId,
+    SystemClock, Timestamp,
 };
 use chess_providers::{ChessCom, Lichess, LichessAuth};
 use chess_store::ConnectionRole;
@@ -36,9 +36,6 @@ use std::sync::{Arc, Mutex};
 
 /// Nome do arquivo do banco da rede, ao lado do banco das Partidas.
 pub const NET_DB_FILE: &str = "rede.db";
-
-/// Motivo (diagnóstico) da Trava de fair play ligada pela Partida competitiva local.
-const COMPETITIVE_REASON: &str = "Partida competitiva em andamento";
 
 /// O que a barra de status precisa saber da rede, sem Bevy nem egui.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -132,9 +129,6 @@ pub struct NetService {
     fair_play: FairPlay,
     /// O relógio da rede (o do sistema; o falso nos testes).
     clock: Arc<dyn Clock>,
-    /// A Partida competitiva local segura a trava como as Partidas online: uma
-    /// [`FairPlayHold`] própria, que nunca solta a de outra Partida (e vice-versa).
-    competitive_hold: Mutex<Option<FairPlayHold>>,
 }
 
 impl std::fmt::Debug for NetService {
@@ -218,7 +212,6 @@ impl NetService {
             playstrategy: Lichess::playstrategy(net.clone(), clock.clone()),
             auth: LichessAuth::new(net.clone(), vault.clone(), clock.clone()),
             clock,
-            competitive_hold: Mutex::new(None),
             net,
             persistent,
             vault,
@@ -382,19 +375,15 @@ impl NetService {
     }
 
     /// Segura a Trava de fair play enquanto `competitive_in_progress` e solta quando acaba.
-    /// É uma [`FairPlayHold`] própria, como a de cada Partida online: o fim da Partida
+    /// É uma trava própria (`FairPlayHold`), como a de cada Partida online: o fim da Partida
     /// competitiva local nunca solta a trava de uma Partida online em andamento, e o fim de uma
-    /// Partida online nunca solta a da competitiva.
+    /// Partida online nunca solta a da competitiva. Quem a segura é o ponto único
+    /// ([`FairPlay::follow_competitive`]): a Engine adversária dessa Partida joga com ela (FP-02).
     pub fn follow_competitive(&self, competitive_in_progress: bool, was_engaged: &mut bool) {
         if competitive_in_progress == *was_engaged {
             return;
         }
-        let mut hold = self
-            .competitive_hold
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *hold =
-            competitive_in_progress.then(|| self.net.fair_play_guard().hold(COMPETITIVE_REASON));
+        self.fair_play.follow_competitive(competitive_in_progress);
         *was_engaged = competitive_in_progress;
     }
 
