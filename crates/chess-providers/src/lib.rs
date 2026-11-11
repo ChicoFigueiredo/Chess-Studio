@@ -52,8 +52,38 @@
 //! | Meses com Partidas | [`ChessCom::archives`] | 1 hora |
 //! | PGN de um mês | [`ChessCom::month_games`] | 7 dias; mês corrente 10 min |
 //! | Partidas públicas (fluxo, em série) | [`ChessCom::games`] | por mês, como acima |
+//!
+//! # Conexão autorizada do Lichess
+//!
+//! O Explorador do Lichess exige uma Conexão autorizada (desde 2026-11-11). [`LichessAuth`]
+//! autoriza pelo navegador (OAuth2 PKCE S256, retorno no loopback `127.0.0.1`) ou por token
+//! pessoal, confere em `/api/account` e guarda o token no Cofre (`chess-vault`); o
+//! [`Lichess`] passa a usar a Conexão com [`Lichess::use_connection`].
+//!
+//! ```no_run
+//! use chess_net::ConnectionId;
+//! use chess_providers::{AuthState, ConnectionRole, Lichess, LichessAuth};
+//! # fn demo(auth: LichessAuth, lichess: Lichess) -> Result<(), chess_providers::AuthError> {
+//! let connection = ConnectionId(7); // a linha da Conexão na Central
+//! let flow = auth.authorize(connection, ConnectionRole::Player)?;
+//! // A interface abre flow.url() no navegador do sistema e, a cada quadro:
+//! match flow.state() {
+//!     AuthState::Authorized(account) => {
+//!         println!("autorizado como {} ({:?})", account.username, account.scopes);
+//!         lichess.use_connection(Some(connection)); // o Explorador volta a funcionar
+//!     }
+//!     AuthState::Waiting => {}
+//!     other => println!("{other:?}"),
+//! }
+//! // Desconectar: revoga no Lichess e apaga o segredo local de qualquer jeito.
+//! let mut revocation = auth.revoke(connection);
+//! # let _ = revocation.try_take();
+//! # Ok(())
+//! # }
+//! ```
 
 mod answer;
+mod auth;
 mod chesscom;
 mod dates;
 mod error;
@@ -67,6 +97,10 @@ mod tablebase;
 pub mod ttl;
 
 pub use answer::{Answer, Query};
+pub use auth::{
+    AuthError, AuthFlow, AuthState, AuthTask, CLIENT_ID, ConnectionRole, DEFAULT_DEADLINE,
+    LichessAccount, LichessAuth, Revocation, pkce_challenge,
+};
 pub use chesscom::{ChessCom, ChessComProfile, MonthGames};
 pub use dates::{Day, YearMonth};
 pub use error::ProviderError;

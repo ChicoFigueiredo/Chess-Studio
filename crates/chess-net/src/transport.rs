@@ -30,6 +30,8 @@ pub(crate) struct ResponseHead {
     pub last_modified: Option<String>,
     pub retry_after: Option<String>,
     pub location: Option<String>,
+    /// Escopos do token, como o Provedor os declara (`X-OAuth-Scopes`).
+    pub oauth_scopes: Option<String>,
 }
 
 #[derive(Debug)]
@@ -119,8 +121,12 @@ impl Http {
             return Err(Failure::Cancelled);
         }
         let result = match out.method {
-            Method::Get => {
-                let mut req = self.agent.get(&out.url);
+            Method::Get | Method::Delete => {
+                let mut req = if out.method == Method::Get {
+                    self.agent.get(&out.url)
+                } else {
+                    self.agent.delete(&out.url)
+                };
                 for (name, value) in &out.headers {
                     req = req.header(name.as_str(), value.as_str());
                 }
@@ -178,6 +184,7 @@ fn head(response: &ureq::http::Response<ureq::Body>) -> ResponseHead {
         last_modified: header("last-modified"),
         retry_after: header("retry-after"),
         location: header("location"),
+        oauth_scopes: header("x-oauth-scopes"),
     }
 }
 

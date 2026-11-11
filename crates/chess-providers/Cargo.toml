@@ -1,6 +1,6 @@
 [package]
 name = "chess-providers"
-description = "Adaptadores tipados de dados públicos (Lichess, Chess.com) sobre a camada de rede por Provedor"
+description = "Adaptadores tipados (Lichess, Chess.com) sobre a camada de rede por Provedor e a autorização do Lichess (OAuth2 PKCE)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,13 +12,22 @@ publish.workspace = true
 chess-core.workspace = true
 # Toda saída de rede passa pelo gate do chess-net; este crate não abre conexão.
 chess-net.workspace = true
+# Segredos das Conexões (token da autorização do Lichess).
+chess-vault.workspace = true
 # Ritmo (`Pace`) e Origem/ImportOptions da importação em fluxo da Biblioteca.
 chess-store.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+# PKCE S256 da autorização do Lichess: SHA-256, base64url e bytes aleatórios do sistema
+# (RustCrypto e afins, MIT OR Apache-2.0).
+sha2 = "0.11"
+base64 = "0.23"
+getrandom = "0.4"
+zeroize = "1.9"
 
 [dev-dependencies]
 chess-net = { workspace = true, features = ["testing"] }
+chess-vault = { workspace = true, features = ["testing"] }
 
 [lints]
 workspace = true

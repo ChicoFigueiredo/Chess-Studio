@@ -30,6 +30,9 @@ pub enum NetError {
         provider: ProviderId,
         capability: Capability,
     },
+    /// O Provedor recusou o token da Conexão: `401` (expirado ou revogado) ou `403` (falta
+    /// permissão). O Cofre marcou a Conexão; os dados locais ficam como estão.
+    ConnectionRejected { provider: ProviderId, status: u16 },
     /// O Provedor pediu pausa (`429`); nada sai para ele antes de `until`.
     RateLimited {
         provider: ProviderId,
@@ -64,7 +67,7 @@ impl NetError {
     /// avaliação).
     pub fn http_status(&self) -> Option<u16> {
         match self {
-            Self::Http { status, .. } => Some(*status),
+            Self::Http { status, .. } | Self::ConnectionRejected { status, .. } => Some(*status),
             Self::RateLimited { .. } => Some(429),
             _ => None,
         }
@@ -78,6 +81,7 @@ impl NetError {
             | Self::EndpointNotAllowed { provider, .. }
             | Self::FairPlayLocked { provider, .. }
             | Self::NotAuthorized { provider, .. }
+            | Self::ConnectionRejected { provider, .. }
             | Self::RateLimited { provider, .. }
             | Self::Timeout { provider }
             | Self::Unreachable { provider, .. }
@@ -142,6 +146,21 @@ impl fmt::Display for NetError {
                 "«{}» no {provider} precisa de uma Conexão autorizada.",
                 capability.label()
             ),
+            Self::ConnectionRejected { provider, status } => {
+                if *status == 403 {
+                    write!(
+                        f,
+                        "{provider} recusou a Conexão: falta permissão ao token para este \
+                         recurso (HTTP 403)."
+                    )
+                } else {
+                    write!(
+                        f,
+                        "A Conexão com {provider} expirou ou foi revogada (HTTP {status}); \
+                         autorize de novo em Arquivo > Conexões."
+                    )
+                }
+            }
             Self::RateLimited { provider, .. } => write!(
                 f,
                 "{provider} pediu uma pausa nos pedidos; o app espera o prazo antes de tentar de novo."

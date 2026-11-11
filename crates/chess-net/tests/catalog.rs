@@ -2,7 +2,7 @@
 //! pedido de senha onde não há protocolo aprovado, gratuitos primeiro e variantes recusadas.
 
 use chess_net::{
-    AuthMethod, CATALOG_VERSION, Capability, ProviderId, ServiceStatus, catalog, provider,
+    AuthMethod, CATALOG_VERSION, Capability, Cost, ProviderId, ServiceStatus, catalog, provider,
 };
 use std::collections::HashSet;
 
@@ -238,4 +238,77 @@ fn the_real_tablebase_host_is_in_the_catalog_as_exact_endgames() {
         .find(|e| e.host == "tablebase.lichess.ovh")
         .expect("endpoint");
     assert!(endpoint.license.contains("Lichess"));
+}
+
+#[test]
+fn the_explorer_needs_a_lichess_connection_and_is_free_with_signup() {
+    let lichess = provider(ProviderId::Lichess);
+    let explore = lichess.service(Capability::Explore).expect("Explorador");
+    assert!(explore.requires_connection());
+    assert_eq!(explore.cost, Cost::FreeWithSignup);
+    assert_eq!(
+        explore.auth,
+        &[AuthMethod::OAuth2Pkce, AuthMethod::PersonalToken]
+    );
+    assert!(explore.note.contains("Conexão autorizada do Lichess"));
+    // Os demais serviços públicos do Lichess seguem abertos (medido em 2026-11-11).
+    for capability in [
+        Capability::CachedEval,
+        Capability::Endgames,
+        Capability::Query,
+    ] {
+        let service = lichess.service(capability).expect("serviço");
+        assert!(!service.requires_connection(), "{capability:?}");
+    }
+    // Dado que muda o que é enviado sobe a versão.
+    const { assert!(CATALOG_VERSION >= 2) };
+}
+
+#[test]
+fn the_token_goes_only_where_the_provider_documents_authentication() {
+    for p in catalog() {
+        for e in p.endpoints {
+            let service = p.service(e.capability).expect("serviço");
+            if service.requires_connection() {
+                assert!(
+                    e.takes_token,
+                    "{} {}{}: exige Conexão mas não recebe o token",
+                    p.name, e.host, e.path_prefix
+                );
+            }
+        }
+    }
+    let lichess_hosts: HashSet<&str> = provider(ProviderId::Lichess)
+        .endpoints
+        .iter()
+        .filter(|e| e.takes_token)
+        .map(|e| e.host)
+        .collect();
+    assert_eq!(
+        lichess_hosts,
+        HashSet::from(["lichess.org", "explorer.lichess.org"]),
+        "o token do Lichess nunca vai para os finais nem para a base"
+    );
+    for (host, path) in [
+        ("lichess.org", "/api/cloud-eval"),
+        ("lichess.org", "/api/games/user/"),
+        ("lichess.org", "/api/user/"),
+        ("lichess.org", "/api/fide/"),
+    ] {
+        let e = provider(ProviderId::Lichess)
+            .endpoints
+            .iter()
+            .find(|e| e.host == host && e.path_prefix == path)
+            .expect("endpoint");
+        assert!(!e.takes_token, "{host}{path} é público: sem token");
+    }
+    for p in catalog() {
+        if p.id != ProviderId::Lichess && p.id != ProviderId::PlayStrategy {
+            assert!(
+                p.endpoints.iter().all(|e| !e.takes_token),
+                "{}: token sem autorização implementada",
+                p.name
+            );
+        }
+    }
 }

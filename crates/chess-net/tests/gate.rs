@@ -1,5 +1,6 @@
 //! O ponto único (gate): endereço no catálogo, HTTPS, Trava de fair play, autorização do
-//! Cofre presa ao host, User-Agent genérico e segredo fora de `Debug`/log.
+//! Cofre presa ao Provedor e aos endereços autenticados do catálogo, User-Agent genérico e
+//! segredo fora de `Debug`/log.
 
 mod common;
 
@@ -13,7 +14,7 @@ use std::sync::Arc;
 
 const TOKEN: &str = "lip_SEGREDO_NAO_PODE_VAZAR";
 
-/// Cofre de teste: a Conexão 7 do Lichess tem um token para `lichess.org`.
+/// Cofre de teste: a Conexão 7 do Lichess tem um token.
 #[derive(Debug)]
 struct TestVault;
 
@@ -25,7 +26,7 @@ impl AuthorizationSource for TestVault {
         connection: ConnectionId,
     ) -> Option<Authorization> {
         (provider == ProviderId::Lichess && connection == ConnectionId(7))
-            .then(|| Authorization::bearer("lichess.org", Secret::new(TOKEN)))
+            .then(|| Authorization::bearer(ProviderId::Lichess, &Secret::new(TOKEN)))
     }
 }
 
@@ -190,10 +191,10 @@ fn the_guard_is_consulted_again_right_before_the_network() {
 
     let first = net.fetch(masters().timeout(std::time::Duration::from_millis(300)));
     assert!(server.wait_for_requests(1, std::time::Duration::from_secs(5)));
-    let queued = net.fetch(Request::get(
-        ProviderId::Lichess,
-        "https://explorer.lichess.org/lichess",
-    ));
+    let queued = net.fetch(
+        Request::get(ProviderId::Lichess, "https://explorer.lichess.org/lichess")
+            .connection(EXPLORER_CONNECTION),
+    );
     guard.engage("a Partida online começou com o pedido na fila");
 
     let _ = first.wait();
@@ -240,37 +241,323 @@ fn a_capability_that_needs_a_connection_is_refused_without_one() {
 }
 
 #[test]
-fn the_authorization_goes_only_to_its_own_host() {
+fn the_authorization_goes_only_to_the_authenticated_endpoints_of_its_provider() {
     let clock = clock();
     let lichess = server(&clock);
     let explorer = FakeServer::with_clock(clock.clone());
+    let others = FakeServer::with_clock(clock.clone());
     lichess.route("/api/account", FakeResponse::json("{\"id\":\"eu\"}"));
+    lichess.route("/api/cloud-eval", FakeResponse::json("{}"));
+    lichess.route("/api/games/user/someone", FakeResponse::json("{}"));
     explorer.route("/masters", FakeResponse::json("{}"));
+    others.route("/standard", FakeResponse::json("{}"));
+    others.route("/pub/player/someone", FakeResponse::json("{}"));
     let net = Net::open(
         chess_net::NetConfig::in_memory()
             .clock(clock.clone())
             .route("lichess.org", &lichess.base_url())
             .route("explorer.lichess.org", &explorer.base_url())
+            .route("tablebase.lichess.org", &others.base_url())
+            .route("api.chess.com", &others.base_url())
             .vault(Arc::new(TestVault)),
     )
     .expect("abre");
+    for p in [ProviderId::Lichess, ProviderId::ChessCom] {
+        net.set_enabled(p, true).expect("liga");
+    }
+    let c = ConnectionId(7);
+    let kpk = "8/8/8/8/8/8/4K3/6kQ w - - 0 1";
+    for request in [
+        Request::get(ProviderId::Lichess, "https://lichess.org/api/account").connection(c),
+        masters().connection(c),
+        Request::get(ProviderId::Lichess, "https://lichess.org/api/cloud-eval")
+            .query("fen", kpk)
+            .connection(c),
+        Request::get(
+            ProviderId::Lichess,
+            "https://lichess.org/api/games/user/someone",
+        )
+        .connection(c),
+        Request::get(
+            ProviderId::Lichess,
+            "https://tablebase.lichess.org/standard",
+        )
+        .query("fen", kpk)
+        .connection(c),
+        Request::get(
+            ProviderId::ChessCom,
+            "https://api.chess.com/pub/player/someone",
+        )
+        .connection(c),
+    ] {
+        net.fetch(request).wait().expect("resposta");
+    }
+
+    let bearer = format!("Bearer {TOKEN}");
+    let lichess_sent = lichess.requests();
+    assert_eq!(lichess_sent.len(), 3);
+    for r in &lichess_sent {
+        let expected = (r.path == "/api/account").then_some(bearer.as_str());
+        assert_eq!(r.header("authorization"), expected, "{}", r.path);
+    }
+    assert_eq!(
+        explorer.requests()[0].header("authorization"),
+        Some(bearer.as_str()),
+        "o Explorador exige a Conexão desde 2026-11-11"
+    );
+    let other_sent = others.requests();
+    assert_eq!(other_sent.len(), 2);
+    for r in &other_sent {
+        assert_eq!(r.header("authorization"), None, "{}", r.path);
+    }
+}
+
+/// Cofre defeituoso: devolve o token do Lichess para qualquer Provedor e Conexão.
+#[derive(Debug)]
+struct LeakyVault;
+
+impl AuthorizationSource for LeakyVault {
+    fn authorization(
+        &self,
+        _profile: LocalProfileId,
+        _provider: ProviderId,
+        _connection: ConnectionId,
+    ) -> Option<Authorization> {
+        Some(Authorization::bearer(
+            ProviderId::Lichess,
+            &Secret::new(TOKEN),
+        ))
+    }
+}
+
+#[test]
+fn a_token_of_one_provider_never_reaches_another_provider_even_from_a_faulty_vault() {
+    let clock = clock();
+    let server = server(&clock);
+    server.route("/api/board/game/x/move/e2e4", FakeResponse::json("{}"));
+    let net = Net::open(config(&server, &clock).vault(Arc::new(LeakyVault))).expect("abre");
+    net.set_enabled(ProviderId::PlayStrategy, true)
+        .expect("liga");
+
+    let err = net
+        .fetch(
+            Request::post(
+                ProviderId::PlayStrategy,
+                "https://playstrategy.org/api/board/game/x/move/e2e4",
+            )
+            .connection(ConnectionId(7)),
+        )
+        .wait()
+        .unwrap_err();
+
+    assert!(matches!(err, NetError::NotAuthorized { .. }), "{err:?}");
+    assert_eq!(
+        server.connections(),
+        0,
+        "o token do Lichess não sai para outro Provedor"
+    );
+}
+
+#[test]
+fn naming_a_connection_without_a_secret_never_goes_out_unauthenticated() {
+    let clock = clock();
+    let server = server(&clock);
+    let net = net_enabled(&server, &clock, &[ProviderId::Lichess]);
+
+    for request in [
+        Request::get(ProviderId::Lichess, "https://explorer.lichess.org/masters")
+            .connection(ConnectionId(99)),
+        Request::delete(ProviderId::Lichess, "https://lichess.org/api/token")
+            .connection(ConnectionId(99)),
+    ] {
+        let err = net.fetch(request).wait().unwrap_err();
+        assert!(matches!(err, NetError::NotAuthorized { .. }), "{err:?}");
+    }
+    // Sem Conexão, o Explorador exige uma (o Provedor responde 401 sem token).
+    let err = net
+        .fetch(Request::get(
+            ProviderId::Lichess,
+            "https://explorer.lichess.org/lichess",
+        ))
+        .wait()
+        .unwrap_err();
+    assert_eq!(
+        err,
+        NetError::NotAuthorized {
+            provider: ProviderId::Lichess,
+            capability: Capability::Explore
+        }
+    );
+    // Outro Perfil local não usa a Conexão do Perfil 1.
+    net.set_active_profile(LocalProfileId(2));
+    net.set_enabled(ProviderId::Lichess, true).expect("liga");
+    let err = net.fetch(masters()).wait().unwrap_err();
+    assert!(matches!(err, NetError::NotAuthorized { .. }), "{err:?}");
+    assert_eq!(server.connections(), 0);
+}
+
+/// Cofre que anota as recusas do Provedor.
+#[derive(Debug, Default)]
+struct RecordingVault {
+    rejected: std::sync::Mutex<Vec<(ConnectionId, u16)>>,
+}
+
+impl AuthorizationSource for RecordingVault {
+    fn authorization(
+        &self,
+        profile: LocalProfileId,
+        provider: ProviderId,
+        connection: ConnectionId,
+    ) -> Option<Authorization> {
+        TestVault.authorization(profile, provider, connection)
+    }
+
+    fn rejected(
+        &self,
+        _profile: LocalProfileId,
+        _provider: ProviderId,
+        connection: ConnectionId,
+        status: u16,
+    ) {
+        self.rejected
+            .lock()
+            .expect("trava")
+            .push((connection, status));
+    }
+}
+
+#[test]
+fn a_401_or_403_with_the_token_marks_the_connection_and_is_typed() {
+    let clock = clock();
+    let server = server(&clock);
+    server.route("/api/account", FakeResponse::status(401));
+    server.route("/api/board/game/x/move/e2e4", FakeResponse::status(403));
+    server.route("/api/user/someone", FakeResponse::status(401));
+    let vault = Arc::new(RecordingVault::default());
+    let net = Net::open(config(&server, &clock).vault(vault.clone())).expect("abre");
     net.set_enabled(ProviderId::Lichess, true).expect("liga");
 
-    net.fetch(
-        Request::get(ProviderId::Lichess, "https://lichess.org/api/account")
-            .connection(ConnectionId(7)),
-    )
-    .wait()
-    .expect("autorizado");
-    net.fetch(masters().connection(ConnectionId(7)))
+    let err = net
+        .fetch(
+            Request::get(ProviderId::Lichess, "https://lichess.org/api/account")
+                .connection(ConnectionId(7)),
+        )
         .wait()
-        .expect("Explorador sem o token");
-
+        .unwrap_err();
     assert_eq!(
-        lichess.requests()[0].header("authorization"),
+        err,
+        NetError::ConnectionRejected {
+            provider: ProviderId::Lichess,
+            status: 401
+        }
+    );
+    assert_eq!(err.http_status(), Some(401));
+    assert!(err.to_string().contains("expirou ou foi revogada"), "{err}");
+
+    let err = net
+        .fetch(
+            Request::post(
+                ProviderId::Lichess,
+                "https://lichess.org/api/board/game/x/move/e2e4",
+            )
+            .connection(ConnectionId(7)),
+        )
+        .wait()
+        .unwrap_err();
+    assert!(
+        matches!(err, NetError::ConnectionRejected { status: 403, .. }),
+        "{err:?}"
+    );
+
+    // Sem token, um 401 é só a resposta do Provedor: nenhuma Conexão é marcada.
+    let err = net
+        .fetch(Request::get(
+            ProviderId::Lichess,
+            "https://lichess.org/api/user/someone",
+        ))
+        .wait()
+        .unwrap_err();
+    assert_eq!(
+        err,
+        NetError::Http {
+            provider: ProviderId::Lichess,
+            status: 401
+        }
+    );
+    assert_eq!(
+        *vault.rejected.lock().expect("trava"),
+        vec![(ConnectionId(7), 401), (ConnectionId(7), 403)]
+    );
+}
+
+#[test]
+fn the_scopes_of_the_token_come_back_only_on_authenticated_requests() {
+    let clock = clock();
+    let server = server(&clock);
+    server.route(
+        "/api/account",
+        FakeResponse::json("{\"id\":\"eu\"}").header("x-oauth-scopes", "board:play"),
+    );
+    server.route(
+        "/api/user/someone",
+        FakeResponse::json("{}").header("x-oauth-scopes", "board:play"),
+    );
+    let net = Net::open(config(&server, &clock).vault(Arc::new(TestVault))).expect("abre");
+    net.set_enabled(ProviderId::Lichess, true).expect("liga");
+
+    let fetched = net
+        .fetch(
+            Request::get(ProviderId::Lichess, "https://lichess.org/api/account")
+                .connection(ConnectionId(7)),
+        )
+        .wait()
+        .expect("conta");
+    assert_eq!(fetched.oauth_scopes.as_deref(), Some("board:play"));
+    let public = net
+        .fetch(Request::get(
+            ProviderId::Lichess,
+            "https://lichess.org/api/user/someone",
+        ))
+        .wait()
+        .expect("perfil");
+    assert_eq!(public.oauth_scopes, None);
+}
+
+#[test]
+fn revocation_goes_out_as_delete_with_the_token() {
+    let clock = clock();
+    let server = server(&clock);
+    server.route("/api/token", FakeResponse::status(204));
+    let net = Net::open(config(&server, &clock).vault(Arc::new(TestVault))).expect("abre");
+    net.set_enabled(ProviderId::Lichess, true).expect("liga");
+
+    let fetched = net
+        .fetch(
+            Request::delete(ProviderId::Lichess, "https://lichess.org/api/token")
+                .connection(ConnectionId(7)),
+        )
+        .wait()
+        .expect("revogado");
+
+    assert_eq!(fetched.status, 204);
+    let sent = &server.requests()[0];
+    assert_eq!(sent.method, "DELETE");
+    assert_eq!(sent.path, "/api/token");
+    assert_eq!(
+        sent.header("authorization"),
         Some(format!("Bearer {TOKEN}").as_str())
     );
-    assert_eq!(explorer.requests()[0].header("authorization"), None);
+}
+
+#[test]
+fn the_debug_of_a_request_hides_the_body() {
+    let request = Request::post(ProviderId::Lichess, "https://lichess.org/api/token").body(
+        "application/x-www-form-urlencoded",
+        b"code=CODIGO_SECRETO&code_verifier=VERIFICADOR_SECRETO".to_vec(),
+    );
+    let text = format!("{request:?}");
+    assert!(!text.contains("SECRETO"), "{text}");
+    assert!(text.contains("bytes"), "{text}");
 }
 
 #[test]
@@ -341,7 +628,7 @@ fn no_secret_shows_up_in_debug_errors_or_the_operation_log() {
     assert_eq!(err.http_status(), Some(401));
 
     let secret = Secret::new(TOKEN);
-    let auth = Authorization::bearer("lichess.org", Secret::new(TOKEN));
+    let auth = Authorization::bearer(ProviderId::Lichess, &Secret::new(TOKEN));
     let texts = [
         format!("{secret:?}"),
         format!("{auth:?}"),

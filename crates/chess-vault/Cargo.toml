@@ -1,0 +1,36 @@
+[package]
+name = "chess-vault"
+description = "Cofre de segredos das Conexões: cofre do sistema operacional ou cofre próprio cifrado com senha-mestra (ADR-0006, CX-10)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+# Cofre do sistema falso, em memória. Só para testes: nenhum crate liga esta feature em
+# `[dependencies]` (teste estático em tests/static_secrets.rs).
+testing = []
+
+[dependencies]
+# ConnectionId, Secret, Authorization e AuthorizationSource: o Cofre responde ao gate de rede.
+chess-net.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# Cofre do sistema operacional (MIT OR Apache-2.0): Secret Service por zbus (Rust puro, sem
+# libdbus) no Linux, Credential Manager no Windows, Keychain no macOS.
+keyring = "4.2"
+# Cofre próprio (RustCrypto, MIT OR Apache-2.0): Argon2id para a senha-mestra e
+# XChaCha20-Poly1305 para o arquivo.
+argon2 = { version = "0.6", default-features = false, features = ["alloc", "zeroize"] }
+chacha20poly1305 = { version = "0.11", default-features = false, features = ["zeroize"] }
+getrandom = "0.4"
+zeroize = "1.9"
+
+[dev-dependencies]
+chess-vault = { path = ".", features = ["testing"] }
+chess-net = { workspace = true, features = ["testing"] }
+
+[lints]
+workspace = true
