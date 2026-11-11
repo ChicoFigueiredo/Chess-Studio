@@ -153,6 +153,8 @@ impl EngineSide {
     ) -> Vec<Step> {
         let snapshot = game.snapshot();
         let mut out = Vec::new();
+        // Lance proposto neste passo: a sessão ainda vai registrá-lo como intenção enviada.
+        let mut playing = false;
         while let Some(event) = self.engine.poll() {
             match event {
                 ControllerEvent::Ready { .. } => {}
@@ -165,6 +167,7 @@ impl EngineSide {
                         Ok(mv) if snapshot.position.is_legal(mv) => {
                             self.illegal_streak = 0;
                             out.push(Step::Play(mv));
+                            playing = true;
                         }
                         _ => {
                             self.illegal_streak += 1;
@@ -208,7 +211,7 @@ impl EngineSide {
         let my_turn = snapshot.side_to_move == local;
         if !my_turn {
             self.stop();
-        } else if idle && game.sent_move().is_none() && self.searching.is_none() {
+        } else if idle && !playing && game.sent_move().is_none() && self.searching.is_none() {
             let id = self.engine.search(self.request(game, &snapshot, local, at));
             self.searching = Some(Search { id, plies });
         }

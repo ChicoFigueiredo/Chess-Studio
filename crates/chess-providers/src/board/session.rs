@@ -295,8 +295,7 @@ impl OnlineGameSession {
         } else if self.hold.is_none() {
             self.hold = Some(self.board.net.fair_play_guard().hold(format!(
                 "Partida online contra pessoa no {} ({})",
-                self.board.profile.name,
-                self.game_id
+                self.board.profile.name, self.game_id
             )));
         }
     }
@@ -364,7 +363,9 @@ impl OnlineGameSession {
                         });
                     }
                 }
-                Step::Rejected { uci } => out.notices.push(SessionNotice::EngineMoveRejected { uci }),
+                Step::Rejected { uci } => {
+                    out.notices.push(SessionNotice::EngineMoveRejected { uci })
+                }
                 Step::Failed { detail } => {
                     let resign = self
                         .engine

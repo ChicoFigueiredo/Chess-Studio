@@ -398,6 +398,11 @@ impl Lichess {
         if let Some(max) = filter.max {
             request = request.query("max", max.to_string());
         }
-        GamesFeed::lichess(provider, self.net.stream(request), name.to_owned(), provenance)
+        GamesFeed::lichess(
+            provider,
+            self.net.stream(request),
+            name.to_owned(),
+            provenance,
+        )
     }
 }

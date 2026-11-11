@@ -40,9 +40,9 @@ mod json;
 mod link;
 mod session;
 
+pub(crate) use engine::EngineSide;
 pub use engine::{DrawResponse, EnginePolicy, MoveEngine};
 pub use link::{Backoff, LinkStatus};
-pub(crate) use engine::EngineSide;
 pub use session::{BoardAction, Gap, OnlineGameSession, OpponentGone, SessionNotice, SessionPoll};
 
 use crate::ProviderError;

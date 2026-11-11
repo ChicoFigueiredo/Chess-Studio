@@ -65,6 +65,32 @@ pub fn temp_dir(name: &str) -> PathBuf {
     dir
 }
 
+/// Guarda no Cofre os tokens das Conexões da etapa 5 (Engine do Lichess e as do PlayStrategy).
+/// Fica fora de `env` para não mudar o que os testes anteriores veem no cofre do sistema.
+pub fn store_stage5_tokens(env: &Env) {
+    for (provider, connection, token) in [
+        (
+            ProviderId::Lichess,
+            LICHESS_ENGINE_CONNECTION,
+            LICHESS_ENGINE_TOKEN,
+        ),
+        (
+            ProviderId::PlayStrategy,
+            PLAYSTRATEGY_CONNECTION,
+            PLAYSTRATEGY_TOKEN,
+        ),
+        (
+            ProviderId::PlayStrategy,
+            PLAYSTRATEGY_ENGINE_CONNECTION,
+            PLAYSTRATEGY_ENGINE_TOKEN,
+        ),
+    ] {
+        env.vault
+            .store(LocalProfileId(1), provider, connection, Secret::new(token))
+            .expect("guarda o token de teste");
+    }
+}
+
 /// Rede com o servidor falso, sem nenhum Provedor ligado.
 pub fn env() -> Env {
     env_with(MemoryKeyring::new(), false)
@@ -92,27 +118,6 @@ pub fn env_with(keyring: MemoryKeyring, net_on_disk: bool) -> Env {
                 Secret::new(EXPLORER_TOKEN),
             )
             .expect("guarda o token do Explorador");
-        for (provider, connection, token) in [
-            (
-                ProviderId::Lichess,
-                LICHESS_ENGINE_CONNECTION,
-                LICHESS_ENGINE_TOKEN,
-            ),
-            (
-                ProviderId::PlayStrategy,
-                PLAYSTRATEGY_CONNECTION,
-                PLAYSTRATEGY_TOKEN,
-            ),
-            (
-                ProviderId::PlayStrategy,
-                PLAYSTRATEGY_ENGINE_CONNECTION,
-                PLAYSTRATEGY_ENGINE_TOKEN,
-            ),
-        ] {
-            vault
-                .store(LocalProfileId(1), provider, connection, Secret::new(token))
-                .expect("guarda o token de teste");
-        }
     }
     let base = if net_on_disk {
         NetConfig::at_path(dir.join("rede.db"))

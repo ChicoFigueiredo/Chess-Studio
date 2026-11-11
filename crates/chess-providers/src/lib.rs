@@ -89,9 +89,9 @@ mod bot;
 mod chesscom;
 mod dates;
 mod error;
-mod family;
 mod eval;
 mod explorer;
+mod family;
 mod games;
 mod lichess;
 mod pgn;
@@ -108,9 +108,8 @@ pub use auth::{
 pub use board::{
     Backoff, BoardAction, BoardError, CORRESPONDENCE_DAYS, Challenge, ChallengePlayer,
     ChallengeSpec, ConnectionEvent, ConnectionEvents, DeclineReason, DrawResponse, EnginePolicy,
-    GameInfo, Gap, LichessBoard, MoveEngine,
-    LinkStatus, OnlineGameSession, OnlineTime, OpponentGone, OpponentInfo, Seek, SeekState,
-    Seeking, SessionNotice, SessionPoll,
+    GameInfo, Gap, LichessBoard, LinkStatus, MoveEngine, OnlineGameSession, OnlineTime,
+    OpponentGone, OpponentInfo, Seek, SeekState, Seeking, SessionNotice, SessionPoll,
 };
 pub use bot::{
     ChallengeAnswer, ChallengeDecision, ChallengePolicy, ChallengeSpeed, IrreversibleConfirmation,
@@ -119,12 +118,12 @@ pub use bot::{
 pub use chesscom::{ChessCom, ChessComProfile, MonthGames};
 pub use dates::{Day, YearMonth};
 pub use error::ProviderError;
-pub use family::ProviderProfile;
 pub use eval::{CloudEval, EvalLine, POV, Score};
 pub use explorer::{
     ExplorerEvent, ExplorerMove, ExplorerPosition, ExplorerStream, LichessFilter, MastersFilter,
     OpeningName, Outcomes, PlayerFilter, ReferenceGame, ReferencePlayer, explorer_license,
 };
+pub use family::ProviderProfile;
 pub use games::{
     DEFAULT_MAX_GAMES, GamesEvent, GamesFeed, GamesFilter, GamesProgress, GamesReader,
     import_options,

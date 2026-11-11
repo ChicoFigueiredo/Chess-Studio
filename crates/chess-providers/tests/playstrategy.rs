@@ -24,6 +24,7 @@ const GAME: &str = "Ps4rT9xQ";
 
 fn env_ps() -> Env {
     let env = env();
+    store_stage5_tokens(&env);
     env.net.set_enabled(ProviderId::PlayStrategy, true).unwrap();
     env
 }
@@ -369,8 +370,7 @@ fn personal_token_is_checked_at_playstrategy_and_errors_name_the_provider() {
     );
     env.server.route(
         "/api/account",
-        FakeResponse::json(r#"{"id":"ana","username":"Ana"}"#)
-            .header("x-oauth-scopes", "bot:play"),
+        FakeResponse::json(r#"{"id":"ana","username":"Ana"}"#).header("x-oauth-scopes", "bot:play"),
     );
     // Conexão de jogador com token de Engine: recusado, com o nome do PlayStrategy.
     let mut task = auth.personal_token(
@@ -379,7 +379,10 @@ fn personal_token_is_checked_at_playstrategy_and_errors_name_the_provider() {
         Secret::new("ps_token_de_engine_123"),
     );
     let error = task.wait_timeout(WAIT).unwrap().unwrap_err();
-    assert!(matches!(error, chess_providers::AuthError::WrongScopes { .. }));
+    assert!(matches!(
+        error,
+        chess_providers::AuthError::WrongScopes { .. }
+    ));
     let text = error.describe(auth.provider_profile());
     assert!(text.contains("board:play"), "{text}");
     let disabled = chess_providers::AuthError::Disabled.describe(auth.provider_profile());

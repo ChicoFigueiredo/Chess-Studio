@@ -2,8 +2,8 @@
 //! `GameFullEvent`, `GameStateEvent`, `GameEventInfo`, `ChallengeJson`; conferida em
 //! 11/11/2026) e a tradução para o domínio. Campos fora do documentado são ignorados.
 
-use crate::family::ProviderProfile;
 use super::{Challenge, ChallengePlayer, GameInfo, OnlineTime, OpponentInfo};
+use crate::family::ProviderProfile;
 use chess_core::{CanonicalPosition, Color};
 use chess_game::{
     EndReason, GameResult, GameSetup, OnlineGame, OnlinePlayer, OnlineSetupError, Opponent,

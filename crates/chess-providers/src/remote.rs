@@ -166,7 +166,11 @@ fn score(item: &Value) -> Result<Score, ProviderError> {
 
 /// A variante principal: o Lance e a continuação, cada um validado pelo núcleo de regras. O
 /// Lance principal ilegal é erro; a continuação é cortada no primeiro Lance ilegal.
-fn line(position: &CanonicalPosition, item: &Value, multipv: usize) -> Result<AnalysisLine, ProviderError> {
+fn line(
+    position: &CanonicalPosition,
+    item: &Value,
+    multipv: usize,
+) -> Result<AnalysisLine, ProviderError> {
     let text = item
         .get("lan")
         .or_else(|| item.get("move"))
@@ -181,7 +185,11 @@ fn line(position: &CanonicalPosition, item: &Value, multipv: usize) -> Result<An
         )));
     }
     let mut pv = vec![best];
-    let mut san = vec![position.san(best).map_err(|_| malformed("Lance sem notação"))?];
+    let mut san = vec![
+        position
+            .san(best)
+            .map_err(|_| malformed("Lance sem notação"))?,
+    ];
     let mut current = position
         .play(best)
         .map_err(|_| malformed("Lance recusado pelas regras"))?;
@@ -226,9 +234,12 @@ fn line(position: &CanonicalPosition, item: &Value, multipv: usize) -> Result<An
     })
 }
 
-fn decode(position: &CanonicalPosition, fetched: &Fetched) -> Result<Vec<AnalysisLine>, ProviderError> {
-    let value: Value = serde_json::from_slice(&fetched.body)
-        .map_err(|_| malformed("a resposta não é JSON"))?;
+fn decode(
+    position: &CanonicalPosition,
+    fetched: &Fetched,
+) -> Result<Vec<AnalysisLine>, ProviderError> {
+    let value: Value =
+        serde_json::from_slice(&fetched.body).map_err(|_| malformed("a resposta não é JSON"))?;
     let items: Vec<&Value> = match &value {
         Value::Array(items) => items.iter().collect(),
         Value::Object(_) => vec![&value],
@@ -239,7 +250,10 @@ fn decode(position: &CanonicalPosition, fetched: &Fetched) -> Result<Vec<Analysi
         match item.get("type").and_then(Value::as_str) {
             // O serviço responde `200` com `type: "error"` (FEN recusado, por exemplo).
             Some("error") => {
-                let code = item.get("error").and_then(Value::as_str).unwrap_or_default();
+                let code = item
+                    .get("error")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
                 return Err(if code.contains("FEN") {
                     ProviderError::invalid("o serviço recusou a Posição (FEN)")
                 } else {
@@ -386,8 +400,10 @@ impl RemoteEngine {
         } else {
             FailureKind::Protocol
         };
-        self.events
-            .push_back(AnalysisEvent::Failed(Failure::new(kind, user_message(&error))));
+        self.events.push_back(AnalysisEvent::Failed(Failure::new(
+            kind,
+            user_message(&error),
+        )));
         self.problem = Some(error);
     }
 

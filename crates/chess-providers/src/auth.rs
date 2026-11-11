@@ -646,7 +646,9 @@ impl LichessAuth {
         token: Secret,
         cancel: &AtomicBool,
     ) -> Result<LichessAccount, AuthError> {
-        let staged = self.vault.stage(profile, self.profile.id, connection, token);
+        let staged = self
+            .vault
+            .stage(profile, self.profile.id, connection, token);
         let account = self.account(connection)?;
         let wrong = !account
             .scopes

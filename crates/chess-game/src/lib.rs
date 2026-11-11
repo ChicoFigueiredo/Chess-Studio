@@ -45,8 +45,8 @@ pub use event::{
 };
 pub use game::Game;
 pub use online::{
-    Desync, ENGINE_GAME_SUFFIX, OnlineGame, OnlinePlayer, OnlineSetupError, OnlineView, Opponent, ProviderClock,
-    ProviderEnd, ProviderSnapshot, SentMove, Variant,
+    Desync, ENGINE_GAME_SUFFIX, OnlineGame, OnlinePlayer, OnlineSetupError, OnlineView, Opponent,
+    ProviderClock, ProviderEnd, ProviderSnapshot, SentMove, Variant,
 };
 pub use outcome::{EndReason, GameResult, Outcome};
 pub use pgn::{PgnOptions, pgn_date_from_unix_ms};
