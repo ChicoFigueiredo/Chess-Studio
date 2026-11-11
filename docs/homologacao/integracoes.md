@@ -79,8 +79,9 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 | CX-HOM-58 | FICS: desafios recebidos e variantes | sim | UNVERIFIED |
 | CX-HOM-59 | FICS: queda de conexão durante a Partida | sim | UNVERIFIED |
 | CX-HOM-60 | FICS: observar uma Partida | sim | UNVERIFIED |
-| CX-HOM-61 | Log detalhado sem segredo | sim | UNVERIFIED |
-| CX-HOM-62 | Problemas do Lichess depois do limite de linha | sim | UNVERIFIED |
+| CX-HOM-76 | Explorador: janela temporal, aviso de amostra e privacidade | sim | UNVERIFIED |
+| CX-HOM-77 | Log detalhado sem segredo | sim | UNVERIFIED |
+| CX-HOM-78 | Problemas do Lichess depois do limite de linha | sim | UNVERIFIED |
 
 ## Itens
 
@@ -739,7 +740,17 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Com o serviço real (UNVERIFIED):** os textos de observação (`You are now observing game N.`, `Game N: …`, `Removing game N from observation list.`) do FICS real são reconhecidos.
 - **Evidência:** [`online/fics_tests.rs`](../../crates/chess-studio/src/online/fics_tests.rs), [decisões FC-13 a FC-21](../decisoes/2026-11-11-fics.md).
 
-### CX-HOM-61. Log detalhado sem segredo
+### CX-HOM-76. Explorador: janela temporal, aviso de amostra e texto de privacidade
+
+- **Passos:**
+  1. Painel Explorador, fonte **Mestres (Lichess)**, com o Lichess ligado e a conexão autorizada: olhe o rodapé.
+  2. Troque para **Minha Biblioteca** e olhe o rodapé de novo.
+  3. Desligue o Lichess e leia o texto do estado "O Lichess está desligado".
+- **Esperado:** o rodapé traz a Origem, o **Período** (nas fontes do Lichess: "o Lichess não informa as datas desta base, e o app não filtra por data"; na Biblioteca: "todas as Partidas da sua Biblioteca") e a frase de que a estatística é histórica, não é avaliação e que vitórias por cor não mostram vantagem objetiva nem o melhor Lance. O texto do estado desligado diz que vão a Posição, a chave da conexão autorizada e, em "Um jogador", o nome digitado.
+- **Serviço real?** sim, só para ver os números reais; o texto não depende do serviço.
+- **Evidência:** testes em `explorer/view.rs`, [capturas](../evidencias/explorador-janela/README.md).
+
+### CX-HOM-77. Log detalhado sem segredo
 
 - **Pré-condição:** uma Conexão do Lichess autorizada (CX-HOM-09 ou CX-HOM-11); internet; terminal.
 - **Passos:**
@@ -750,7 +761,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Com o serviço real (UNVERIFIED):** o teste automático usa o servidor falso; só aqui o pedido real ao Lichess passa pelo log.
 - **Evidência:** [`log_secrets.rs`](../../crates/chess-net/tests/log_secrets.rs), [revisão de segurança SEC-01](../seguranca/revisao-v4.md#sec-01-token-código-e-verificador-pkce-no-log-em-trace).
 
-### CX-HOM-62. Problemas do Lichess depois do limite de linha
+### CX-HOM-78. Problemas do Lichess depois do limite de linha
 
 - **Pré-condição:** internet; Lichess ligado.
 - **Passos:**

@@ -103,4 +103,4 @@ Severidade:
 
 ## Itens de homologação
 
-[CX-HOM-61](../homologacao/integracoes.md#cx-hom-61-log-detalhado-sem-segredo) (log detalhado sem segredo) e [CX-HOM-62](../homologacao/integracoes.md#cx-hom-62-problemas-do-lichess-depois-do-limite-de-linha) (a base real de problemas continua sendo lida com o limite de linha).
+[CX-HOM-77](../homologacao/integracoes.md#cx-hom-77-log-detalhado-sem-segredo) (log detalhado sem segredo) e [CX-HOM-78](../homologacao/integracoes.md#cx-hom-78-problemas-do-lichess-depois-do-limite-de-linha) (a base real de problemas continua sendo lida com o limite de linha).
