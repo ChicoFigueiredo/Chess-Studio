@@ -33,6 +33,8 @@ mod eval_bar;
 mod explorer;
 mod fen_pgn;
 mod fide_panel;
+mod fide_profile;
+mod file_picker;
 mod focus;
 mod framing;
 mod highlight;
@@ -42,9 +44,11 @@ mod hud_draw;
 mod hud_policy;
 mod i18n;
 mod layout;
+mod library_bulk;
 mod library_ui;
 mod load_control;
 mod local_profiles;
+mod local_time;
 mod net_service;
 mod new_game;
 mod notation;
@@ -70,6 +74,7 @@ mod scoresheet;
 mod screen_layouts;
 mod secrets;
 mod session;
+mod short_date;
 mod status_bar;
 mod study;
 mod table;
@@ -304,6 +309,14 @@ fn main() {
             if let Some(pixels) = option_value("--connections-scroll").and_then(|v| v.parse().ok())
             {
                 demo.scrolled(pixels);
+            }
+            // `--connections-fide-search`: a busca por nome com resultados fictícios (#242).
+            if std::env::args().any(|a| a == "--connections-fide-search") {
+                demo.fide.demo_search();
+            }
+            // `--connections-clear-confirm`: a confirmação de "Limpar dados guardados" (#242).
+            if std::env::args().any(|a| a == "--connections-clear-confirm") {
+                demo.stored.confirming = true;
             }
             app.insert_resource(demo);
             let net = app.world().resource::<net_service::NetService>();

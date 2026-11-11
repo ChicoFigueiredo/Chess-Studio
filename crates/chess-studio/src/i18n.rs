@@ -79,6 +79,7 @@ const PT_BR: &[(&str, &str)] = &[
         "authorization.ftl",
         include_str!("../assets/i18n/pt-BR/authorization.ftl"),
     ),
+    ("time.ftl", include_str!("../assets/i18n/pt-BR/time.ftl")),
     (
         "options.ftl",
         include_str!("../assets/i18n/pt-BR/options.ftl"),
@@ -94,6 +95,14 @@ const PT_BR: &[(&str, &str)] = &[
     (
         "connections.ftl",
         include_str!("../assets/i18n/pt-BR/connections.ftl"),
+    ),
+    (
+        "profiledata.ftl",
+        include_str!("../assets/i18n/pt-BR/profiledata.ftl"),
+    ),
+    (
+        "filepicker.ftl",
+        include_str!("../assets/i18n/pt-BR/filepicker.ftl"),
     ),
 ];
 

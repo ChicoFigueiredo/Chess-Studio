@@ -84,6 +84,7 @@ pub(super) struct PacksUi {
     pub(super) installed: Vec<PackInfo>,
     load_errors: Vec<(String, String)>,
     path: String,
+    pick: crate::file_picker::FilePickButton,
     /// Arquivos `.csv`/`.csv.zst` sugeridos (pasta de documentos), lidos uma vez.
     suggestions: Option<Vec<PathBuf>>,
     themes: String,
@@ -111,6 +112,7 @@ impl Default for PacksUi {
             installed: Vec::new(),
             load_errors: Vec::new(),
             path: String::new(),
+            pick: crate::file_picker::FilePickButton::default(),
             suggestions: None,
             themes: String::new(),
             min_rating: String::new(),
@@ -592,6 +594,12 @@ pub(super) fn view(ui: &mut egui::Ui, i18n: &I18n, packs: &mut PacksUi) -> Optio
         &i18n.t("training-packs-path-hint"),
         None,
     );
+    let typed = packs.path.clone();
+    if let Some(file) = packs.pick.show_open(ui, i18n, || {
+        crate::file_picker::puzzles_open_request(i18n, &typed)
+    }) {
+        packs.path = file.display().to_string();
+    }
     let files = packs.suggestions.get_or_insert_with(|| {
         let dir = crate::paths::documents_dir(
             crate::paths::Platform::current(),

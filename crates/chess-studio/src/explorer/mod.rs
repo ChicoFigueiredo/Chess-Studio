@@ -20,6 +20,7 @@ mod driver;
 mod lookup;
 mod model;
 mod prefs;
+mod reference;
 mod view;
 
 pub use driver::{CloudDriver, CloudRow, Explorer, Input};
@@ -68,6 +69,8 @@ pub struct ExplorerUi {
     prefs_for: Option<ProfileId>,
     /// As últimas escolhas gravadas, para só gravar quando algo mudou.
     saved_prefs: Option<serde_json::Value>,
+    /// A Partida de referência que está sendo aberta (#239).
+    reference: reference::ReferenceOpen,
 }
 
 #[derive(Default)]
@@ -83,7 +86,7 @@ pub struct ExplorerPlugin;
 impl Plugin for ExplorerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ExplorerUi>()
-            .add_systems(Update, demo::apply_demo);
+            .add_systems(Update, (demo::apply_demo, drive_reference));
         crate::dock::register_panel(
             app,
             PanelDef {
@@ -388,7 +391,14 @@ impl ExplorerUi {
         ui.add_space(12.0);
         let selected = self.preview.clone();
         if let Some(scene) = self.demo.as_ref().and_then(demo::Scene::openings_view) {
-            self.show_openings(ui, i18n, scene, selected.as_deref(), actions);
+            self.show_openings(
+                ui,
+                i18n,
+                scene,
+                &here.position,
+                selected.as_deref(),
+                actions,
+            );
             return;
         }
         if self.explorer.source == Source::Library {
@@ -404,7 +414,7 @@ impl ExplorerUi {
             return;
         }
         let view = self.explorer.openings_view(input, net);
-        self.show_openings(ui, i18n, view, selected.as_deref(), actions);
+        self.show_openings(ui, i18n, view, &here.position, selected.as_deref(), actions);
     }
 
     fn show_openings(
@@ -412,17 +422,21 @@ impl ExplorerUi {
         ui: &mut egui::Ui,
         i18n: &I18n,
         view: OpeningsView,
+        position: &CanonicalPosition,
         selected: Option<&str>,
         actions: &mut Vec<UiAction>,
     ) {
+        let status = self.reference.status();
         match view {
             OpeningsView::Notice(notice) => {
                 view::notice(ui, i18n, &notice, false, NetService::now(), actions);
             }
-            OpeningsView::Table(table) => {
+            OpeningsView::Table(mut table) => {
+                // O livro local manda no nome da abertura; o do Provedor é o reserva.
+                table.prefer_local_opening(OpeningBook::embedded(), position);
                 view::stale_notice(ui, i18n, &table.origin, NetService::now());
-                view::openings_table(ui, i18n, &table, selected, actions);
-                view::footer(ui, i18n, &table.origin);
+                view::openings_table(ui, i18n, &table, selected, &status, actions);
+                view::footer(ui, i18n, &table.origin, NetService::now());
             }
         }
     }
@@ -448,18 +462,13 @@ impl ExplorerUi {
         }
         match &self.library.table {
             Some(table) if !table.rows.is_empty() => {
-                view::openings_table(ui, i18n, table, selected, actions);
-                view::footer(ui, i18n, &table.origin);
+                view::openings_table(ui, i18n, table, selected, &self.reference.status(), actions);
+                view::footer(ui, i18n, &table.origin, NetService::now());
             }
             Some(table) => {
                 // Sem Partidas aqui: a abertura do livro ainda vale como contexto.
                 if let Some((eco, name)) = &table.opening {
-                    ui.label(
-                        egui::RichText::new(
-                            i18n.t_with("explorer-opening", &[("eco", eco), ("name", name)]),
-                        )
-                        .strong(),
-                    );
+                    ui.label(egui::RichText::new(view::opening_label(i18n, eco, name)).strong());
                     ui.add_space(8.0);
                 }
                 view::notice(
@@ -470,7 +479,7 @@ impl ExplorerUi {
                     NetService::now(),
                     actions,
                 );
-                view::footer(ui, i18n, &table.origin);
+                view::footer(ui, i18n, &table.origin, NetService::now());
             }
             None => {}
         }
@@ -495,7 +504,7 @@ impl ExplorerUi {
             EndgamesView::Table(table) => {
                 view::stale_notice(ui, i18n, &table.origin, NetService::now());
                 view::endgames_table(ui, i18n, &table, actions);
-                view::footer(ui, i18n, &table.origin);
+                view::footer(ui, i18n, &table.origin, NetService::now());
             }
         }
     }
@@ -587,16 +596,64 @@ fn apply_world_actions(world: &mut World, i18n: &I18n, actions: &[UiAction]) {
             UiAction::OpenLibrary => {
                 world.write_message(ActionRequested(Action::OpenLibrary));
             }
-            UiAction::SearchReference { white, .. } => {
-                if let Some(mut library) = world.get_resource_mut::<crate::library_ui::LibraryUi>()
-                {
-                    library.focus_player(white);
-                }
-                world.write_message(ActionRequested(Action::OpenLibrary));
-            }
+            UiAction::OpenReference { id } => open_reference(world, id),
             UiAction::Play(_) | UiAction::Retry | UiAction::BackToGame | UiAction::UseLibrary => {}
         }
     }
+}
+
+/// Clicou numa Partida de referência: abre a Partida exata. Se a Biblioteca já a tem (pelo id
+/// do Provedor), só abre; senão começa a baixar, e [`drive_reference`] a grava e abre.
+fn open_reference(world: &mut World, id: &str) {
+    world.resource_scope(|world, mut state: Mut<ExplorerUi>| {
+        let handle = world.get_resource::<PersistenceHandle>();
+        let plan = with_store(&mut state.local, handle, |store, profile| {
+            reference::plan(store, profile, id)
+        });
+        match plan {
+            Some(reference::Plan::Open(found)) => open_in_library(world, found),
+            _ => {
+                let Some(net) = world.get_resource::<NetService>() else {
+                    return;
+                };
+                let source = state.explorer.source;
+                state.reference.start(id, source, net.lichess());
+            }
+        }
+    });
+}
+
+/// Mostra a Partida da Biblioteca na própria Biblioteca (a Partida jogada nunca é tocada).
+fn open_in_library(world: &mut World, id: chess_store::ImportedId) {
+    if let Some(mut library) = world.get_resource_mut::<crate::library_ui::LibraryUi>() {
+        library.open_imported(id);
+    }
+    world.write_message(ActionRequested(Action::OpenLibrary));
+}
+
+/// Todo quadro: se a Partida de referência terminou de baixar, grava na Biblioteca com a
+/// Origem da consulta e a abre.
+fn drive_reference(world: &mut World) {
+    let Some(answer) = world.get_resource_mut::<ExplorerUi>().and_then(|mut s| {
+        if s.reference.is_busy() {
+            s.reference.poll()
+        } else {
+            None
+        }
+    }) else {
+        return;
+    };
+    world.resource_scope(|world, mut state: Mut<ExplorerUi>| {
+        let handle = world.get_resource::<PersistenceHandle>();
+        let opened = with_store(&mut state.local, handle, |store, profile| {
+            reference::import(store, profile, &answer)
+        })
+        .flatten();
+        match opened {
+            Some(id) => open_in_library(world, id),
+            None => state.reference.fail_import(&answer.value.id),
+        }
+    });
 }
 
 /// Abre o diálogo "Ligar <Provedor>?" com o nome do recurso na frase.

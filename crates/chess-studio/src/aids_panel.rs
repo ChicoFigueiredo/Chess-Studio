@@ -466,6 +466,12 @@ fn file_section(
             let dir = paths::documents_dir(paths::Platform::current(), &paths::process_env);
             tools.export(session, notes, &dir);
         }
+        let save_as = tools.pgn_pick.show_save(ui, i18n, || {
+            crate::file_picker::pgn_save_request(i18n, FileTools::suggested_file_name())
+        });
+        if let Some(path) = save_as {
+            tools.export_to(session, notes, &path);
+        }
         match &tools.pgn_result {
             Some(Ok(path)) => {
                 ui.colored_label(

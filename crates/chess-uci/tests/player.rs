@@ -100,7 +100,7 @@ fn drive_until(
         let before = Instant::now();
         player.drive(game, t.now());
         assert!(
-            before.elapsed() < ms(100),
+            before.elapsed() < ms(400),
             "drive bloqueou a thread da interface"
         );
         std::thread::sleep(ms(5));

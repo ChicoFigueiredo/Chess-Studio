@@ -36,11 +36,14 @@ mod connections;
 mod engines;
 mod error;
 mod favorites;
+mod fide;
 mod imported;
+mod imported_bulk;
 mod library;
 pub mod migrations;
 mod openings;
 mod origin;
+mod remote_lookup;
 mod scoresheet;
 mod store;
 mod training;
@@ -53,10 +56,12 @@ pub use connections::{
 pub use engines::{EngineId, EngineOrigin, EngineRecord};
 pub use error::{Result, StoreError};
 pub use favorites::{Favorite, FavoriteId, FavoriteOrigin, FavoriteQuery, NewFavorite};
+pub use fide::FideSnapshot;
 pub use imported::{
     DEFAULT_BATCH, DEFAULT_MAX_DECOMPRESSED, ImportOptions, ImportProgress, ImportReport,
     ImportSummary, ImportedId, ImportedQuery, ImportedSummary, MAX_ERROR_SAMPLES,
 };
+pub use imported_bulk::{BulkCount, BulkDeleted, ImportGroup, ImportScope};
 pub use library::{
     LibraryEntry, LibraryEntryId, LibraryPage, LibraryQuery, LibrarySource, position_key,
 };

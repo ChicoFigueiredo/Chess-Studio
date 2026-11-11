@@ -671,6 +671,24 @@ pub fn later(provider: &Provider) -> Vec<&'static str> {
     out
 }
 
+/// Os nomes (ids Fluent) dos serviços que ainda não funcionam, para "O que vem depois": uma
+/// lista curta de substantivos ("Explorador · Finais exatos"), não uma frase de verbos.
+pub fn later_services(provider: &Provider) -> Vec<&'static str> {
+    let mut out: Vec<&'static str> = Vec::new();
+    for service in provider.services {
+        if !matches!(service.status, ServiceStatus::Planned { .. })
+            || service.capability == Capability::IdentityOnly
+        {
+            continue;
+        }
+        let key = service_key(service.capability);
+        if !out.contains(&key) {
+            out.push(key);
+        }
+    }
+    out
+}
+
 /// Custo por serviço, do mais barato ao mais caro: cada custo com os serviços que o têm. Um
 /// Provedor de custos diferentes mostra cada grupo (Lichess: consultas sem cadastro; Explorador
 /// com cadastro), nunca um custo só que contradiga o outro.
@@ -777,8 +795,8 @@ pub fn error_key(error: &chess_net::NetError) -> &'static str {
     }
 }
 
-/// Há quanto tempo foi a última consulta. O app não lê o fuso do sistema (sem `unsafe`, e sem
-/// uma dependência de fuso), então a interface mostra "há N min" em vez de uma hora local.
+/// Há quanto tempo foi a última consulta. A interface mostra a hora local ("às 14:32", ver
+/// `local_time`); este "há N min" é o que sobra quando o sistema não informa o fuso.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Age {
     JustNow,

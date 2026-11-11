@@ -1104,6 +1104,10 @@ pub(super) fn keytip_badge_rect(spot: Option<KeyTipSpot>, item: Rect, size: Vec2
 /// Selos dos KeyTips em `eval` (12/16 negrito): `ink` sobre `surface-1` invertido. Camada em
 /// `Order::Tooltip`, sobre os retângulos que o Ribbon registrou neste quadro.
 fn paint_keytips(ctx: &egui::Context, p: &Palette, ribbon: &RibbonState, level: KeyTipLevel) {
+    // Os bastidores cobrem o Ribbon: as letras das abas ficariam soltas sobre a página (#239).
+    if ribbon.backstage.is_some() {
+        return;
+    }
     let painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Tooltip,
         Id::new("chess-studio/keytips"),

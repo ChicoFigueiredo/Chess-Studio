@@ -180,6 +180,10 @@ pub(super) fn backstage_ui(
                                 &mut local,
                                 training.session_swapped(),
                             );
+                            ui.add_space(24.0);
+                            if crate::fide_profile::profile_block(ui, &ctx, &i18n, &mut central) {
+                                outcome.page = Some(BackstagePage::Connections);
+                            }
                         }
                         BackstagePage::Connections => {
                             crate::connections::section(

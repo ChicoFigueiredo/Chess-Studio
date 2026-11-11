@@ -796,6 +796,7 @@ impl Shared {
             None => None,
         };
         if let Some(entry) = &cached
+            && !request.refresh
             && entry.is_fresh(self.clock.now())
         {
             return Ok(from_entry(entry, self.clock.now(), Freshness::Cache));

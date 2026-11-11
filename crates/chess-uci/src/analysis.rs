@@ -686,8 +686,15 @@ fn run_analysis(
         } else if ctx.load.generation() != state.applied_gen {
             Some(Outcome::Reconfigure)
         } else {
+            // A rajada só termina depois de devolver ao menos uma linha: com a máquina
+            // carregada, a Engine pode demorar mais que a rajada para responder, e uma
+            // rajada vazia seria só uma pausa a mais. O teto (4x) evita esperar para sempre
+            // uma Engine muda.
             burst
-                .filter(|d| began.elapsed() >= d.run)
+                .filter(|d| {
+                    let elapsed = began.elapsed();
+                    elapsed >= d.run && (collector.seen || elapsed >= d.run.saturating_mul(4))
+                })
                 .map(|d| Outcome::Burst(d.pause))
         };
         if let Some(outcome) = interrupt {
@@ -734,6 +741,8 @@ struct Collector {
     root: CanonicalPosition,
     slots: Vec<Option<AnalysisLine>>,
     dirty: bool,
+    /// Já veio ao menos uma linha aproveitável nesta busca.
+    seen: bool,
 }
 
 impl Collector {
@@ -742,6 +751,7 @@ impl Collector {
             root,
             slots: vec![None; multipv],
             dirty: false,
+            seen: false,
         }
     }
 
@@ -785,6 +795,7 @@ impl Collector {
             san,
         });
         self.dirty = true;
+        self.seen = true;
     }
 
     /// Lances legais em sequência a partir da raiz; para no primeiro inválido.
