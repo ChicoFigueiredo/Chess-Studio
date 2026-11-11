@@ -18,5 +18,13 @@ flate2 = "1"
 tar = { version = "0.4", default-features = false }
 zip = { version = "9", default-features = false, features = ["deflate"] }
 
+[dev-dependencies]
+# A partida completa da Engine online (#234) usa a Engine UCI falsa deste crate; o
+# ciclo com chess-providers (que depende de chess-uci) é só de teste.
+chess-providers.workspace = true
+chess-net = { workspace = true, features = ["testing"] }
+chess-vault = { workspace = true, features = ["testing"] }
+serde_json.workspace = true
+
 [lints]
 workspace = true

@@ -1,0 +1,5 @@
+# Resposta SINTETICA no formato real do Chess-API.com (type bestmove), com um Lance ILEGAL de proposito (e2e5 na posicao inicial) para provar a validacao pelo nucleo de regras. Nao gravada do servico real.
+HTTP/2 200
+content-type: application/json; charset=utf-8
+
+{"text":"Move e2 -> e5 (e5): [0.33]. The game is balanced. Depth 12.","type":"bestmove","depth":12,"move":"e2e5","lan":"e2e5","eval":0.33,"centipawns":"33","mate":null,"continuationArr":["e7e5"],"winChance":51.2,"fen":"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"}

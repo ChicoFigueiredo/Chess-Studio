@@ -1,0 +1,71 @@
+# Resposta REAL gravada em 2026-11-11 com curl -i (User-Agent generico, sem chave, sem autenticacao). Preto joga e esta ganhando: ponto de vista da avaliacao.
+# POST https://chess-api.com/v1 corpo: {"fen":"7k/8/8/8/8/5q2/8/6K1 b - - 0 1","depth":12,"variants":1}
+HTTP/2 200 
+server: nginx/1.18.0 (Ubuntu)
+date: Wed, 11 Nov 2026 16:24:29 GMT
+content-type: application/json; charset=utf-8
+content-length: 1202
+x-powered-by: Express
+access-control-allow-origin: *
+etag: W/"4b2-8ZYvAZvulolCO3hzgi/aoB1rGc4"
+
+{
+  "text": "Move f3 → e2 (Qe2): [-100]. Black is winning. Depth 12.",
+  "captured": false,
+  "promotion": false,
+  "isCapture": false,
+  "isPromotion": false,
+  "isCastling": false,
+  "fen": "7k/8/8/8/8/5q2/8/6K1 b - - 0 1",
+  "type": "bestmove",
+  "depth": 12,
+  "move": "f3e2",
+  "eval": -100,
+  "centipawns": -10000,
+  "mate": -9,
+  "continuationArr": [
+    "g1h1",
+    "h8g8",
+    "h1g1",
+    "g8f7",
+    "g1h1",
+    "f7f6",
+    "h1g1",
+    "f6g6",
+    "g1h1",
+    "g6g5",
+    "h1g1",
+    "g5h4",
+    "g1h1",
+    "h4g3",
+    "h1g1",
+    "e2g2"
+  ],
+  "debug": "info depth 12 seldepth 18 multipv 1 score mate 9 nodes 289503 nps 36187875 hashfull 10 tbhits 0 time 8 pv f3e2 g1h1 h8g8 h1g1 g8f7 g1h1 f7f6 h1g1 f6g6 g1h1 g6g5 h1g1 g5h4 g1h1 h4g3 h1g1 e2g2",
+  "winChance": 0,
+  "taskId": "da097mhd8",
+  "turn": "b",
+  "color": "b",
+  "piece": "q",
+  "from": "f3",
+  "to": "e2",
+  "san": "Qe2",
+  "flags": "n",
+  "lan": "f3e2",
+  "fromNumeric": "63",
+  "toNumeric": "52",
+  "continuation": [
+    {
+      "from": "g1",
+      "to": "h1",
+      "fromNumeric": "71",
+      "toNumeric": "81"
+    },
+    {
+      "from": "h8",
+      "to": "g8",
+      "fromNumeric": "88",
+      "toNumeric": "78"
+    }
+  ]
+}

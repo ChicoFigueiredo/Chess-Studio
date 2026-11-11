@@ -24,7 +24,7 @@ use crate::answer::{stream_provenance, valid_name};
 use crate::chesscom::ChessComPlan;
 use crate::dates::Day;
 use crate::error::{Missing, ProviderError};
-use crate::lichess::{API_HOST, Lichess, PROVIDER};
+use crate::lichess::Lichess;
 use chess_core::Color;
 use chess_net::{ProviderId, Request, Stream, StreamEvent};
 use chess_store::{ImportMode, ImportOptions, ImportSource, Pace};
@@ -94,7 +94,11 @@ pub struct GamesProgress {
 pub(crate) type SharedProgress = Arc<Mutex<GamesProgress>>;
 
 enum Source {
-    Lichess { stream: Stream, name: String },
+    Lichess {
+        provider: ProviderId,
+        stream: Stream,
+        name: String,
+    },
     ChessCom(Box<ChessComPlan>),
     Early(Option<ProviderError>),
     Done,
@@ -117,8 +121,20 @@ impl fmt::Debug for GamesFeed {
 }
 
 impl GamesFeed {
-    pub(crate) fn lichess(stream: Stream, name: String, provenance: chess_net::Provenance) -> Self {
-        Self::with(Source::Lichess { stream, name }, provenance)
+    pub(crate) fn lichess(
+        provider: ProviderId,
+        stream: Stream,
+        name: String,
+        provenance: chess_net::Provenance,
+    ) -> Self {
+        Self::with(
+            Source::Lichess {
+                provider,
+                stream,
+                name,
+            },
+            provenance,
+        )
     }
 
     pub(crate) fn chesscom(plan: ChessComPlan, provenance: chess_net::Provenance) -> Self {
@@ -155,7 +171,11 @@ impl GamesFeed {
         let mut out = VecDeque::new();
         let mut progress = self.progress();
         match &mut self.source {
-            Source::Lichess { stream, name } => poll_lichess(stream, name, &mut out, &mut progress),
+            Source::Lichess {
+                provider,
+                stream,
+                name,
+            } => poll_lichess(*provider, stream, name, &mut out, &mut progress),
             Source::ChessCom(plan) => plan.poll(&mut out, &mut progress),
             Source::Early(error) => {
                 if let Some(error) = error.take() {
@@ -290,6 +310,7 @@ struct WireGame {
 }
 
 fn poll_lichess(
+    provider: ProviderId,
     stream: &Stream,
     name: &str,
     out: &mut VecDeque<GamesEvent>,
@@ -301,7 +322,7 @@ fn poll_lichess(
     match event {
         StreamEvent::Line(line) => match serde_json::from_str::<WireGame>(&line) {
             Ok(game) => {
-                let accepted = chess_net::provider(PROVIDER).accepts_variant(&game.variant);
+                let accepted = chess_net::provider(provider).accepts_variant(&game.variant);
                 match game.pgn {
                     Some(pgn) if accepted => {
                         progress.games += 1;
@@ -312,7 +333,7 @@ fn poll_lichess(
             }
             Err(e) => {
                 stream.close();
-                out.push_back(GamesEvent::Failed(ProviderError::malformed(PROVIDER, e)));
+                out.push_back(GamesEvent::Failed(ProviderError::malformed(provider, e)));
             }
         },
         StreamEvent::Ended => out.push_back(GamesEvent::Finished),
@@ -328,9 +349,10 @@ impl Lichess {
     /// o pedido já pede os ritmos padrão e qualquer variante que escape é descartada
     /// (`progress.skipped`).
     pub fn games(&self, name: &str, filter: &GamesFilter) -> GamesFeed {
+        let provider = self.profile.id;
         let provenance = stream_provenance(
-            PROVIDER,
-            API_HOST,
+            provider,
+            self.profile.api_host,
             &format!("/api/games/user/{}", name.trim()),
             self.clock.as_ref(),
         );
@@ -349,8 +371,8 @@ impl Lichess {
             perf_type.push_str(",ultraBullet");
         }
         let mut request = Request::get(
-            PROVIDER,
-            format!("https://{API_HOST}/api/games/user/{name}"),
+            provider,
+            self.profile.url(&format!("/api/games/user/{name}")),
         )
         .accept("application/x-ndjson")
         .query("pgnInJson", "true")
@@ -376,6 +398,11 @@ impl Lichess {
         if let Some(max) = filter.max {
             request = request.query("max", max.to_string());
         }
-        GamesFeed::lichess(self.net.stream(request), name.to_owned(), provenance)
+        GamesFeed::lichess(
+            provider,
+            self.net.stream(request),
+            name.to_owned(),
+            provenance,
+        )
     }
 }
