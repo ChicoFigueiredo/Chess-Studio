@@ -16,6 +16,7 @@ chess-training.workspace = true
 rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+flate2 = "1"
 
 [lints]
 workspace = true

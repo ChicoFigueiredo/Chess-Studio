@@ -143,7 +143,15 @@ impl Store {
         // aqui é de poucos bytes por Lance, então o custo de FULL é irrelevante.
         conn.pragma_update(None, "synchronous", "FULL")?;
         migrations::migrate(&mut conn)?;
-        Ok(Self { conn })
+        let mut store = Self { conn };
+        store.backfill_imported_facts()?;
+        Ok(store)
+    }
+
+    /// Caminho do arquivo do banco (`None` em memória): quem importa em outra thread abre
+    /// a sua própria conexão com ele.
+    pub fn database_path(&self) -> Option<std::path::PathBuf> {
+        self.conn.path().filter(|p| !p.is_empty()).map(std::path::PathBuf::from)
     }
 
     pub fn schema_version(&self) -> Result<u32> {

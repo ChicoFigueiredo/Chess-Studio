@@ -36,6 +36,7 @@ mod engines;
 mod error;
 mod favorites;
 mod imported;
+mod origin;
 mod library;
 pub mod migrations;
 mod openings;
@@ -47,7 +48,13 @@ mod training_profiles;
 pub use engines::{EngineId, EngineOrigin, EngineRecord};
 pub use error::{Result, StoreError};
 pub use favorites::{Favorite, FavoriteId, FavoriteOrigin, FavoriteQuery, NewFavorite};
-pub use imported::{ImportReport, ImportedId, ImportedQuery, ImportedSummary};
+pub use imported::{
+    DEFAULT_BATCH, ImportOptions, ImportProgress, ImportReport, ImportSummary, ImportedId,
+    ImportedQuery, ImportedSummary, MAX_ERROR_SAMPLES,
+};
+pub use origin::{
+    ImportMode, ImportSource, Origin, Pace, Provenance, game_fingerprint, remote_id,
+};
 pub use library::{
     LibraryEntry, LibraryEntryId, LibraryPage, LibraryQuery, LibrarySource, position_key,
 };
