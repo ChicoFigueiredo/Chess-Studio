@@ -32,6 +32,7 @@ mod engine_wizard;
 mod eval_bar;
 mod explorer;
 mod fen_pgn;
+mod file_picker;
 mod fide_panel;
 mod focus;
 mod framing;

@@ -1,7 +1,7 @@
 //! Carregar FEN e exportar PGN (B11, DB-02/DB-03). A lógica de arquivo é pura e testável;
-//! a interface fica em `aids_panel`. O PGN é gravado na pasta de documentos do usuário
-//! (sem diálogo nativo: `rfd` arrastaria GTK/portais para uma ação ocasional) e a
-//! mensagem de sucesso mostra o caminho completo.
+//! a interface fica em `aids_panel`. "Exportar para Documentos" grava na pasta de documentos
+//! do usuário; "Salvar como…" (#243) usa o seletor do sistema (`file_picker`). A mensagem de
+//! sucesso mostra o caminho completo.
 
 use crate::session::Session;
 use bevy::prelude::Resource;
@@ -15,6 +15,8 @@ pub struct FileTools {
     pub include_comments: bool,
     pub fen_result: Option<Result<(), String>>,
     pub pgn_result: Option<Result<PathBuf, String>>,
+    /// Botão "Salvar como…" do PGN (diálogo do sistema, #243).
+    pub pgn_pick: crate::file_picker::FilePickButton,
 }
 
 impl Default for FileTools {
@@ -24,6 +26,7 @@ impl Default for FileTools {
             include_comments: true,
             fen_result: None,
             pgn_result: None,
+            pgn_pick: crate::file_picker::FilePickButton::default(),
         }
     }
 }
@@ -45,6 +48,22 @@ impl FileTools {
             export_pgn(&session.export_pgn(self.include_comments, notes), dir, wall)
                 .map_err(|err| format!("{}: {err}", dir.display())),
         );
+    }
+
+    /// Exporta o PGN para o arquivo escolhido em "Salvar como…" (o diálogo já confirmou a
+    /// substituição de um arquivo existente).
+    pub fn export_to(&mut self, session: &Session, notes: &[(usize, String)], path: &Path) {
+        let pgn = session.export_pgn(self.include_comments, notes);
+        self.pgn_result = Some(
+            std::fs::write(path, pgn)
+                .map(|()| path.to_path_buf())
+                .map_err(|err| format!("{}: {err}", path.display())),
+        );
+    }
+
+    /// Nome sugerido no "Salvar como…".
+    pub fn suggested_file_name() -> String {
+        pgn_file_name(session_wall_ms())
     }
 }
 
@@ -144,6 +163,22 @@ mod tests {
         let text = std::fs::read_to_string(first).unwrap();
         assert!(text.contains("[Event \"Partida casual\"]"));
         assert!(text.contains("1. e4 e5"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn save_as_writes_exactly_the_chosen_file() {
+        let dir = temp_dir("save-as");
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("minha-partida.pgn");
+        let mut s = Session::new();
+        mv(&mut s, "e2", "e4");
+        let mut tools = FileTools::default();
+        tools.export_to(&s, &[], &target);
+        assert_eq!(tools.pgn_result.as_ref().unwrap().as_ref().unwrap(), &target);
+        assert!(std::fs::read_to_string(&target).unwrap().contains("1. e4"));
+        tools.export_to(&s, &[], &dir.join("nao/existe/x.pgn"));
+        assert!(tools.pgn_result.as_ref().unwrap().is_err());
         std::fs::remove_dir_all(dir).unwrap();
     }
 
