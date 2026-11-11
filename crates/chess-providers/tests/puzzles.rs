@@ -30,7 +30,10 @@ struct Env {
 fn temp_dir() -> PathBuf {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!("chess-providers-puzzles-{}-{n}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!(
+        "chess-providers-puzzles-{}-{n}",
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&dir);
     dir
 }
@@ -135,7 +138,10 @@ fn a_selecao_atendida_encerra_o_download_cedo_e_instala_o_pacote_com_a_origem() 
     let env = env(true);
     let compressed = zst(&csv(60_000));
     let total = compressed.len() as u64;
-    assert!(total > 1_000_000, "o arquivo sintético é grande ({total} bytes)");
+    assert!(
+        total > 1_000_000,
+        "o arquivo sintético é grande ({total} bytes)"
+    );
     env.server.route(PATH, FakeResponse::ok(compressed));
 
     let mut job = env.lichess.download_puzzles(request(
@@ -171,7 +177,10 @@ fn a_selecao_atendida_encerra_o_download_cedo_e_instala_o_pacote_com_a_origem() 
 
     // Origem do arquivo e do pacote.
     assert_eq!(outcome.provenance.provider, ProviderId::Lichess);
-    assert_eq!(outcome.provenance.license, "CC0-1.0 (exportações gerais; conferir cada conjunto)");
+    assert_eq!(
+        outcome.provenance.license,
+        "CC0-1.0 (exportações gerais; conferir cada conjunto)"
+    );
     assert_eq!(outcome.provenance.mode, chess_net::ImportMode::Download);
     let pack = outcome.pack.expect("instalou");
     assert_eq!(pack.count, 25);
@@ -185,7 +194,8 @@ fn a_selecao_atendida_encerra_o_download_cedo_e_instala_o_pacote_com_a_origem() 
     assert!(errors.is_empty());
     assert_eq!(loaded.len(), 25);
     assert!(loaded.iter().all(|e| {
-        e.themes.iter().any(|t| t == "mateIn2") && e.rating.is_some_and(|r| (1200..=1800).contains(&r))
+        e.themes.iter().any(|t| t == "mateIn2")
+            && e.rating.is_some_and(|r| (1200..=1800).contains(&r))
     }));
     // O corpo não foi para o cache da rede.
     let cached = env
@@ -277,8 +287,10 @@ fn queda_do_servidor_vira_erro_em_portugues_e_nao_instala() {
 #[test]
 fn arquivo_que_nao_e_zstd_falha_sem_instalar() {
     let env = env(true);
-    env.server
-        .route(PATH, FakeResponse::ok(b"isto nao e zstd, e um html de erro".to_vec()));
+    env.server.route(
+        PATH,
+        FakeResponse::ok(b"isto nao e zstd, e um html de erro".to_vec()),
+    );
     let mut job = env.lichess.download_puzzles(request(&env, filter(&[], 10)));
     let (_, end) = finish(&mut job);
     assert!(matches!(end, PuzzleEvent::Failed(_)), "{end:?}");

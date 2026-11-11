@@ -15,7 +15,11 @@ pub(super) fn theme_name(i18n: &I18n, id: &str) -> String {
 
 /// Até `max` nomes separados por vírgula; o resto vira "e mais N".
 pub(super) fn theme_names(i18n: &I18n, ids: &[String], max: usize) -> String {
-    let shown: Vec<String> = ids.iter().take(max).map(|id| theme_name(i18n, id)).collect();
+    let shown: Vec<String> = ids
+        .iter()
+        .take(max)
+        .map(|id| theme_name(i18n, id))
+        .collect();
     let text = shown.join(", ");
     if ids.len() > max {
         i18n.t_with(

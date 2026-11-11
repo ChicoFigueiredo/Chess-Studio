@@ -1284,6 +1284,12 @@ pub(crate) fn dock_ui(world: &mut World) {
                         dock.layout
                             .detach(ids::STUDY, [160.0, 90.0], DEFAULT_FLOAT_SIZE);
                     }
+                    // Evidência do Treino (#238): o painel flutuante e alto, para a tela de Pacotes
+                    // caber inteira.
+                    "training-float" => {
+                        dock.layout
+                            .detach(ids::TRAINING, [820.0, 168.0], [560.0, 810.0]);
+                    }
                     _ => {}
                 }
             }

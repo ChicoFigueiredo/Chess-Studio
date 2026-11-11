@@ -96,9 +96,9 @@ pub(super) struct PacksUi {
     /// Baixar pacotes do Lichess pela rede (#238).
     pub(super) download: DownloadUi,
     /// Temas que aparecem nos Exercícios carregados (para o filtro da lista).
-    theme_ids: Vec<String>,
+    pub(super) theme_ids: Vec<String>,
     // Filtro da lista de Exercícios.
-    filter_pack: PackChoice,
+    pub(super) filter_pack: PackChoice,
     filter_theme: String,
     filter_min: String,
     filter_max: String,
@@ -462,15 +462,20 @@ pub(super) fn filter_bar(ui: &mut egui::Ui, i18n: &I18n, packs: &mut PacksUi) {
                 .iter()
                 .map(|id| (id.clone(), theme_name(i18n, id)))
                 .collect();
-            named.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
+            named.sort_by_key(|(_, name)| name.to_lowercase());
             let mut options = vec![(String::new(), i18n.t("training-filter-theme-any"))];
             options.extend(named);
             if !options.iter().any(|(id, _)| *id == packs.filter_theme) {
                 packs.filter_theme.clear();
             }
-            cs_dropdown(ui, "training-filter-theme", &mut packs.filter_theme, &options);
+            cs_dropdown(
+                ui,
+                "training-filter-theme",
+                &mut packs.filter_theme,
+                &options,
+            );
         }
-        ui.allocate_ui(egui::vec2(80.0, 0.0), |ui| {
+        ui.allocate_ui(egui::vec2(140.0, 0.0), |ui| {
             cs_text_field(
                 ui,
                 &mut packs.filter_min,
@@ -478,7 +483,7 @@ pub(super) fn filter_bar(ui: &mut egui::Ui, i18n: &I18n, packs: &mut PacksUi) {
                 None,
             );
         });
-        ui.allocate_ui(egui::vec2(80.0, 0.0), |ui| {
+        ui.allocate_ui(egui::vec2(140.0, 0.0), |ui| {
             cs_text_field(
                 ui,
                 &mut packs.filter_max,
@@ -526,11 +531,16 @@ pub(super) fn view(ui: &mut egui::Ui, i18n: &I18n, packs: &mut PacksUi) -> Optio
         return action;
     }
 
-    ui.label(i18n.t("training-packs-installed"));
+    let mut cmd = None;
+    if let Some(chosen) = download::card(ui, i18n, &mut packs.download) {
+        cmd = Some(chosen);
+    }
+    ui.add_space(8.0);
+
+    ui.label(egui::RichText::new(i18n.t("training-packs-installed")).strong());
     if packs.installed.is_empty() {
         ui.label(i18n.t("training-packs-none"));
     }
-    let mut cmd = None;
     for info in &packs.installed {
         ui.separator();
         ui.label(i18n.t_with(
@@ -571,11 +581,6 @@ pub(super) fn view(ui: &mut egui::Ui, i18n: &I18n, packs: &mut PacksUi) -> Optio
             "training-packs-load-error",
             &[("id", id), ("reason", reason)],
         ));
-    }
-
-    ui.add_space(8.0);
-    if let Some(chosen) = download::card(ui, i18n, &mut packs.download) {
-        cmd = Some(chosen);
     }
 
     ui.separator();

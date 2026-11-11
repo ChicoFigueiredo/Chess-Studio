@@ -106,7 +106,8 @@ pub enum PuzzleEvent {
 /// Baixada em andamento. Descartar cancela (a conexão cai e nada é instalado).
 #[derive(Debug)]
 pub struct PuzzleDownload {
-    rx: Receiver<PuzzleEvent>,
+    /// Em `Mutex` só para o `PuzzleDownload` ser `Sync` (recurso do Bevy); lê um por vez.
+    rx: Mutex<Receiver<PuzzleEvent>>,
     cancel: Arc<AtomicBool>,
     last: PuzzleProgress,
     done: bool,
@@ -118,16 +119,19 @@ impl PuzzleDownload {
         if self.done {
             return None;
         }
-        let event = match self.rx.try_recv() {
+        let Ok(rx) = self.rx.get_mut() else {
+            return None;
+        };
+        let event = match rx.try_recv() {
             Ok(event) => event,
             Err(mpsc::TryRecvError::Empty) => return None,
             // A thread sumiu sem avisar (pânico): trata como falha.
-            Err(mpsc::TryRecvError::Disconnected) => PuzzleEvent::Failed(ProviderError::Net(
-                NetError::Unreachable {
+            Err(mpsc::TryRecvError::Disconnected) => {
+                PuzzleEvent::Failed(ProviderError::Net(NetError::Unreachable {
                     provider: PROVIDER,
                     detail: "a leitura dos problemas parou sem aviso".to_owned(),
-                },
-            )),
+                }))
+            }
         };
         match &event {
             PuzzleEvent::Progress(p) => self.last = *p,
@@ -165,7 +169,7 @@ impl Lichess {
         let (tx, rx) = mpsc::channel();
         let cancel = Arc::new(AtomicBool::new(false));
         let job = PuzzleDownload {
-            rx,
+            rx: Mutex::new(rx),
             cancel: cancel.clone(),
             last: PuzzleProgress::default(),
             done: false,
@@ -259,13 +263,10 @@ fn run(
         slot: slot.clone(),
     };
     let net_failure = |fallback: String| {
-        slot.lock()
-            .ok()
-            .and_then(|mut s| s.take())
-            .map_or_else(
-                || ProviderError::malformed(PROVIDER, fallback),
-                ProviderError::from,
-            )
+        slot.lock().ok().and_then(|mut s| s.take()).map_or_else(
+            || ProviderError::malformed(PROVIDER, fallback),
+            ProviderError::from,
+        )
     };
     let reader = match open_puzzle_reader(source, true) {
         Ok(reader) => reader,
@@ -274,23 +275,19 @@ fn run(
     };
     let mut filter = request.filter.clone();
     filter.max_count = filter.max_count.clamp(1, MAX_PUZZLES);
-    let (exercises, report) = match import_lichess_csv(
-        reader,
-        &filter,
-        cancel,
-        &mut |p: &ImportProgress| {
+    let (exercises, report) =
+        match import_lichess_csv(reader, &filter, cancel, &mut |p: &ImportProgress| {
             let _ = tx.send(PuzzleEvent::Progress(PuzzleProgress {
                 downloaded: meter.received(),
                 total: meter.total(),
                 read: p.lines,
                 selected: p.imported,
             }));
-        },
-    ) {
-        Ok(done) => done,
-        Err(_) if cancel.load(Ordering::Acquire) => return Ok(cancelled(provenance)),
-        Err(e) => return Err(net_failure(e.to_string())),
-    };
+        }) {
+            Ok(done) => done,
+            Err(_) if cancel.load(Ordering::Acquire) => return Ok(cancelled(provenance)),
+            Err(e) => return Err(net_failure(e.to_string())),
+        };
     // Fim do arquivo antes de atender a seleção é normal (seleção rara); fim por
     // cancelamento não instala nada.
     if report.cancelled || cancel.load(Ordering::Acquire) {

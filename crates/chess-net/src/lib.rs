@@ -81,8 +81,8 @@ pub use guard::{FairPlayGuard, FairPlayHold};
 pub use limits::RetryPolicy;
 pub use loopback::{CallbackError, CallbackParams, LoopbackCallback};
 pub use ndjson::{NdjsonError, NdjsonItem, NdjsonReader};
-pub use net::{Net, NetConfig, Pending, Stream, StreamEvent};
 pub use net::{Download, DownloadEvent, DownloadMeter, DownloadReader};
+pub use net::{Net, NetConfig, Pending, Stream, StreamEvent};
 pub use request::{Method, Request};
 pub use response::{Fetched, Freshness, ImportMode, Provenance};
 pub use secret::{

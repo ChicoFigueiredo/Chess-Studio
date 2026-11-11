@@ -55,10 +55,8 @@ impl Plugin for TrainingPlugin {
                 (training_demo, training_judge).chain().after(PlaySet),
             )
             .add_systems(Update, (position::tick, position::sync_board).chain())
-            .add_systems(
-                Update,
-                (packs::poll, download::poll, download::on_consent),
-            )
+            .add_systems(Update, (packs::poll, download::poll, download::on_consent))
+            .add_systems(Update, download::demo_system)
             .add_systems(EguiPrimaryContextPass, position::editor);
         crate::dock::register_panel(
             app,
@@ -1281,7 +1279,7 @@ pub(crate) fn demo_active() -> bool {
     demo_script().is_some()
 }
 
-fn demo_script() -> Option<String> {
+pub(super) fn demo_script() -> Option<String> {
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         if arg == "--training" {
@@ -1307,9 +1305,6 @@ fn training_demo(
     mut session: ResMut<Session>,
     aids: Res<AidSettings>,
     capture: Option<Res<CaptureMode>>,
-    net: Option<Res<NetService>>,
-    mut dialog: Option<ResMut<crate::provider_consent::ConsentDialog>>,
-    i18n: Res<I18n>,
     mut frame: Local<u32>,
 ) {
     if capture.is_none() {
@@ -1318,21 +1313,7 @@ fn training_demo(
     let Some(script) = demo_script() else { return };
     *frame += 1;
     if script.starts_with("download") {
-        download::demo(&mut state, &script, *frame);
-        if let Some(net) = &net {
-            if *frame == 3 {
-                let on = !matches!(script.as_str(), "download-off" | "download-consent");
-                let _ = net.set_enabled(chess_net::ProviderId::Lichess, on);
-            }
-            if *frame == 8
-                && script == "download-consent"
-                && let Some(dialog) = dialog.as_deref_mut()
-            {
-                let feature = i18n.t("training-download-feature");
-                net.ensure_enabled(chess_net::ProviderId::Lichess, Some(&feature), dialog);
-                state.packs.download.set_waiting();
-            }
-        }
+        // Cenas do download de problemas: ver `download::demo_system`.
         return;
     }
     if script.starts_with("memory") {

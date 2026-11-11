@@ -57,8 +57,8 @@ impl ThemeGroup {
     }
 }
 
-use ThemeGroup::{Advanced, Goals, Lengths, MatePatterns, Mates, Motifs, Origin, Phases};
 use ThemeGroup::SpecialMoves;
+use ThemeGroup::{Advanced, Goals, Lengths, MatePatterns, Mates, Motifs, Origin, Phases};
 
 /// Todos os temas oficiais visíveis do Lichess, por grupo. "Mate" aparece só em
 /// [`ThemeGroup::Mates`] (o Lichess o repete em Objetivos).

@@ -5,9 +5,7 @@
 mod common;
 
 use chess_net::testing::{FakeResponse, FakeServer};
-use chess_net::{
-    DownloadEvent, FakeClock, NetError, Net, ProviderId, Request,
-};
+use chess_net::{DownloadEvent, FakeClock, Net, NetError, ProviderId, Request};
 use common::*;
 use std::io::Read;
 use std::sync::Arc;

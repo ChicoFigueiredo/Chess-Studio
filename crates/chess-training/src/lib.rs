@@ -59,7 +59,8 @@ pub use lichess::{
 pub use memory::{MemoryPhase, MemoryRun, MemorySummary, PlyResult};
 pub use metrics::{Metrics, Tally};
 pub use packs::{
-    PackError, PackInfo, install_pack, install_pack_dated, install_pack_json, list_packs, load_packs, remove_pack,
+    PackError, PackInfo, install_pack, install_pack_dated, install_pack_json, list_packs,
+    load_packs, remove_pack,
 };
 pub use position_memory::{
     PiecePlacement, PositionJudgment, PositionMemoryRun, PositionMemorySummary, PositionPhase,

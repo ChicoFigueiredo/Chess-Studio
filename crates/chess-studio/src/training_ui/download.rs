@@ -15,8 +15,8 @@ use crate::net_service::{NetService, Readiness};
 use crate::persistence::PersistenceHandle;
 use crate::provider_consent::{ConsentDialog, ProviderConsentAnswered};
 use crate::ui_theme::{
-    ButtonVariant, CardEmphasis, StatusTone, cs_button, cs_card_frame, cs_disclosure,
-    cs_segmented, cs_status_badge, cs_text_field, cs_toggle_button, palette,
+    ButtonVariant, CardEmphasis, StatusTone, cs_button, cs_card_frame, cs_disclosure, cs_segmented,
+    cs_status_badge, cs_text_field, cs_toggle_button, palette,
 };
 use bevy::prelude::*;
 use bevy_egui::egui;
@@ -431,9 +431,9 @@ pub(super) fn begin(state: &mut TrainingUi, world: &mut World, i18n: &I18n) {
     };
     let feature = i18n.t("training-download-feature");
     let readiness = world.resource_scope(|world, mut dialog: Mut<ConsentDialog>| {
-        world.get_resource::<NetService>().map(|net| {
-            net.ensure_enabled(ProviderId::Lichess, Some(&feature), &mut dialog)
-        })
+        world
+            .get_resource::<NetService>()
+            .map(|net| net.ensure_enabled(ProviderId::Lichess, Some(&feature), &mut dialog))
     });
     match readiness {
         Some(Readiness::Ready) => state.start_download(&lichess, i18n),
@@ -583,7 +583,9 @@ fn formulary(ui: &mut egui::Ui, i18n: &I18n, form: &mut DownloadUi) -> Option<Cm
         caption(ui, themes_label(i18n, &form.themes, usize::MAX));
     }
     for (index, group) in ThemeGroup::ALL.into_iter().enumerate() {
-        let picked = themes_in(group).filter(|id| form.themes.contains(*id)).count();
+        let picked = themes_in(group)
+            .filter(|id| form.themes.contains(*id))
+            .count();
         let mut label = i18n.t(&format!("puzzle-theme-group-{}", group.key()));
         if picked > 0 {
             label = format!("{label} ({picked})");
@@ -669,9 +671,7 @@ fn formulary(ui: &mut egui::Ui, i18n: &I18n, form: &mut DownloadUi) -> Option<Cm
 }
 
 fn progress(ui: &mut egui::Ui, i18n: &I18n, form: &mut DownloadUi) -> Option<Cmd> {
-    let Some(running) = form.running.as_ref() else {
-        return None;
-    };
+    let running = form.running.as_ref()?;
     let p = running.progress;
     ui.ctx().request_repaint();
     let mut cmd = None;
@@ -687,11 +687,7 @@ fn progress(ui: &mut egui::Ui, i18n: &I18n, form: &mut DownloadUi) -> Option<Cmd
         ));
     }
     let fraction = (p.selected as f32 / running.target.max(1) as f32).clamp(0.0, 1.0);
-    ui.add(
-        egui::ProgressBar::new(fraction)
-            .desired_width(f32::INFINITY)
-            .fill(palette(ui).accent),
-    );
+    bar(ui, fraction);
     if p.read > 0 || p.total.is_some() {
         let read = fmt_int(p.read);
         let downloaded = fmt_bytes(p.downloaded);
@@ -731,6 +727,20 @@ fn progress(ui: &mut egui::Ui, i18n: &I18n, form: &mut DownloadUi) -> Option<Cmd
     cmd
 }
 
+/// Barra de andamento com os tokens: trilho em `surface-4`, preenchimento em `accent`.
+fn bar(ui: &mut egui::Ui, fraction: f32) {
+    let p = palette(ui);
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 8.0), egui::Sense::hover());
+    let corner = egui::CornerRadius::same(4);
+    ui.painter().rect_filled(rect, corner, p.surface_4);
+    let mut filled = rect;
+    filled.set_width(rect.width() * fraction.clamp(0.0, 1.0));
+    if filled.width() > 0.0 {
+        ui.painter().rect_filled(filled, corner, p.accent);
+    }
+}
+
 fn message_view(ui: &mut egui::Ui, i18n: &I18n, message: &Message) {
     match message {
         Message::Done {
@@ -752,7 +762,10 @@ fn message_view(ui: &mut egui::Ui, i18n: &I18n, message: &Message) {
             if *short {
                 caption(
                     ui,
-                    i18n.t_with("training-download-done-short", &[("count", &count.to_string())]),
+                    i18n.t_with(
+                        "training-download-done-short",
+                        &[("count", &count.to_string())],
+                    ),
                 );
             }
             if !date.is_empty() {
@@ -802,6 +815,39 @@ impl TrainingUi {
 
 // --- Evidências (`--training download|download-run|download-done|...`) --------------------
 
+/// Sistema das capturas (`--screenshot ... --training download*`): liga ou desliga o Lichess
+/// da rede em memória, prepara a cena e, na `download-consent`, abre o diálogo de verdade.
+pub(super) fn demo_system(
+    mut state: ResMut<TrainingUi>,
+    capture: Option<Res<crate::capture::CaptureMode>>,
+    net: Option<Res<NetService>>,
+    mut dialog: Option<ResMut<ConsentDialog>>,
+    i18n: Res<I18n>,
+    mut frame: Local<u32>,
+) {
+    if capture.is_none() {
+        return;
+    }
+    let Some(script) = super::demo_script().filter(|s| s.starts_with("download")) else {
+        return;
+    };
+    *frame += 1;
+    demo(&mut state, &script, *frame);
+    let Some(net) = &net else { return };
+    if *frame == 3 {
+        let on = !matches!(script.as_str(), "download-off" | "download-consent");
+        let _ = net.set_enabled(ProviderId::Lichess, on);
+    }
+    if *frame == 8
+        && script == "download-consent"
+        && let Some(dialog) = dialog.as_deref_mut()
+    {
+        let feature = i18n.t("training-download-feature");
+        net.ensure_enabled(ProviderId::Lichess, Some(&feature), dialog);
+        state.packs.download.set_waiting();
+    }
+}
+
 /// Cenas de captura: o formulário preenchido, a baixada em andamento e os desfechos, com
 /// dados fictícios (nenhuma chamada de rede). Só existe em `--screenshot`.
 pub(super) fn demo(state: &mut TrainingUi, script: &str, frame: u32) {
@@ -830,6 +876,12 @@ pub(super) fn demo(state: &mut TrainingUi, script: &str, frame: u32) {
         },
     ];
     state.view = super::View::Packs;
+    if script == "download-list" {
+        demo_pack(state);
+        state.packs.filter_pack = packs::PackChoice::Pack("lichess-matein2".into());
+        state.view = super::View::List;
+        return;
+    }
     let form = &mut state.packs.download;
     form.open = true;
     form.themes = ["fork", "pin", "mateIn2"].map(String::from).into();
@@ -860,6 +912,7 @@ pub(super) fn demo(state: &mut TrainingUi, script: &str, frame: u32) {
             });
         }
         "download-error" => {
+            form.open = false;
             form.message = Some(Message::Failed(ProviderError::Net(
                 chess_net::NetError::Unreachable {
                     provider: ProviderId::Lichess,
@@ -868,6 +921,63 @@ pub(super) fn demo(state: &mut TrainingUi, script: &str, frame: u32) {
             )));
         }
         _ => {}
+    }
+}
+
+/// Um pacote fictício já instalado, com temas do Lichess, para mostrar a lista traduzida.
+fn demo_pack(state: &mut TrainingUi) {
+    const THEMES: [&[&str]; 6] = [
+        &["mate", "mateIn2", "short", "middlegame"],
+        &["fork", "advantage", "opening"],
+        &["pin", "crushing", "middlegame", "kingsideAttack"],
+        &["backRankMate", "mateIn1", "oneMove", "endgame"],
+        &["skewer", "rookEndgame", "long"],
+        &[
+            "discoveredAttack",
+            "sacrifice",
+            "veryLong",
+            "masterVsMaster",
+        ],
+    ];
+    let exercises: Vec<chess_training::Exercise> = state
+        .catalog
+        .iter()
+        .filter(|e| e.pack.is_none())
+        .take(THEMES.len())
+        .zip(THEMES)
+        .enumerate()
+        .map(|(i, (base, themes))| {
+            let mut e = base.clone();
+            e.id = format!("lichess-demo{i}");
+            e.title = format!("Lichess 00{}Kq", i + 1);
+            e.themes = themes.iter().map(|t| (*t).to_owned()).collect();
+            e.rating = Some(1250 + 90 * i as u32);
+            e.provenance = Some(chess_training::Provenance {
+                provider: "lichess".into(),
+                license: "CC0-1.0".into(),
+                url: None,
+                remote_id: None,
+            });
+            e
+        })
+        .collect();
+    let text = serde_json::json!({
+        "format": 1,
+        "package": {"name": "Lichess: Mate em 2 (de 1200 a 1800)", "downloaded_on": "2026-11-09"},
+        "exercises": exercises,
+    })
+    .to_string();
+    if let Ok(pack) = chess_training::Catalog::from_pack_json("lichess-matein2", &text) {
+        let _ = state.catalog.extend(pack);
+    }
+    let themes: BTreeSet<&str> = state
+        .catalog
+        .iter()
+        .flat_map(|e| e.themes.iter().map(String::as_str))
+        .collect();
+    state.packs.theme_ids = themes.into_iter().map(str::to_owned).collect();
+    if let Some(info) = state.packs.installed.first_mut() {
+        info.count = exercises.len();
     }
 }
 
@@ -903,7 +1013,10 @@ mod tests {
         form.count = 500;
         let filter = form.filter();
         assert_eq!(filter.themes, ["fork", "mateIn2"]);
-        assert_eq!((filter.min_rating, filter.max_rating), (Some(1200), Some(1800)));
+        assert_eq!(
+            (filter.min_rating, filter.max_rating),
+            (Some(1200), Some(1800))
+        );
         assert_eq!(filter.max_count, 500);
         assert_eq!(
             pack_name(&i18n, &form),
@@ -943,8 +1056,14 @@ mod tests {
         ];
         for error in errors {
             let text = failure_text(&i18n, &error);
-            assert!(text.contains("nada foi") || text.contains("Nada foi"), "{text}");
-            assert!(!text.contains("training-download"), "chave sem texto: {text}");
+            assert!(
+                text.contains("nada foi") || text.contains("Nada foi"),
+                "{text}"
+            );
+            assert!(
+                !text.contains("training-download"),
+                "chave sem texto: {text}"
+            );
         }
     }
 
