@@ -305,7 +305,9 @@ fn query_is_fast_with_a_few_hundred_games() {
     eprintln!(
         "500 partidas: importação+indexação {import:?}, consulta raiz {root:?}, pior {worst:?}"
     );
-    assert!(worst.as_millis() < 50, "consulta lenta: {worst:?}");
+    // Medido: ~9 ms. O teto de 50 ms (spec) vale no teste de 10 mil Partidas, `--ignored`;
+    // aqui a margem larga só evita falso positivo com a máquina carregada (#236).
+    assert!(worst.as_millis() < 250, "consulta lenta: {worst:?}");
 }
 
 #[test]

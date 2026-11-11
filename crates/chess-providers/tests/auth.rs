@@ -384,7 +384,12 @@ fn cancelling_or_dropping_the_flow_closes_the_port() {
     let (redirect_uri, _, _) = browser_view(&flow);
     flow.cancel();
     assert_eq!(flow.wait(WAIT), AuthState::Failed(AuthError::Cancelled));
-    assert!(come_back(&redirect_uri, "code=x&state=y").is_err());
+    // A porta fecha de forma assíncrona: espera com prazo, sem conferir na hora (#236).
+    assert!(eventually(WAIT, || come_back(
+        &redirect_uri,
+        "code=x&state=y"
+    )
+    .is_err()));
 
     let flow = auth
         .authorize(PLAYER, ConnectionRole::Player)

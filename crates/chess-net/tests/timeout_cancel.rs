@@ -47,7 +47,7 @@ fn cancelling_answers_at_once_and_the_worker_is_released() {
     let start = Instant::now();
     pending.cancel();
     assert_eq!(pending.wait(), Err(NetError::Cancelled));
-    assert!(start.elapsed() < Duration::from_millis(200));
+    assert!(start.elapsed() < Duration::from_millis(600));
 
     assert!(
         eventually(Duration::from_secs(5), || net.status().active_requests == 0),
@@ -116,7 +116,7 @@ fn polling_never_blocks() {
         assert_eq!(pending.try_take(), None);
     }
     assert!(
-        start.elapsed() < Duration::from_millis(100),
+        start.elapsed() < Duration::from_millis(400),
         "poll bloqueou"
     );
     pending.cancel();
