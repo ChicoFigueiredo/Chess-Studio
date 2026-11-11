@@ -549,6 +549,14 @@ static CATALOG: [Provider; 19] = [
                 C::Endgames,
                 "Termos do Lichess (tablebases Syzygy)",
             ),
+            // O host real dos finais é `.ovh` (conferido por consulta manual em 2026-11-11);
+            // o `.org` acima segue na lista por compatibilidade com a especificação.
+            at(
+                "tablebase.lichess.ovh",
+                "/",
+                C::Endgames,
+                "Termos do Lichess (tablebases Syzygy)",
+            ),
             at(
                 "database.lichess.org",
                 "/",
@@ -592,7 +600,7 @@ static CATALOG: [Provider; 19] = [
         rate_limit: RateLimit::new(4, SECOND),
         sends: "Posições (FEN) e Lances consultados no Explorador (explorer.lichess.org), na \
                 avaliação em cache e nas consultas de Partidas públicas (lichess.org), nos \
-                finais (tablebase.lichess.org) e nos pacotes da base (database.lichess.org); \
+                finais (tablebase.lichess.ovh e tablebase.lichess.org) e nos pacotes da base (database.lichess.org); \
                 nomes e IDs FIDE públicos que você pedir. Com uma Conexão autorizada, também os \
                 seus Lances e desafios. Nada do Perfil local vai junto.",
         reviewed_on: REVIEWED,

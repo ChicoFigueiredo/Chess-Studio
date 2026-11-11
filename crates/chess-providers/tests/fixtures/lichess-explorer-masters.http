@@ -1,0 +1,8 @@
+# Resposta SINTETICA no formato documentado do Opening Explorer do Lichess (masters), depois de 1.e4.
+# NAO e real: em 2026-11-11 o servico respondeu 401 sem autenticacao (ver lichess-explorer-masters-401.http).
+# Campos conforme a OpenAPI do Lichess: white/draws/black, moves[] (uci, san, averageRating), topGames[], opening.
+HTTP/2 200
+content-type: application/json
+etag: "masters-e2e4"
+
+{"white":1000,"draws":1200,"black":800,"moves":[{"uci":"c7c5","san":"c5","white":300,"draws":350,"black":280,"averageRating":2500,"game":null},{"uci":"e7e5","san":"e5","white":250,"draws":400,"black":150,"averageRating":2480,"game":null}],"topGames":[{"uci":"c7c5","id":"AbCdEfGh","winner":"white","black":{"name":"Fulano, A","rating":2700},"white":{"name":"Beltrano, B","rating":2750},"year":2019,"month":"2019-05"},{"uci":"e7e5","id":"IjKlMnOp","winner":null,"black":{"name":"Ciclano, C","rating":2680},"white":{"name":"Dowling, D","rating":2690},"year":2020,"month":"2020-01"}],"opening":{"eco":"B00","name":"King's Pawn Game"}}

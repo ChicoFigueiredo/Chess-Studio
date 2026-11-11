@@ -219,3 +219,23 @@ fn only_standard_chess_is_accepted_and_offered_variants_are_refused_by_name() {
     assert!(provider(ProviderId::Lichess).accepts_variant("standard"));
     assert!(!provider(ProviderId::Lichess).accepts_variant("chess960"));
 }
+
+#[test]
+fn the_real_tablebase_host_is_in_the_catalog_as_exact_endgames() {
+    let request = chess_net::Request::get(
+        ProviderId::Lichess,
+        "https://tablebase.lichess.ovh/standard",
+    );
+    let capability = request.capability().expect("no catálogo");
+    assert_eq!(capability, Capability::Endgames);
+    assert!(
+        capability.computes(),
+        "finais calculam: a Trava os bloqueia"
+    );
+    let endpoint = provider(ProviderId::Lichess)
+        .endpoints
+        .iter()
+        .find(|e| e.host == "tablebase.lichess.ovh")
+        .expect("endpoint");
+    assert!(endpoint.license.contains("Lichess"));
+}

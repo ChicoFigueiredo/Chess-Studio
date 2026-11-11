@@ -1,0 +1,20 @@
+# Resposta REAL gravada em 2026-11-11 com curl -i (User-Agent generico, sem autenticacao).
+# 1.e4 no Explorador de mestres; o servico passou a exigir autenticacao (401).
+# URL: https://explorer.lichess.org/masters?play=e2e4
+HTTP/2 401 
+server: nginx
+date: Wed, 11 Nov 2026 13:11:20 GMT
+content-type: text/html; charset=utf-8
+content-length: 172
+vary: Origin
+access-control-allow-origin: *
+access-control-allow-methods: GET,OPTIONS
+access-control-allow-headers: Accept,If-Modified-Since,Cache-Control,X-Requested-With,Authorization
+
+<html>
+<head><title>401 Authorization Required</title></head>
+<body>
+<center><h1>401 Authorization Required</h1></center>
+<hr><center>nginx</center>
+</body>
+</html>

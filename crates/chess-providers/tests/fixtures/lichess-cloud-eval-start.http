@@ -1,0 +1,22 @@
+# Resposta REAL gravada em 2026-11-11 com curl -i (User-Agent generico, sem autenticacao).
+# Posicao inicial, MultiPV=2.
+# URL: https://lichess.org/api/cloud-eval?fen=rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR%20w%20KQkq%20-%200%201&multiPv=2
+HTTP/2 200 
+date: Wed, 11 Nov 2026 13:11:32 GMT
+content-type: application/json
+server: cloudflare
+vary: Origin
+vary: accept-encoding
+cache-control: public, max-age=86400
+access-control-allow-origin: *
+access-control-allow-headers: Origin, Authorization, If-Modified-Since, Cache-Control, Content-Type
+access-control-allow-methods: OPTIONS, GET, POST, PUT, DELETE
+strict-transport-security: max-age=63072000; includeSubDomains; preload
+x-frame-options: DENY
+permissions-policy: interest-cohort=()
+last-modified: Wed, 11 Nov 2026 13:11:32 GMT
+cf-cache-status: HIT
+cf-ray: a58d8b1d59d1254a-GRU
+alt-svc: h3=":443"; ma=86400
+
+{"fen":"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1","knodes":695524,"depth":75,"pvs":[{"moves":"e2e4 e7e5 g1f3 b8c6 f1c4 g8f6 d2d3 f8c5 e1h1 d7d6","cp":19},{"moves":"d2d4 g8f6 g1f3 e7e6 c2c4 d7d5 b1c3 f8b4 d1a4 b8c6","cp":15}]}

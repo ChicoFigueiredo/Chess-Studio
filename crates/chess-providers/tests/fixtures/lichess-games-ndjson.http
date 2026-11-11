@@ -1,0 +1,21 @@
+# Resposta REAL gravada em 2026-11-11 com curl -i (User-Agent generico, sem autenticacao).
+# 2 partidas publicas em NDJSON com PGN dentro do JSON (Accept: application/x-ndjson).
+# URL: https://lichess.org/api/games/user/thibault?max=2&rated=true&perfType=blitz&pgnInJson=true&clocks=false&evals=false&opening=false
+HTTP/2 200 
+date: Wed, 11 Nov 2026 13:15:08 GMT
+content-type: application/x-ndjson; charset=utf-8
+server: cloudflare
+vary: Origin
+content-disposition: attachment; filename=lichess_thibault_2026-11-11.json
+access-control-allow-origin: *
+access-control-allow-headers: Origin, Authorization, If-Modified-Since, Cache-Control, Content-Type
+access-control-allow-methods: OPTIONS, GET, POST, PUT, DELETE
+strict-transport-security: max-age=63072000; includeSubDomains; preload
+x-frame-options: DENY
+permissions-policy: interest-cohort=()
+cf-cache-status: BYPASS
+cf-ray: a58d9062e9612ffa-GRU
+alt-svc: h3=":443"; ma=86400
+
+{"id":"0IdR4QNI","rated":true,"variant":"standard","speed":"blitz","perf":"blitz","createdAt":1794070038318,"lastMoveAt":1794070472937,"status":"resign","source":"pool","players":{"white":{"user":{"name":"thibault","flair":"symbols.transgender-flag","patron":true,"patronColor":10,"id":"thibault"},"rating":1750,"ratingDiff":-5},"black":{"user":{"name":"SergeyB123","id":"sergeyb123"},"rating":1838,"ratingDiff":4}},"winner":"black","moves":"e4 e5 f4 exf4 Nf3 g5 Bc4 Bg7 O-O h6 Nc3 d6 d4 Nc6 e5 dxe5 Re1 Nge7 h4 g4 Nxe5 Nxe5 dxe5 Qxd1 Rxd1 Bxe5 Ne4 Be6 Bb5+ c6 Be2 Rd8 Re1 O-O c3 Nf5 Bxg4 Nxh4 Bxe6 fxe6 Nc5 f3 Rxe5 f2+ Kf1 Rd1+","pgn":"[Event \"rated blitz game\"]\n[Site \"https://lichess.org/game/0IdR4QNI\"]\n[Date \"2026.11.07\"]\n[Round \"-\"]\n[White \"thibault\"]\n[Black \"SergeyB123\"]\n[Result \"0-1\"]\n[GameId \"0IdR4QNI\"]\n[UTCDate \"2026.11.07\"]\n[UTCTime \"16:47:18\"]\n[WhiteElo \"1750\"]\n[BlackElo \"1838\"]\n[WhiteRatingDiff \"-5\"]\n[BlackRatingDiff \"+4\"]\n[Variant \"Standard\"]\n[TimeControl \"300+3\"]\n[Termination \"Normal\"]\n\n1. e4 e5 2. f4 exf4 3. Nf3 g5 4. Bc4 Bg7 5. O-O h6 6. Nc3 d6 7. d4 Nc6 8. e5 dxe5 9. Re1 Nge7 10. h4 g4 11. Nxe5 Nxe5 12. dxe5 Qxd1 13. Rxd1 Bxe5 14. Ne4 Be6 15. Bb5+ c6 16. Be2 Rd8 17. Re1 O-O 18. c3 Nf5 19. Bxg4 Nxh4 20. Bxe6 fxe6 21. Nc5 f3 22. Rxe5 f2+ 23. Kf1 Rd1+ 0-1\n\n\n","clock":{"initial":300,"increment":3,"totalTime":420}}
+{"id":"h7BRAh6C","rated":true,"variant":"standard","speed":"blitz","perf":"blitz","createdAt":1793994443857,"lastMoveAt":1793994726583,"status":"resign","source":"pool","players":{"white":{"user":{"name":"thibault","flair":"symbols.transgender-flag","patron":true,"patronColor":10,"id":"thibault"},"rating":1744,"ratingDiff":6},"black":{"user":{"name":"grandchecker","id":"grandchecker"},"rating":1710,"ratingDiff":-5}},"winner":"white","moves":"e4 d5 exd5 Nf6 c4 c6 dxc6 e5 Nc3 Bc5 Nf3 e4 d4 exf3 dxc5 Qe7+ Be3 fxg2 Bxg2 Nxc6 Nd5 Ne5 Nxe7","pgn":"[Event \"rated blitz game\"]\n[Site \"https://lichess.org/game/h7BRAh6C\"]\n[Date \"2026.11.06\"]\n[Round \"-\"]\n[White \"thibault\"]\n[Black \"grandchecker\"]\n[Result \"1-0\"]\n[GameId \"h7BRAh6C\"]\n[UTCDate \"2026.11.06\"]\n[UTCTime \"19:47:23\"]\n[WhiteElo \"1744\"]\n[BlackElo \"1710\"]\n[WhiteRatingDiff \"+6\"]\n[BlackRatingDiff \"-5\"]\n[Variant \"Standard\"]\n[TimeControl \"300+3\"]\n[Termination \"Normal\"]\n\n1. e4 d5 2. exd5 Nf6 3. c4 c6 4. dxc6 e5 5. Nc3 Bc5 6. Nf3 e4 7. d4 exf3 8. dxc5 Qe7+ 9. Be3 fxg2 10. Bxg2 Nxc6 11. Nd5 Ne5 12. Nxe7 1-0\n\n\n","clock":{"initial":300,"increment":3,"totalTime":420}}

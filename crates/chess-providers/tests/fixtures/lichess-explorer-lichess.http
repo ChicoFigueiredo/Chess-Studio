@@ -1,0 +1,6 @@
+# Resposta SINTETICA no formato documentado do Opening Explorer do Lichess (/lichess), depois de 1.e4, com recentGames.
+# NAO e real: o servico exigia autenticacao em 2026-11-11.
+HTTP/2 200
+content-type: application/json
+
+{"white":500000,"draws":40000,"black":460000,"moves":[{"uci":"e7e5","san":"e5","white":150000,"draws":12000,"black":130000,"averageRating":1850,"game":null},{"uci":"c7c5","san":"c5","white":120000,"draws":9000,"black":110000,"averageRating":1840,"game":null}],"topGames":[],"recentGames":[{"uci":"e7e5","id":"QrStUvWx","winner":"black","speed":"blitz","mode":"rated","black":{"name":"anna","rating":1900},"white":{"name":"bob","rating":1880},"year":2026,"month":"2026-11"}],"opening":{"eco":"B00","name":"King's Pawn"}}

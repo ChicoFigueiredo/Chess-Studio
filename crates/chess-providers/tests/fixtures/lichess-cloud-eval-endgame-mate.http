@@ -1,0 +1,22 @@
+# Resposta REAL gravada em 2026-11-11 com curl -i (User-Agent generico, sem autenticacao).
+# Final KPK com mate em cache (campo mate em vez de cp).
+# URL: https://lichess.org/api/cloud-eval?fen=8/8/8/3k4/8/8/2K1P3/8%20w%20-%20-%200%201&multiPv=1
+HTTP/2 200 
+date: Wed, 11 Nov 2026 13:11:38 GMT
+content-type: application/json
+server: cloudflare
+vary: Origin
+vary: accept-encoding
+cache-control: public, max-age=86400
+access-control-allow-origin: *
+access-control-allow-headers: Origin, Authorization, If-Modified-Since, Cache-Control, Content-Type
+access-control-allow-methods: OPTIONS, GET, POST, PUT, DELETE
+strict-transport-security: max-age=63072000; includeSubDomains; preload
+x-frame-options: DENY
+permissions-policy: interest-cohort=()
+last-modified: Wed, 11 Nov 2026 13:11:38 GMT
+cf-cache-status: MISS
+cf-ray: a58d8b4038f89f3d-GRU
+alt-svc: h3=":443"; ma=86400
+
+{"fen":"8/8/8/3k4/8/8/2K1P3/8 w - - 0 1","knodes":132126,"depth":60,"pvs":[{"moves":"c2d3 d5e5 d3e3 e5d6 e3f4 d6e6 f4e4 e6d6 e4f5 d6e7","mate":22}]}
