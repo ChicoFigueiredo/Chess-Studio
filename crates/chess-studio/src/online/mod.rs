@@ -1,20 +1,26 @@
-//! Partida online no Lichess (#233, ADR-0007, CX-15): o serviço ([`service`]), a ligação
-//! com o Bevy e a interface ([`view`]).
+//! Partida online no Lichess (#233, ADR-0007, CX-15) e no FICS como visitante (#254): o
+//! serviço ([`service`], com a parte do FICS em [`fics`]), a ligação com o Bevy e a interface
+//! ([`view`], com a tela do FICS em [`fics_view`]). O tabuleiro e o Painel são os mesmos para
+//! os dois Provedores: falam com a Partida pela sessão abstrata (`service::GameSession`).
 //!
 //! A cada quadro, depois dos gestos ([`drive_online`]):
 //!
 //! 1. acompanha a Conexão de jogador autorizada (`NetService::authorized_connection`);
 //! 2. envia as intenções do tabuleiro (Lance, empate, abandono…) à sessão da Partida;
-//! 3. recolhe o que o Lichess mandou e grava no banco só o que ele confirmou;
+//! 3. recolhe o que o Provedor mandou e grava no banco só o que ele confirmou;
 //! 4. põe no tabuleiro a Partida que começou e espelha a que está nele;
 //! 5. informa a Trava de fair play do app das Partidas em andamento.
 //!
 //! Nada aqui escreve a Partida (ADR-0001): a sessão do Provedor é o controlador.
 
 pub mod demo;
+pub mod fics;
+pub mod fics_view;
 pub mod service;
 pub mod view;
 
+#[cfg(test)]
+mod fics_tests;
 #[cfg(test)]
 mod tests;
 
@@ -27,7 +33,7 @@ use crate::session::Session;
 use bevy::prelude::*;
 use bevy_egui::EguiPrimaryContextPass;
 use chess_providers::{BoardError, LinkStatus, ProviderError};
-use service::{OnlineNotice, OnlinePlay, StoreAccess};
+use service::{GameKey, OnlineNotice, OnlinePlay, Provider, StoreAccess};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -91,6 +97,16 @@ pub struct OnlineUi {
     pub error: Option<service::Unavailable>,
     /// Cena de demonstração das capturas (dados fictícios; nenhum pedido sai).
     pub demo: Option<demo::Scene>,
+    /// O Provedor escolhido na tela (Lichess ou FICS como visitante).
+    pub provider: Provider,
+    /// Aba da tela do FICS.
+    pub fics_tab: fics_view::FicsTab,
+    /// O que o jogador preenche na tela do FICS.
+    pub fics_form: fics_view::FicsForm,
+    /// "Sair do FICS" com a Partida em andamento pede confirmação (o FICS a dá como perdida).
+    pub fics_confirm_leave: bool,
+    /// Último erro de um pedido ao FICS iniciado pela tela.
+    pub fics_error: Option<service::Unavailable>,
 }
 
 impl OnlineUi {
@@ -99,6 +115,14 @@ impl OnlineUi {
         self.open = true;
         self.tab = tab;
         self.error = None;
+    }
+
+    /// Abre a tela do FICS numa aba.
+    pub fn open_fics(&mut self, tab: fics_view::FicsTab) {
+        self.open = true;
+        self.provider = Provider::Fics;
+        self.fics_tab = tab;
+        self.fics_error = None;
     }
 
     pub fn push(&mut self, notice: OnlineNotice) {
@@ -211,9 +235,13 @@ pub fn drive_online(
             persistence.as_deref(),
             rig.as_deref_mut(),
         );
-        // A Partida online que vai ao tabuleiro traz o Painel dela.
-        if shown && let Some(mut dock) = dock {
-            reveal_panel(&mut dock.layout);
+        // A Partida online que vai ao tabuleiro traz o Painel dela; a tela de busca fecha (a
+        // Partida é o que importa agora).
+        if shown {
+            ui.open = false;
+            if let Some(mut dock) = dock {
+                reveal_panel(&mut dock.layout);
+            }
         }
         for notice in play.take_notices() {
             ui.push(notice);
@@ -224,6 +252,20 @@ pub fn drive_online(
     });
 }
 
+/// A Partida online do tabuleiro (Provedor e id), se há uma.
+pub fn board_key(session: &Session) -> Option<GameKey> {
+    GameKey::of(session.game())
+}
+
+/// Envia à sessão da Partida do tabuleiro, de qualquer Provedor, o que o jogador pediu.
+pub fn route_intents(play: &mut OnlinePlay, session: &mut Session) {
+    if let Some(key) = board_key(session) {
+        for intent in session.take_online_intents() {
+            play.apply_to(&key, intent);
+        }
+    }
+}
+
 /// Um quadro do serviço com o tabuleiro: intenções, rede, banco, tabuleiro. Separado do
 /// sistema para os testes o chamarem sem Bevy.
 pub fn step(
@@ -232,11 +274,7 @@ pub fn step(
     persistence: Option<&PersistenceHandle>,
     rig: Option<&mut CameraRig>,
 ) -> bool {
-    if let Some(remote) = session.online_remote_id().map(str::to_owned) {
-        for intent in session.take_online_intents() {
-            play.apply(&remote, intent);
-        }
-    }
+    route_intents(play, session);
     let frame = match persistence.and_then(|h| h.0.lock().ok()) {
         Some(mut guard) => {
             let (store, profile) = guard.store_and_profile();
@@ -256,14 +294,14 @@ pub fn after_frame(
     rig: Option<&mut CameraRig>,
 ) -> bool {
     let mut shown = false;
-    if let Some(remote) = frame.show
-        && let Some(live) = play.live(&remote)
+    if let Some(key) = frame.show
+        && let Some(live) = play.session_for(&key)
         && let Some(game) = live.game()
     {
         session.show_online(
             game.clone(),
-            live.store_id,
-            live.link() != LinkStatus::Closed,
+            live.store_id(),
+            live.link() != LinkStatus::Closed && !live.desynced(),
         );
         shown = true;
         if let Some(rig) = rig {
@@ -272,19 +310,25 @@ pub fn after_frame(
             rig.view = Some(view);
         }
     }
-    if let Some(remote) = session.online_remote_id().map(str::to_owned) {
+    let key = board_key(session);
+    if let Some(key) = &key {
         match play
-            .live(&remote)
-            .and_then(|l| l.game().map(|g| (g, l.link())))
+            .session_for(key)
+            .and_then(|l| l.game().map(|g| (g, l.link(), l.desynced())))
         {
-            Some((game, link)) => {
-                let live = link != LinkStatus::Closed;
+            Some((game, link, desynced)) => {
+                // Dessincronizada, a Partida não aceita Lance local (nada é inventado).
+                let live = link != LinkStatus::Closed && !desynced;
                 session.mirror_online(game, live);
             }
             None => session.set_online_live(false),
         }
     }
-    play.follow_board(session.online_remote_id());
+    let lichess = key
+        .as_ref()
+        .filter(|k| k.provider == Provider::Lichess)
+        .map(|k| k.remote_id.as_str());
+    play.follow_board(lichess);
     shown
 }
 

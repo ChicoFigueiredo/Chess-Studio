@@ -117,11 +117,7 @@ impl Env {
     /// Um quadro do app, como `drive_online` faz.
     fn frame(&mut self) {
         self.play.follow_connection(&self.service);
-        if let Some(remote) = self.session.online_remote_id().map(str::to_owned) {
-            for intent in self.session.take_online_intents() {
-                self.play.apply(&remote, intent);
-            }
-        }
+        super::route_intents(&mut self.play, &mut self.session);
         let frame = self.play.frame(Some(StoreAccess {
             store: &mut self.store,
             profile: self.profile,

@@ -22,7 +22,7 @@ use std::fmt;
 use std::time::Duration;
 
 /// Versão dos dados do catálogo; gravada junto do consentimento.
-pub const CATALOG_VERSION: u32 = 3;
+pub const CATALOG_VERSION: u32 = 4;
 
 /// Provedor do catálogo. A chave ([`ProviderId::key`]) é o que se grava no banco e na Origem.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -909,12 +909,14 @@ static CATALOG: [Provider; 19] = [
         id: ProviderId::Fics,
         name: "FICS",
         category: Category::OnlinePlay,
+        // Pronto como visitante (#254): o app só entra como visitante, sem senha (FC-01); conta
+        // registrada só com canal cifrado comprovado, que o FICS não tem (CX-18).
         services: &[svc(
             C::Play,
-            &[A::None, A::UsernamePasswordApprovedProtocol],
-            K::FreeWithSignup,
-            S::Planned { stage: 5 },
-            "Protocolo ICS (não HTTP); visitante primeiro; senha só com transporte seguro comprovado (CX-18)",
+            &[A::None],
+            K::FreeNoSignup,
+            S::Ready,
+            "Protocolo ICS (não HTTP), em texto puro: só visitante, sem senha (CX-18, FC-01)",
         )],
         // ICS não passa pelo cliente HTTP: o endereço ICS está em `crate::ics_endpoints`.
         endpoints: &[],
@@ -937,7 +939,8 @@ static CATALOG: [Provider; 19] = [
             ],
         },
         rate_limit: DEFAULT_RATE,
-        sends: "Lances e comandos do protocolo ICS para freechess.org, como visitante (etapa 5).",
+        sends: "Lances e comandos do protocolo ICS para freechess.org:5000, como visitante, em texto \
+                puro (sem criptografia); nenhuma senha.",
         reviewed_on: REVIEWED,
     },
     Provider {

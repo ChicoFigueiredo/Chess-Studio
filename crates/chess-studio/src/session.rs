@@ -886,10 +886,14 @@ impl Session {
     /// Acompanha a Partida online que a sessão do Provedor escreveu. Só copia: a Partida do
     /// tabuleiro nunca é escrita aqui. Outra Partida (outro id) é ignorada.
     pub fn mirror_online(&mut self, game: &Game, live: bool) {
-        let same = game
-            .setup()
-            .online_game()
-            .is_some_and(|o| Some(o.remote_id.as_str()) == self.online_remote_id());
+        // A mesma Partida: o mesmo Provedor e o mesmo id (o FICS e o Lichess numeram cada um a
+        // sua maneira).
+        let same = match (game.setup().online_game(), self.game.setup().online_game()) {
+            (Some(theirs), Some(ours)) => {
+                theirs.provider == ours.provider && theirs.remote_id == ours.remote_id
+            }
+            _ => false,
+        };
         if !same {
             return;
         }

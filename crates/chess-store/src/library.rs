@@ -826,6 +826,11 @@ fn online_origin(online: &chess_game::OnlineGame) -> String {
             "Partida online · Lichess · lichess.org/{}",
             online.remote_id
         ),
+        // O número da Partida no FICS é reaproveitado depois do fim: não é endereço (#254).
+        "fics" => format!(
+            "Partida online · FICS (visitante) · Partida {}",
+            online.remote_id
+        ),
         other => format!("Partida online · {other} · {}", online.remote_id),
     }
 }

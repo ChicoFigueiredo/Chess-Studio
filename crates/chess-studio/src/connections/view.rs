@@ -31,6 +31,8 @@ use std::collections::{HashMap, HashSet};
 
 #[path = "view_auth.rs"]
 mod auth_ui;
+#[path = "view_fics.rs"]
+mod fics_ui;
 #[path = "view_fide.rs"]
 mod fide_ui;
 
@@ -449,6 +451,9 @@ impl View<'_> {
         self.authorization_block(ui, provider, state, p);
         if id == ProviderId::Fide {
             self.fide_block(ui);
+        }
+        if id == ProviderId::Fics {
+            self.fics_block(ui, p);
         }
 
         let actions = model::card_actions(provider, state, linked);
