@@ -152,6 +152,7 @@ fn explorer_panel(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
 
 impl ExplorerUi {
     /// Desenha o Painel. Não toca a Partida: as intenções saem em `actions`.
+    #[allow(clippy::too_many_arguments)]
     fn draw(
         &mut self,
         ui: &mut egui::Ui,

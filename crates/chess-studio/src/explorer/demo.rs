@@ -193,7 +193,9 @@ fn scene(name: &str) -> Option<Scene> {
             cloud: Some(CloudRow::Ready(cloud_view())),
             ..Scene::default()
         },
-        "library" | "signin" | "off" | "locked" | "endgame-off" | "toomany" => Scene::default(),
+        "library" | "signin" | "off" | "locked" | "endgame-off" | "toomany" | "cloud-off" => {
+            Scene::default()
+        }
         _ => return None,
     })
 }
@@ -240,6 +242,7 @@ fn seed_library(store: &mut Store) {
 }
 
 /// Aplica a cena pedida em `--explorer-demo`. Só roda em captura.
+#[allow(clippy::too_many_arguments)] // parâmetros de sistema do Bevy
 pub fn apply_demo(
     mut state: ResMut<ExplorerUi>,
     mut dock: ResMut<Dock>,
@@ -260,7 +263,7 @@ pub fn apply_demo(
     if *frame == 1 {
         // Evidência: só o Painel da cena no dock, para ele ocupar a altura toda.
         let only = match name.as_str() {
-            "cloud" => ids::ANALYSIS,
+            "cloud" | "cloud-off" => ids::ANALYSIS,
             "import" | "import-done" => ids::LIBRARY,
             _ => ids::EXPLORER,
         };
@@ -311,7 +314,7 @@ pub fn apply_demo(
             let _ = net.set_enabled(ProviderId::Lichess, true);
         }
     }
-    if name == "cloud" {
+    if name == "cloud" || name == "cloud-off" {
         let _ = session
             .study_from_fen("r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 2 2");
     }

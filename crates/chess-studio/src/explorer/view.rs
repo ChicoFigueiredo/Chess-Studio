@@ -630,6 +630,8 @@ fn endgame_row(ui: &mut Ui, i18n: &I18n, mv: &EndgameMove) {
         strong_font(ui.ctx(), 14.0),
         p.ink,
     );
+    // Onde termina o texto do resultado: a distância só aparece se couber depois dele.
+    let mut text_end = rect.left() + PAD + 76.0;
     if let Some(verdict) = mv.verdict {
         let (glyph, color, key) = move_style(p, verdict);
         let x = rect.left() + PAD + 76.0;
@@ -640,13 +642,15 @@ fn endgame_row(ui: &mut Ui, i18n: &I18n, mv: &EndgameMove) {
             icon_font(ui.ctx(), 16.0),
             color,
         );
-        painter.text(
-            egui::pos2(x + 24.0, y),
-            Align2::LEFT_CENTER,
-            i18n.t(key),
-            body(ui),
-            p.ink,
-        );
+        text_end = painter
+            .text(
+                egui::pos2(x + 24.0, y),
+                Align2::LEFT_CENTER,
+                i18n.t(key),
+                body(ui),
+                p.ink,
+            )
+            .right();
     }
     let distance = match (mv.dtm.filter(|d| *d != 0), mv.dtz.filter(|d| *d != 0)) {
         (Some(dtm), _) => Some(mate_text(i18n, dtm)),
@@ -658,11 +662,13 @@ fn endgame_row(ui: &mut Ui, i18n: &I18n, mv: &EndgameMove) {
     };
     if let Some(text) = distance {
         let run = Tabular::new(&painter, &text, &caption(ui), p.ink_muted);
-        run.paint(
-            &painter,
-            egui::pos2(rect.right() - PAD - run.size.x, y - run.size.y / 2.0),
-            p.ink_muted,
-        );
+        let x = rect.right() - PAD - run.size.x;
+        if x >= text_end + 12.0 {
+            run.paint(&painter, egui::pos2(x, y - run.size.y / 2.0), p.ink_muted);
+        } else {
+            // Sem espaço: a distância vai na dica da linha.
+            response.on_hover_text(text);
+        }
     }
 }
 
