@@ -145,9 +145,10 @@ fn reinstalling_a_removed_pack_brings_back_the_hidden_exercise_with_its_runs() {
 }
 
 #[test]
-fn migration_14_marks_existing_exercises_as_bundled() {
+fn migration_14_applies_on_a_v13_database_and_preserves_everything() {
     let mut conn = rusqlite::Connection::open_in_memory().unwrap();
     migrations::migrate_to(&mut conn, 13).unwrap();
+    assert_eq!(migrations::current_version(&conn).unwrap(), 13);
     conn.execute(
         "INSERT INTO exercises (kind, initial_fen, solution_json, version, created_at_ms, slug,
                                 definition_json)
@@ -155,7 +156,22 @@ fn migration_14_marks_existing_exercises_as_bundled() {
         [],
     )
     .unwrap();
-    migrations::migrate_to(&mut conn, 14).unwrap();
+    conn.execute(
+        "INSERT INTO exercise_runs (exercise_id, profile_id, correct, hints_used, duration_ms,
+                                    created_at_ms, finished, session)
+         VALUES (1, 1, 1, 0, 10, 5, 1, 7)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO imported_games (profile_id, source, result, start_fen, ply_count,
+                                     variation_count, tree_json, imported_at_ms)
+         VALUES (1, 'a.pgn', '1-0', 'x', 3, 0, '{}', 99)",
+        [],
+    )
+    .unwrap();
+    migrations::migrate(&mut conn).unwrap();
+    assert_eq!(migrations::current_version(&conn).unwrap(), 14);
     let (origin, pack, hidden): (String, Option<String>, i64) = conn
         .query_row(
             "SELECT origin, pack, hidden FROM exercises WHERE slug = 'velho-1'",
@@ -164,4 +180,17 @@ fn migration_14_marks_existing_exercises_as_bundled() {
         )
         .unwrap();
     assert_eq!((origin.as_str(), pack, hidden), ("bundled", None, 0));
+    let runs: i64 = conn
+        .query_row("SELECT COUNT(*) FROM exercise_runs", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(runs, 1, "a Resolução antiga segue lá");
+    // O que a 13 trouxe continua: a Origem estruturada da Partida importada.
+    let (source, retrieved): (String, i64) = conn
+        .query_row(
+            "SELECT source, retrieved_at_ms FROM imported_games",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!((source.as_str(), retrieved), ("a.pgn", 99));
 }

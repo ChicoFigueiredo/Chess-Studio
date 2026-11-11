@@ -16,8 +16,10 @@ mod export;
 mod lexer;
 mod model;
 mod parser;
+mod stream;
 
 pub use convert::ConvertError;
 pub use error::{PgnError, PgnErrorKind};
 pub use model::{MoveNode, PgnGame, PgnResult};
 pub use parser::{ParseReport, parse_pgn, parse_pgn_lenient};
+pub use stream::{Decoded, MAX_GAME_BYTES, MAX_LINE_BYTES, PgnStream, StreamItem, decode_text};

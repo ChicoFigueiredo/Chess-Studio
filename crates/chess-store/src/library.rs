@@ -103,6 +103,12 @@ pub struct LibraryQuery {
     /// FEN: Partidas em que a Posição ocorre (chave normalizada).
     pub position: Option<String>,
     pub source: Option<LibrarySource>,
+    /// Provedor da Origem (só Partidas importadas; casa com qualquer das Origens).
+    pub provider: Option<String>,
+    /// Prefixo do código ECO (só Partidas importadas com a tag).
+    pub eco: Option<String>,
+    /// Ritmo (só Partidas importadas com `TimeControl` ou ritmo no nome do evento).
+    pub pace: Option<crate::Pace>,
     pub profile: Option<ProfileId>,
     pub limit: Option<u32>,
     pub offset: u32,
@@ -576,6 +582,37 @@ impl Store {
             conds.push(format!(
                 "e.source = {}",
                 bind(&mut args, Sql::Text(source.as_str().to_owned()))
+            ));
+        }
+        let mut imported_conds: Vec<String> = Vec::new();
+        if let Some(provider) = query.provider.as_deref().filter(|p| !p.is_empty()) {
+            let p = bind(&mut args, Sql::Text(provider.to_owned()));
+            imported_conds.push(format!(
+                "(g.provider = {p} OR EXISTS (SELECT 1 FROM imported_game_origins o
+                                              WHERE o.game_id = g.id AND o.provider = {p}))"
+            ));
+        }
+        if let Some(eco) = query
+            .eco
+            .as_deref()
+            .map(|e| e.trim().to_uppercase())
+            .filter(|e| !e.is_empty())
+        {
+            imported_conds.push(format!(
+                "g.eco LIKE {} || '%'",
+                bind(&mut args, Sql::Text(eco))
+            ));
+        }
+        if let Some(pace) = query.pace {
+            imported_conds.push(format!(
+                "g.pace = {}",
+                bind(&mut args, Sql::Text(pace.as_str().to_owned()))
+            ));
+        }
+        if !imported_conds.is_empty() {
+            conds.push(format!(
+                "(e.source = 'imported' AND e.ref_id IN (SELECT g.id FROM imported_games g WHERE {}))",
+                imported_conds.join(" AND ")
             ));
         }
         if let Some(result) = query.result.as_deref().filter(|r| !r.is_empty()) {

@@ -39,6 +39,7 @@ mod imported;
 mod library;
 pub mod migrations;
 mod openings;
+mod origin;
 mod scoresheet;
 mod store;
 mod training;
@@ -47,12 +48,16 @@ mod training_profiles;
 pub use engines::{EngineId, EngineOrigin, EngineRecord};
 pub use error::{Result, StoreError};
 pub use favorites::{Favorite, FavoriteId, FavoriteOrigin, FavoriteQuery, NewFavorite};
-pub use imported::{ImportReport, ImportedId, ImportedQuery, ImportedSummary};
+pub use imported::{
+    DEFAULT_BATCH, DEFAULT_MAX_DECOMPRESSED, ImportOptions, ImportProgress, ImportReport,
+    ImportSummary, ImportedId, ImportedQuery, ImportedSummary, MAX_ERROR_SAMPLES,
+};
 pub use library::{
     LibraryEntry, LibraryEntryId, LibraryPage, LibraryQuery, LibrarySource, position_key,
 };
 pub use migrations::LATEST_VERSION as LATEST_SCHEMA_VERSION;
 pub use openings::{OPENING_PLIES, OpeningMoveStats};
+pub use origin::{ImportMode, ImportSource, Origin, Pace, Provenance, game_fingerprint, remote_id};
 pub use store::{
     GameId, GameMetadata, GameQuery, GameSummary, MAX_PROFILE_NAME_LEN, OpenedGame, Pragmas,
     ProfileId, ProfileInfo, Store,

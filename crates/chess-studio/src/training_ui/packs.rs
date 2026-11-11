@@ -60,6 +60,8 @@ struct Job {
     /// `Mutex` só para o recurso do Bevy ser `Sync`; quem lê é um sistema por vez.
     rx: Mutex<Receiver<JobMsg>>,
     progress: ImportProgress,
+    /// Tamanho do `.csv` (para a barra); `None` em `.zst`, cujos bytes lidos são descomprimidos.
+    total_bytes: Option<u64>,
 }
 
 /// Resultado da última instalação, mostrado até a próxima.
@@ -77,6 +79,8 @@ pub(super) struct PacksUi {
     pub(super) installed: Vec<PackInfo>,
     load_errors: Vec<(String, String)>,
     path: String,
+    /// Arquivos `.csv`/`.csv.zst` sugeridos (pasta de documentos), lidos uma vez.
+    suggestions: Option<Vec<PathBuf>>,
     themes: String,
     min_rating: String,
     max_rating: String,
@@ -98,6 +102,7 @@ impl Default for PacksUi {
             installed: Vec::new(),
             load_errors: Vec::new(),
             path: String::new(),
+            suggestions: None,
             themes: String::new(),
             min_rating: String::new(),
             max_rating: String::new(),
@@ -111,6 +116,23 @@ impl Default for PacksUi {
             filter_max: String::new(),
         }
     }
+}
+
+/// `.csv` e `.csv.zst` de uma pasta, em ordem de nome (no máximo 8).
+fn list_puzzle_files(dir: &Path) -> Vec<PathBuf> {
+    let Ok(read) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut files: Vec<PathBuf> = read
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| {
+            let name = p.to_string_lossy().to_lowercase();
+            p.is_file() && (name.ends_with(".csv") || name.ends_with(".csv.zst"))
+        })
+        .collect();
+    files.sort();
+    files.truncate(8);
+    files
 }
 
 fn parse_rating(text: &str) -> Option<u32> {
@@ -238,6 +260,9 @@ impl TrainingUi {
             .and_then(|n| n.to_str())
             .unwrap_or("problemas")
             .to_owned();
+        let total_bytes = (path.extension().is_none_or(|x| x != "zst"))
+            .then(|| std::fs::metadata(&path).ok().map(|m| m.len()))
+            .flatten();
         let cancel = Arc::new(AtomicBool::new(false));
         let (tx, rx) = mpsc::channel();
         let flag = Arc::clone(&cancel);
@@ -265,6 +290,7 @@ impl TrainingUi {
             cancel,
             rx: Mutex::new(rx),
             progress: ImportProgress::default(),
+            total_bytes,
         });
     }
 
@@ -516,6 +542,24 @@ pub(super) fn view(ui: &mut egui::Ui, i18n: &I18n, packs: &mut PacksUi) -> Optio
         &i18n.t("training-packs-path-hint"),
         None,
     );
+    let files = packs.suggestions.get_or_insert_with(|| {
+        let dir = crate::paths::documents_dir(
+            crate::paths::Platform::current(),
+            &crate::paths::process_env,
+        );
+        list_puzzle_files(&dir)
+    });
+    if !files.is_empty() {
+        ui.small(i18n.t("training-packs-suggestions"));
+        for file in files.clone() {
+            let name = file
+                .file_name()
+                .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+            if ui.small_button(name).clicked() {
+                packs.path = file.display().to_string();
+            }
+        }
+    }
     cs_text_field(
         ui,
         &mut packs.themes,
@@ -542,6 +586,12 @@ pub(super) fn view(ui: &mut egui::Ui, i18n: &I18n, packs: &mut PacksUi) -> Optio
                 ("imported", &job.progress.imported.to_string()),
             ],
         ));
+        if let Some(total) = job.total_bytes.filter(|t| *t > 0) {
+            ui.add(
+                egui::ProgressBar::new((job.progress.bytes as f32 / total as f32).min(1.0))
+                    .desired_width(f32::INFINITY),
+            );
+        }
         if cs_button(
             ui,
             &i18n.t("training-packs-cancel"),

@@ -315,10 +315,51 @@ CREATE TABLE opening_moves (
 CREATE INDEX opening_moves_entry ON opening_moves (entry_id);
 ";
 
-// Versão 13 reservada para a Biblioteca e o PGN (#216), que corre em paralelo. Este marcador
-// só mantém a numeração; ao juntar os dois branches, o conteúdo da outra migração substitui
-// esta linha e a V14 abaixo (independente: só toca `exercises`) segue valendo.
-const V13_RESERVED: &str = "SELECT 1;";
+// Origem estruturada, impressão digital e metadados das Partidas importadas (CX-4, #216).
+// Só acrescenta colunas, índices e uma tabela: o texto livre `source` continua intacto e
+// vira a primeira Origem (modo arquivo, instante = o da importação). A impressão digital e as
+// colunas derivadas das tags (Site, Elo, TimeControl, ECO, ritmo) das linhas antigas são
+// preenchidas ao abrir o banco (`Store::backfill_imported_facts`), porque dependem da árvore.
+const V13_IMPORT_ORIGIN: &str = "
+ALTER TABLE imported_games ADD COLUMN provider TEXT;
+ALTER TABLE imported_games ADD COLUMN import_mode TEXT NOT NULL DEFAULT 'file'
+    CHECK (import_mode IN ('file', 'manual', 'api'));
+ALTER TABLE imported_games ADD COLUMN retrieved_at_ms INTEGER;
+ALTER TABLE imported_games ADD COLUMN license TEXT;
+ALTER TABLE imported_games ADD COLUMN reference_url TEXT;
+ALTER TABLE imported_games ADD COLUMN remote_id TEXT;
+ALTER TABLE imported_games ADD COLUMN fingerprint TEXT;
+ALTER TABLE imported_games ADD COLUMN site TEXT;
+ALTER TABLE imported_games ADD COLUMN white_elo INTEGER;
+ALTER TABLE imported_games ADD COLUMN black_elo INTEGER;
+ALTER TABLE imported_games ADD COLUMN time_control TEXT;
+ALTER TABLE imported_games ADD COLUMN eco TEXT;
+ALTER TABLE imported_games ADD COLUMN pace TEXT;
+UPDATE imported_games SET retrieved_at_ms = imported_at_ms;
+CREATE UNIQUE INDEX imported_games_fingerprint
+    ON imported_games (profile_id, fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX imported_games_remote
+    ON imported_games (profile_id, provider, remote_id)
+    WHERE provider IS NOT NULL AND remote_id IS NOT NULL;
+CREATE INDEX imported_games_provider ON imported_games (provider);
+CREATE INDEX imported_games_eco ON imported_games (eco);
+CREATE INDEX imported_games_pace ON imported_games (pace);
+
+-- Origens somadas depois da primeira: a mesma Partida vinda de outro Provedor ou arquivo.
+CREATE TABLE imported_game_origins (
+    id              INTEGER PRIMARY KEY,
+    game_id         INTEGER NOT NULL REFERENCES imported_games(id) ON DELETE CASCADE,
+    provider        TEXT,
+    import_mode     TEXT NOT NULL CHECK (import_mode IN ('file', 'manual', 'api')),
+    retrieved_at_ms INTEGER NOT NULL,
+    license         TEXT,
+    reference_url   TEXT,
+    remote_id       TEXT,
+    source          TEXT
+);
+CREATE INDEX imported_game_origins_game ON imported_game_origins (game_id);
+CREATE INDEX imported_game_origins_provider ON imported_game_origins (provider);
+";
 
 // Pacotes de Exercícios externos (CX-5, #217): Origem (`bundled` ou o Provedor, ex.:
 // `lichess`), pacote a que o Exercício pertence e marca de oculto. Um Exercício de pacote
@@ -345,7 +386,7 @@ const MIGRATIONS: &[&str] = &[
     V10_MANUAL_SCORESHEET,
     V11_SCORESHEET_CHECK,
     V12_OPENING_EXPLORER,
-    V13_RESERVED,
+    V13_IMPORT_ORIGIN,
     V14_EXERCISE_PACKS,
 ];
 
