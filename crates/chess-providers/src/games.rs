@@ -163,6 +163,12 @@ impl GamesFeed {
         self.progress.lock().map(|p| p.clone()).unwrap_or_default()
     }
 
+    /// O andamento compartilhado: continua valendo depois de [`GamesFeed::into_reader`]
+    /// (quem importa em segundo plano lê daqui quantas Partidas foram puladas por variante).
+    pub fn progress_handle(&self) -> Arc<Mutex<GamesProgress>> {
+        Arc::clone(&self.progress)
+    }
+
     /// Próximo evento, se já chegou (nunca bloqueia). Chame a cada quadro.
     pub fn try_next(&mut self) -> Option<GamesEvent> {
         if let Some(event) = self.queued.pop_front() {
@@ -233,6 +239,7 @@ pub fn import_options(provenance: &chess_net::Provenance) -> ImportOptions {
     let source = match provenance.provider {
         ProviderId::Lichess => ImportSource::Lichess,
         ProviderId::ChessCom => ImportSource::ChessCom,
+        ProviderId::PlayStrategy => ImportSource::PlayStrategy,
         _ => ImportSource::Other,
     };
     let mut origin = chess_store::Provenance::from_source(

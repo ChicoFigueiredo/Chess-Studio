@@ -333,6 +333,7 @@ fn main() {
             for provider in [
                 chess_net::ProviderId::Lichess,
                 chess_net::ProviderId::ChessCom,
+                chess_net::ProviderId::PlayStrategy,
             ] {
                 let _ = net.set_enabled(provider, true);
             }

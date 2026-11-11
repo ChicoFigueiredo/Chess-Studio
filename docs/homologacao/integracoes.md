@@ -65,6 +65,9 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 | CX-HOM-43 | Seletor de arquivo: escolher e Salvar como… | não (sistema) | UNVERIFIED |
 | CX-HOM-44 | Baixar problemas do Lichess pela rede | sim | UNVERIFIED |
 | CX-HOM-45 | Consentimento do Lichess cita tudo o que o app envia | não | UNVERIFIED |
+| CX-HOM-46 | PlayStrategy: cartão na Central, ligar e testar | sim | UNVERIFIED |
+| CX-HOM-47 | PlayStrategy: importar Partidas públicas e variantes puladas | sim | UNVERIFIED |
+| CX-HOM-48 | PlayStrategy: Origem, Atualizar e duplicatas | sim | UNVERIFIED |
 | CX-HOM-49 | Engine remota: escolher, aviso e consentimento | sim | UNVERIFIED |
 | CX-HOM-50 | Engine remota: análise, limite e Provedor desligado | sim | UNVERIFIED |
 | CX-HOM-51 | Engine remota sob a Trava de fair play | sim | UNVERIFIED |
@@ -593,6 +596,33 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
   2. Leia **O que será enviado** e **Para onde vai**; abra também o cartão do Lichess na Central (Detalhes).
 - **Esperado:** uma frase para cada uso: Explorador, avaliação em cache, finais, consulta de Partidas e IDs FIDE públicos, download de problemas e Partidas online (com a Conexão autorizada); nenhuma sigla técnica (sem "HTTP", "etapa" ou nome de endpoint). O mesmo texto vale no cartão da Central.
 - **Evidência:** teste `every_ready_network_service_has_a_consent_line` em [`connections/model.rs`](../../crates/chess-studio/src/connections/model.rs); [capturas](../evidencias/acabamento-etapa-5/README.md).
+### CX-HOM-46. PlayStrategy: cartão na Central, ligar e testar
+
+- **Passos:**
+  1. **Arquivo > Conexões**: abra o cartão do **PlayStrategy**. Com tudo desligado, leia "O que será enviado".
+  2. Ligue o Provedor pelo Switch e confirme o aviso. Vincule o nome de um usuário público do PlayStrategy e use **Testar**.
+  3. Teste também um nome que não existe.
+- **Esperado:** o cartão está completo (não mais em "Em breve"), com Switch, e diz que não há Partida online no PlayStrategy nesta versão. Desligado, nada sai. O teste confirma o nome e mostra "PlayStrategy" como fonte; o nome inexistente dá "Nome não encontrado".
+- **Com o serviço real:** os formatos do PlayStrategy são os da família do Lichess, mas **só foram escritos a partir do contrato e de respostas sintéticas** (a página de documentação não entrega o texto das rotas): confirme que `/api/user/{nome}` responde assim.
+- **Evidência:** [`connections/model.rs`](../../crates/chess-studio/src/connections/model.rs), [`probe.rs`](../../crates/chess-studio/src/connections/probe.rs), [capturas](../evidencias/playstrategy-central-importacao/README.md).
+
+### CX-HOM-47. PlayStrategy: importar Partidas públicas e variantes puladas
+
+- **Passos:**
+  1. **Biblioteca > Importar > PlayStrategy (online)**, com o Provedor desligado: o botão pede para ligar e nada é pedido.
+  2. Ligue, informe um usuário público que jogue também variantes (damas, shogi, Crazyhouse...) e importe com período e ritmo.
+- **Esperado:** só as Partidas de xadrez padrão entram; o resumo diz quantas Partidas de variantes foram puladas. O formulário avisa que só xadrez padrão é importado e que não há Partida online no PlayStrategy.
+- **Com o serviço real:** confirme que `/api/games/user/{nome}` aceita os filtros (`since`, `perfType`, `max`) e que o campo `variant` de cada linha vem como `standard`/`fromPosition` para xadrez; se o PlayStrategy usar outros nomes, as Partidas de xadrez seriam puladas por engano.
+- **Evidência:** [`online_import.rs`](../../crates/chess-studio/src/online_import.rs) (testes com servidor falso), [`catalog.rs`](../../crates/chess-net/src/catalog.rs).
+
+### CX-HOM-48. PlayStrategy: Origem, Atualizar e duplicatas
+
+- **Passos:**
+  1. Depois do item anterior, abra uma Partida importada: a Origem diz "PlayStrategy · API".
+  2. Na aba **Origens** da Biblioteca, confira o grupo **PlayStrategy**.
+  3. Volte ao formulário e use **Atualizar**; depois importe o mesmo nome de novo.
+- **Esperado:** Origem e aba Origens mostram "PlayStrategy" (não "Lichess" nem "Outro"). **Atualizar** pede só o que veio depois da última Partida; repetir a importação não duplica nada (as Partidas voltam como repetidas).
+- **Evidência:** [`origin.rs`](../../crates/chess-store/src/origin.rs), [`import_origin.rs`](../../crates/chess-store/tests/import_origin.rs).
 ### CX-HOM-49. Engine remota: escolher, aviso e consentimento
 
 - **Passos:**

@@ -189,6 +189,7 @@ impl ConnectionsUi {
             NewConnection::new("lichess", ConnectionKind::PublicName, "bruno_exemplo")
                 .nickname("Treino"),
             NewConnection::new("chesscom", ConnectionKind::PublicName, "carla_exemplo"),
+            NewConnection::new("playstrategy", ConnectionKind::PublicName, "ana_exemplo"),
             NewConnection::new("fide", ConnectionKind::PublicId, "9999991"),
         ];
         let _ = with_store(&mut ui.local, None, |store, profile| {

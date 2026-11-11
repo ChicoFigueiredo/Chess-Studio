@@ -1,4 +1,4 @@
-//! Importar do Lichess e do Chess.com (CX-9, #226): as Partidas públicas de um jogador entram
+//! Importar do Lichess, do PlayStrategy e do Chess.com (CX-9, #226, #253): as Partidas públicas de um jogador entram
 //! na Biblioteca em segundo plano, com a Origem de cada uma (Provedor, instante, licença).
 //!
 //! - o pedido é um [`GamesFeed`] do `chess-providers` (nenhuma conexão sai daqui: tudo passa
@@ -10,13 +10,19 @@
 //!   então nada se duplica;
 //! - não há sincronização automática: só roda quando a pessoa aperta o botão.
 //!
+//! - o Lichess e o PlayStrategy são a mesma família de API: um só caminho, escolhido pelo
+//!   `ProviderProfile` do Provedor (`Lichess::with_profile`); só xadrez padrão, e as Partidas
+//!   de variantes são puladas e contadas ([`Summary::skipped_variants`]).
+//!
 //! A lógica pura e o trabalho da thread ficam aqui; o formulário fica em `library_ui`.
 
 use crate::net_service::NetService;
 use chess_core::Color;
 use chess_net::{NetError, ProviderId, Timestamp};
-use chess_providers::{ChessCom, Day, GamesFeed, GamesFilter, Lichess, Pace, ProviderError};
-use chess_store::{ImportProgress, ProfileId, Store};
+use chess_providers::{
+    ChessCom, Day, GamesFeed, GamesFilter, GamesProgress, Lichess, Pace, ProviderError,
+};
+use chess_store::{ImportProgress, ImportSource, ProfileId, Store};
 use std::io::BufReader;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -31,6 +37,7 @@ pub const BATCH: usize = 10;
 pub enum Site {
     Lichess,
     ChessCom,
+    PlayStrategy,
 }
 
 impl Site {
@@ -38,12 +45,28 @@ impl Site {
         match self {
             Site::Lichess => ProviderId::Lichess,
             Site::ChessCom => ProviderId::ChessCom,
+            Site::PlayStrategy => ProviderId::PlayStrategy,
         }
     }
 
-    /// Nome gravado na Origem de cada Partida (`imported_games.provider`).
+    /// A Origem que a Biblioteca grava nas Partidas deste Provedor.
+    pub fn source(self) -> ImportSource {
+        match self {
+            Site::Lichess => ImportSource::Lichess,
+            Site::ChessCom => ImportSource::ChessCom,
+            Site::PlayStrategy => ImportSource::PlayStrategy,
+        }
+    }
+
+    /// Nome gravado na Origem de cada Partida (`imported_games.provider`): o mesmo da
+    /// Biblioteca e da aba Origens, não a chave de rede do Provedor.
     pub fn key(self) -> &'static str {
-        self.provider().key()
+        self.source().provider_id()
+    }
+
+    /// Provedor da família do Lichess: só xadrez padrão, variantes puladas e contadas.
+    pub fn is_lila_family(self) -> bool {
+        matches!(self, Site::Lichess | Site::PlayStrategy)
     }
 
     pub fn name(self) -> &'static str {
@@ -123,6 +146,7 @@ impl Request {
 #[derive(Clone)]
 pub struct Clients {
     lichess: Lichess,
+    playstrategy: Lichess,
     chesscom: ChessCom,
 }
 
@@ -130,6 +154,7 @@ impl Clients {
     pub fn of(service: &NetService) -> Self {
         Self {
             lichess: service.lichess().clone(),
+            playstrategy: service.playstrategy().clone(),
             chesscom: service.chesscom().clone(),
         }
     }
@@ -137,9 +162,12 @@ impl Clients {
     /// Abre o fluxo de Partidas (nada bloqueia: o pedido sai da rede em segundo plano).
     pub fn feed(&self, request: &Request, now: Timestamp) -> GamesFeed {
         let filter = request.filter(now);
+        let name = request.name.trim();
         match request.site {
-            Site::Lichess => self.lichess.games(request.name.trim(), &filter),
-            Site::ChessCom => self.chesscom.games(request.name.trim(), &filter),
+            // Mesmo cliente, perfil de Provedor diferente.
+            Site::Lichess => self.lichess.games(name, &filter),
+            Site::PlayStrategy => self.playstrategy.games(name, &filter),
+            Site::ChessCom => self.chesscom.games(name, &filter),
         }
     }
 }
@@ -173,6 +201,9 @@ pub struct Summary {
     pub duplicates: usize,
     pub errors: usize,
     pub cancelled: bool,
+    /// Partidas que o Provedor mandou e o app pulou por não serem xadrez padrão (variantes).
+    /// Só o Lichess e o PlayStrategy contam; no Chess.com fica em zero.
+    pub skipped_variants: usize,
 }
 
 /// Por que a importação não terminou, em termos que a interface sabe explicar.
@@ -243,6 +274,7 @@ pub fn run(
 ) -> Result<Summary, Failure> {
     let mut options = feed.import_options();
     options.batch_size = BATCH;
+    let feed_progress = feed.progress_handle();
     let tapped = Arc::new(Mutex::new(None));
     let reader = BufReader::new(Tap {
         inner: feed.into_reader(cancel.clone()),
@@ -252,6 +284,14 @@ pub fn run(
         progress(Progress::from(p));
     });
     let provider_error = tapped.lock().ok().and_then(|mut slot| slot.take());
+    let skipped_variants = if site.is_lila_family() {
+        feed_progress
+            .lock()
+            .map(|p: std::sync::MutexGuard<'_, GamesProgress>| p.skipped)
+            .unwrap_or(0)
+    } else {
+        0
+    };
     match (outcome, provider_error) {
         (_, Some(error)) => Err(Failure::of(site, &error)),
         (Ok(summary), None) => Ok(Summary {
@@ -260,6 +300,7 @@ pub fn run(
             duplicates: summary.duplicates,
             errors: summary.errors,
             cancelled: summary.cancelled,
+            skipped_variants,
         }),
         (Err(error), None) => Err(Failure::Other(error.to_string())),
     }
@@ -402,12 +443,13 @@ mod tests {
         let clock = Arc::new(FakeClock::new(T0));
         let server = FakeServer::with_clock(clock.clone());
         let mut config = NetConfig::in_memory().clock(clock.clone()).jitter_seed(3);
-        for host in ["lichess.org", "api.chess.com"] {
+        for host in ["lichess.org", "api.chess.com", "playstrategy.org"] {
             config = config.route(host, &server.base_url());
         }
         let net = Net::open(config).unwrap();
         if enabled {
             net.set_enabled(ProviderId::Lichess, true).unwrap();
+            net.set_enabled(ProviderId::PlayStrategy, true).unwrap();
         }
         let service = NetService::from_net(net, clock.clone(), false);
         let db = std::env::temp_dir().join(format!(
@@ -584,6 +626,121 @@ mod tests {
             import(&env, request("fantasma")),
             Err(Failure::UnknownName("fantasma".into()))
         );
+    }
+
+    /// Duas Partidas de xadrez padrão e duas de variantes, no formato NDJSON da família do
+    /// Lichess (sintético: o PlayStrategy não foi consultado de verdade, CX-17).
+    fn playstrategy_games() -> FakeResponse {
+        let game = |id: &str, variant: &str, day: u32, moves: &str| {
+            let pgn = format!(
+                "[Event \"Rated Rapid game\"]\n[Site \"https://playstrategy.org/{id}\"]\n\
+                 [Date \"2026.11.{day:02}\"]\n[White \"ana_exemplo\"]\n[Black \"adversario\"]\n\
+                 [Result \"1-0\"]\n\n{moves} 1-0\n\n"
+            );
+            let line = serde_json::json!({ "id": id, "variant": variant, "pgn": pgn });
+            format!("{line}\n")
+        };
+        let body = [
+            game("Ps4rT9xQ", "standard", 3, "1. e4 e5 2. Nf3"),
+            game("Ps5aB8yZ", "fromPosition", 5, "1. d4 d5 2. c4"),
+            game("Ps6shogi", "shogi", 6, "1. P-76"),
+            game("Ps7crazy", "crazyhouse", 7, "1. e4 e5"),
+        ]
+        .concat();
+        FakeResponse::ok(body).header("content-type", "application/x-ndjson")
+    }
+
+    fn ps_request(name: &str) -> Request {
+        Request {
+            site: Site::PlayStrategy,
+            ..request(name)
+        }
+    }
+
+    #[test]
+    fn playstrategy_reuses_the_lichess_flow_keeps_standard_chess_and_counts_the_skipped_variants() {
+        let env = env("ps", true);
+        env.server
+            .route("/api/games/user/ana_exemplo", playstrategy_games());
+        let first = import(&env, ps_request("ana_exemplo")).unwrap();
+        assert_eq!((first.new, first.duplicates, first.errors), (2, 0, 0));
+        assert_eq!(first.skipped_variants, 2, "shogi e crazyhouse puladas");
+
+        // O pedido foi ao PlayStrategy, com os filtros da família do Lichess.
+        let sent = env.server.requests();
+        assert_eq!(sent.len(), 1);
+        assert!(sent[0].path.ends_with("/api/games/user/ana_exemplo"));
+        assert!(
+            sent[0].header("authorization").is_none(),
+            "público: sem token"
+        );
+
+        // Origem correta: Provedor "playstrategy", modo API, licença e id remoto.
+        let store = Store::open(&env.db).unwrap();
+        let games = store
+            .list_imported(&chess_store::ImportedQuery::default())
+            .unwrap();
+        assert_eq!(games.len(), 2);
+        assert!(
+            games
+                .iter()
+                .all(|g| g.provider.as_deref() == Some("playstrategy"))
+        );
+        let origin = &store.origins(ME, games[0].id).unwrap()[0];
+        assert_eq!(origin.provider.as_deref(), Some("playstrategy"));
+        assert!(origin.license.is_some());
+        assert!(origin.remote_id.is_some());
+        let last = last_imported_day(&store, ME, Site::PlayStrategy, "ANA_exemplo");
+        assert!(
+            last.is_some(),
+            "o Atualizar enxerga a Origem do PlayStrategy"
+        );
+        // As Partidas do PlayStrategy não são "do Lichess".
+        assert_eq!(
+            last_imported_day(&store, ME, Site::Lichess, "ana_exemplo"),
+            None
+        );
+        drop(store);
+
+        // Importar de novo: tudo reconhecido, nada duplicado.
+        let second = import(&env, ps_request("ana_exemplo")).unwrap();
+        assert_eq!((second.new, second.duplicates), (0, 2));
+        assert_eq!(second.skipped_variants, 2);
+    }
+
+    #[test]
+    fn playstrategy_switched_off_sends_no_request() {
+        let env = env("psoff", false);
+        env.server
+            .route("/api/games/user/ana_exemplo", playstrategy_games());
+        assert_eq!(
+            import(&env, ps_request("ana_exemplo")),
+            Err(Failure::Off(Site::PlayStrategy))
+        );
+        assert!(env.server.requests().is_empty(), "zero pedidos");
+    }
+
+    #[test]
+    fn each_provider_is_independent_and_the_origin_keys_match_the_library() {
+        // Só o PlayStrategy ligado: o Lichess continua sem pedir.
+        let env = env("psonly", false);
+        env.service
+            .set_enabled(ProviderId::PlayStrategy, true)
+            .unwrap();
+        env.server
+            .route("/api/games/user/ana_exemplo", playstrategy_games());
+        assert_eq!(
+            import(&env, request("ana_exemplo")),
+            Err(Failure::Off(Site::Lichess))
+        );
+        assert!(env.server.requests().is_empty());
+        assert!(import(&env, ps_request("ana_exemplo")).is_ok());
+        for site in [Site::Lichess, Site::ChessCom, Site::PlayStrategy] {
+            assert_eq!(
+                chess_store::ImportSource::from_provider_id(site.key()),
+                Some(site.source())
+            );
+        }
     }
 
     #[test]
