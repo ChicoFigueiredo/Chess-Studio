@@ -175,3 +175,39 @@ fn engine_connections_do_not_mix_with_player_ones() {
     // Cada papel tem a sua padrão.
     assert!(players[0].is_default && engines[0].is_default);
 }
+
+#[test]
+fn migration_15_applies_on_a_version_14_database_and_keeps_everything() {
+    let db = TempDb::new("conn-migrate");
+    {
+        let mut conn = rusqlite::Connection::open(db.path()).unwrap();
+        chess_store::migrations::migrate_to(&mut conn, 14).unwrap();
+        conn.execute_batch(
+            "INSERT INTO profiles (id, name, created_at_ms) VALUES (2, 'Ana', 5);
+             INSERT INTO ui_preferences (profile_id, key, value_json) VALUES (2, 'quality', '\"Ultra\"');
+             INSERT INTO exercises (id, kind, initial_fen, solution_json, version, created_at_ms, origin, pack)
+                 VALUES (7, 'tactic', '8/8/8/8/8/8/8/K6k w - - 0 1', '[]', 1, 9, 'lichess', 'pack-a');",
+        )
+        .unwrap();
+        assert_eq!(chess_store::migrations::current_version(&conn).unwrap(), 14);
+    }
+    let mut store = Store::open(db.path()).unwrap();
+    assert_eq!(store.schema_version().unwrap(), 15);
+    let ana = chess_store::ProfileId(2);
+    assert_eq!(store.profile(ana).unwrap().name, "Ana");
+    assert_eq!(
+        store.get_pref(ana, "quality").unwrap(),
+        Some(serde_json::json!("Ultra"))
+    );
+    store
+        .add_connection(ana, &public_name("lichess", "ana_l"))
+        .unwrap();
+    drop(store);
+    let conn = rusqlite::Connection::open(db.path()).unwrap();
+    let (origin, pack): (String, String) = conn
+        .query_row("SELECT origin, pack FROM exercises WHERE id = 7", [], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .unwrap();
+    assert_eq!((origin.as_str(), pack.as_str()), ("lichess", "pack-a"));
+}

@@ -1,0 +1,20 @@
+# Resposta REAL gravada em 2026-11-11 com curl -i (User-Agent generico, sem autenticacao).
+# Perfil publico da conta oficial.
+# URL: https://lichess.org/api/user/lichess
+HTTP/2 200 
+date: Wed, 11 Nov 2026 13:11:44 GMT
+content-type: application/json
+server: cloudflare
+vary: Origin
+vary: accept-encoding
+access-control-allow-origin: *
+access-control-allow-headers: Origin, Authorization, If-Modified-Since, Cache-Control, Content-Type
+access-control-allow-methods: OPTIONS, GET, POST, PUT, DELETE
+strict-transport-security: max-age=63072000; includeSubDomains; preload
+x-frame-options: DENY
+permissions-policy: interest-cohort=()
+cf-cache-status: BYPASS
+cf-ray: a58d8b635f3ef24f-GRU
+alt-svc: h3=":443"; ma=86400
+
+{"id":"lichess","username":"Lichess","perfs":{"bullet":{"games":0,"rating":1500,"rd":500,"prog":0,"prov":true},"blitz":{"games":0,"rating":1500,"rd":500,"prog":0,"prov":true},"rapid":{"games":0,"rating":1500,"rd":500,"prog":0,"prov":true},"classical":{"games":0,"rating":1500,"rd":500,"prog":0,"prov":true},"correspondence":{"games":0,"rating":1500,"rd":500,"prog":0,"prov":true}},"flair":"activity.lichess","patron":true,"patronColor":10,"verified":true,"createdAt":1290460176000,"profile":{"location":"Internet, Lichess.org","bio":"https://i.imgur.com/2HhZd2d.jpg","links":"www.youtube.com/channel/UCr6RfQga70yMM9-nuzAYTsA\r\ntwitch.tv/lichessdotorg\r\ndiscord.gg/lichess\r\nhttps://www.instagram.com/lichessdotorg/\r\nhttps://t.me/lichessdotorg"},"seenAt":1794402679680,"playTime":{"total":6,"tv":0},"url":"https://lichess.org/@/Lichess","count":{"all":0,"rated":0,"draw":0,"loss":0,"win":0,"bookmark":0,"playing":0,"import":2131096,"me":0}}

@@ -1,0 +1,27 @@
+# Resposta REAL gravada em 2026-11-11 com curl -i (User-Agent generico, sem autenticacao).
+# Perfil publico (exemplo da documentacao).
+# URL: https://api.chess.com/pub/player/erik
+HTTP/2 200 
+date: Wed, 11 Nov 2026 13:12:45 GMT
+content-type: application/json; charset=utf-8
+content-length: 469
+etag: W/"57e39a2c6dd767f48de54b863d675d8e"
+x-chesscom-matched: None
+last-modified: Wednesday, 11-Nov-2026 12:34:21 GMT+0000
+access-control-allow-origin: *
+cache-control: public, max-age=5
+expires: Wed, 11 Nov 2026 13:12:50
+x-chesscom-meta: lean=cached
+x-chesscom-request-id-lb: 058e176d8ca4f0c638535c5102082166
+x-chesscom-request-id-cdn: a58d54da19693570-IAD
+strict-transport-security: max-age=31536000; includeSubDomains
+x-chesscom-ingress-pool: k8s-prod-fpm-catch-all
+accept-ranges: bytes
+cf-cache-status: REVALIDATED
+link: <https://api.chess.com/context/Player.jsonld>; rel="http://www.w3.org/ns/json-ld#context"; type="application/ld+json"
+vary: accept-encoding
+server: cloudflare
+cf-ray: a58d8ce268c01595-GRU
+alt-svc: h3=":443"; ma=86400
+
+{"avatar":"https://images.chesscomfiles.com/uploads/v1/user/41.5434c4ff.200x200o.5b102889d835.jpeg","player_id":41,"@id":"https://api.chess.com/pub/player/erik","url":"https://www.chess.com/member/erik","name":"Erik","username":"erik","followers":9384,"country":"https://api.chess.com/pub/country/US","location":"Bay Area, CA","last_online":1794400461,"joined":1178556600,"status":"staff","is_streamer":false,"verified":false,"league":"Silver","streaming_platforms":[]}

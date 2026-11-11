@@ -27,7 +27,11 @@ fn the_bundled_catalog_is_the_exercises_directory() {
 #[test]
 fn every_kind_has_at_least_three_exercises() {
     let catalog = catalog();
-    for kind in ExerciseKind::ALL {
+    // `Tactic` só vem de pacote instalado; o catálogo de fábrica não tem nenhum.
+    for kind in ExerciseKind::ALL
+        .into_iter()
+        .filter(|k| *k != ExerciseKind::Tactic)
+    {
         let n = of_kind(&catalog, kind).len();
         assert!(n >= 3, "{kind:?} tem só {n} Exercício(s)");
     }
@@ -190,6 +194,9 @@ fn the_solution_does_what_the_kind_promises() {
             }
             ExerciseKind::MemoryPosition => {
                 assert!(first.is_none(), "{}: sem Lance", e.id);
+            }
+            ExerciseKind::Tactic => {
+                assert!(e.pack.is_some(), "{}: tática só vem de pacote", e.id);
             }
         }
     }

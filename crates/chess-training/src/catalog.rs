@@ -75,6 +75,7 @@ impl std::error::Error for CatalogError {}
 #[derive(Deserialize)]
 struct File {
     format: u32,
+    #[serde(default)]
     exercises: Vec<Exercise>,
 }
 
@@ -137,6 +138,36 @@ impl Catalog {
             catalog.add_file(&std::fs::read_to_string(path).map_err(io)?)?;
         }
         Ok(catalog)
+    }
+
+    /// Lê um pacote instalado: igual a [`Catalog::from_json`], mas marca cada Exercício
+    /// com o `pack` (a pertença vem do arquivo no disco, não do conteúdo).
+    pub fn from_pack_json(pack: &str, text: &str) -> Result<Self, CatalogError> {
+        let mut catalog = Self::from_json(text)?;
+        for exercise in &mut catalog.exercises {
+            exercise.pack = Some(pack.to_owned());
+        }
+        Ok(catalog)
+    }
+
+    /// Acrescenta os Exercícios de `other`; id repetido (entre os dois) é recusado e nada
+    /// é acrescentado.
+    pub fn extend(&mut self, other: Catalog) -> Result<(), CatalogError> {
+        if let Some(id) = self.clash_with(&other) {
+            return Err(CatalogError::DuplicateId(id));
+        }
+        self.exercises.extend(other.exercises);
+        Ok(())
+    }
+
+    /// Primeiro id de `other` que já existe neste catálogo.
+    pub(crate) fn clash_with(&self, other: &Catalog) -> Option<String> {
+        let known: HashSet<&str> = self.exercises.iter().map(|e| e.id.as_str()).collect();
+        other
+            .exercises
+            .iter()
+            .find(|e| known.contains(e.id.as_str()))
+            .map(|e| e.id.clone())
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &Exercise> {

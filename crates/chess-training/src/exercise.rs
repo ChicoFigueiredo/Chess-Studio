@@ -19,10 +19,12 @@ pub enum ExerciseKind {
     /// Memória de posição (C11): mostra a Posição, esvazia o tabuleiro e o usuário
     /// recoloca as peças.
     MemoryPosition,
+    /// Tática vinda de um pacote externo (problemas do Lichess): FEN + linha de Lances.
+    Tactic,
 }
 
 impl ExerciseKind {
-    pub const ALL: [ExerciseKind; 8] = [
+    pub const ALL: [ExerciseKind; 9] = [
         ExerciseKind::Stalemate,
         ExerciseKind::Mate,
         ExerciseKind::Check,
@@ -31,6 +33,7 @@ impl ExerciseKind {
         ExerciseKind::Promotion,
         ExerciseKind::Memory,
         ExerciseKind::MemoryPosition,
+        ExerciseKind::Tactic,
     ];
 
     /// Identificador estável (coluna `kind` do banco).
@@ -44,6 +47,7 @@ impl ExerciseKind {
             Self::Promotion => "promotion",
             Self::Memory => "memory",
             Self::MemoryPosition => "memory_position",
+            Self::Tactic => "tactic",
         }
     }
 }
@@ -96,6 +100,34 @@ pub struct Exercise {
     pub solution: Solution,
     pub explanation: String,
     pub version: u32,
+    /// Temas (Lichess: `mateIn2`, `fork`…). Vazio nos Exercícios de fábrica.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub themes: Vec<String>,
+    /// Dificuldade (rating do problema). `None` nos Exercícios de fábrica.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rating: Option<u32>,
+    /// Origem do Exercício; `None` é "de fábrica".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<Provenance>,
+    /// Pacote de Exercícios a que pertence; `None` é "de fábrica". Quem define é o
+    /// carregador de pacotes, não o arquivo.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pack: Option<String>,
+}
+
+/// Origem de um Exercício externo (GLOSSARY: Origem).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Provenance {
+    /// Provedor do dado (`lichess`).
+    pub provider: String,
+    /// Licença dos dados (`CC0-1.0`).
+    pub license: String,
+    /// Página de referência (a partida do problema).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// Identificador no Provedor (`PuzzleId`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_id: Option<String>,
 }
 
 /// Por que um Exercício não passa na validação do chess-core.

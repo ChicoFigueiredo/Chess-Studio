@@ -21,6 +21,25 @@ pub struct UpsertReport {
     pub kept: usize,
 }
 
+/// Pacote de Exercícios gravado (só os Exercícios visíveis contam).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackSummary {
+    pub pack: String,
+    pub exercises: usize,
+}
+
+/// O que [`Store::remove_pack`] fez.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RemovePackReport {
+    /// Exercícios sem Resolução: apagados de vez.
+    pub deleted: usize,
+    /// Exercícios com Resolução: ficam ocultos, para as Resoluções seguirem íntegras.
+    pub hidden: usize,
+}
+
+/// Valor da coluna `origin` dos Exercícios de fábrica.
+const ORIGIN_BUNDLED: &str = "bundled";
+
 /// Filtro de [`Store::list_runs`] e [`Store::metrics`]; o padrão lista tudo.
 #[derive(Debug, Clone, Default)]
 pub struct RunQuery {
@@ -47,21 +66,25 @@ impl Store {
         let tx = self.conn.transaction()?;
         let mut report = UpsertReport::default();
         for exercise in exercises {
-            let stored: Option<i64> = tx
+            let stored: Option<(i64, bool)> = tx
                 .query_row(
-                    "SELECT version FROM exercises WHERE slug = ?1",
+                    "SELECT version, hidden FROM exercises WHERE slug = ?1",
                     [&exercise.id],
-                    |r| r.get(0),
+                    |r| Ok((r.get(0)?, r.get(1)?)),
                 )
                 .optional()?;
+            let origin = exercise
+                .provenance
+                .as_ref()
+                .map_or(ORIGIN_BUNDLED, |o| o.provider.as_str());
             let definition = serde_json::to_string(exercise)?;
             let solution = serde_json::to_string(&exercise.solution)?;
             match stored {
                 None => {
                     tx.execute(
                         "INSERT INTO exercises (kind, initial_fen, solution_json, version,
-                                                created_at_ms, slug, definition_json)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                                                created_at_ms, slug, definition_json, origin, pack)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                         params![
                             exercise.kind.as_str(),
                             exercise.fen,
@@ -69,15 +92,18 @@ impl Store {
                             exercise.version,
                             now,
                             exercise.id,
-                            definition
+                            definition,
+                            origin,
+                            exercise.pack
                         ],
                     )?;
                     report.inserted += 1;
                 }
-                Some(version) if i64::from(exercise.version) > version => {
+                Some((version, hidden)) if i64::from(exercise.version) > version => {
                     tx.execute(
                         "UPDATE exercises SET kind = ?2, initial_fen = ?3, solution_json = ?4,
-                                version = ?5, definition_json = ?6
+                                version = ?5, definition_json = ?6, origin = ?7, pack = ?8,
+                                hidden = 0
                          WHERE slug = ?1",
                         params![
                             exercise.id,
@@ -85,8 +111,19 @@ impl Store {
                             exercise.fen,
                             solution,
                             exercise.version,
-                            definition
+                            definition,
+                            origin,
+                            exercise.pack
                         ],
+                    )?;
+                    let _ = hidden;
+                    report.updated += 1;
+                }
+                // Pacote reinstalado: o Exercício oculto volta (com as Resoluções antigas).
+                Some((_, true)) => {
+                    tx.execute(
+                        "UPDATE exercises SET hidden = 0, origin = ?2, pack = ?3 WHERE slug = ?1",
+                        params![exercise.id, origin, exercise.pack],
                     )?;
                     report.updated += 1;
                 }
@@ -101,7 +138,8 @@ impl Store {
     /// definição ficam de fora).
     pub fn list_exercises(&self) -> Result<Vec<Exercise>> {
         let mut stmt = self.conn.prepare(
-            "SELECT definition_json FROM exercises WHERE definition_json != '{}' ORDER BY id",
+            "SELECT definition_json FROM exercises
+             WHERE definition_json != '{}' AND hidden = 0 ORDER BY id",
         )?;
         let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
         let mut out = Vec::new();
@@ -111,6 +149,52 @@ impl Store {
             }
         }
         Ok(out)
+    }
+
+    /// Origem gravada do Exercício: `bundled` (de fábrica) ou o Provedor (`lichess`).
+    pub fn exercise_origin(&self, slug: &str) -> Result<Option<String>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT origin FROM exercises WHERE slug = ?1",
+                [slug],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
+    /// Pacotes com Exercícios visíveis, em ordem de nome.
+    pub fn packs(&self) -> Result<Vec<PackSummary>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT pack, COUNT(*) FROM exercises
+             WHERE pack IS NOT NULL AND hidden = 0 GROUP BY pack ORDER BY pack",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(PackSummary {
+                pack: r.get(0)?,
+                exercises: usize::try_from(r.get::<_, i64>(1)?).unwrap_or(0),
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<_, _>>()?)
+    }
+
+    /// Remove os Exercícios do pacote (e só os dele). Regra das Resoluções: o Exercício
+    /// **sem** Resolução é apagado; o que **tem** Resolução fica oculto (some das listas e
+    /// não pode ser resolvido), e as Resoluções continuam no histórico e nas métricas.
+    /// Reinstalar o pacote traz o Exercício de volta com o histórico.
+    pub fn remove_pack(&mut self, pack: &str) -> Result<RemovePackReport> {
+        let tx = self.conn.transaction()?;
+        let hidden = tx.execute(
+            "UPDATE exercises SET hidden = 1
+             WHERE pack = ?1 AND EXISTS (SELECT 1 FROM exercise_runs r WHERE r.exercise_id = exercises.id)",
+            [pack],
+        )?;
+        let deleted = tx.execute(
+            "DELETE FROM exercises WHERE pack = ?1 AND hidden = 0",
+            [pack],
+        )?;
+        tx.commit()?;
+        Ok(RemovePackReport { deleted, hidden })
     }
 
     /// Abre uma Resolução (ainda não encerrada: fica fora das listagens e métricas).
@@ -124,7 +208,7 @@ impl Store {
         let exercise: i64 = self
             .conn
             .query_row(
-                "SELECT id FROM exercises WHERE slug = ?1",
+                "SELECT id FROM exercises WHERE slug = ?1 AND hidden = 0",
                 [exercise_id],
                 |r| r.get(0),
             )

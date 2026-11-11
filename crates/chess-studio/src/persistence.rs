@@ -156,6 +156,8 @@ pub struct Restored {
 #[derive(Debug)]
 pub struct Persistence {
     store: Store,
+    /// Pasta do banco: os pacotes de Exercícios ficam ao lado dele, por Perfil local.
+    data_dir: Option<PathBuf>,
     profile: ProfileId,
     current: Option<GameId>,
     /// Quantos Eventos da Partida atual já estão gravados.
@@ -217,7 +219,17 @@ impl Persistence {
             // Falha aqui reaparece como erro do SQLite ao abrir o arquivo.
             let _ = std::fs::create_dir_all(parent);
         }
-        Ok(Self::new(Store::open(path)?))
+        let mut persistence = Self::new(Store::open(path)?);
+        persistence.data_dir = path.parent().map(Path::to_path_buf);
+        Ok(persistence)
+    }
+
+    /// Pasta dos pacotes de Exercícios do Perfil local atual (`<dados>/exercise-packs/<id>`);
+    /// `None` sem banco em disco.
+    pub(crate) fn exercise_packs_dir(&self) -> Option<PathBuf> {
+        self.data_dir
+            .as_ref()
+            .map(|d| d.join("exercise-packs").join(self.profile.0.to_string()))
     }
 
     pub fn new(store: Store) -> Self {
@@ -225,6 +237,7 @@ impl Persistence {
         let profile = store.active_profile().unwrap_or(ProfileId(1));
         Self {
             store,
+            data_dir: None,
             profile,
             current: None,
             persisted: 0,

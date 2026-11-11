@@ -21,6 +21,7 @@ chess-uci = { path = "crates/chess-uci" }
 chess-net = { path = "crates/chess-net" }
 chess-training = { path = "crates/chess-training" }
 chess-openings = { path = "crates/chess-openings" }
+chess-providers = { path = "crates/chess-providers" }
 
 # Regras de xadrez (MIT) — sempre atrás da API própria de chess-core.
 cozy-chess = "0.3"

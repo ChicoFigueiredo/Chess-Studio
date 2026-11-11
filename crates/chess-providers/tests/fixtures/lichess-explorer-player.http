@@ -1,0 +1,8 @@
+# Resposta SINTETICA no formato NDJSON do Explorador de jogador (/player): resultados parciais cada vez melhores.
+# NAO e real: o servico exigia autenticacao em 2026-11-11. A linha em branco e um heartbeat.
+HTTP/2 200
+content-type: application/x-ndjson
+
+{"white":3,"draws":1,"black":2,"moves":[{"uci":"e7e5","san":"e5","white":2,"draws":1,"black":1,"averageOpponentRating":1700,"performance":1720}],"recentGames":[],"opening":{"eco":"B00","name":"King's Pawn"},"queuePosition":4}
+
+{"white":30,"draws":10,"black":20,"moves":[{"uci":"e7e5","san":"e5","white":20,"draws":8,"black":10,"averageOpponentRating":1710,"performance":1730},{"uci":"c7c5","san":"c5","white":10,"draws":2,"black":10,"averageOpponentRating":1690,"performance":1650}],"recentGames":[{"uci":"e7e5","id":"ZzYyXxWw","winner":"white","speed":"rapid","white":{"name":"alguem","rating":1750},"black":{"name":"outro","rating":1700},"year":2026,"month":"2026-10"}],"opening":{"eco":"B00","name":"King's Pawn"}}

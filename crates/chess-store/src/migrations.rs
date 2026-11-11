@@ -361,10 +361,16 @@ CREATE INDEX imported_game_origins_game ON imported_game_origins (game_id);
 CREATE INDEX imported_game_origins_provider ON imported_game_origins (provider);
 ";
 
-/// Versão 14: reservada aos Exercícios externos (#217, PR #218, ainda em revisão). Fica como
-/// no-op aqui para que a versão 15 nasça com o número certo; ao mesclar as duas, esta constante
-/// recebe o SQL do #218 **antes** de qualquer banco chegar à 15 (veja o PR da Central).
-const V14_RESERVED_EXTERNAL_EXERCISES: &str = "SELECT 1;";
+// Pacotes de Exercícios externos (CX-5, #217): Origem (`bundled` ou o Provedor, ex.:
+// `lichess`), pacote a que o Exercício pertence e marca de oculto. Um Exercício de pacote
+// removido que já tem Resolução fica oculto (`hidden = 1`) para a Resolução, que referencia
+// `exercises(id)` com ON DELETE CASCADE, não ser apagada junto.
+const V14_EXERCISE_PACKS: &str = "
+ALTER TABLE exercises ADD COLUMN origin TEXT NOT NULL DEFAULT 'bundled';
+ALTER TABLE exercises ADD COLUMN pack TEXT;
+ALTER TABLE exercises ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1));
+CREATE INDEX exercises_pack ON exercises (pack) WHERE pack IS NOT NULL;
+";
 
 /// Versão 15: Conexões por nome ou ID público (CX-3, #214). Uma linha vincula um Perfil local a
 /// um Provedor (a chave do catálogo de `chess-net`); pode haver várias por Provedor, com
@@ -404,7 +410,7 @@ const MIGRATIONS: &[&str] = &[
     V11_SCORESHEET_CHECK,
     V12_OPENING_EXPLORER,
     V13_IMPORT_ORIGIN,
-    V14_RESERVED_EXTERNAL_EXERCISES,
+    V14_EXERCISE_PACKS,
     V15_CONNECTIONS,
 ];
 

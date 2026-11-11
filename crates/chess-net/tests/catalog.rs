@@ -2,7 +2,7 @@
 //! pedido de senha onde não há protocolo aprovado, gratuitos primeiro e variantes recusadas.
 
 use chess_net::{
-    AuthMethod, CATALOG_VERSION, Capability, ProviderId, ServiceStatus, catalog, provider,
+    AuthMethod, CATALOG_VERSION, Capability, Cost, ProviderId, ServiceStatus, catalog, provider,
 };
 use std::collections::HashSet;
 
@@ -218,4 +218,38 @@ fn only_standard_chess_is_accepted_and_offered_variants_are_refused_by_name() {
     }
     assert!(provider(ProviderId::Lichess).accepts_variant("standard"));
     assert!(!provider(ProviderId::Lichess).accepts_variant("chess960"));
+}
+
+#[test]
+fn the_real_tablebase_host_is_in_the_catalog_as_exact_endgames() {
+    let request = chess_net::Request::get(
+        ProviderId::Lichess,
+        "https://tablebase.lichess.ovh/standard",
+    );
+    let capability = request.capability().expect("no catálogo");
+    assert_eq!(capability, Capability::Endgames);
+    assert!(
+        capability.computes(),
+        "finais calculam: a Trava os bloqueia"
+    );
+    let endpoint = provider(ProviderId::Lichess)
+        .endpoints
+        .iter()
+        .find(|e| e.host == "tablebase.lichess.ovh")
+        .expect("endpoint");
+    assert!(endpoint.license.contains("Lichess"));
+}
+
+#[test]
+fn the_lichess_explorer_is_free_with_signup_and_says_it_needs_an_authorized_connection() {
+    // Medido em 2026-11-11: sem token o Explorador do Lichess responde 401.
+    let explore = provider(ProviderId::Lichess)
+        .service(Capability::Explore)
+        .expect("Explorador listado");
+    assert_eq!(explore.cost, Cost::FreeWithSignup);
+    assert!(
+        explore
+            .note
+            .contains("Conexão autorizada do Lichess (etapa 3)")
+    );
 }
