@@ -1985,6 +1985,7 @@ dependencies = [
  "chess-game",
  "miniz_oxide 0.9.1",
  "pdf-writer",
+ "ruzstd",
  "serde",
  "serde_json",
  "subsetter",

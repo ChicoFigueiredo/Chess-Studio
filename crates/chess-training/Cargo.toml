@@ -13,6 +13,7 @@ chess-core.workspace = true
 chess-game.workspace = true
 miniz_oxide = "0.9.1"
 pdf-writer = "0.15.0"
+ruzstd = "0.9.1"
 serde.workspace = true
 serde_json.workspace = true
 subsetter = "0.2.6"
