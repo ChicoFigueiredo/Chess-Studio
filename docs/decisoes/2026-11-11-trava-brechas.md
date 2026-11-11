@@ -15,3 +15,4 @@ A auditoria final do V4 (#258) achou três caminhos do app que calculam sem pass
 - Com uma Partida por correspondência **no tabuleiro** (sessão aberta, trava da rede ligada), "Contra a Engine" fica recusado até o jogador sair dela; ao sair, a sessão fecha (PO-17) e vale a trava por Posição.
 - A Engine online que estava jogando quando a Trava ligou abandona cada Partida no próximo Lance que lhe caberia. A tela conta "A Engine falhou e a Partida foi abandonada" (o motivo vai no detalhe); recusas de desafio e Partidas abertas sob a Trava aparecem com texto próprio.
 - Sem o recurso `FairPlay` (apps parciais de teste) nada que calcula sai: a Engine adversária não joga e a busca por Posição não responde.
+- A Partida da Engine online mostrada no tabuleiro (#271) não pode contar como Partida competitiva em andamento (`hud_policy`): se contar, a trava competitiva liga e, por FP-04, a Engine online recusa as próprias buscas.
