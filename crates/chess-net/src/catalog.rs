@@ -22,7 +22,7 @@ use std::fmt;
 use std::time::Duration;
 
 /// Versão dos dados do catálogo; gravada junto do consentimento.
-pub const CATALOG_VERSION: u32 = 2;
+pub const CATALOG_VERSION: u32 = 3;
 
 /// Provedor do catálogo. A chave ([`ProviderId::key`]) é o que se grava no banco e na Origem.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -814,7 +814,7 @@ static CATALOG: [Provider; 19] = [
                 &[A::None, A::PublicId],
                 K::FreeNoSignup,
                 S::Planned { stage: 5 },
-                "Exportação de Partidas públicas",
+                "Perfil e exportação de Partidas públicas",
             ),
         ],
         endpoints: &[
@@ -822,6 +822,32 @@ static CATALOG: [Provider; 19] = [
                 "playstrategy.org",
                 "/api/stream/event",
                 C::Play,
+                "Termos do PlayStrategy",
+            ),
+            // Mesma família de API do Lichess (#234): conta, desafios, troca e revogação do
+            // token. Não há Explorador, avaliação em cache nem finais no PlayStrategy.
+            authed(
+                "playstrategy.org",
+                "/api/account",
+                C::Play,
+                "Termos do PlayStrategy",
+            ),
+            authed(
+                "playstrategy.org",
+                "/api/challenge/",
+                C::Play,
+                "Termos do PlayStrategy",
+            ),
+            authed(
+                "playstrategy.org",
+                "/api/token",
+                C::Query,
+                "Termos do PlayStrategy",
+            ),
+            at(
+                "playstrategy.org",
+                "/api/user/",
+                C::Query,
                 "Termos do PlayStrategy",
             ),
             authed(
@@ -848,7 +874,8 @@ static CATALOG: [Provider; 19] = [
         data_license: "Termos do PlayStrategy",
         restrictions: &[
             "Uma requisição por vez; depois de 429, esperar um minuto",
-            "Adaptador próprio, não só trocar o host do Lichess",
+            "Só xadrez padrão: as demais variantes (damas, shogi, xiangqi…) são recusadas",
+            "Perfil de Provedor sobre os clientes da família do Lichess, com testes de contrato próprios",
         ],
         variants: Variants {
             standard: &["standard", "fromPosition"],
@@ -889,7 +916,7 @@ static CATALOG: [Provider; 19] = [
             S::Planned { stage: 5 },
             "Protocolo ICS (não HTTP); visitante primeiro; senha só com transporte seguro comprovado (CX-18)",
         )],
-        // ICS não passa pelo cliente HTTP: o adaptador da etapa 5 terá o seu transporte.
+        // ICS não passa pelo cliente HTTP: o endereço ICS está em `crate::ics_endpoints`.
         endpoints: &[],
         docs_url: "https://www.freechess.org/interfaces.html",
         terms_url: "https://www.freechess.org/",
@@ -1010,7 +1037,8 @@ static CATALOG: [Provider; 19] = [
             &[A::None],
             K::FreeLimited,
             S::Planned { stage: 3 },
-            "Stockfish remoto; profundidade e variantes limitadas; sem SLA",
+            "Stockfish remoto; profundidade 18 e 100 ms de pensar no acesso comum; sem SLA; \
+             sem chave (conferido por consulta de leitura em 2026-11-11)",
         )],
         endpoints: &[at(
             "chess-api.com",

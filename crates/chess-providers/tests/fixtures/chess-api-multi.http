@@ -1,0 +1,5 @@
+# Resposta SINTETICA: varias variantes (variants=2) como uma lista de objetos no formato real; o formato com varias variantes nao foi gravado do servico real. Nao gravada do servico real.
+HTTP/2 200
+content-type: application/json; charset=utf-8
+
+[{"type":"move","move":"e2e4","lan":"e2e4","depth":12,"eval":0.33,"centipawns":33,"mate":null,"continuationArr":["e7e5","g1f3","a1a1","b8c6"]},{"type":"move","move":"d2d4","lan":"d2d4","depth":12,"eval":0.28,"centipawns":"28","mate":null,"continuationArr":["d7d5"]},{"type":"info","text":"andamento"}]

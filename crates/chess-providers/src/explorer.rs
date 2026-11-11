@@ -295,6 +295,9 @@ impl Lichess {
     /// Corpus de mestres (partidas de torneios de elite) na Posição `fen`. Validade do cache:
     /// [`ttl::MASTERS`].
     pub fn masters(&self, fen: &str, filter: &MastersFilter) -> Query<ExplorerPosition> {
+        if self.profile.explorer_host.is_none() {
+            return Query::failed(self.not_offered("o Explorador de aberturas"));
+        }
         let mut request = self
             .explorer_request("/masters")
             .position("fen", fen)
@@ -317,6 +320,9 @@ impl Lichess {
     /// Todas as Partidas do Lichess na Posição `fen`, por ritmo e faixa de rating. Validade do
     /// cache: [`ttl::LICHESS_EXPLORER`].
     pub fn explorer(&self, fen: &str, filter: &LichessFilter) -> Query<ExplorerPosition> {
+        if self.profile.explorer_host.is_none() {
+            return Query::failed(self.not_offered("o Explorador de aberturas"));
+        }
         if let Some(bad) = filter.ratings.iter().find(|r| !RATING_BANDS.contains(r)) {
             return Query::failed(ProviderError::invalid(format!(
                 "faixa de rating {bad} não existe no Explorador (use {RATING_BANDS:?})"
@@ -362,6 +368,12 @@ impl Lichess {
         color: Color,
         filter: &PlayerFilter,
     ) -> ExplorerStream {
+        if self.profile.explorer_host.is_none() {
+            return ExplorerStream::failed(
+                self.not_offered("o Explorador de aberturas"),
+                self.provenance(),
+            );
+        }
         let name = match crate::answer::valid_name(player) {
             Ok(name) => name,
             Err(e) => return ExplorerStream::failed(e, self.provenance()),
