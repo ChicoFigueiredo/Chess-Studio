@@ -340,10 +340,22 @@ fn install_exercises(dir: &Path, profile: ProfileId) -> Result<(), String> {
 // --- Conexões fictícias, todas desligadas ---------------------------------------------------
 
 /// Nomes públicos fictícios por Provedor. Sem segredo, sem autorização, Provedor desligado.
-const CONNECTIONS: [(&str, &str, &str); 3] = [
-    ("lichess", "usuario_demo", "Minha conta de exemplo"),
-    ("chess-com", "usuario_demo", "Minha conta de exemplo"),
-    ("playstrategy", "usuario_demo", "Minha conta de exemplo"),
+const CONNECTIONS: [(ImportSource, &str, &str); 3] = [
+    (
+        ImportSource::Lichess,
+        "usuario_demo",
+        "Minha conta de exemplo",
+    ),
+    (
+        ImportSource::ChessCom,
+        "usuario_demo",
+        "Minha conta de exemplo",
+    ),
+    (
+        ImportSource::PlayStrategy,
+        "usuario_demo",
+        "Minha conta de exemplo",
+    ),
 ];
 
 // --- Cache do Explorador --------------------------------------------------------------------
@@ -418,8 +430,12 @@ fn populate(dir: &Path) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
     for (provider, identifier, nickname) in CONNECTIONS {
-        let connection =
-            NewConnection::new(provider, ConnectionKind::PublicName, identifier).nickname(nickname);
+        let connection = NewConnection::new(
+            provider.provider_id(),
+            ConnectionKind::PublicName,
+            identifier,
+        )
+        .nickname(nickname);
         store
             .add_connection(profile, &connection)
             .map_err(|e| e.to_string())?;
@@ -479,17 +495,19 @@ mod tests {
         providers.sort();
         providers.dedup();
         for wanted in [
-            "lichess",
-            "chess-com",
-            "playstrategy",
-            "twic",
-            "chessbase",
-            "pgn-mentor",
-            "queen-alice",
+            ImportSource::Lichess,
+            ImportSource::ChessCom,
+            ImportSource::PlayStrategy,
+            ImportSource::Twic,
+            ImportSource::ChessBase,
+            ImportSource::PgnMentor,
+            ImportSource::QueenAlice,
         ] {
             assert!(
-                providers.iter().any(|p| p.as_deref() == Some(wanted)),
-                "falta a Origem {wanted}: {providers:?}"
+                providers
+                    .iter()
+                    .any(|p| p.as_deref() == Some(wanted.provider_id())),
+                "falta a Origem {wanted:?}: {providers:?}"
             );
         }
 
