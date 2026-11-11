@@ -238,7 +238,7 @@ pub(crate) fn parse_line(line: &str) -> Message {
     }
     if let Some(rest) = line.strip_prefix("You are now observing game ") {
         return number(rest.trim_end_matches('.'))
-            .map_or(Message::Other, |n| Message::ObservationStarted(n));
+            .map_or(Message::Other, Message::ObservationStarted);
     }
     if let Some(rest) = line.strip_prefix("Removing game ") {
         return rest
