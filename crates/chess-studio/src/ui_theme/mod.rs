@@ -12,6 +12,8 @@ mod tokens;
 mod widgets;
 
 pub use appearance::{Appearance, Density, ThemeMode, UiScale, resolve_theme};
+#[cfg(test)]
+pub(crate) use fonts::definitions as font_definitions;
 pub use gallery::GalleryMode;
 pub use tokens::{Palette, ThemeKind, Tokens};
 // Os widgets são a API do tema para os próximos tickets (Ribbon, Opções): o app ainda não usa todos.

@@ -580,37 +580,23 @@ pub fn profiles_section(
     profiles: &mut InterfaceProfiles,
 ) {
     let mut chosen: Option<ProfileKey> = None;
-    egui::ComboBox::from_id_salt("interface-profile")
-        .selected_text(profiles.active_label(i18n))
-        .show_ui(ui, |ui| {
-            for f in FactoryProfile::ALL {
-                let key = ProfileKey::Factory(f);
-                if ui
-                    .selectable_label(profiles.state.active == key, i18n.t(f.label_key()))
-                    .clicked()
-                {
-                    chosen = Some(key);
-                }
-            }
-            for u in &profiles.state.user {
-                let key = ProfileKey::User(u.name.clone());
-                if ui
-                    .selectable_label(profiles.state.active == key, &u.name)
-                    .clicked()
-                {
-                    chosen = Some(key);
-                }
-            }
-            if ui
-                .selectable_label(
-                    profiles.state.active == ProfileKey::Custom,
-                    i18n.t("iprofile-custom"),
-                )
+    // Cartões de escolha (Backstage): o perfil ativo em `accent-subtle` com contorno `accent`.
+    ui.horizontal_wrapped(|ui| {
+        let mut card = |ui: &mut egui::Ui, key: ProfileKey, label: &str| {
+            if crate::ui_theme::cs_choice_card(ui, profiles.state.active == key, label, None)
                 .clicked()
             {
-                chosen = Some(ProfileKey::Custom);
+                chosen = Some(key);
             }
-        });
+        };
+        for f in FactoryProfile::ALL {
+            card(ui, ProfileKey::Factory(f), &i18n.t(f.label_key()));
+        }
+        for u in &profiles.state.user {
+            card(ui, ProfileKey::User(u.name.clone()), &u.name);
+        }
+        card(ui, ProfileKey::Custom, &i18n.t("iprofile-custom"));
+    });
     let active = profiles.state.active.clone();
     ui.horizontal_wrapped(|ui| {
         if ui

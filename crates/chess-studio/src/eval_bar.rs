@@ -262,13 +262,10 @@ fn eval_bar_ui(
                 egui::Stroke::new(1.0, p.border_strong),
                 egui::StrokeKind::Outside,
             );
-            painter.text(
-                egui::pos2(bar.center().x, bar.max.y + 4.0),
-                egui::Align2::CENTER_TOP,
-                label,
-                font,
-                p.ink,
-            );
+            // Números tabulares: o valor não muda de largura a cada atualização.
+            let run = crate::ui_theme::Tabular::new(painter, label, &font, p.ink);
+            let top_left = egui::pos2(bar.center().x - run.size.x / 2.0, bar.max.y + 4.0);
+            run.paint(painter, top_left, p.ink);
         });
     Ok(())
 }

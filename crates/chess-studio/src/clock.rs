@@ -750,11 +750,22 @@ pub fn clock_tone(ms: u64) -> ClockTone {
     }
 }
 
-/// Um lado do relógio (ChessClock): nome e tempo em 32px com números tabulares (fonte
-/// monoespaçada). O lado que joga ganha o contorno `accent` e um traço à esquerda.
+/// Marca do lado na linha do nome (ChessClock): a coroa para as Brancas e o cavalo para as
+/// Pretas. É a única marca de xadrez da interface; as peças são do tabuleiro.
+pub fn side_mark(side: Side) -> &'static str {
+    match side {
+        Side::White => egui_phosphor::regular::CROWN,
+        Side::Black => egui_phosphor::regular::HORSE,
+    }
+}
+
+/// Um lado do relógio (ChessClock): marca do lado e nome na mesma linha, tempo em 32px com
+/// números tabulares (cada dígito com a mesma largura, `tabular_text`). O lado que joga ganha o
+/// contorno `accent` e um traço à esquerda.
 fn clock_card(
     ui: &mut egui::Ui,
     p: &crate::ui_theme::Palette,
+    mark: &str,
     name: &str,
     time: &str,
     running: bool,
@@ -780,18 +791,17 @@ fn clock_card(
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                let label = egui::RichText::new(name).size(14.0).color(if running {
-                    p.ink
-                } else {
-                    p.ink_muted
-                });
-                ui.label(label);
+                let ink = if running { p.ink } else { p.ink_muted };
+                ui.label(crate::ui_theme::icon_job(
+                    ui.ctx(),
+                    Some(mark),
+                    name,
+                    egui::FontId::proportional(14.0),
+                    ink,
+                ));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(
-                        egui::RichText::new(time)
-                            .font(egui::FontId::new(32.0, egui::FontFamily::Monospace))
-                            .color(digits),
-                    );
+                    let font = crate::ui_theme::strong_font(ui.ctx(), 32.0);
+                    crate::ui_theme::tabular_text(ui, time, font, digits);
                 });
             });
         })
@@ -832,7 +842,15 @@ fn clock_panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
             Side::White => "clock-white",
             Side::Black => "clock-black",
         });
-        clock_card(ui, p, &name, &clock_text(ms), running, clock_tone(ms));
+        clock_card(
+            ui,
+            p,
+            side_mark(side),
+            &name,
+            &clock_text(ms),
+            running,
+            clock_tone(ms),
+        );
         ui.add_space(crate::panel_chrome::token("space-2", 8.0));
     }
     if let Some(time) = session.config().time {

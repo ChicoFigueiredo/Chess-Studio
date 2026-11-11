@@ -25,6 +25,18 @@ enum Show {
 pub struct GalleryMode {
     show: Show,
     demo: Demo,
+    /// Rolagem vertical inicial, uma vez (`--gallery-scroll`, para as capturas de evidência).
+    scroll: Option<f32>,
+}
+
+impl GalleryMode {
+    /// Abre a galeria já rolada `pixels` para baixo.
+    pub fn scrolled(pixels: f32) -> Self {
+        Self {
+            scroll: Some(pixels),
+            ..Self::default()
+        }
+    }
 }
 
 /// Estado dos widgets de demonstração (compartilhado entre os quatro painéis).
@@ -37,6 +49,7 @@ struct Demo {
     hud: bool,
     policy: u8,
     quality: u8,
+    card: u8,
     name: String,
     seconds: f32,
 }
@@ -51,6 +64,7 @@ impl Default for Demo {
             hud: false,
             policy: 0,
             quality: 1,
+            card: 0,
             name: String::new(),
             seconds: 5.0,
         }
@@ -84,7 +98,11 @@ pub fn gallery_window(
         .show(ctx, |ui| {
             controls(ui, &mut gallery, &mut appearance, &i18n);
             ui.separator();
-            egui::ScrollArea::both().auto_shrink(false).show(ui, |ui| {
+            let mut area = egui::ScrollArea::both().auto_shrink(false);
+            if let Some(offset) = gallery.scroll.take() {
+                area = area.vertical_scroll_offset(offset);
+            }
+            area.show(ui, |ui| {
                 panels(ui, &mut gallery, &i18n);
             });
         });
@@ -255,6 +273,19 @@ fn widgets_demo(ui: &mut egui::Ui, p: &Palette, demo: &mut Demo, i18n: &I18n) {
     );
     cs_switch(ui, &mut demo.highlight, &i18n.t("gallery-switch-highlight"));
 
+    section(ui, p, i18n.t("gallery-section-disabled"));
+    ui.add_enabled_ui(false, |ui| {
+        ui.horizontal(|ui| {
+            ui.add(CsButton::new(&i18n.t("gallery-disabled-toggle")).toggled(true));
+            ui.add(CsButton::new(&i18n.t("gallery-toggle-2d")).toggled(false));
+        });
+        let (mut on, mut off) = (true, false);
+        cs_switch(ui, &mut on, &i18n.t("gallery-disabled-switch-on"));
+        cs_switch(ui, &mut off, &i18n.t("gallery-disabled-switch-off"));
+        cs_checkbox(ui, &mut on, &i18n.t("gallery-disabled-check-on"));
+        cs_checkbox(ui, &mut off, &i18n.t("gallery-disabled-check-off"));
+    });
+
     section(ui, p, i18n.t("gallery-section-selection"));
     let mut all = demo.all_aids();
     if cs_checkbox_tri(ui, &mut all, &i18n.t("gallery-check-all")).changed() {
@@ -300,6 +331,32 @@ fn widgets_demo(ui: &mut egui::Ui, p: &Palette, demo: &mut Demo, i18n: &I18n) {
         &[("seconds", &format!("{:.0}", demo.seconds))],
     ));
     cs_slider(ui, &mut demo.seconds, 1.0..=30.0, 1.0);
+
+    section(ui, p, i18n.t("gallery-section-cards"));
+    ui.horizontal_wrapped(|ui| {
+        for (i, (title, detail)) in [
+            ("gallery-card-engine", "gallery-card-engine-detail"),
+            ("gallery-card-two", "gallery-card-two-detail"),
+            ("gallery-card-resume", "gallery-card-resume-detail"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let chosen = demo.card == i as u8;
+            if cs_choice_card(ui, chosen, &i18n.t(title), Some(&i18n.t(detail))).clicked() {
+                demo.card = i as u8;
+            }
+        }
+    });
+
+    section(ui, p, i18n.t("gallery-section-numbers"));
+    ui.horizontal(|ui| {
+        let font = strong_font(ui.ctx(), 32.0);
+        for text in ["11:11", "00:48", "88:08"] {
+            tabular_text(ui, text, font.clone(), p.ink);
+            ui.add_space(12.0);
+        }
+    });
 
     section(ui, p, i18n.t("gallery-section-tooltip"));
     ui.horizontal_top(|ui| {

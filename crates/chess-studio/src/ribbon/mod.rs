@@ -88,7 +88,18 @@ impl RibbonState {
 #[derive(Debug, Default, Clone)]
 pub struct Registered {
     pub tabs: Vec<(RibbonView, egui::Rect)>,
-    pub actions: Vec<(Action, egui::Rect)>,
+    pub actions: Vec<(Action, egui::Rect, KeyTipSpot)>,
+}
+
+/// Onde o selo do KeyTip fica em relação ao item (`KeyTips.md`): nunca cobre o rótulo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyTipSpot {
+    /// Botão grande: sobre o ícone.
+    BigIcon,
+    /// Botão pequeno e caixa de seleção: sobre o ícone ou a caixa, à esquerda.
+    Leading,
+    /// Botão só de ícone: preso à borda de baixo.
+    Below,
 }
 
 /// Estado do Ribbon. O modo, o recolhido, a aba ativa e a Barra de Acesso Rápido entram no

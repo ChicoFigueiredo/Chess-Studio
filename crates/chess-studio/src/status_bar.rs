@@ -303,7 +303,10 @@ fn status_bar(
                 ui.label(&text.view);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = 16.0;
-                    let scale = ui.label(&text.scale);
+                    // Números tabulares: FPS e Escala não empurram os vizinhos ao mudar.
+                    let font = egui::TextStyle::Body.resolve(ui.style());
+                    let ink = ui.visuals().text_color();
+                    let scale = crate::ui_theme::tabular_text(ui, &text.scale, font.clone(), ink);
                     scale.context_menu(|ui| {
                         if ui
                             .checkbox(&mut prefs.show_fps, i18n.t("statusbar-show-fps"))
@@ -313,7 +316,7 @@ fn status_bar(
                         }
                     });
                     if let Some(fps) = &text.fps {
-                        ui.label(fps);
+                        crate::ui_theme::tabular_text(ui, fps, font, ink);
                     }
                     for warning in &text.warnings {
                         ui.label(

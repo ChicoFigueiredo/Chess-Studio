@@ -326,8 +326,13 @@ pub fn ui_with_notes(
                 .spacing([4.0, 2.0])
                 .show(ui, |ui| {
                     for row in rows(&snapshot.history, first_number) {
-                        ui.label(
-                            egui::RichText::new(format!("{}.", row.number)).color(p.ink_muted),
+                        // Números tabulares: a coluna não muda de largura entre 9. e 10.
+                        let font = egui::TextStyle::Body.resolve(ui.style());
+                        crate::ui_theme::tabular_text(
+                            ui,
+                            &format!("{}.", row.number),
+                            font,
+                            p.ink_muted,
                         );
                         for (cell, gap) in [(&row.white, row.white.is_none()), (&row.black, false)]
                         {
