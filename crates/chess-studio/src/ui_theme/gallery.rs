@@ -50,6 +50,7 @@ struct Demo {
     policy: u8,
     quality: u8,
     card: u8,
+    details: bool,
     name: String,
     seconds: f32,
 }
@@ -65,6 +66,7 @@ impl Default for Demo {
             policy: 0,
             quality: 1,
             card: 0,
+            details: false,
             name: String::new(),
             seconds: 5.0,
         }
@@ -348,6 +350,72 @@ fn widgets_demo(ui: &mut egui::Ui, p: &Palette, demo: &mut Demo, i18n: &I18n) {
                 demo.card = i as u8;
             }
         }
+    });
+
+    section(ui, p, i18n.t("gallery-section-states"));
+    ui.horizontal_wrapped(|ui| {
+        for (tone, glyph, key) in [
+            (StatusTone::Neutral, icon::POWER, "gallery-state-off"),
+            (
+                StatusTone::Success,
+                icon::LINK_SIMPLE,
+                "gallery-state-linked",
+            ),
+            (
+                StatusTone::Info,
+                icon::FILE_ARROW_DOWN,
+                "gallery-state-manual",
+            ),
+            (StatusTone::Warning, icon::TIMER, "gallery-state-limited"),
+            (
+                StatusTone::Danger,
+                icon::WARNING_CIRCLE,
+                "gallery-state-failing",
+            ),
+            (StatusTone::Accent, "", "gallery-state-default"),
+        ] {
+            cs_status_badge(ui, tone, glyph, &i18n.t(key));
+        }
+    });
+
+    section(ui, p, i18n.t("gallery-section-surfaces"));
+    cs_card_frame(p, CardEmphasis::Full).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.label(strong(ui.ctx(), i18n.t("gallery-surface-title")));
+        ui.label(egui::RichText::new(i18n.t("gallery-surface-body")).color(p.ink_muted));
+        ui.horizontal(|ui| {
+            cs_disclosure(
+                ui,
+                &mut demo.details,
+                &i18n.t("gallery-surface-details"),
+                &i18n.t("gallery-surface-details-hint"),
+            );
+            cs_overflow_menu(
+                ui,
+                egui::Id::new("gallery-overflow"),
+                &i18n.t("gallery-surface-more"),
+                &[
+                    MenuItem::new(&i18n.t("gallery-surface-item-clear")).icon(icon::BROOM),
+                    MenuItem::new(&i18n.t("gallery-surface-item-soon"))
+                        .icon(icon::SEAL_CHECK)
+                        .disabled(&i18n.t("gallery-surface-item-soon-reason")),
+                    MenuItem::new(&i18n.t("gallery-surface-item-remove"))
+                        .icon(icon::TRASH)
+                        .danger(),
+                ],
+            );
+        });
+        if demo.details {
+            ui.separator();
+            cs_detail_row(ui, &i18n.t("gallery-surface-row-label"), |ui| {
+                ui.label(i18n.t("gallery-surface-row-value"));
+            });
+        }
+    });
+    ui.add_space(8.0);
+    cs_card_frame(p, CardEmphasis::Quiet).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.label(strong(ui.ctx(), i18n.t("gallery-surface-quiet")));
     });
 
     section(ui, p, i18n.t("gallery-section-numbers"));

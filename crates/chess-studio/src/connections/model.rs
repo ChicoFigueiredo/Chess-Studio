@@ -2,12 +2,17 @@
 //! catálogo se ordenam e agrupam, em que estado cada cartão está, quais ações e campos ele
 //! mostra e o que "permite agora" (sem prometer o futuro).
 //!
-//! Regras de produto (CX-05, CX-06, CX-09; especificação 4.1 e 4.2):
+//! Regras de produto (CX-05, CX-06, CX-09; especificação 4.1 e 4.2; #225):
 //!
 //! - gratuitos primeiro, agrupados por categoria (jogar, dados, Engines, importação, ratings);
+//!   dentro de cada categoria, o que já funciona, depois "Em breve", por último "Requer
+//!   aprovação";
+//! - "Autorizado" só existe com uma Conexão autorizada (o Cofre chega no #224); "Ligado" nunca
+//!   se apresenta como conectado;
 //! - Provedor sem API ou sem aprovação nunca mostra campo de segredo nem botão de autorização;
-//! - Autorizar e Inserir chave aparecem desabilitados até a etapa 3 (Cofre);
-//! - vincular nome ou ID público grava uma Conexão por Perfil local.
+//! - o cartão mostra uma ação principal; as demais vão no menu "⋯";
+//! - nenhum texto da tela vem do catálogo: as notas técnicas de `chess-net` são para quem
+//!   desenvolve, e a interface usa os textos próprios em Fluent.
 
 use chess_net::{
     AuthMethod, Capability, Category, Cost, Operation, Provider, ProviderId, ProviderState,
@@ -106,7 +111,8 @@ fn fold(text: &str) -> String {
 }
 
 /// Os Provedores do catálogo que passam nos filtros, por categoria na ordem da Central e,
-/// dentro de cada uma, **gratuitos primeiro** (custo crescente; a ordem do catálogo desempata).
+/// dentro de cada uma, o que funciona antes do que vem em breve e do que requer aprovação e, em cada faixa,
+/// **gratuitos primeiro** (custo crescente; a ordem do catálogo desempata).
 pub fn groups(filter: CostFilter, query: &str) -> Vec<Group> {
     CATEGORY_ORDER
         .into_iter()
@@ -117,7 +123,7 @@ pub fn groups(filter: CostFilter, query: &str) -> Vec<Group> {
                 .filter(|p| filter.matches(p.cost()) && matches_query(p, query))
                 .collect();
             // Estável: o desempate é a ordem do catálogo.
-            providers.sort_by_key(|p| p.cost());
+            providers.sort_by_key(|p| (tier_of(p), p.cost()));
             (!providers.is_empty()).then_some(Group {
                 category,
                 providers,
@@ -134,15 +140,17 @@ pub fn count(filter: CostFilter) -> usize {
         .count()
 }
 
-/// O estado do cartão (a palavra do chip).
+/// O estado do cartão (a palavra do selo).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CardState {
     /// Provedor de rede, desligado.
     Off,
-    /// Ligado e sem problema conhecido.
-    Available,
-    /// Ligado e com uma Conexão vinculada.
-    Connected,
+    /// Ligado, sem nome vinculado.
+    On,
+    /// Ligado e com um nome ou ID público vinculado (não é uma Conexão autorizada).
+    Linked,
+    /// Ligado e com uma Conexão **autorizada**: o único estado que pode dizer isso.
+    Authorized,
     /// O Provedor pediu uma pausa.
     Limited,
     /// A última tentativa falhou.
@@ -151,24 +159,71 @@ pub enum CardState {
     ManualImport,
     /// Pago ou sob aprovação do Provedor: nada sai para a rede.
     NeedsApproval,
-    /// O adaptador chega daqui a duas ou mais etapas.
+    /// O adaptador ainda não existe.
     Planned,
     /// API ou termos ainda não confirmados.
     Unconfirmed,
+}
+
+/// A faixa do cartão dentro da categoria.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Tier {
+    /// O que já funciona: cartão completo.
+    Working,
+    /// Em breve: cartão menor.
+    Soon,
+    /// Requer aprovação: cartão menor.
+    Approval,
+}
+
+impl Tier {
+    /// Id Fluent do título da faixa (só as faixas menores têm título).
+    pub fn key(self) -> Option<&'static str> {
+        match self {
+            Self::Working => None,
+            Self::Soon => Some("connections-tier-soon"),
+            Self::Approval => Some("connections-tier-approval"),
+        }
+    }
 }
 
 impl CardState {
     pub fn key(self) -> &'static str {
         match self {
             Self::Off => "connections-state-off",
-            Self::Available => "connections-state-available",
-            Self::Connected => "connections-state-connected",
+            Self::On => "connections-state-on",
+            Self::Linked => "connections-state-linked",
+            Self::Authorized => "connections-state-authorized",
             Self::Limited => "connections-state-limited",
             Self::Failing => "connections-state-failing",
             Self::ManualImport => "connections-state-manual",
             Self::NeedsApproval => "connections-state-approval",
-            Self::Planned => "connections-state-planned",
-            Self::Unconfirmed => "connections-state-unconfirmed",
+            Self::Planned => "connections-state-soon",
+            Self::Unconfirmed => "connections-state-evaluating",
+        }
+    }
+
+    /// Id Fluent da explicação do estado (tooltip do selo).
+    pub fn hint_key(self) -> &'static str {
+        match self {
+            Self::Off => "connections-hint-off",
+            Self::On => "connections-hint-on",
+            Self::Linked => "connections-hint-linked",
+            Self::Authorized => "connections-hint-authorized",
+            Self::Limited => "connections-hint-limited",
+            Self::Failing => "connections-hint-failing",
+            Self::ManualImport => "connections-hint-manual",
+            Self::NeedsApproval => "connections-hint-approval",
+            Self::Planned => "connections-hint-planned",
+            Self::Unconfirmed => "connections-hint-unconfirmed",
+        }
+    }
+
+    pub fn tier(self) -> Tier {
+        match self {
+            Self::Planned | Self::Unconfirmed => Tier::Soon,
+            Self::NeedsApproval => Tier::Approval,
+            _ => Tier::Working,
         }
     }
 
@@ -178,6 +233,11 @@ impl CardState {
             self,
             Self::ManualImport | Self::NeedsApproval | Self::Unconfirmed
         )
+    }
+
+    /// Cartão menor, sem Switch, sem detalhes e sem ação principal.
+    pub fn is_compact(self) -> bool {
+        self.tier() != Tier::Working
     }
 }
 
@@ -194,11 +254,27 @@ pub fn earliest_stage(provider: &Provider) -> Option<u8> {
         .min()
 }
 
-/// A partir desta etapa o Provedor aparece como "Planejado" e não se liga ainda.
+/// A partir desta etapa o Provedor aparece como "Em breve" e não se liga ainda.
 const PLANNED_FROM_STAGE: u8 = 3;
 
-/// O estado do cartão a partir do catálogo, do estado da rede e de haver Conexão vinculada.
-pub fn card_state(provider: &Provider, net: &ProviderState, has_connection: bool) -> CardState {
+/// O Provedor tem algo a fazer hoje: vincular nome ou ID público, ou um serviço pronto. Sem
+/// isso o Switch não leva a nada e o cartão fica em "Em breve".
+fn has_use_today(provider: &Provider) -> bool {
+    has_auth(provider, &[AuthMethod::PublicId])
+        || provider
+            .services
+            .iter()
+            .any(|s| s.status == ServiceStatus::Ready)
+}
+
+/// O estado do cartão a partir do catálogo, do estado da rede, de haver nome vinculado e de
+/// haver Conexão autorizada. `authorized` só vale com o Provedor ligado.
+pub fn card_state(
+    provider: &Provider,
+    net: &ProviderState,
+    has_connection: bool,
+    authorized: bool,
+) -> CardState {
     if !provider.uses_network() {
         let services = provider.services;
         if services
@@ -220,50 +296,41 @@ pub fn card_state(provider: &Provider, net: &ProviderState, has_connection: bool
     match net {
         ProviderState::Limited { .. } => CardState::Limited,
         ProviderState::Failing { .. } => CardState::Failing,
-        ProviderState::Available if has_connection => CardState::Connected,
-        ProviderState::Available => CardState::Available,
+        ProviderState::Available if authorized => CardState::Authorized,
+        ProviderState::Available if has_connection => CardState::Linked,
+        ProviderState::Available => CardState::On,
         ProviderState::Disabled => {
-            if earliest_stage(provider).is_some_and(|stage| stage >= PLANNED_FROM_STAGE) {
-                CardState::Planned
-            } else {
+            if has_use_today(provider)
+                && earliest_stage(provider).is_none_or(|stage| stage < PLANNED_FROM_STAGE)
+            {
                 CardState::Off
+            } else {
+                CardState::Planned
             }
         }
     }
 }
 
-/// Como o Switch "Ligado" aparece.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SwitchMode {
-    /// Sem serviço de rede: não há o que ligar.
-    Hidden,
-    /// Ainda não: o adaptador chega na etapa indicada.
-    Locked {
-        stage: u8,
-    },
-    Usable,
+/// A faixa do Provedor, independente do estado da rede.
+pub fn tier_of(provider: &Provider) -> Tier {
+    card_state(provider, &ProviderState::Disabled, false, false).tier()
 }
 
-pub fn switch_mode(provider: &Provider, state: CardState) -> SwitchMode {
-    if !provider.uses_network() {
-        return SwitchMode::Hidden;
-    }
-    match (state, earliest_stage(provider)) {
-        (CardState::Planned, Some(stage)) => SwitchMode::Locked { stage },
-        _ => SwitchMode::Usable,
-    }
+/// O Switch "Ligado" existe só nos cartões completos de Provedor de rede.
+pub fn has_switch(provider: &Provider, state: CardState) -> bool {
+    provider.uses_network() && !state.is_compact()
 }
 
-/// Ações de um cartão, na ordem em que aparecem.
+/// Ações de um cartão.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CardAction {
     /// Vincular nome ou ID público (uma Conexão do Perfil local).
     Link,
     Test,
     ClearCache,
-    /// Autorizar pelo navegador (etapa 3).
+    /// Autorizar pelo navegador (chega com o Cofre, #224).
     Authorize,
-    /// Inserir chave ou token (etapa 3).
+    /// Inserir uma chave pessoal (chega com o Cofre, #224).
     EnterKey,
     OpenDocs,
     OpenTerms,
@@ -273,10 +340,15 @@ pub enum CardAction {
 pub struct ActionSpec {
     pub action: CardAction,
     pub enabled: bool,
-    /// Desabilitada porque chega numa etapa futura.
-    pub soon_stage: Option<u8>,
-    /// Id Fluent do motivo de estar desabilitada agora (tooltip).
+    /// Id Fluent do motivo de estar desabilitada agora (tooltip, em linguagem de usuário).
     pub reason_key: Option<&'static str>,
+}
+
+/// A ação principal do cartão e as demais, que vão para o menu "⋯".
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct Actions {
+    pub primary: Option<ActionSpec>,
+    pub menu: Vec<ActionSpec>,
 }
 
 /// O Provedor cujo adaptador responde ao "Testar" da Conexão por nome ou ID público. O FIDE
@@ -312,52 +384,63 @@ pub fn can_link(provider: &Provider, state: CardState) -> bool {
         )
 }
 
-/// As ações do cartão conforme o método de identificação e o estado.
-pub fn card_actions(
-    provider: &Provider,
-    state: CardState,
-    has_connection: bool,
-) -> Vec<ActionSpec> {
+/// As ações do cartão: uma principal (a que a pessoa mais provavelmente quer agora) e o resto no
+/// menu. Cartões menores só levam instruções e termos no menu.
+pub fn card_actions(provider: &Provider, state: CardState, has_connection: bool) -> Actions {
     let ready = |action| ActionSpec {
         action,
         enabled: true,
-        soon_stage: None,
         reason_key: None,
     };
-    let soon = |action, stage| ActionSpec {
+    let soon = |action, reason_key| ActionSpec {
         action,
         enabled: false,
-        soon_stage: Some(stage),
-        reason_key: None,
+        reason_key: Some(reason_key),
     };
-    let mut out = Vec::new();
-    if can_link(provider, state) {
-        out.push(ready(CardAction::Link));
+    let docs = !provider.docs_url.is_empty();
+    let terms = !provider.terms_url.is_empty();
+    let mut out = Actions::default();
+    if state.is_compact() {
+        if docs {
+            out.menu.push(ready(CardAction::OpenDocs));
+        }
+        if terms {
+            out.menu.push(ready(CardAction::OpenTerms));
+        }
+        return out;
     }
-    if can_test(provider.id) && can_link(provider, state) {
-        out.push(ActionSpec {
-            action: CardAction::Test,
-            enabled: has_connection,
-            soon_stage: None,
-            reason_key: (!has_connection).then_some("connections-test-needs-connection"),
-        });
+    let linkable = can_link(provider, state);
+    out.primary = if linkable && has_connection && can_test(provider.id) {
+        Some(ready(CardAction::Test))
+    } else if linkable && !has_connection {
+        Some(ready(CardAction::Link))
+    } else if !provider.uses_network() && docs {
+        Some(ready(CardAction::OpenDocs))
+    } else {
+        None
+    };
+    let primary = out.primary.map(|spec| spec.action);
+    if linkable && primary != Some(CardAction::Link) {
+        out.menu.push(ready(CardAction::Link));
     }
     if provider.uses_network() {
-        out.push(ready(CardAction::ClearCache));
+        out.menu.push(ready(CardAction::ClearCache));
     }
     if !state.is_informational() {
         if has_auth(provider, &[AuthMethod::OAuth2Pkce]) {
-            out.push(soon(CardAction::Authorize, 3));
+            out.menu
+                .push(soon(CardAction::Authorize, "connections-reason-authorize"));
         }
         if has_auth(provider, &[AuthMethod::PersonalToken, AuthMethod::ApiKey]) {
-            out.push(soon(CardAction::EnterKey, 3));
+            out.menu
+                .push(soon(CardAction::EnterKey, "connections-reason-key"));
         }
     }
-    if !provider.docs_url.is_empty() {
-        out.push(ready(CardAction::OpenDocs));
+    if docs && primary != Some(CardAction::OpenDocs) {
+        out.menu.push(ready(CardAction::OpenDocs));
     }
-    if !provider.terms_url.is_empty() {
-        out.push(ready(CardAction::OpenTerms));
+    if terms {
+        out.menu.push(ready(CardAction::OpenTerms));
     }
     out
 }
@@ -368,9 +451,9 @@ pub enum FieldKind {
     PublicName,
     PublicId,
     Nickname,
-    /// Campo de segredo (chave, token, senha): só existe a partir da etapa 3, e nunca em
-    /// Provedor sem API ou sob aprovação. Hoje nenhum cartão o mostra.
-    #[allow(dead_code)] // reservado à etapa 3 (Cofre)
+    /// Campo de segredo (chave): só existe com o Cofre (#224), e nunca em Provedor sem API ou
+    /// sob aprovação. Hoje nenhum cartão o mostra.
+    #[allow(dead_code)] // reservado ao Cofre
     Secret,
 }
 
@@ -383,7 +466,7 @@ pub fn connection_kind(provider: &Provider) -> ConnectionKind {
     }
 }
 
-/// Todos os campos de entrada do cartão (o formulário de vincular). Nunca `Secret` na etapa 1.
+/// Todos os campos de entrada do cartão (o formulário de vincular). Nunca `Secret` por enquanto.
 pub fn card_fields(provider: &Provider, state: CardState) -> Vec<FieldKind> {
     if !can_link(provider, state) {
         return Vec::new();
@@ -397,37 +480,85 @@ pub fn card_fields(provider: &Provider, state: CardState) -> Vec<FieldKind> {
     ]
 }
 
-/// Id Fluent do nome da capacidade.
-pub fn capability_key(capability: Capability) -> &'static str {
+/// Id Fluent do nome do serviço, como substantivo ("Explorador", "Finais exatos").
+pub fn service_key(capability: Capability) -> &'static str {
     match capability {
-        Capability::Play => "connections-cap-play",
-        Capability::OnlineEngine => "connections-cap-online-engine",
-        Capability::Explore => "connections-cap-explore",
-        Capability::Endgames => "connections-cap-endgames",
-        Capability::CachedEval => "connections-cap-cached-eval",
-        Capability::Analyze => "connections-cap-analyze",
-        Capability::Query => "connections-cap-query",
-        Capability::Download => "connections-cap-download",
-        Capability::ImportPgn => "connections-cap-import-pgn",
-        Capability::IdentityOnly => "connections-cap-identity-only",
+        Capability::Play => "connections-svc-play",
+        Capability::OnlineEngine => "connections-svc-online-engine",
+        Capability::Explore => "connections-svc-explore",
+        Capability::Endgames => "connections-svc-endgames",
+        Capability::CachedEval => "connections-svc-cached-eval",
+        Capability::Analyze => "connections-svc-analyze",
+        Capability::Query => "connections-svc-query",
+        Capability::Download => "connections-svc-download",
+        Capability::ImportPgn => "connections-svc-import-pgn",
+        Capability::IdentityOnly => "connections-svc-identity",
     }
 }
 
-/// O que o Provedor permite **agora**: o serviço pronto, a importação manual e vincular nome.
-/// O que ainda não existe fica em [`planned`].
-pub fn now_keys(provider: &Provider, state: CardState) -> Vec<&'static str> {
-    let mut out = Vec::new();
+/// Id Fluent do nome do serviço, com a situação: o que se importa de arquivo baixado é
+/// "Arquivos baixados por você", não "Pacotes e bases".
+pub fn service_label_key(service: &chess_net::Service) -> &'static str {
+    match (service.capability, service.status) {
+        (Capability::Download | Capability::ImportPgn, ServiceStatus::ManualImport) => {
+            "connections-svc-manual-file"
+        }
+        (capability, _) => service_key(capability),
+    }
+}
+
+/// Id Fluent do verbo do serviço, para "o que você pode fazer" (infinitivo, sem maiúscula).
+pub fn verb_key(capability: Capability, status: ServiceStatus) -> &'static str {
+    match (capability, status) {
+        (Capability::Download | Capability::ImportPgn, ServiceStatus::ManualImport) => {
+            "connections-do-import-file"
+        }
+        (Capability::Play, _) => "connections-do-play",
+        (Capability::OnlineEngine, _) => "connections-do-online-engine",
+        (Capability::Explore, _) => "connections-do-explore",
+        (Capability::Endgames, _) => "connections-do-endgames",
+        (Capability::CachedEval, _) => "connections-do-cached-eval",
+        (Capability::Analyze, _) => "connections-do-analyze",
+        (Capability::Query, _) => "connections-do-query",
+        (Capability::Download, _) => "connections-do-download",
+        (Capability::ImportPgn, _) => "connections-do-import-pgn",
+        (Capability::IdentityOnly, _) => "connections-do-link",
+    }
+}
+
+/// O que o cartão diz em "O que você pode fazer agora".
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Face {
+    /// Verbos (ids Fluent), numa frase curta.
+    Can(Vec<&'static str>),
+    /// Nada ainda: o texto próprio do estado (id Fluent).
+    Note(&'static str),
+}
+
+/// O que o Provedor permite **agora**: vincular nome, testar e os serviços prontos ou de
+/// importação manual. O que ainda não existe fica em [`later`].
+pub fn face(provider: &Provider, state: CardState) -> Face {
+    match state {
+        CardState::Planned => return Face::Note("connections-face-planned"),
+        CardState::Unconfirmed => return Face::Note("connections-face-unconfirmed"),
+        CardState::NeedsApproval => return Face::Note("connections-face-approval"),
+        _ => {}
+    }
+    let mut out: Vec<&'static str> = Vec::new();
     if can_link(provider, state) {
-        out.push(capability_key(Capability::IdentityOnly));
+        out.push(match connection_kind(provider) {
+            ConnectionKind::PublicId => "connections-do-link-id",
+            ConnectionKind::PublicName => "connections-do-link",
+        });
+        if can_test(provider.id) {
+            out.push("connections-do-test");
+        }
     }
     for service in provider.services {
         let key = match (service.capability, service.status) {
             (Capability::IdentityOnly, _) => continue,
-            (Capability::Download, ServiceStatus::ManualImport) => {
-                "connections-cap-manual-download"
-            }
             (capability, ServiceStatus::Ready | ServiceStatus::ManualImport) => {
-                capability_key(capability)
+                verb_key(capability, service.status)
             }
             _ => continue,
         };
@@ -435,39 +566,90 @@ pub fn now_keys(provider: &Provider, state: CardState) -> Vec<&'static str> {
             out.push(key);
         }
     }
+    if out.is_empty() {
+        Face::Note("connections-face-planned")
+    } else {
+        Face::Can(out)
+    }
+}
+
+/// O que chega depois (verbos, sem a identidade, que a Central já oferece): sem etapas nem
+/// datas, só o que o Provedor vai permitir.
+pub fn later(provider: &Provider) -> Vec<&'static str> {
+    let mut out: Vec<&'static str> = Vec::new();
+    for service in provider.services {
+        if !matches!(service.status, ServiceStatus::Planned { .. })
+            || service.capability == Capability::IdentityOnly
+        {
+            continue;
+        }
+        let key = verb_key(service.capability, service.status);
+        if !out.contains(&key) {
+            out.push(key);
+        }
+    }
     out
 }
 
-/// O que chega depois, por etapa (sem a identidade, que a Central já oferece): não é promessa
-/// de data, só a etapa do programa.
-pub fn planned(provider: &Provider) -> Vec<(u8, Vec<&'static str>)> {
-    let mut out: Vec<(u8, Vec<&'static str>)> = Vec::new();
+/// Custo por serviço, do mais barato ao mais caro: cada custo com os serviços que o têm. Um
+/// Provedor de custos diferentes mostra cada grupo (Lichess: consultas sem cadastro; Explorador
+/// com cadastro), nunca um custo só que contradiga o outro.
+pub fn cost_groups(provider: &Provider) -> Vec<(Cost, Vec<&'static str>)> {
+    let mut out: Vec<(Cost, Vec<&'static str>)> = Vec::new();
     for service in provider.services {
-        let ServiceStatus::Planned { stage } = service.status else {
-            continue;
-        };
         if service.capability == Capability::IdentityOnly {
             continue;
         }
-        let key = capability_key(service.capability);
-        match out.iter_mut().find(|(s, _)| *s == stage) {
+        let key = service_label_key(service);
+        match out.iter_mut().find(|(cost, _)| *cost == service.cost) {
             Some((_, list)) => list.push(key),
-            None => out.push((stage, vec![key])),
+            None => out.push((service.cost, vec![key])),
         }
     }
-    out.sort_by_key(|(stage, _)| *stage);
+    if out.is_empty() {
+        // Só identidade: o custo é o do Provedor.
+        out.push((provider.cost(), Vec::new()));
+    }
+    out.sort_by_key(|(cost, _)| *cost);
     out
 }
 
-/// Serviços que custam mais que o Provedor e dizem que exigem uma Conexão autorizada (o
-/// Explorador do Lichess): o nome da capacidade e a frase do catálogo.
-pub fn requirements(provider: &Provider) -> Vec<(&'static str, &'static str)> {
+/// Serviços que exigem cadastro e custam mais que o resto do Provedor (o Explorador do
+/// Lichess): a interface diz "Requer autorizar sua conexão do Lichess".
+pub fn requirements(provider: &Provider) -> Vec<&'static str> {
     provider
         .services
         .iter()
-        .filter(|s| s.cost > provider.cost() && s.note.contains("Conexão autorizada"))
-        .map(|s| (capability_key(s.capability), s.note))
+        .filter(|s| s.cost > provider.cost() && s.cost <= Cost::FreeWithSignup)
+        .map(|s| service_key(s.capability))
         .collect()
+}
+
+/// Id Fluent do texto "O que é enviado" do cartão: o do Provedor, ou o do tipo dele.
+pub fn sends_key(provider: &Provider, state: CardState) -> &'static str {
+    match provider.id {
+        ProviderId::Lichess => "connections-sends-lichess",
+        ProviderId::ChessCom => "connections-sends-chesscom",
+        ProviderId::Fide => "connections-sends-fide",
+        _ => match state {
+            CardState::ManualImport => "connections-sends-manual",
+            CardState::NeedsApproval | CardState::Unconfirmed => "connections-sends-info",
+            CardState::Planned => "connections-sends-soon",
+            _ => "connections-sends-generic",
+        },
+    }
+}
+
+/// Os endereços para onde o Provedor pode receber pedidos (sem repetir), para o diálogo de
+/// consentimento: aparecem como lista curta, nunca dentro de uma frase.
+pub fn hosts(provider: &Provider) -> Vec<&'static str> {
+    let mut out: Vec<&'static str> = Vec::new();
+    for endpoint in provider.endpoints {
+        if !out.contains(&endpoint.host) {
+            out.push(endpoint.host);
+        }
+    }
+    out
 }
 
 /// Ids Fluent dos métodos de identificação do Provedor.
@@ -479,7 +661,7 @@ pub fn auth_keys(provider: &Provider) -> Vec<&'static str> {
             AuthMethod::None => "connections-auth-none",
             AuthMethod::PublicId => "connections-auth-public-id",
             AuthMethod::OAuth2Pkce => "connections-auth-oauth",
-            AuthMethod::PersonalToken => "connections-auth-token",
+            AuthMethod::PersonalToken => "connections-auth-key-personal",
             AuthMethod::ApiKey => "connections-auth-key",
             AuthMethod::UsernamePasswordApprovedProtocol => "connections-auth-protocol",
             AuthMethod::ManualImportOnly => "connections-auth-manual",
@@ -488,7 +670,7 @@ pub fn auth_keys(provider: &Provider) -> Vec<&'static str> {
         .collect()
 }
 
-/// Id Fluent do custo do Provedor.
+/// Id Fluent do custo.
 pub fn cost_key(cost: Cost) -> &'static str {
     match cost {
         Cost::FreeNoSignup => "connections-cost-free-nosignup",
@@ -511,7 +693,8 @@ pub fn error_key(error: &chess_net::NetError) -> &'static str {
     }
 }
 
-/// Há quanto tempo foi a última consulta.
+/// Há quanto tempo foi a última consulta. O app não lê o fuso do sistema (sem `unsafe`, e sem
+/// uma dependência de fuso), então a interface mostra "há N min" em vez de uma hora local.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Age {
     JustNow,
@@ -528,6 +711,11 @@ pub fn age(now: Timestamp, then: Timestamp) -> Age {
         3600..=86_399 => Age::Hours(secs / 3600),
         _ => Age::Days(secs / 86_400),
     }
+}
+
+/// Quanto falta para o Provedor sair da pausa, em minutos inteiros (para cima; no mínimo 1).
+pub fn minutes_left(now: Timestamp, until: Timestamp) -> u64 {
+    until.since(now).as_secs().div_ceil(60).max(1)
 }
 
 /// O instante da última consulta que deu certo de cada Provedor (das operações da sessão).
@@ -552,23 +740,27 @@ mod tests {
     }
 
     fn state_of(id: ProviderId) -> CardState {
-        card_state(provider(id), &ProviderState::Disabled, false)
+        card_state(provider(id), &ProviderState::Disabled, false, false)
     }
 
     #[test]
-    fn free_providers_come_first_inside_every_category() {
+    fn free_providers_come_first_inside_every_tier_of_every_category() {
         let all = groups(CostFilter::All, "");
         assert_eq!(
             all.iter().map(|g| g.category).collect::<Vec<_>>(),
             CATEGORY_ORDER
         );
         for group in &all {
-            let costs: Vec<Cost> = group.providers.iter().map(|p| p.cost()).collect();
-            let mut sorted = costs.clone();
+            let keys: Vec<(Tier, Cost)> = group
+                .providers
+                .iter()
+                .map(|p| (tier_of(p), p.cost()))
+                .collect();
+            let mut sorted = keys.clone();
             sorted.sort();
-            assert_eq!(costs, sorted, "{:?}", group.category);
+            assert_eq!(keys, sorted, "{:?}", group.category);
         }
-        // Nos Provedores de jogo, os pagos (ICC) e os não confirmados ficam depois dos gratuitos.
+        // Em Jogar online: o que funciona, depois "Em breve", por último "Requer aprovação".
         let play = &all[0];
         assert_eq!(
             play.providers.first().map(|p| p.id),
@@ -576,19 +768,9 @@ mod tests {
         );
         assert_eq!(
             play.providers.last().map(|p| p.id),
-            Some(ProviderId::PyChessVariants)
+            Some(ProviderId::Icc),
+            "o que requer aprovação vem por último"
         );
-        let icc = play
-            .providers
-            .iter()
-            .position(|p| p.id == ProviderId::Icc)
-            .unwrap();
-        let fics = play
-            .providers
-            .iter()
-            .position(|p| p.id == ProviderId::Fics)
-            .unwrap();
-        assert!(fics < icc);
         // Nenhum Provedor some nem se repete.
         let total: usize = all.iter().map(|g| g.providers.len()).sum();
         assert_eq!(total, catalog().len());
@@ -636,27 +818,27 @@ mod tests {
         assert_eq!(state_of(ProviderId::Icc), CardState::NeedsApproval);
         assert_eq!(state_of(ProviderId::Chessify), CardState::Unconfirmed);
         assert_eq!(state_of(ProviderId::StockfishApi), CardState::Unconfirmed);
-        // Adaptadores distantes aparecem como planejados.
+        // Adaptadores distantes aparecem como "Em breve".
         assert_eq!(state_of(ProviderId::Fics), CardState::Planned);
         assert_eq!(state_of(ProviderId::PlayStrategy), CardState::Planned);
         assert_eq!(state_of(ProviderId::ChessApi), CardState::Planned);
+        // Sem nada para fazer hoje, não há Switch: o Chessigma também espera.
+        assert_eq!(state_of(ProviderId::Chessigma), CardState::Planned);
 
         let lichess = provider(ProviderId::Lichess);
-        assert_eq!(
-            card_state(lichess, &ProviderState::Available, false),
-            CardState::Available
-        );
-        assert_eq!(
-            card_state(lichess, &ProviderState::Available, true),
-            CardState::Connected
-        );
+        let on =
+            |linked, authorized| card_state(lichess, &ProviderState::Available, linked, authorized);
+        assert_eq!(on(false, false), CardState::On);
+        assert_eq!(on(true, false), CardState::Linked);
+        assert_eq!(on(true, true), CardState::Authorized);
         assert_eq!(
             card_state(
                 lichess,
                 &ProviderState::Limited {
                     until: Timestamp::from_millis(1)
                 },
-                true
+                true,
+                false
             ),
             CardState::Limited
         );
@@ -669,6 +851,7 @@ mod tests {
                         provider: ProviderId::Lichess
                     }
                 },
+                false,
                 false
             ),
             CardState::Failing
@@ -676,57 +859,124 @@ mod tests {
     }
 
     #[test]
+    fn authorized_is_impossible_without_an_authorized_connection() {
+        let nets = [
+            ProviderState::Disabled,
+            ProviderState::Available,
+            ProviderState::Limited {
+                until: Timestamp::from_millis(1),
+            },
+            ProviderState::Failing {
+                since: Timestamp::from_millis(1),
+                error: chess_net::NetError::Timeout {
+                    provider: ProviderId::Lichess,
+                },
+            },
+        ];
+        for p in catalog() {
+            for net in &nets {
+                for linked in [false, true] {
+                    // Sem Conexão autorizada, nunca "Autorizado", com ou sem nome vinculado.
+                    let state = card_state(p, net, linked, false);
+                    assert_ne!(state, CardState::Authorized, "{} {net:?}", p.name);
+                    // E um nome vinculado nunca vira "Autorizado" nem "Conectado".
+                    assert!(!matches!(state.key(), "connections-state-connected"));
+                }
+            }
+        }
+        // "Ligado · nome vinculado" é o que o nome vinculado vale.
+        let lichess = provider(ProviderId::Lichess);
+        assert_eq!(
+            card_state(lichess, &ProviderState::Available, true, false),
+            CardState::Linked
+        );
+        assert!(!CardState::Linked.key().ends_with("authorized"));
+    }
+
+    #[test]
     fn manual_and_approval_cards_never_show_a_secret_field_or_an_authorize_action() {
         for p in catalog() {
             for net in [ProviderState::Disabled, ProviderState::Available] {
-                let state = card_state(p, &net, false);
+                let state = card_state(p, &net, false, false);
                 let fields = card_fields(p, state);
                 assert!(!fields.contains(&FieldKind::Secret), "{}", p.name);
                 if state.is_informational() {
                     let actions = card_actions(p, state, true);
-                    for spec in &actions {
+                    let all: Vec<ActionSpec> =
+                        actions.primary.into_iter().chain(actions.menu).collect();
+                    for spec in &all {
                         assert!(
                             !matches!(spec.action, CardAction::Authorize | CardAction::EnterKey),
                             "{}: {:?}",
                             p.name,
                             spec.action
                         );
+                        assert!(
+                            !matches!(spec.action, CardAction::ClearCache),
+                            "{}: não há cache de rede",
+                            p.name
+                        );
                     }
                     // E nenhuma chamada própria de rede: só o FIDE testa (pelo Lichess).
                     assert_eq!(
-                        actions.iter().any(|a| matches!(a.action, CardAction::Test)),
+                        all.iter().any(|a| a.action == CardAction::Test),
                         p.id == ProviderId::Fide,
                         "{}",
                         p.name
                     );
-                    assert!(
-                        !actions
-                            .iter()
-                            .any(|a| matches!(a.action, CardAction::ClearCache))
-                    );
-                    assert_eq!(switch_mode(p, state), SwitchMode::Hidden, "{}", p.name);
+                    assert!(!has_switch(p, state), "{}", p.name);
                 }
             }
         }
     }
 
     #[test]
-    fn authorize_and_enter_key_are_disabled_until_stage_three() {
+    fn authorize_and_enter_key_stay_in_the_menu_and_disabled_with_a_reason() {
         let lichess = provider(ProviderId::Lichess);
         let actions = card_actions(lichess, CardState::Off, false);
         for wanted in [CardAction::Authorize, CardAction::EnterKey] {
-            let spec = actions.iter().find(|a| a.action == wanted).unwrap();
+            let spec = actions.menu.iter().find(|a| a.action == wanted).unwrap();
             assert!(!spec.enabled);
-            assert_eq!(spec.soon_stage, Some(3));
+            assert!(spec.reason_key.is_some());
         }
-        // Nenhum cartão do catálogo oferece um desses dois habilitado.
+        // Nenhum cartão do catálogo oferece um desses dois habilitado, e todo item
+        // desabilitado do menu explica o motivo.
         for p in catalog() {
-            for spec in card_actions(p, card_state(p, &ProviderState::Available, false), true) {
+            let state = card_state(p, &ProviderState::Available, false, false);
+            let actions = card_actions(p, state, true);
+            for spec in actions.primary.iter().chain(&actions.menu) {
                 if matches!(spec.action, CardAction::Authorize | CardAction::EnterKey) {
                     assert!(!spec.enabled, "{}", p.name);
                 }
+                assert!(spec.enabled || spec.reason_key.is_some(), "{}", p.name);
             }
         }
+    }
+
+    #[test]
+    fn a_card_has_one_primary_action_and_the_rest_in_the_menu() {
+        let lichess = provider(ProviderId::Lichess);
+        let none = card_actions(lichess, CardState::On, false);
+        assert_eq!(none.primary.map(|s| s.action), Some(CardAction::Link));
+        assert!(!none.menu.iter().any(|a| a.action == CardAction::Link));
+        assert!(none.menu.iter().any(|a| a.action == CardAction::ClearCache));
+        let linked = card_actions(lichess, CardState::Linked, true);
+        assert_eq!(linked.primary.map(|s| s.action), Some(CardAction::Test));
+        assert!(
+            linked.menu.iter().any(|a| a.action == CardAction::Link),
+            "vincular outro nome fica no menu"
+        );
+        // Provedor só de arquivo: a ação principal abre as instruções.
+        let twic = card_actions(provider(ProviderId::Twic), CardState::ManualImport, false);
+        assert_eq!(twic.primary.map(|s| s.action), Some(CardAction::OpenDocs));
+        // Cartão menor: nenhuma ação principal, só instruções e termos no menu.
+        let fics = card_actions(provider(ProviderId::Fics), CardState::Planned, false);
+        assert!(fics.primary.is_none());
+        assert!(
+            fics.menu
+                .iter()
+                .all(|a| matches!(a.action, CardAction::OpenDocs | CardAction::OpenTerms))
+        );
     }
 
     #[test]
@@ -763,28 +1013,28 @@ mod tests {
     #[test]
     fn test_exists_only_for_the_adapters_and_needs_a_linked_connection() {
         let lichess = provider(ProviderId::Lichess);
-        let find = |has| {
-            card_actions(lichess, CardState::Off, has)
+        let has_test = |linked| {
+            let actions = card_actions(lichess, CardState::On, linked);
+            actions
+                .primary
                 .into_iter()
-                .find(|a| a.action == CardAction::Test)
-                .unwrap()
+                .chain(actions.menu)
+                .any(|a| a.action == CardAction::Test)
         };
-        assert!(!find(false).enabled);
-        assert_eq!(
-            find(false).reason_key,
-            Some("connections-test-needs-connection")
-        );
-        assert!(find(true).enabled);
+        assert!(!has_test(false), "sem nome vinculado não há o que testar");
+        assert!(has_test(true));
         for id in [
             ProviderId::PlayStrategy,
             ProviderId::Fics,
             ProviderId::Chessigma,
         ] {
             let p = provider(id);
-            let state = state_of(id);
+            let actions = card_actions(p, state_of(id), true);
             assert!(
-                !card_actions(p, state, true)
-                    .iter()
+                !actions
+                    .primary
+                    .into_iter()
+                    .chain(actions.menu)
                     .any(|a| a.action == CardAction::Test)
             );
         }
@@ -794,64 +1044,92 @@ mod tests {
     }
 
     #[test]
-    fn the_lichess_explorer_requirement_is_shown_from_the_catalog() {
-        let found = requirements(provider(ProviderId::Lichess));
-        assert_eq!(found.len(), 1);
-        assert_eq!(found[0].0, "connections-cap-explore");
-        assert!(found[0].1.contains("Gratuito com cadastro"));
+    fn a_provider_with_services_of_different_costs_shows_each_cost_never_a_contradiction() {
+        let groups = cost_groups(provider(ProviderId::Lichess));
+        assert!(groups.len() >= 2, "{groups:?}");
+        let costs: Vec<Cost> = groups.iter().map(|(c, _)| *c).collect();
+        assert_eq!(costs.first(), Some(&Cost::FreeNoSignup));
+        assert!(costs.contains(&Cost::FreeWithSignup));
+        let mut sorted = costs.clone();
+        sorted.sort();
+        assert_eq!(costs, sorted);
+        // O Explorador está só no grupo "com cadastro"; nenhum serviço aparece em dois grupos.
+        let with_signup = groups
+            .iter()
+            .find(|(c, _)| *c == Cost::FreeWithSignup)
+            .unwrap();
+        assert!(with_signup.1.contains(&"connections-svc-explore"));
+        let mut seen = Vec::new();
+        for (_, services) in &groups {
+            for key in services {
+                assert!(!seen.contains(key), "{key} em dois custos");
+                seen.push(*key);
+            }
+        }
         assert!(
-            found[0]
-                .1
-                .contains("Conexão autorizada do Lichess (etapa 3)")
+            groups
+                .iter()
+                .filter(|(c, _)| *c == Cost::FreeNoSignup)
+                .all(|(_, s)| !s.contains(&"connections-svc-explore"))
         );
+        // Um Provedor de custo único tem um grupo só.
+        assert_eq!(cost_groups(provider(ProviderId::Twic)).len(), 1);
+        // O requisito do Explorador sai do custo (e do jogo), sem texto do catálogo.
+        assert!(requirements(provider(ProviderId::Lichess)).contains(&"connections-svc-explore"));
         assert!(requirements(provider(ProviderId::ChessCom)).is_empty());
     }
 
     #[test]
-    fn the_switch_is_hidden_without_network_and_locked_for_distant_stages() {
-        assert_eq!(
-            switch_mode(provider(ProviderId::Lichess), CardState::Off),
-            SwitchMode::Usable
-        );
-        assert_eq!(
-            switch_mode(provider(ProviderId::Fics), CardState::Planned),
-            SwitchMode::Locked { stage: 5 }
-        );
-        assert_eq!(
-            switch_mode(provider(ProviderId::Twic), CardState::ManualImport),
-            SwitchMode::Hidden
-        );
+    fn the_switch_exists_only_on_full_cards_of_network_providers() {
+        assert!(has_switch(provider(ProviderId::Lichess), CardState::Off));
+        assert!(!has_switch(provider(ProviderId::Fics), CardState::Planned));
+        assert!(!has_switch(
+            provider(ProviderId::Twic),
+            CardState::ManualImport
+        ));
     }
 
     #[test]
-    fn now_lists_only_what_exists_and_planned_lists_the_rest_by_stage() {
+    fn face_lists_only_what_exists_and_later_lists_the_rest() {
         let lichess = provider(ProviderId::Lichess);
+        let Face::Can(now) = face(lichess, CardState::Off) else {
+            panic!("o Lichess permite algo agora");
+        };
+        assert_eq!(now, ["connections-do-link", "connections-do-test"]);
+        // O FIDE vincula um ID, não um nome.
+        let Face::Can(fide) = face(provider(ProviderId::Fide), CardState::ManualImport) else {
+            panic!("o FIDE permite vincular e testar");
+        };
+        assert_eq!(fide[0], "connections-do-link-id");
+        let later = later(lichess);
+        assert!(later.contains(&"connections-do-explore"));
+        assert!(later.contains(&"connections-do-play"));
+        assert!(!later.contains(&"connections-do-link"));
+        let Face::Can(twic) = face(provider(ProviderId::Twic), CardState::ManualImport) else {
+            panic!("importar arquivo é o que o TWIC permite");
+        };
+        assert_eq!(twic, ["connections-do-import-file"]);
         assert_eq!(
-            now_keys(lichess, CardState::Off),
-            ["connections-cap-identity-only"]
+            face(provider(ProviderId::Fics), CardState::Planned),
+            Face::Note("connections-face-planned")
         );
-        let planned = planned(lichess);
         assert_eq!(
-            planned.iter().map(|(s, _)| *s).collect::<Vec<_>>(),
-            [2, 4, 5]
+            face(provider(ProviderId::Icc), CardState::NeedsApproval),
+            Face::Note("connections-face-approval")
         );
-        assert!(planned[0].1.contains(&"connections-cap-explore"));
-        let twic = provider(ProviderId::Twic);
-        assert_eq!(
-            now_keys(twic, CardState::ManualImport),
-            ["connections-cap-import-pgn"]
-        );
-        assert!(now_keys(provider(ProviderId::Chessify), CardState::Unconfirmed).is_empty());
     }
 
     #[test]
-    fn age_buckets_and_last_query() {
+    fn age_buckets_remaining_minutes_and_last_query() {
         let t = |s: i64| Timestamp::from_millis(s * 1000);
         assert_eq!(age(t(100), t(60)), Age::JustNow);
         assert_eq!(age(t(1000), t(1000 - 125)), Age::Minutes(2));
         assert_eq!(age(t(100_000), t(100_000 - 7300)), Age::Hours(2));
         assert_eq!(age(t(1_000_000), t(1_000_000 - 200_000)), Age::Days(2));
         assert_eq!(age(t(10), t(50)), Age::JustNow, "relógio que voltou");
+        assert_eq!(minutes_left(t(0), t(1)), 1);
+        assert_eq!(minutes_left(t(0), t(61)), 2);
+        assert_eq!(minutes_left(t(100), t(40)), 1, "já passou: no mínimo 1");
 
         let op = |provider, at: i64, ok: bool| Operation {
             provider,
@@ -877,30 +1155,87 @@ mod tests {
         assert!(!last.contains_key(&ProviderId::ChessCom));
     }
 
+    /// Todo texto fixo da Central e do diálogo (o arquivo Fluent inteiro) existe em pt-BR e
+    /// não usa jargão interno nem as palavras proibidas do glossário.
     #[test]
-    fn every_text_of_every_card_exists_and_avoids_the_banned_words() {
-        let i18n = I18n::pt_br();
-        let mut texts = Vec::new();
-        for p in catalog() {
-            let state = state_of(p.id);
-            let mut keys = vec![state.key(), category_key(p.category), cost_key(p.cost())];
-            keys.extend(now_keys(p, state));
-            keys.extend(auth_keys(p));
-            for (_, list) in planned(p) {
-                keys.extend(list);
+    fn no_interface_text_uses_stage_jargon_or_the_banned_words() {
+        let source = include_str!("../../assets/i18n/pt-BR/connections.ftl");
+        let mut checked = 0;
+        for line in source.lines() {
+            let trimmed = line.trim_start();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
             }
-            for key in keys {
-                let text = i18n.t(key);
-                assert_ne!(text, key, "{key}");
-                texts.push(text);
+            let text = trimmed.split_once('=').map_or(trimmed, |(_, value)| value);
+            let lower = text.to_lowercase();
+            for banned in [
+                "etapa",
+                "401",
+                "token",
+                "conta",
+                "login",
+                "credencial",
+                "pkce",
+                "planejad",
+            ] {
+                assert!(!lower.contains(banned), "{banned:?} em: {line}");
+            }
+            checked += 1;
+        }
+        assert!(checked > 100, "o arquivo foi lido ({checked} linhas)");
+    }
+
+    #[test]
+    fn every_text_key_of_every_card_exists() {
+        let i18n = I18n::pt_br();
+        for p in catalog() {
+            for state in [
+                state_of(p.id),
+                CardState::On,
+                CardState::Linked,
+                CardState::Authorized,
+                CardState::Limited,
+                CardState::Failing,
+            ] {
+                let mut keys = vec![
+                    state.key(),
+                    state.hint_key(),
+                    category_key(p.category),
+                    sends_key(p, state),
+                ];
+                if let Face::Note(key) = face(p, state) {
+                    keys.push(key);
+                }
+                if let Face::Can(list) = face(p, state) {
+                    keys.extend(list);
+                }
+                keys.extend(later(p));
+                keys.extend(auth_keys(p));
+                keys.extend(requirements(p));
+                keys.push("connections-svc-manual-file");
+                for (cost, services) in cost_groups(p) {
+                    keys.push(cost_key(cost));
+                    keys.extend(services);
+                }
+                let actions = card_actions(p, state, true);
+                keys.extend(
+                    actions
+                        .primary
+                        .into_iter()
+                        .chain(actions.menu)
+                        .filter_map(|a| a.reason_key),
+                );
+                for key in keys {
+                    assert_ne!(i18n.t(key), key, "{key} ({})", p.name);
+                }
             }
         }
         for filter in CostFilter::ALL {
-            texts.push(i18n.t(filter.key()));
+            assert_ne!(i18n.t(filter.key()), filter.key());
         }
-        let all = texts.join(" ").to_lowercase();
-        for banned in ["conta", "login", "credencial"] {
-            assert!(!all.contains(banned), "{banned}");
+        for tier in [Tier::Soon, Tier::Approval] {
+            let key = tier.key().unwrap();
+            assert_ne!(i18n.t(key), key);
         }
     }
 }

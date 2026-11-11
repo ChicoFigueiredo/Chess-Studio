@@ -197,13 +197,6 @@ pub(crate) fn advance(
     }
 }
 
-/// `14:32 UTC` a partir do instante (sem fuso: o app não lê o fuso do sistema).
-pub(crate) fn clock_text(at: Timestamp) -> String {
-    let secs = at.as_millis().div_euclid(1000);
-    let day = secs.rem_euclid(86_400);
-    format!("{:02}:{:02} UTC", day / 3600, (day % 3600) / 60)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -405,7 +398,6 @@ mod tests {
             panic!("esperava Limited, veio {:?}", report.outcome);
         };
         assert_eq!(until, T0.plus(Duration::from_secs(60)));
-        assert_eq!(clock_text(until), "12:01 UTC");
     }
 
     #[test]
@@ -461,11 +453,5 @@ mod tests {
         env.test(ProviderId::Lichess);
         assert!(env.ui.tests.is_empty());
         assert_eq!(env.dialog.current(), None);
-    }
-
-    #[test]
-    fn clock_text_is_hours_and_minutes_in_utc() {
-        assert_eq!(clock_text(T0), "12:00 UTC");
-        assert_eq!(clock_text(Timestamp::from_millis(0)), "00:00 UTC");
     }
 }

@@ -178,8 +178,24 @@ fn body(ui: &mut egui::Ui, ctx: &egui::Context, i18n: &I18n, ask: &Ask) -> Optio
         .inner_margin(egui::Margin::same(12))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.label(provider.sends);
+            let state = crate::connections::model::CardState::Off;
+            let key = crate::connections::model::sends_key(provider, state);
+            ui.label(i18n.t(key));
         });
+    let hosts = crate::connections::model::hosts(provider);
+    if !hosts.is_empty() {
+        ui.add_space(8.0);
+        ui.label(
+            egui::RichText::new(i18n.t("consent-where-label"))
+                .font(strong_font(ctx, 14.0))
+                .color(p.ink),
+        );
+        ui.label(
+            egui::RichText::new(hosts.join(", "))
+                .text_style(egui::TextStyle::Small)
+                .color(p.ink_muted),
+        );
+    }
     ui.add_space(8.0);
     ui.label(
         egui::RichText::new(i18n.t("consent-footer"))
