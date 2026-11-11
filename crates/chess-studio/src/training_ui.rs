@@ -18,6 +18,7 @@ use crate::i18n::I18n;
 use crate::persistence::PersistenceHandle;
 use crate::play::PlaySet;
 use crate::session::Session;
+use crate::ui_theme::{ButtonVariant, cs_button};
 use bevy::prelude::*;
 use bevy_egui::{EguiPrimaryContextPass, egui};
 use chess_core::{Color as Side, Square};
@@ -34,6 +35,7 @@ use std::sync::Mutex;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 mod evolution;
+mod packs;
 mod position;
 mod profiles;
 
@@ -50,6 +52,7 @@ impl Plugin for TrainingPlugin {
                 (training_demo, training_judge).chain().after(PlaySet),
             )
             .add_systems(Update, (position::tick, position::sync_board).chain())
+            .add_systems(Update, packs::poll)
             .add_systems(EguiPrimaryContextPass, position::editor);
         crate::dock::register_panel(
             app,
@@ -75,6 +78,8 @@ enum View {
     Profiles,
     /// Aba Evolução (C11).
     Evolution,
+    /// Pacotes de Exercícios: instalar do Lichess, listar e remover (#217).
+    Packs,
 }
 
 #[derive(Debug)]
@@ -120,6 +125,8 @@ pub struct TrainingUi {
     active_profile: Option<String>,
     evolution_data: evolution::EvolutionData,
     evolution_view: evolution::EvolutionView,
+    /// Pacotes de Exercícios instalados, filtros da lista e leitura em andamento.
+    packs: packs::PacksUi,
     metrics: Metrics,
     /// Identifica a sessão do app nas métricas.
     session_id: u64,
@@ -167,6 +174,7 @@ impl Default for TrainingUi {
             active_profile: None,
             evolution_data: evolution::EvolutionData::default(),
             evolution_view: evolution::EvolutionView::default(),
+            packs: packs::PacksUi::default(),
             metrics: Metrics::default(),
             session_id: wall,
             clock: Instant::now(),
@@ -275,6 +283,7 @@ impl TrainingUi {
     }
 
     fn open(&mut self, handle: Option<&PersistenceHandle>) {
+        self.reload_packs(handle);
         self.sync_catalog(handle);
         self.view = if self.active.is_some() || self.memory.is_some() {
             View::Exercise
@@ -460,6 +469,8 @@ enum Action {
     /// Segue o Perfil de treino e resolve o próximo Exercício dele.
     FollowAndStart(String, String),
     Unfollow,
+    /// Comando da tela de Pacotes.
+    Packs(packs::Cmd),
 }
 
 fn promotion_piece(uci: &str) -> Option<chess_core::Piece> {
@@ -845,15 +856,112 @@ fn metrics_section(ui: &mut egui::Ui, i18n: &I18n, metrics: &Metrics, session_id
     });
 }
 
-fn list_view(ui: &mut egui::Ui, i18n: &I18n, state: &TrainingUi) -> Option<Action> {
+fn exercise_row(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    state: &TrainingUi,
+    exercise: &Exercise,
+) -> Option<Action> {
+    let mut action = None;
+    let tally = state
+        .metrics
+        .by_exercise
+        .get(&exercise.id)
+        .copied()
+        .unwrap_or_default();
+    ui.horizontal_wrapped(|ui| {
+        if cs_button(ui, &i18n.t("training-start"), ButtonVariant::Secondary).clicked() {
+            action = Some(Action::Start(exercise.id.clone()));
+        }
+        let mut text = format!(
+            "{} — {}",
+            exercise.title,
+            i18n.t_with(
+                "training-exercise-count",
+                &[
+                    ("correct", &tally.correct.to_string()),
+                    ("runs", &tally.runs.to_string()),
+                ],
+            )
+        );
+        if let Some(rating) = exercise.rating {
+            text += &format!(
+                " — {}",
+                i18n.t_with(
+                    "training-exercise-rating",
+                    &[("rating", &rating.to_string())]
+                )
+            );
+        }
+        if !exercise.themes.is_empty() {
+            text += &format!(" — {}", exercise.themes.join(" "));
+        }
+        ui.label(text);
+    });
+    action
+}
+
+/// Seção de um pacote instalado: nome, Origem visível e os Exercícios que passam no filtro.
+fn pack_section(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    state: &TrainingUi,
+    id: &str,
+    matching: &[&Exercise],
+) -> Option<Action> {
+    let mut action = None;
+    ui.label(
+        egui::RichText::new(i18n.t_with(
+            "training-section-pack",
+            &[("name", packs::pack_name(&state.packs, id))],
+        ))
+        .strong(),
+    );
+    if let Some(origin) = packs::pack_origin(i18n, &state.packs, id) {
+        ui.small(origin);
+    }
+    for exercise in matching.iter().take(packs::ROWS_PER_SECTION) {
+        if let Some(chosen) = exercise_row(ui, i18n, state, exercise) {
+            action = Some(chosen);
+        }
+    }
+    if matching.len() > packs::ROWS_PER_SECTION {
+        ui.small(i18n.t_with(
+            "training-list-shown",
+            &[
+                ("shown", &packs::ROWS_PER_SECTION.to_string()),
+                ("total", &matching.len().to_string()),
+            ],
+        ));
+    }
+    action
+}
+
+fn list_view(ui: &mut egui::Ui, i18n: &I18n, state: &mut TrainingUi) -> Option<Action> {
     let mut action = None;
     ui.strong(i18n.t("training-list-heading"));
+    packs::filter_bar(ui, i18n, &mut state.packs);
+    let filter = state.packs.filter();
+    let state = &*state;
+    let matching: Vec<&Exercise> = state.catalog.iter().filter(|e| filter.matches(e)).collect();
+    if matching.is_empty() {
+        ui.label(i18n.t("training-list-none"));
+    }
     egui::ScrollArea::vertical()
         .max_height(260.0)
         .show(ui, |ui| {
+            // De fábrica, por tipo.
+            let factory: Vec<&Exercise> = matching
+                .iter()
+                .copied()
+                .filter(|e| e.pack.is_none())
+                .collect();
+            if !factory.is_empty() && !state.packs.installed.is_empty() {
+                ui.label(egui::RichText::new(i18n.t("training-section-factory")).strong());
+            }
             for kind in ExerciseKind::ALL {
                 let exercises: Vec<&Exercise> =
-                    state.catalog.iter().filter(|e| e.kind == kind).collect();
+                    factory.iter().copied().filter(|e| e.kind == kind).collect();
                 if exercises.is_empty() {
                     continue;
                 }
@@ -872,28 +980,24 @@ fn list_view(ui: &mut egui::Ui, i18n: &I18n, state: &TrainingUi) -> Option<Actio
                     .strong(),
                 );
                 for exercise in exercises {
-                    let tally = state
-                        .metrics
-                        .by_exercise
-                        .get(&exercise.id)
-                        .copied()
-                        .unwrap_or_default();
-                    ui.horizontal(|ui| {
-                        if ui.button(i18n.t("training-start")).clicked() {
-                            action = Some(Action::Start(exercise.id.clone()));
-                        }
-                        ui.label(format!(
-                            "{} — {}",
-                            exercise.title,
-                            i18n.t_with(
-                                "training-exercise-count",
-                                &[
-                                    ("correct", &tally.correct.to_string()),
-                                    ("runs", &tally.runs.to_string()),
-                                ],
-                            )
-                        ));
-                    });
+                    if let Some(chosen) = exercise_row(ui, i18n, state, exercise) {
+                        action = Some(chosen);
+                    }
+                }
+            }
+            // Pacotes instalados, separados dos de fábrica.
+            for info in &state.packs.installed {
+                let of_pack: Vec<&Exercise> = matching
+                    .iter()
+                    .copied()
+                    .filter(|e| e.pack.as_deref() == Some(info.id.as_str()))
+                    .collect();
+                if of_pack.is_empty() {
+                    continue;
+                }
+                ui.separator();
+                if let Some(chosen) = pack_section(ui, i18n, state, &info.id, &of_pack) {
+                    action = Some(chosen);
                 }
             }
         });
@@ -1073,11 +1177,20 @@ pub fn training_panel(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
                                     if ui.button(i18n.t("evolution-open")).clicked() {
                                         go = Some(Action::Show(View::Evolution));
                                     }
+                                    if cs_button(
+                                        ui,
+                                        &i18n.t("training-packs-open"),
+                                        ButtonVariant::Secondary,
+                                    )
+                                    .clicked()
+                                    {
+                                        go = Some(Action::Show(View::Packs));
+                                    }
                                     go
                                 })
                                 .inner;
                             let resume = profiles::continue_bar(ui, i18n, &state);
-                            let chosen = list_view(ui, i18n, &state);
+                            let chosen = list_view(ui, i18n, &mut state);
                             go.or(resume).or(chosen)
                         }
                         View::Exercise => {
@@ -1098,6 +1211,7 @@ pub fn training_panel(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
                                 .and_then(|p| position::panel(ui, i18n, p, now))
                         }
                         View::Profiles => profiles::view(ui, i18n, &state),
+                        View::Packs => packs::view(ui, i18n, &mut state.packs),
                         View::Evolution => evolution::view(ui, i18n, &mut state)
                             .then_some(Action::Show(View::List)),
                         _ => state.review.as_ref().and_then(|r| review_view(ui, i18n, r)),
@@ -1133,6 +1247,7 @@ pub fn training_panel(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
                     state.start(&exercise, &mut session, &aids, handle);
                 }
                 Some(Action::Unfollow) => state.follow_profile(None, handle),
+                Some(Action::Packs(cmd)) => state.apply_packs(cmd, handle),
                 // Sair sem resolver nem desistir descarta a Resolução (não vira erro).
                 Some(Action::BackToList) => state.leave(&mut session, View::List),
                 Some(Action::Reveal) => {

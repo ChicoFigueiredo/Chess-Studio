@@ -26,8 +26,11 @@ mod aids;
 mod catalog;
 mod evolution;
 mod exercise;
+mod filter;
+mod lichess;
 mod memory;
 mod metrics;
+mod packs;
 mod position_memory;
 mod profiles;
 mod review;
@@ -44,10 +47,19 @@ pub use evolution::{
     civil_date, day_of, report,
 };
 pub use exercise::{
-    Exercise, ExerciseError, ExerciseKind, MEMORY_LINE_RANGE, POSITION_STUDY_SECONDS, Solution,
+    Exercise, ExerciseError, ExerciseKind, MEMORY_LINE_RANGE, POSITION_STUDY_SECONDS, Provenance,
+    Solution,
+};
+pub use filter::ExerciseFilter;
+pub use lichess::{
+    ImportProgress, ImportReport, PuzzleFilter, PuzzleImportError, import_lichess_csv,
+    open_puzzle_file,
 };
 pub use memory::{MemoryPhase, MemoryRun, MemorySummary, PlyResult};
 pub use metrics::{Metrics, Tally};
+pub use packs::{
+    PackError, PackInfo, install_pack, install_pack_json, list_packs, load_packs, remove_pack,
+};
 pub use position_memory::{
     PiecePlacement, PositionJudgment, PositionMemoryRun, PositionMemorySummary, PositionPhase,
     SquareVerdict, judge, squares_in_reading_order,

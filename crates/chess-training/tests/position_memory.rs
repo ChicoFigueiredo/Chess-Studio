@@ -28,6 +28,10 @@ fn exercise(seconds: u32) -> Exercise {
         solution: Solution::MemorizePosition { seconds },
         explanation: "Explicação.".into(),
         version: 1,
+        themes: Vec::new(),
+        rating: None,
+        provenance: None,
+        pack: None,
     }
 }
 

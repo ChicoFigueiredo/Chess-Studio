@@ -62,7 +62,7 @@ pub use store::{
     GameId, GameMetadata, GameQuery, GameSummary, MAX_PROFILE_NAME_LEN, OpenedGame, Pragmas,
     ProfileId, ProfileInfo, Store,
 };
-pub use training::{RunId, RunQuery, StoredRun, UpsertReport};
+pub use training::{PackSummary, RemovePackReport, RunId, RunQuery, StoredRun, UpsertReport};
 
 #[cfg(doc)]
 use chess_game::Game;

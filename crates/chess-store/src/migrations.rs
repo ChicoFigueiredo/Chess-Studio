@@ -361,6 +361,17 @@ CREATE INDEX imported_game_origins_game ON imported_game_origins (game_id);
 CREATE INDEX imported_game_origins_provider ON imported_game_origins (provider);
 ";
 
+// Pacotes de Exercícios externos (CX-5, #217): Origem (`bundled` ou o Provedor, ex.:
+// `lichess`), pacote a que o Exercício pertence e marca de oculto. Um Exercício de pacote
+// removido que já tem Resolução fica oculto (`hidden = 1`) para a Resolução, que referencia
+// `exercises(id)` com ON DELETE CASCADE, não ser apagada junto.
+const V14_EXERCISE_PACKS: &str = "
+ALTER TABLE exercises ADD COLUMN origin TEXT NOT NULL DEFAULT 'bundled';
+ALTER TABLE exercises ADD COLUMN pack TEXT;
+ALTER TABLE exercises ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1));
+CREATE INDEX exercises_pack ON exercises (pack) WHERE pack IS NOT NULL;
+";
+
 /// Migrações em ordem; o índice + 1 é a versão resultante.
 const MIGRATIONS: &[&str] = &[
     V1_CORE,
@@ -376,6 +387,7 @@ const MIGRATIONS: &[&str] = &[
     V11_SCORESHEET_CHECK,
     V12_OPENING_EXPLORER,
     V13_IMPORT_ORIGIN,
+    V14_EXERCISE_PACKS,
 ];
 
 /// Versão de esquema desta build.

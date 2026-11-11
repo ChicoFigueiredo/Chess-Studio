@@ -70,7 +70,9 @@ fn bancos_com_o_flag_errado_sao_corrigidos_ao_migrar() {
              ALTER TABLE imported_games DROP COLUMN black_elo;
              ALTER TABLE imported_games DROP COLUMN time_control;
              ALTER TABLE imported_games DROP COLUMN eco;
-             ALTER TABLE imported_games DROP COLUMN pace;",
+             ALTER TABLE imported_games DROP COLUMN pace;
+             DROP INDEX exercises_pack; ALTER TABLE exercises DROP COLUMN origin;
+             ALTER TABLE exercises DROP COLUMN pack; ALTER TABLE exercises DROP COLUMN hidden;",
         )
         .unwrap();
         conn.pragma_update(None, "user_version", 8).unwrap();
