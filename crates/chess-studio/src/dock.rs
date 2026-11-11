@@ -817,6 +817,9 @@ pub(crate) struct DockBehavior<'a> {
     float_size: [f32; 2],
     /// Aba do dock em arrasto neste quadro (preenchido por `draw_dock`).
     tab_drag: Option<PanelId>,
+    /// Largura de cada aba do grupo neste quadro (PanelTabs: as inativas encolhem sem espaço),
+    /// calculada em `top_bar_right_ui`, que o `egui_tiles` chama antes das abas.
+    tab_widths: std::collections::HashMap<TileId, f32>,
 }
 
 impl<'a> DockBehavior<'a> {
@@ -829,6 +832,7 @@ impl<'a> DockBehavior<'a> {
             window: None,
             float_size: DEFAULT_FLOAT_SIZE,
             tab_drag: None,
+            tab_widths: std::collections::HashMap::new(),
         }
     }
 
@@ -906,7 +910,7 @@ impl Behavior<PanelId> for DockBehavior<'_> {
         };
         let title = self.tab_title_for_tile(tiles, tile_id).text().to_owned();
         let close_tip = self.i18n.t("dock-close");
-        let (response, closed) = panel_chrome::tab_button_closable(
+        let (response, closed) = panel_chrome::tab_button_fitted(
             ui,
             id,
             pane.as_ref().map(|p| panel_icon(&p.0)),
@@ -915,6 +919,7 @@ impl Behavior<PanelId> for DockBehavior<'_> {
             state.is_being_dragged,
             egui::Sense::click_and_drag(),
             Some(&close_tip),
+            self.tab_widths.get(&tile_id).copied(),
         );
         if closed && let Some(pane) = pane.clone() {
             self.actions.push(DockAction::Close(pane));
@@ -952,6 +957,39 @@ impl Behavior<PanelId> for DockBehavior<'_> {
                 None => header_tools(ui, self.i18n, &mut self.actions, &active, false),
             }
         }
+        // Sobrou para as abas o que não é dos botões da direita: reparte entre elas.
+        let ids: Vec<(TileId, Option<PanelId>)> = tabs
+            .children
+            .iter()
+            .copied()
+            .map(|child| match tiles.get(child) {
+                Some(Tile::Pane(pane)) => (child, Some(pane.clone())),
+                _ => (child, None),
+            })
+            .collect();
+        let natural: Vec<f32> = ids
+            .iter()
+            .map(|(child, pane)| {
+                let title = pane.as_ref().map_or_else(String::new, |p| self.title(p));
+                panel_chrome::tab_natural_width(
+                    ui,
+                    pane.as_ref().map(|p| panel_icon(&p.0)),
+                    &title,
+                    tabs.active == Some(*child),
+                    true,
+                )
+            })
+            .collect();
+        let active_index = ids
+            .iter()
+            .position(|(child, _)| tabs.active == Some(*child));
+        let widths = panel_chrome::fit_tab_widths(
+            &natural,
+            active_index,
+            ui.available_width(),
+            panel_chrome::TAB_MIN_WIDTH,
+        );
+        self.tab_widths = ids.iter().map(|(child, _)| *child).zip(widths).collect();
     }
 
     fn tab_bar_height(&self, _style: &egui::Style) -> f32 {
