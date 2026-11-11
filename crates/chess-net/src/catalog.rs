@@ -22,7 +22,7 @@ use std::fmt;
 use std::time::Duration;
 
 /// Versão dos dados do catálogo; gravada junto do consentimento.
-pub const CATALOG_VERSION: u32 = 7;
+pub const CATALOG_VERSION: u32 = 8;
 
 /// Provedor do catálogo. A chave ([`ProviderId::key`]) é o que se grava no banco e na Origem.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -552,7 +552,7 @@ static CATALOG: [Provider; 19] = [
                 C::OnlineEngine,
                 &[A::OAuth2Pkce, A::PersonalToken],
                 K::FreeWithSignup,
-                S::Planned { stage: 5 },
+                S::Ready,
                 "Bot API (bot:play) com conta BOT separada e irreversível",
             ),
         ],

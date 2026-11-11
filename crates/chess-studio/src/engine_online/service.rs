@@ -58,6 +58,8 @@ pub struct Settings {
     pub draw: DrawResponse,
     /// Tempo de pensar quando a Partida não tem relógio.
     pub movetime: Duration,
+    /// Elo pedido à Engine (a mesma força da Engine adversária local); `None`: força total.
+    pub elo: Option<u32>,
 }
 
 impl Default for Settings {
@@ -67,6 +69,7 @@ impl Default for Settings {
             max_games: Some(5),
             draw: DrawResponse::Decline,
             movetime: Duration::from_millis(1000),
+            elo: None,
         }
     }
 }
@@ -74,16 +77,25 @@ impl Default for Settings {
 /// Cria a Engine de uma Partida (os testes trocam por uma roteirizada).
 pub type EngineFactory = Box<dyn FnMut(&EngineSpec) -> Result<Box<dyn MoveEngine>, String> + Send>;
 
-/// A fábrica real: um processo UCI da Engine escolhida, em força total.
-pub fn uci_factory() -> EngineFactory {
-    Box::new(|spec| {
+/// A força pedida: Elo simples como na Engine adversária local (`UCI_LimitStrength`/`UCI_Elo`,
+/// ou `Skill Level`), ou força total.
+pub fn strength_of(elo: Option<u32>) -> Strength {
+    elo.map_or(Strength::Full, |elo| {
+        Strength::Elo(elo.clamp(crate::engine::MIN_ELO, crate::engine::MAX_ELO))
+    })
+}
+
+/// A fábrica real: um processo UCI da Engine escolhida, na força do usuário (total ou Elo).
+pub fn uci_factory(elo: Option<u32>) -> EngineFactory {
+    let strength = strength_of(elo);
+    Box::new(move |spec| {
         let config = spec
             .options
             .iter()
             .fold(EngineConfig::new(&spec.path), |c, (name, value)| {
                 c.option(name, value)
             });
-        Ok(Box::new(EngineController::start(config, Strength::Full)))
+        Ok(Box::new(EngineController::start(config, strength)))
     })
 }
 
@@ -134,6 +146,10 @@ pub enum Activity {
     Declined {
         name: String,
         reason: DeclineReason,
+    },
+    /// Uma Partida que já estava no banco continua de onde parou (app religado).
+    GameResumed {
+        opponent: String,
     },
     GameStarted {
         opponent: String,
@@ -264,6 +280,29 @@ impl std::fmt::Debug for EngineOnline {
     }
 }
 
+/// A Partida da Engine online ainda sem fim no banco para o `remote_id`, com o log carregado.
+fn stored_game(
+    access: &mut StoreAccess<'_>,
+    remote_id: &str,
+) -> Option<(GameId, chess_game::Game)> {
+    let query = chess_store::GameQuery {
+        only_unfinished: true,
+        profile: Some(access.profile),
+        limit: None,
+    };
+    let found = access
+        .store
+        .list_games(&query)
+        .ok()?
+        .into_iter()
+        .find(|g| {
+            let online = &g.metadata["online"];
+            online["provider"] == BOT_KEY && online["remote_id"] == remote_id
+        })?;
+    let game = access.store.load_game(found.id).ok()?;
+    Some((found.id, game))
+}
+
 fn metadata(remote_id: &str, at: Timestamp) -> GameMetadata {
     GameMetadata {
         title: Some("Partida da Engine online no Lichess".to_owned()),
@@ -322,6 +361,14 @@ impl EngineOnline {
 
     pub fn conversion(&self) -> Option<&Conversion> {
         self.conversion.as_ref()
+    }
+
+    /// Quantas Partidas ainda não terminaram (as que o app teria de abandonar ao sair).
+    pub fn games_in_progress(&self) -> usize {
+        self.games
+            .iter()
+            .filter(|g| !g.session.game().is_some_and(|x| x.snapshot().is_over()))
+            .count()
     }
 
     /// As Partidas em andamento, para a tela.
@@ -440,7 +487,7 @@ impl EngineOnline {
         if !self.active {
             return;
         }
-        self.poll_events();
+        self.poll_events(&mut store);
         self.poll_answers();
         self.poll_games(&mut store);
         self.expire_accepted();
@@ -464,7 +511,7 @@ impl EngineOnline {
             .is_some_and(|max| self.accepted_total >= max)
     }
 
-    fn poll_events(&mut self) {
+    fn poll_events(&mut self, store: &mut Option<StoreAccess<'_>>) {
         let Some(events) = &mut self.events else {
             return;
         };
@@ -472,7 +519,7 @@ impl EngineOnline {
         for event in polled {
             match event {
                 ConnectionEvent::Challenge(challenge) => self.on_challenge(&challenge),
-                ConnectionEvent::GameStarted(info) => self.on_game_started(info),
+                ConnectionEvent::GameStarted(info) => self.on_game_started(info, store),
                 ConnectionEvent::ChallengeCanceled { id } => {
                     self.accepted.retain(|(accepted, _)| *accepted != id);
                 }
@@ -532,7 +579,7 @@ impl EngineOnline {
         });
     }
 
-    fn on_game_started(&mut self, info: GameInfo) {
+    fn on_game_started(&mut self, info: GameInfo, store: &mut Option<StoreAccess<'_>>) {
         self.accepted.retain(|(id, _)| *id != info.game_id);
         if self
             .games
@@ -547,11 +594,56 @@ impl EngineOnline {
         let (Some(bot), Some(spec)) = (self.bot.clone(), self.spec.clone()) else {
             return;
         };
+        let policy = EnginePolicy {
+            draw: self.settings.draw,
+            resign_if_engine_fails: true,
+            movetime: self.settings.movetime,
+        };
+        // Partida que já estava no banco (o app fechou e religou no meio dela): continua no
+        // mesmo log, nunca uma segunda linha na Biblioteca. O Lichess reenvia `gameStart`
+        // das Partidas em andamento ao abrir o fluxo de eventos.
+        let stored = store
+            .as_mut()
+            .and_then(|access| stored_game(access, &info.game_id).map(|(id, g)| (access, id, g)));
+        let mut resumed = None;
+        if let Some((access, id, game)) = stored {
+            let engine = self.make_engine(&spec);
+            if let Ok(session) = bot.resume_game(game, engine, policy) {
+                access.store.resume_game(id).ok();
+                resumed = Some((id, session));
+            }
+        }
+        let (session, store_id) = if let Some((id, session)) = resumed {
+            self.note(Activity::GameResumed {
+                opponent: info.opponent.name.clone(),
+            });
+            (session, Some(id))
+        } else {
+            let engine = self.make_engine(&spec);
+            self.note(Activity::GameStarted {
+                opponent: info.opponent.name.clone(),
+            });
+            (bot.open_game(&info, engine, policy), None)
+        };
+        self.games.push(BotGame {
+            session,
+            store_id,
+            opponent: info.opponent.name.clone(),
+            rating: info.opponent.rating,
+            color_white: info.color == chess_core::Color::White,
+            rated: info.rated,
+            speed: info.speed.clone(),
+            resign_wanted: self.stopping == Some(StopReason::UserNow),
+        });
+    }
+
+    /// A Engine de uma Partida; se ela não sobe, uma Engine morta que faz a política abandonar.
+    fn make_engine(&mut self, spec: &EngineSpec) -> Box<dyn MoveEngine> {
         let built = match self.factory.as_mut() {
-            Some(factory) => factory(&spec),
+            Some(factory) => factory(spec),
             None => Err("Nenhuma Engine escolhida.".to_owned()),
         };
-        let engine = match built {
+        match built {
             Ok(engine) => engine,
             Err(detail) => {
                 self.note(Activity::EngineStartFailed {
@@ -563,26 +655,7 @@ impl EngineOnline {
                     next: 1,
                 })
             }
-        };
-        let policy = EnginePolicy {
-            draw: self.settings.draw,
-            resign_if_engine_fails: true,
-            movetime: self.settings.movetime,
-        };
-        let session = bot.open_game(&info, engine, policy);
-        self.note(Activity::GameStarted {
-            opponent: info.opponent.name.clone(),
-        });
-        self.games.push(BotGame {
-            session,
-            store_id: None,
-            opponent: info.opponent.name.clone(),
-            rating: info.opponent.rating,
-            color_white: info.color == chess_core::Color::White,
-            rated: info.rated,
-            speed: info.speed.clone(),
-            resign_wanted: self.stopping == Some(StopReason::UserNow),
-        });
+        }
     }
 
     fn poll_answers(&mut self) {

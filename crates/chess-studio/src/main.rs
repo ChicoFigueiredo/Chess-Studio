@@ -202,6 +202,9 @@ fn main() {
             .set(WindowPlugin {
                 // Fechar a janela principal encerra o app mesmo com janelas destacadas abertas.
                 exit_condition: bevy::window::ExitCondition::OnPrimaryClosed,
+                // Quem fecha as janelas é `engine_online::exit`, que pergunta antes se há Partida
+                // da Engine online em andamento.
+                close_when_requested: false,
                 primary_window: Some(Window {
                     title: i18n::I18n::pt_br().t("app-title"),
                     resolution,
