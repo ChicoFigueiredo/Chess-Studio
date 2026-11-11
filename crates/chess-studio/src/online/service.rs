@@ -15,10 +15,16 @@
 //!   ela está no tabuleiro; fora dele, a trava vale para ela e as Posições dela (PO-13).
 //! - **Conexão.** Só a Conexão de **jogador** autorizada (`NetService::authorized_connection`)
 //!   joga; a de Engine nunca.
+//! - **Provedores.** O tabuleiro, o Painel e a gravação no banco falam com a Partida por uma
+//!   sessão abstrata ([`GameSession`]): a do Lichess ([`Live`]) e a do FICS como visitante
+//!   (`super::fics`, #254). O que é próprio de cada um (buscar, desafiar, a lista do Lichess,
+//!   a entrada de visitante e a observação do FICS) fica na parte de cada Provedor.
 
+use super::fics::{FICS_KEY, FicsInfo, FicsPlay};
 use crate::net_service::NetService;
+use crate::session::OnlineIntent;
 use chess_core::{Color, Move};
-use chess_game::Game;
+use chess_game::{Event, Game};
 use chess_net::{Clock, ConnectionId, ProviderId, Timestamp};
 use chess_providers::{
     BoardAction, BoardError, Challenge, ChallengeSpec, ConnectionEvent, ConnectionEvents,
@@ -33,6 +39,88 @@ use std::sync::Arc;
 /// Chave do Provedor no `GameSetup` das Partidas do Lichess.
 pub const LICHESS_KEY: &str = "lichess";
 
+/// O Provedor de uma Partida online no app.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub enum Provider {
+    #[default]
+    Lichess,
+    /// FICS, só como visitante (FC-01).
+    Fics,
+}
+
+impl Provider {
+    /// A chave no `GameSetup` e no `metadata` (a mesma do catálogo).
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Lichess => LICHESS_KEY,
+            Self::Fics => FICS_KEY,
+        }
+    }
+
+    pub fn of_key(key: &str) -> Option<Self> {
+        match key {
+            LICHESS_KEY => Some(Self::Lichess),
+            FICS_KEY => Some(Self::Fics),
+            _ => None,
+        }
+    }
+}
+
+/// Uma Partida online: o Provedor e o id dela lá. O id sozinho não basta (o FICS numera as
+/// Partidas, o Lichess usa letras e números).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct GameKey {
+    pub provider: Provider,
+    pub remote_id: String,
+}
+
+impl GameKey {
+    pub fn new(provider: Provider, remote_id: impl Into<String>) -> Self {
+        Self {
+            provider,
+            remote_id: remote_id.into(),
+        }
+    }
+
+    /// A chave da Partida online `game` (nenhuma, se não é online de um Provedor conhecido).
+    pub fn of(game: &Game) -> Option<Self> {
+        let online = game.setup().online_game()?;
+        Some(Self::new(
+            Provider::of_key(&online.provider)?,
+            online.remote_id.clone(),
+        ))
+    }
+}
+
+/// A sessão de uma Partida online, de qualquer Provedor: o controlador dela (ADR-0007). O
+/// tabuleiro, o Painel e a gravação no banco só falam com a Partida por aqui; buscar adversário,
+/// desafiar e observar ficam na parte de cada Provedor.
+pub trait GameSession {
+    fn provider(&self) -> Provider;
+    /// O id da Partida no Provedor (o FICS só o dá quando a Partida começa).
+    fn remote_id(&self) -> Option<&str>;
+    /// A Partida, a partir do primeiro retrato do Provedor (só o que ele confirmou).
+    fn game(&self) -> Option<&Game>;
+    /// A linha da Partida no banco.
+    fn store_id(&self) -> Option<GameId>;
+    /// O estado da conexão com o Provedor (o selo do Painel).
+    fn link(&self) -> LinkStatus;
+    /// A Partida local e a do Provedor não conferem: nada foi reescrito e não há Lance local
+    /// até um retrato coerente.
+    fn desynced(&self) -> bool;
+    /// O adversário saiu (só o Lichess avisa).
+    fn opponent_gone(&self) -> bool {
+        false
+    }
+    /// O prazo do Provedor para reclamar a vitória já passou.
+    fn can_claim_victory(&self, _now: Timestamp) -> bool {
+        false
+    }
+    /// Envia o pedido do jogador (Lance, empate, abandono…), **uma vez**. Nada muda até o
+    /// Provedor confirmar; a recusa volta como aviso.
+    fn request(&mut self, intent: OnlineIntent, now: Timestamp) -> Result<(), OnlineNotice>;
+}
+
 /// Por que um pedido online não pôde nem começar.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Unavailable {
@@ -42,6 +130,8 @@ pub enum Unavailable {
     ProviderOff,
     /// A Board API recusou antes da rede (ritmo, busca em andamento…).
     Board(BoardError),
+    /// O FICS (ou o app, por ele) recusou antes da rede.
+    Fics(chess_providers::FicsError),
 }
 
 /// O que a interface conta ao jogador (avisos de vida curta).
@@ -75,6 +165,8 @@ pub enum OnlineNotice {
     EventsClosed(ProviderError),
     /// Falha ao gravar no banco.
     StoreFailed(String),
+    /// Um aviso da conexão de visitante no FICS (entrada, busca, desafios, observação, queda).
+    Fics(FicsInfo),
 }
 
 /// Busca de adversário em andamento.
@@ -178,6 +270,60 @@ impl Live {
     }
 }
 
+impl GameSession for Live {
+    fn provider(&self) -> Provider {
+        Provider::Lichess
+    }
+
+    fn remote_id(&self) -> Option<&str> {
+        Some(self.session.game_id())
+    }
+
+    fn game(&self) -> Option<&Game> {
+        self.session.game()
+    }
+
+    fn store_id(&self) -> Option<GameId> {
+        self.store_id
+    }
+
+    fn link(&self) -> LinkStatus {
+        self.session.link()
+    }
+
+    fn desynced(&self) -> bool {
+        self.game()
+            .and_then(|g| g.snapshot().online)
+            .is_some_and(|o| o.desync.is_some())
+    }
+
+    fn opponent_gone(&self) -> bool {
+        Live::opponent_gone(self)
+    }
+
+    fn can_claim_victory(&self, now: Timestamp) -> bool {
+        Live::can_claim_victory(self, now)
+    }
+
+    fn request(&mut self, intent: OnlineIntent, now: Timestamp) -> Result<(), OnlineNotice> {
+        use OnlineIntent as I;
+        let result = match intent {
+            I::Play(mv) => self.session.play(mv),
+            I::Resign => self.session.resign(),
+            I::Abort => self.session.abort(),
+            I::OfferDraw => self.session.offer_draw(),
+            I::AcceptDraw => self.session.accept_draw(),
+            I::DeclineDraw => self.session.decline_draw(),
+            I::ClaimVictory if self.can_claim_victory(now) => self.session.claim_victory(),
+            I::ClaimVictory => Err(BoardError::NotAllowed("o prazo do Lichess não chegou")),
+        };
+        result.map_err(|error| match intent {
+            I::Play(mv) => OnlineNotice::MoveRefused { mv },
+            _ => OnlineNotice::SessionClosed(error),
+        })
+    }
+}
+
 /// Uma linha de "Partidas em andamento".
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlayingRow {
@@ -213,7 +359,7 @@ pub struct StoreAccess<'a> {
 #[derive(Debug, Default)]
 pub struct Frame {
     /// A Partida a pôr no tabuleiro agora (começou, ou o jogador pediu para abrir).
-    pub show: Option<String>,
+    pub show: Option<GameKey>,
 }
 
 /// O serviço inteiro. Um por app.
@@ -233,7 +379,9 @@ pub struct OnlinePlay {
     remote_at: Option<Timestamp>,
     games: Vec<Live>,
     /// A Partida que deve ir ao tabuleiro assim que existir (começou ou foi aberta).
-    to_show: Option<String>,
+    to_show: Option<GameKey>,
+    /// A conexão de visitante no FICS (#254).
+    pub fics: FicsPlay,
     notices: Vec<OnlineNotice>,
     db: DbIndex,
     /// Quem espera um `gameStart`: a busca, a Engine do Lichess ou um desafio feito.
@@ -250,9 +398,28 @@ impl std::fmt::Debug for OnlinePlay {
     }
 }
 
+/// A Origem da Partida online no banco (PO-16): Provedor, id, endereço e licença dos dados.
 fn metadata(game: &Game, at: Timestamp) -> GameMetadata {
     let online = game.setup().online_game();
     let remote = online.map(|o| o.remote_id.clone()).unwrap_or_default();
+    let provider = online.and_then(|o| Provider::of_key(&o.provider));
+    if provider == Some(Provider::Fics) {
+        // O número da Partida no FICS é reaproveitado depois do fim: não é endereço.
+        return GameMetadata {
+            title: Some("Partida online · FICS (visitante)".to_owned()),
+            extra: json!({
+                "online": {
+                    "provider": FICS_KEY,
+                    "remote_id": remote,
+                    "server": "freechess.org",
+                    "license": "Termos do FICS",
+                    "mode": "ics-guest",
+                    "guest": true,
+                    "queried_at_ms": at.as_millis(),
+                }
+            }),
+        };
+    }
     GameMetadata {
         title: Some("Partida online no Lichess".to_owned()),
         extra: json!({
@@ -268,10 +435,54 @@ fn metadata(game: &Game, at: Timestamp) -> GameMetadata {
     }
 }
 
+/// O que a sessão de uma Partida devolveu num quadro, para gravar.
+#[derive(Debug)]
+pub(super) struct Confirmed<'a> {
+    pub game: Option<&'a Game>,
+    /// A Partida acabou de nascer: o setup vai ao banco antes dos Eventos.
+    pub created: bool,
+    pub events: &'a [Event],
+}
+
+/// Grava no banco exatamente o que o Provedor confirmou (PO-16): o setup quando a Partida
+/// nasce e, depois, os Eventos do controlador, na ordem. Vale para todo Provedor. Diz se a
+/// Partida terminou neste quadro.
+pub(super) fn record(
+    store: &mut Option<StoreAccess<'_>>,
+    store_id: &mut Option<GameId>,
+    confirmed: &Confirmed<'_>,
+    at: Timestamp,
+    notices: &mut Vec<OnlineNotice>,
+) -> bool {
+    if confirmed.created
+        && let (Some(game), Some(access)) = (confirmed.game, store.as_mut())
+    {
+        match access
+            .store
+            .create_game_for(access.profile, game.setup(), &metadata(game, at))
+        {
+            Ok(id) => *store_id = Some(id),
+            Err(error) => notices.push(OnlineNotice::StoreFailed(error.to_string())),
+        }
+    }
+    if !confirmed.events.is_empty()
+        && let (Some(id), Some(access)) = (*store_id, store.as_mut())
+        && let Err(error) = access.store.append_events(id, confirmed.events)
+    {
+        notices.push(OnlineNotice::StoreFailed(error.to_string()));
+    }
+    confirmed.events.iter().any(|e| {
+        matches!(
+            e.kind,
+            chess_game::EventKind::GameEnded { .. } | chess_game::EventKind::GameAborted
+        )
+    })
+}
+
 /// A Partida do banco é online (gravada por este serviço)?
 fn stored_remote_id(metadata: &serde_json::Value) -> Option<String> {
     let online = metadata.get("online")?;
-    (online.get("provider")?.as_str()? == LICHESS_KEY)
+    (online.get("provider")?.as_str()? == Provider::Lichess.key())
         .then(|| online.get("remote_id")?.as_str().map(str::to_owned))
         .flatten()
 }
@@ -554,7 +765,7 @@ impl OnlinePlay {
     /// Lichess; a que só existe lá nasce do primeiro retrato.
     pub fn open(&mut self, net: &NetService, remote_id: &str) -> Result<(), Unavailable> {
         if self.live(remote_id).is_some() {
-            self.to_show = Some(remote_id.to_owned());
+            self.to_show = Some(GameKey::new(Provider::Lichess, remote_id));
             return Ok(());
         }
         let board = self.ready(net)?;
@@ -571,7 +782,7 @@ impl OnlinePlay {
             }
         };
         self.games.push(live);
-        self.to_show = Some(remote_id.to_owned());
+        self.to_show = Some(GameKey::new(Provider::Lichess, remote_id));
         Ok(())
     }
 
@@ -655,36 +866,43 @@ impl OnlinePlay {
         self.games
             .iter()
             .any(|g| g.realtime && g.game().is_none_or(Game::online_human_in_progress) && !g.over())
+            || self.fics.game_in_progress()
     }
 
-    /// Envia o que o jogador pediu na Partida `remote_id`. Nada muda até o retrato.
-    pub fn apply(&mut self, remote_id: &str, intent: crate::session::OnlineIntent) {
-        use crate::session::OnlineIntent as I;
+    /// A sessão da Partida `key`, de qualquer Provedor.
+    pub fn session_for(&self, key: &GameKey) -> Option<&dyn GameSession> {
+        match key.provider {
+            Provider::Lichess => self
+                .live(&key.remote_id)
+                .map(|live| live as &dyn GameSession),
+            Provider::Fics => self.fics.session_for(&key.remote_id),
+        }
+    }
+
+    fn session_for_mut(&mut self, key: &GameKey) -> Option<&mut dyn GameSession> {
+        match key.provider {
+            Provider::Lichess => self
+                .live_mut(&key.remote_id)
+                .map(|live| live as &mut dyn GameSession),
+            Provider::Fics => self.fics.session_for_mut(&key.remote_id),
+        }
+    }
+
+    /// Envia à sessão da Partida `key` o que o jogador pediu. Nada muda até o Provedor
+    /// confirmar; nada é reenviado.
+    pub fn apply_to(&mut self, key: &GameKey, intent: OnlineIntent) {
         let now = self.now();
-        let Some(live) = self.live_mut(remote_id) else {
+        let Some(session) = self.session_for_mut(key) else {
             return;
         };
-        let result = match intent {
-            I::Play(mv) => live.session.play(mv),
-            I::Resign => live.session.resign(),
-            I::Abort => live.session.abort(),
-            I::OfferDraw => live.session.offer_draw(),
-            I::AcceptDraw => live.session.accept_draw(),
-            I::DeclineDraw => live.session.decline_draw(),
-            I::ClaimVictory if live.can_claim_victory(now) => live.session.claim_victory(),
-            I::ClaimVictory => Err(BoardError::NotAllowed("o prazo do Lichess não chegou")),
-        };
-        if let Err(error) = result {
-            let notice = match (intent, error) {
-                (I::Play(mv), _) => OnlineNotice::MoveRefused { mv },
-                (_, error) => OnlineNotice::SessionClosed(error),
-            };
+        if let Err(notice) = session.request(intent, now) {
             self.notices.push(notice);
         }
     }
 
     /// A Partida no tabuleiro mudou: a sessão de uma correspondência que saiu dele fecha (a
-    /// trava continua por ela, pelo banco); as de tempo real seguem até o fim.
+    /// trava continua por ela, pelo banco); as de tempo real seguem até o fim. `shown` é o id
+    /// da Partida do Lichess no tabuleiro (nenhum, se o tabuleiro mostra outra coisa).
     pub fn follow_board(&mut self, shown: Option<&str>) {
         let before = self.games.len();
         self.games.retain(|g| {
@@ -717,12 +935,19 @@ impl OnlinePlay {
         self.poll_playing();
         self.poll_requests();
         self.poll_games(&mut store);
-        let show = self.to_show.take_if(|id| {
-            self.games
-                .iter()
-                .any(|g| g.remote_id() == id && g.game().is_some())
-        });
-        Frame { show }
+        let now = self.now();
+        if let Some(key) = self.fics.poll(&mut store, now, &mut self.notices) {
+            self.to_show = Some(key);
+        }
+        let to_show = self.to_show.take();
+        let ready = to_show
+            .as_ref()
+            .is_some_and(|key| self.session_for(key).is_some_and(|s| s.game().is_some()));
+        if ready {
+            return Frame { show: to_show };
+        }
+        self.to_show = to_show;
+        Frame { show: None }
     }
 
     fn refresh_db(&mut self, store: &mut Store, profile: ProfileId) {
@@ -841,7 +1066,7 @@ impl OnlinePlay {
         let remote_id = info.game_id.clone();
         let live = self.start_session(&board, info);
         self.games.push(live);
-        self.to_show = Some(remote_id.clone());
+        self.to_show = Some(GameKey::new(Provider::Lichess, remote_id.clone()));
         self.notices.push(OnlineNotice::GameStarted { remote_id });
         // Quem esperava já tem a sua Partida.
         if let Some(run) = self.seek.take() {
@@ -973,22 +1198,23 @@ impl OnlinePlay {
         let mut ended = false;
         for live in &mut self.games {
             let polled = live.session.poll();
-            if polled.created
-                && let (Some(game), Some(access)) = (live.session.game(), store.as_mut())
+            // Só o que o Provedor confirmou: o setup e exatamente os Eventos do controlador.
+            let before = live.store_id;
+            ended |= record(
+                store,
+                &mut live.store_id,
+                &Confirmed {
+                    game: live.session.game(),
+                    created: polled.created,
+                    events: &polled.events,
+                },
+                now,
+                &mut self.notices,
+            );
+            if let Some(id) = live.store_id
+                && before != Some(id)
             {
-                match access.store.create_game_for(
-                    access.profile,
-                    game.setup(),
-                    &metadata(game, now),
-                ) {
-                    Ok(id) => {
-                        live.store_id = Some(id);
-                        self.db.by_remote.insert(live.remote_id().to_owned(), id);
-                    }
-                    Err(error) => self
-                        .notices
-                        .push(OnlineNotice::StoreFailed(error.to_string())),
-                }
+                self.db.by_remote.insert(live.remote_id().to_owned(), id);
             }
             if polled.created
                 && let Some(game) = live.session.game()
@@ -998,20 +1224,6 @@ impl OnlinePlay {
                     .online_game()
                     .is_some_and(|o| o.days_per_move.is_none());
             }
-            // Só o que o Provedor confirmou: exatamente os Eventos do controlador.
-            if !polled.events.is_empty()
-                && let (Some(id), Some(access)) = (live.store_id, store.as_mut())
-                && let Err(error) = access.store.append_events(id, &polled.events)
-            {
-                self.notices
-                    .push(OnlineNotice::StoreFailed(error.to_string()));
-            }
-            ended |= polled.events.iter().any(|e| {
-                matches!(
-                    e.kind,
-                    chess_game::EventKind::GameEnded { .. } | chess_game::EventKind::GameAborted
-                )
-            });
             for notice in polled.notices {
                 let mapped = match notice {
                     SessionNotice::MoveRefused { mv, .. } => Some(OnlineNotice::MoveRefused { mv }),
@@ -1060,6 +1272,9 @@ impl OnlinePlay {
     /// estado mais novo) e as do banco sem sessão.
     pub fn locked_games(&self) -> Vec<&Game> {
         let mut games: Vec<&Game> = self.games.iter().filter_map(Live::game).collect();
+        // A Partida do FICS enquanto a sessão existe, inclusive a que caiu: a trava fica até o
+        // fim confirmado ou o descarte explícito (FC-08).
+        games.extend(self.fics.game());
         for (_, game) in &self.db.in_progress {
             let remote = game.setup().online_game().map(|o| o.remote_id.as_str());
             if !self.games.iter().any(|g| Some(g.remote_id()) == remote) {

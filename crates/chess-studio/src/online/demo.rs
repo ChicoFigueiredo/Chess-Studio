@@ -3,12 +3,16 @@
 //! banco. As cenas montam a Partida localmente pelo mesmo retrato que o Lichess mandaria.
 //!
 //! Cenas: `dialog`, `offline`, `waiting`, `challenges`, `engine`, `list`, `playing`,
-//! `reconnecting`, `draw`, `gone`, `toast`, `offer`, `ended`.
+//! `reconnecting`, `draw`, `gone`, `toast`, `offer`, `ended` e, no FICS como visitante (#254),
+//! `fics-off`, `fics-guest`, `fics-lobby`, `fics-waiting`, `fics-challenges`, `fics-observe`,
+//! `fics-playing`, `fics-desync`, `fics-dropped` e `fics-ended`.
 //!
 //! `--online-tour dialog,playing,...` (com `--screenshot <dir>`) percorre as cenas nos Temas
 //! Escuro e Claro numa só execução e grava `online-<cena>-<tema>.png`.
 
-use super::service::{OutgoingState, PlayingRow};
+use super::fics::FicsSeek;
+use super::fics_view::{FicsTab, FicsView};
+use super::service::{OutgoingState, PlayingRow, Provider};
 use super::view::{Pace, PanelView};
 use super::{OnlineUi, Tab};
 use crate::session::Session;
@@ -19,8 +23,42 @@ use chess_game::{
     ProviderClock, ProviderEnd, ProviderSnapshot, TimeControl, Timestamp as GameTime, Variant,
 };
 use chess_net::Timestamp;
-use chess_providers::{Challenge, ChallengePlayer, LinkStatus, OnlineTime, Seek};
+use chess_providers::{
+    Challenge, ChallengePlayer, FicsChallenge, FicsStatus, LinkStatus, ObservedGame, OnlineTime,
+    Seek,
+};
 use std::time::Duration;
+
+/// O que a tela do FICS mostra numa cena (dados fictícios; nenhuma conexão).
+#[derive(Debug, Clone, Default)]
+struct FicsDemo {
+    enabled: bool,
+    status: Option<FicsStatus>,
+    seek: Option<(u32, u32, Duration)>,
+    challenges: Vec<FicsChallenge>,
+    observed: bool,
+    tab: FicsTab,
+}
+
+const GUEST: &str = "GuestDEMO";
+
+fn fics_challenge(
+    name: &str,
+    rating: Option<u32>,
+    kind: &str,
+    minutes: u32,
+    inc: u32,
+) -> FicsChallenge {
+    FicsChallenge {
+        challenger: name.to_owned(),
+        rating,
+        receiver: GUEST.to_owned(),
+        rated: false,
+        kind: kind.to_owned(),
+        minutes,
+        increment_s: inc,
+    }
+}
 
 /// Uma cena: o que a tela, o Painel e o aviso mostram.
 #[derive(Debug, Clone)]
@@ -36,6 +74,10 @@ pub struct Scene {
     opponent_gone: bool,
     toast: bool,
     offer: Option<usize>,
+    /// Cena do FICS (tela e Painel com a Partida de visitante).
+    fics: Option<FicsDemo>,
+    desynced: bool,
+    dropped: bool,
 }
 
 const OPPONENT: &str = "Coruja_Azul";
@@ -73,6 +115,14 @@ impl Scene {
             opponent_gone: false,
             toast: false,
             offer: None,
+            fics: None,
+            desynced: false,
+            dropped: false,
+        };
+        let ready = FicsDemo {
+            enabled: true,
+            status: Some(FicsStatus::Ready),
+            ..FicsDemo::default()
         };
         let blitz = OnlineTime::RealTime {
             base_s: 300,
@@ -174,8 +224,99 @@ impl Scene {
                 opponent_gone: true,
                 ..base
             },
+            "fics-off" => Self {
+                fics: Some(FicsDemo::default()),
+                ..base
+            },
+            "fics-guest" => Self {
+                fics: Some(FicsDemo {
+                    enabled: true,
+                    ..FicsDemo::default()
+                }),
+                ..base
+            },
+            "fics-lobby" | "fics-playing" | "fics-ended" => Self {
+                fics: Some(ready),
+                ..base
+            },
+            "fics-waiting" => Self {
+                fics: Some(FicsDemo {
+                    seek: Some((5, 3, Duration::from_secs(18))),
+                    ..ready
+                }),
+                ..base
+            },
+            "fics-challenges" => Self {
+                fics: Some(FicsDemo {
+                    challenges: vec![
+                        fics_challenge("Peao_Passado", Some(1520), "blitz", 3, 0),
+                        fics_challenge("GuestXQZT", None, "wild/fr", 5, 0),
+                    ],
+                    tab: FicsTab::Challenges,
+                    ..ready
+                }),
+                ..base
+            },
+            "fics-observe" => Self {
+                fics: Some(FicsDemo {
+                    observed: true,
+                    tab: FicsTab::Observe,
+                    ..ready
+                }),
+                ..base
+            },
+            "fics-desync" => Self {
+                fics: Some(ready),
+                desynced: true,
+                ..base
+            },
+            "fics-dropped" => Self {
+                fics: Some(FicsDemo {
+                    status: Some(FicsStatus::Closed),
+                    ..ready
+                }),
+                link: Some(LinkStatus::Closed),
+                dropped: true,
+                ..base
+            },
             _ => return None,
         })
+    }
+
+    /// O Provedor da cena.
+    fn provider(&self) -> Provider {
+        if self.fics.is_some() {
+            Provider::Fics
+        } else {
+            Provider::Lichess
+        }
+    }
+
+    /// A tela do FICS desta cena.
+    pub(super) fn fics_view(&self, now: Timestamp) -> FicsView {
+        let demo = self.fics.clone().unwrap_or_default();
+        FicsView {
+            enabled: demo.enabled,
+            status: demo.status,
+            handle: demo.status.map(|_| GUEST.to_owned()),
+            closed: None,
+            dropped: self.dropped,
+            seek: demo.seek.map(|(minutes, increment_s, ago)| FicsSeek {
+                minutes,
+                increment_s,
+                since: Timestamp::from_millis(
+                    now.as_millis()
+                        .saturating_sub(i64::try_from(ago.as_millis()).unwrap_or(0)),
+                ),
+                posted: true,
+            }),
+            challenges: demo.challenges,
+            observe_requested: None,
+            observing: demo.observed,
+            observed: demo.observed.then(observed_game).flatten(),
+            in_game: false,
+            now,
+        }
     }
 
     fn dialog_tab(&self) -> Option<Tab> {
@@ -184,7 +325,30 @@ impl Scene {
             "challenges" => Some(Tab::Challenge),
             "engine" => Some(Tab::Engine),
             "list" => Some(Tab::Playing),
+            "fics-off" | "fics-guest" | "fics-lobby" | "fics-waiting" | "fics-challenges"
+            | "fics-observe" => Some(Tab::Seek),
             _ => None,
+        }
+    }
+
+    /// Abre a tela da cena (no Provedor dela) e preenche o formulário de exemplo.
+    pub(super) fn open_dialog(&self, ui: &mut OnlineUi) {
+        let Some(tab) = self.dialog_tab() else {
+            return;
+        };
+        ui.open_at(tab);
+        if let Some(fics) = &self.fics {
+            ui.open_fics(fics.tab);
+            if self.name == "fics-observe" {
+                ui.fics_form.observe = "77".to_owned();
+            }
+        }
+        if self.name == "challenges" {
+            ui.form.name = "Peao_Passado".to_owned();
+        }
+        if self.name == "dialog" {
+            ui.form.seek_pace = Pace::Rapid10_5;
+            ui.form.seek_rated = true;
         }
     }
 
@@ -208,6 +372,7 @@ impl Scene {
             refreshing: false,
             refreshed: (self.name == "list").then_some(now),
             now,
+            fics: self.fics_view(now),
         }
     }
 
@@ -218,7 +383,10 @@ impl Scene {
             opponent_gone: self.opponent_gone,
             can_claim: self.opponent_gone,
             incoming: self.incoming.len(),
-            stored: 2,
+            stored: if self.fics.is_some() { 0 } else { 2 },
+            desynced: self.desynced,
+            dropped: self.dropped,
+            fics_incoming: 0,
         }
     }
 
@@ -232,55 +400,83 @@ impl Scene {
 
     /// A Partida no tabuleiro desta cena, se houver.
     fn game(&self) -> Option<Game> {
-        let script: (&[&str], Option<&str>, Option<ProviderEnd>, Option<Color>) =
-            match self.name.as_str() {
-                // Espanhola, e a intenção enviada 4.Ba4 à espera do Lichess.
-                "playing" => (&RUY, Some("b5a4"), None, None),
-                "reconnecting" | "gone" => (&RUY, None, None, None),
-                "draw" => (&RUY_LONG, None, None, Some(Color::Black)),
-                "ended" => (
-                    &RUY_LONG,
-                    None,
-                    Some(ProviderEnd::Decided(Outcome {
-                        result: GameResult::WhiteWins,
-                        reason: EndReason::Resignation,
-                    })),
-                    None,
-                ),
-                _ => return None,
-            };
+        let script: (&[&str], Option<&str>, Option<ProviderEnd>, Option<Color>) = match self
+            .name
+            .as_str()
+        {
+            // Espanhola, e a intenção enviada 4.Ba4 à espera do Provedor.
+            "playing" | "fics-playing" => (&RUY, Some("b5a4"), None, None),
+            "reconnecting" | "gone" | "fics-desync" | "fics-dropped" => (&RUY, None, None, None),
+            "draw" => (&RUY_LONG, None, None, Some(Color::Black)),
+            "ended" | "fics-ended" => (
+                &RUY_LONG,
+                None,
+                Some(ProviderEnd::Decided(Outcome {
+                    result: GameResult::WhiteWins,
+                    reason: EndReason::Resignation,
+                })),
+                None,
+            ),
+            _ => return None,
+        };
         let (moves, sent, end, offer) = script;
+        let fics = self.provider() == Provider::Fics;
+        // No FICS: visitante, sem rating, Partida 142.
+        let (provider, remote_id, white, white_rating, black, black_rating) = if fics {
+            ("fics", "142", GUEST, None, "Peao_Passado", None)
+        } else {
+            (
+                "lichess",
+                "cR7nQ2wE",
+                "Voce_Demo",
+                Some(1612),
+                OPPONENT,
+                Some(1648),
+            )
+        };
         let setup = GameSetup::online(
             OnlineGame {
-                provider: "lichess".into(),
-                remote_id: "cR7nQ2wE".into(),
+                provider: provider.into(),
+                remote_id: remote_id.into(),
                 local_color: Color::White,
                 opponent: Opponent::Human,
                 white: OnlinePlayer {
-                    name: "Voce_Demo".into(),
-                    rating: Some(1612),
+                    name: white.into(),
+                    rating: white_rating,
                 },
                 black: OnlinePlayer {
-                    name: OPPONENT.into(),
-                    rating: Some(1648),
+                    name: black.into(),
+                    rating: black_rating,
                 },
-                rated: true,
+                rated: !fics,
                 days_per_move: None,
             },
             Variant::Standard,
             None,
         )
         .ok()?
-        .with_time_control(TimeControl {
-            base_ms: 600_000,
-            increment_ms: 5_000,
+        .with_time_control(if fics {
+            TimeControl {
+                base_ms: 300_000,
+                increment_ms: 3_000,
+            }
+        } else {
+            TimeControl {
+                base_ms: 600_000,
+                increment_ms: 5_000,
+            }
         });
+        let (white_ms, black_ms) = if fics {
+            (212_000, 247_000)
+        } else {
+            (512_000, 547_000)
+        };
         let mut game = Game::new(setup);
         let snapshot = ProviderSnapshot {
             moves: moves.iter().map(|m| (*m).to_owned()).collect(),
             clock: Some(ProviderClock {
-                white_ms: 512_000,
-                black_ms: 547_000,
+                white_ms,
+                black_ms,
                 running: true,
             }),
             draw_offer: offer,
@@ -296,6 +492,57 @@ impl Scene {
 }
 
 const RUY: [&str; 6] = ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6"];
+
+/// A Partida observada da cena `fics-observe`: Gambito da Dama, vista desde o começo.
+fn observed_game() -> Option<ObservedGame> {
+    let setup = GameSetup::online(
+        OnlineGame {
+            provider: "fics".into(),
+            remote_id: "77".into(),
+            local_color: Color::White,
+            opponent: Opponent::Human,
+            white: OnlinePlayer {
+                name: "Bispo_Solitario".into(),
+                rating: None,
+            },
+            black: OnlinePlayer {
+                name: "Gambito_Verde".into(),
+                rating: None,
+            },
+            rated: false,
+            days_per_move: None,
+        },
+        Variant::Standard,
+        None,
+    )
+    .ok()?
+    .with_time_control(TimeControl {
+        base_ms: 180_000,
+        increment_ms: 0,
+    });
+    let mut game = Game::new(setup);
+    let snapshot = ProviderSnapshot {
+        moves: ["d2d4", "d7d5", "c2c4", "e7e6", "b1c3", "g8f6", "c1g5"]
+            .iter()
+            .map(|m| (*m).to_owned())
+            .collect(),
+        clock: Some(ProviderClock {
+            white_ms: 151_000,
+            black_ms: 163_000,
+            running: true,
+        }),
+        draw_offer: None,
+        end: None,
+    };
+    game.handle(Command::Provider(snapshot), GameTime::mono(1))
+        .ok()?;
+    Some(ObservedGame {
+        game: 77,
+        white: "Bispo_Solitario".into(),
+        black: "Gambito_Verde".into(),
+        snapshot: game.snapshot(),
+    })
+}
 const RUY_LONG: [&str; 11] = [
     "e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6", "b5a4", "g8f6", "e1g1", "f8e7", "f1e1",
 ];
@@ -325,21 +572,19 @@ fn enter(
     dock: Option<&mut crate::dock::Dock>,
 ) {
     *ui = OnlineUi::default();
-    if let Some(tab) = scene.dialog_tab() {
-        ui.open_at(tab);
-        if scene.name == "challenges" {
-            ui.form.name = "Peao_Passado".to_owned();
-        }
-        if scene.name == "dialog" {
-            ui.form.seek_pace = Pace::Rapid10_5;
-            ui.form.seek_rated = true;
-        }
-    }
+    scene.open_dialog(ui);
     match scene.game() {
         Some(game) => {
             session.show_online(game, None, true);
             if let Some(dock) = dock {
                 super::reveal_panel(&mut dock.layout);
+                // Nas cenas do FICS, o Painel vai para o grupo do Relógio (o mais alto), para
+                // caber inteiro na captura: os avisos do FICS são mais longos que os do Lichess.
+                if scene.fics.is_some() {
+                    dock.layout
+                        .move_into_group_of(super::PANEL_ID, crate::dock::ids::CLOCK);
+                    dock.layout.activate(super::PANEL_ID);
+                }
             }
         }
         None if session.is_online() => {
@@ -469,16 +714,7 @@ pub fn apply_demo(
         warn!("cena desconhecida em --online-demo: {name}");
         return;
     };
-    if let Some(tab) = scene.dialog_tab() {
-        ui.open_at(tab);
-        if scene.name == "challenges" {
-            ui.form.name = "Peao_Passado".to_owned();
-        }
-        if scene.name == "dialog" {
-            ui.form.seek_pace = Pace::Rapid10_5;
-            ui.form.seek_rated = true;
-        }
-    }
+    scene.open_dialog(&mut ui);
     if let Some(game) = scene.game() {
         session.show_online(game, None, true);
         if let Some(mut dock) = dock {

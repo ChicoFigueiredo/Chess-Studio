@@ -417,6 +417,32 @@ fn chess_api_is_a_computing_engine_without_token_and_documents_that_no_key_is_ne
     assert!(service.note.contains("sem chave"));
 }
 
+#[test]
+fn fics_plays_as_a_guest_only_with_no_password_over_a_plaintext_channel() {
+    // #254: o FICS joga como visitante; a senha nunca entra (o canal não é cifrado, CX-18).
+    let fics = provider(ProviderId::Fics);
+    let play = fics.service(Capability::Play).unwrap();
+    assert_eq!(play.status, ServiceStatus::Ready);
+    assert_eq!(play.auth, &[AuthMethod::None]);
+    assert!(!fics.auth_methods().iter().any(|a| a.uses_password()));
+    assert!(fics.uses_network());
+    assert!(fics.sends.contains("texto puro"));
+    let ics: Vec<_> = chess_net::ics_endpoints()
+        .iter()
+        .filter(|e| e.provider == ProviderId::Fics)
+        .collect();
+    assert_eq!(ics.len(), 1);
+    assert!(!ics[0].encrypted, "o FICS não tem canal cifrado comprovado");
+    // Nenhum Provedor do catálogo declara senha.
+    for p in catalog() {
+        assert!(
+            !p.auth_methods().iter().any(|a| a.uses_password()),
+            "{} pede senha",
+            p.name
+        );
+    }
+}
+
 /// Termos de quem desenvolve que não podem aparecer em texto de Provedor (notas, avisos,
 /// restrições e licenças): a pessoa lê linguagem de usuário.
 const JARGON: [&str; 9] = [

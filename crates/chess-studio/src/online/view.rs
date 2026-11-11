@@ -1,10 +1,14 @@
-//! A interface da Partida online: a tela "Partida online no Lichess" (buscar adversário,
-//! desafiar, Engine do Lichess, Partidas em andamento), o Painel Partida online, o aviso
+//! A interface da Partida online: a tela "Partida online" (no Lichess: buscar adversário,
+//! desafiar, Engine do Lichess, Partidas em andamento; no FICS como visitante, a tela de
+//! [`super::fics_view`]), o Painel Partida online (o mesmo para os dois Provedores), o aviso
 //! discreto de desafio recebido e a confirmação de abandono. Só widgets e tokens do design
 //! system; textos em Fluent, na linguagem do usuário. Nada aqui escreve a Partida: as
 //! intenções vão à `Session` ou ao serviço online.
 
-use super::service::{OnlineNotice, OnlinePlay, OutgoingState, PlayingRow, Unavailable};
+use super::fics_view::{self, FicsView};
+use super::service::{
+    GameKey, OnlineNotice, OnlinePlay, OutgoingState, PlayingRow, Provider, Unavailable,
+};
 use super::{OnlineService, OnlineUi, Tab, board_error_text, provider_error_text};
 use crate::actions::ActionRequested;
 use crate::i18n::I18n;
@@ -173,7 +177,7 @@ pub fn left_label(i18n: &I18n, seconds: u64) -> String {
 }
 
 /// "0:42", "12:05".
-fn elapsed_label(elapsed: Duration) -> String {
+pub(super) fn elapsed_label(elapsed: Duration) -> String {
     let s = elapsed.as_secs();
     format!("{}:{:02}", s / 60, s % 60)
 }
@@ -186,12 +190,12 @@ fn rated_label(i18n: &I18n, rated: bool) -> String {
     })
 }
 
-fn muted(ui: &mut egui::Ui, text: impl Into<String>) {
+pub(super) fn muted(ui: &mut egui::Ui, text: impl Into<String>) {
     let p = palette(ui);
     ui.add(egui::Label::new(egui::RichText::new(text).small().color(p.ink_muted)).wrap());
 }
 
-fn section(ui: &mut egui::Ui, text: &str) {
+pub(super) fn section(ui: &mut egui::Ui, text: &str) {
     let p = palette(ui);
     ui.label(
         egui::RichText::new(text)
@@ -201,7 +205,7 @@ fn section(ui: &mut egui::Ui, text: &str) {
 }
 
 /// Linha com ícone e texto (avisos, Trava de fair play).
-fn icon_line(ui: &mut egui::Ui, glyph: &str, tint: egui::Color32, text: &str) {
+pub(super) fn icon_line(ui: &mut egui::Ui, glyph: &str, tint: egui::Color32, text: &str) {
     let p = palette(ui);
     ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
@@ -215,7 +219,7 @@ fn icon_line(ui: &mut egui::Ui, glyph: &str, tint: egui::Color32, text: &str) {
 }
 
 /// Bloco centrado de estado (sem Conexão, espera…).
-fn state_block(ui: &mut egui::Ui, glyph: Option<&str>, title: &str, text: &str) {
+pub(super) fn state_block(ui: &mut egui::Ui, glyph: Option<&str>, title: &str, text: &str) {
     let p = palette(ui);
     ui.vertical_centered(|ui| {
         ui.add_space(8.0);
@@ -309,6 +313,7 @@ fn unavailable_text(i18n: &I18n, error: &Unavailable) -> String {
         Unavailable::NoConnection => i18n.t("online-error-sign-in"),
         Unavailable::ProviderOff => i18n.t("online-error-disabled"),
         Unavailable::Board(error) => board_error_text(i18n, error),
+        Unavailable::Fics(error) => fics_view::error_text(i18n, error),
     }
 }
 
@@ -351,6 +356,7 @@ pub fn notice_text(i18n: &I18n, notice: &OnlineNotice) -> Option<(StatusTone, St
             StatusTone::Danger,
             i18n.t_with("online-notice-store", &[("error", error)]),
         ),
+        OnlineNotice::Fics(info) => fics_view::info_text(i18n, info),
     })
 }
 
@@ -363,7 +369,7 @@ fn notice_glyph(tone: StatusTone) -> &'static str {
     }
 }
 
-fn notice_line(ui: &mut egui::Ui, tone: StatusTone, text: &str) {
+pub(super) fn notice_line(ui: &mut egui::Ui, tone: StatusTone, text: &str) {
     let p = palette(ui);
     let tint = match tone {
         StatusTone::Success => p.success,
@@ -404,6 +410,8 @@ pub(super) struct DialogView {
     pub(super) refreshing: bool,
     pub(super) refreshed: Option<Timestamp>,
     pub(super) now: Timestamp,
+    /// A conexão de visitante no FICS.
+    pub(super) fics: FicsView,
 }
 
 impl DialogView {
@@ -423,6 +431,7 @@ impl DialogView {
             refreshing: play.refreshing(),
             refreshed: play.refreshed_at(),
             now: net.clock().now(),
+            fics: FicsView::of(play, net),
         }
     }
 }
@@ -434,6 +443,7 @@ pub fn online_dialog(
     mut ui_state: ResMut<OnlineUi>,
     service: Res<OnlineService>,
     net: Option<Res<NetService>>,
+    mut consent: Option<ResMut<crate::provider_consent::ConsentDialog>>,
     mut actions: MessageWriter<ActionRequested>,
 ) -> Result {
     if !ui_state.open {
@@ -456,10 +466,11 @@ pub fn online_dialog(
             ui.painter().rect_filled(rect, 0.0, palette(ui).scrim);
         });
     let mut intents = Vec::new();
+    let mut fics_intents = Vec::new();
     // O egui guarda o tamanho da janela: um id por conteúdo faz ela encolher ao trocar de aba
     // ou de estado, em vez de herdar a altura da aba mais longa.
     let content = (
-        ui_state.tab,
+        (ui_state.provider, ui_state.tab, ui_state.fics_tab),
         view.connected && view.provider_on,
         view.seek.map(|(_, _, posted)| posted),
         view.engine_pending,
@@ -467,9 +478,23 @@ pub fn online_dialog(
         view.outgoing.len(),
         view.rows.len(),
         ui_state.error.is_some(),
+        (
+            view.fics.enabled,
+            view.fics.status.map(|s| s as u8),
+            view.fics.seek.is_some(),
+            view.fics.challenges.len(),
+            view.fics.observed.is_some(),
+            view.fics.in_game,
+            ui_state.fics_confirm_leave,
+            ui_state.fics_error.is_some(),
+        ),
     );
     let max_height = (ctx.viewport_rect().height() - 160.0).max(240.0);
-    egui::Window::new(i18n.t("online-title"))
+    let title = match ui_state.provider {
+        Provider::Lichess => i18n.t("online-title"),
+        Provider::Fics => i18n.t("fics-title"),
+    };
+    egui::Window::new(title)
         .id(egui::Id::new(("online-dialog", content)))
         .order(egui::Order::Foreground)
         .collapsible(false)
@@ -484,7 +509,26 @@ pub fn online_dialog(
                 .min_scrolled_height(max_height)
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
-                    dialog_body(ui, &i18n, &mut ui_state, &view, &mut intents);
+                    provider_choice(ui, &i18n, &mut ui_state);
+                    match ui_state.provider {
+                        Provider::Lichess => {
+                            dialog_body(ui, &i18n, &mut ui_state, &view, &mut intents);
+                        }
+                        Provider::Fics => {
+                            fics_view::body(
+                                ui,
+                                &i18n,
+                                &mut ui_state,
+                                &view.fics,
+                                &mut fics_intents,
+                            );
+                            if let Some(error) = &ui_state.fics_error {
+                                ui.add_space(8.0);
+                                let text = fics_view::unavailable_text(&i18n, error);
+                                notice_line(ui, StatusTone::Danger, &text);
+                            }
+                        }
+                    }
                 });
         });
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -496,7 +540,29 @@ pub fn online_dialog(
     for intent in intents {
         apply_intent(intent, &mut ui_state, &service, &net, &mut actions);
     }
+    for intent in fics_intents {
+        fics_view::apply(
+            intent,
+            &mut ui_state,
+            &service,
+            &net,
+            consent.as_deref_mut(),
+            &i18n,
+            &mut actions,
+        );
+    }
     Ok(())
+}
+
+/// Lichess ou FICS como visitante: o mesmo Painel e o mesmo tabuleiro, telas de começo
+/// próprias.
+fn provider_choice(ui: &mut egui::Ui, i18n: &I18n, state: &mut OnlineUi) {
+    let options = [
+        (Provider::Lichess, i18n.t("fics-provider-lichess")),
+        (Provider::Fics, i18n.t("fics-provider-fics")),
+    ];
+    cs_segmented(ui, &mut state.provider, &options);
+    ui.add_space(12.0);
 }
 
 fn apply_intent(
@@ -624,7 +690,7 @@ fn dialog_body(
 }
 
 /// Rodapé com os botões à direita (o primário por último, à direita).
-fn footer(ui: &mut egui::Ui, buttons: impl FnOnce(&mut egui::Ui)) {
+pub(super) fn footer(ui: &mut egui::Ui, buttons: impl FnOnce(&mut egui::Ui)) {
     ui.add_space(16.0);
     // Uma linha da altura de um controle: sem isso o layout da direita ocuparia o resto da
     // janela e o rodapé flutuaria no meio dela.
@@ -1155,7 +1221,7 @@ fn playing_row(ui: &mut egui::Ui, i18n: &I18n, row: &PlayingRow, intents: &mut V
 
 // --- Painel Partida online -----------------------------------------------------------------
 
-/// O que o Painel mostra da Partida online do tabuleiro.
+/// O que o Painel mostra da Partida online do tabuleiro (de qualquer Provedor).
 #[derive(Debug, Clone)]
 pub struct PanelView {
     pub link: Option<LinkStatus>,
@@ -1164,20 +1230,55 @@ pub struct PanelView {
     pub can_claim: bool,
     pub incoming: usize,
     pub stored: usize,
+    /// A sessão diz que a Partida local e a do Provedor não conferem.
+    pub desynced: bool,
+    /// FICS: a conexão caiu com a Partida em andamento (a sessão segura a trava até o
+    /// descarte).
+    pub dropped: bool,
+    /// Desafios recebidos no FICS.
+    pub fics_incoming: usize,
 }
 
 impl PanelView {
-    fn of(play: &OnlinePlay, session: &Session, now: Timestamp) -> Self {
-        let live = session.online_remote_id().and_then(|id| play.live(id));
+    pub(super) fn of(play: &OnlinePlay, session: &Session, now: Timestamp) -> Self {
+        let key = GameKey::of(session.game());
+        let live = key.as_ref().and_then(|k| play.session_for(k));
+        let fics = live.is_some_and(|l| l.provider() == Provider::Fics);
         Self {
-            link: live.map(super::service::Live::link),
+            link: live.map(|l| l.link()),
             now,
-            opponent_gone: live.is_some_and(super::service::Live::opponent_gone),
+            opponent_gone: live.is_some_and(|l| l.opponent_gone()),
             can_claim: live.is_some_and(|l| l.can_claim_victory(now)),
             incoming: play.incoming.len(),
             stored: play.stored_in_progress(),
+            desynced: live.is_some_and(|l| l.desynced()),
+            dropped: fics && play.fics.dropped_mid_game(),
+            fics_incoming: play.fics.challenges().len(),
         }
     }
+}
+
+/// O texto próprio do Provedor da Partida: os do FICS não falam do Lichess.
+fn by_provider(provider: Provider, key: &'static str) -> &'static str {
+    if provider == Provider::Lichess {
+        return key;
+    }
+    match key {
+        "online-badge-lichess" => "fics-badge",
+        "online-status-desync" => "fics-status-desync",
+        "online-status-not-open" => "fics-status-gone",
+        "online-abort-tip" => "fics-abort-tip",
+        "online-fairplay-on" => "fics-fairplay-on",
+        "online-ended-aborted" => "fics-ended-aborted",
+        "online-ended-saved" => "fics-ended-saved",
+        "online-resign-text" => "fics-resign-text",
+        other => other,
+    }
+}
+
+/// O Provedor da Partida do tabuleiro (Lichess, se não é online).
+fn board_provider(session: &Session) -> Provider {
+    GameKey::of(session.game()).map_or(Provider::Lichess, |k| k.provider)
 }
 
 /// O que o Painel pediu.
@@ -1190,6 +1291,10 @@ enum PanelIntent {
     List,
     Analyze,
     Library,
+    /// FICS: descartar a sessão que caiu (solta a Trava de fair play).
+    DiscardFics,
+    /// FICS: ver os desafios recebidos.
+    FicsChallenges,
 }
 
 pub fn online_panel(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
@@ -1260,6 +1365,14 @@ fn apply_panel_intent(world: &mut World, intent: PanelIntent) {
         PanelIntent::Library => {
             world.write_message(ActionRequested(Action::OpenLibrary));
         }
+        PanelIntent::DiscardFics => {
+            world
+                .resource::<OnlineService>()
+                .with(|play| play.fics.leave());
+        }
+        PanelIntent::FicsChallenges => world
+            .resource_mut::<OnlineUi>()
+            .open_fics(super::fics_view::FicsTab::Challenges),
     }
 }
 
@@ -1323,7 +1436,7 @@ fn player_line(name: &str, rating: Option<u32>) -> String {
 fn ended_text(i18n: &I18n, session: &Session) -> String {
     let snapshot = session.snapshot();
     let Some(outcome) = snapshot.outcome else {
-        return i18n.t("online-ended-aborted");
+        return i18n.t(by_provider(board_provider(session), "online-ended-aborted"));
     };
     let result = i18n.t(crate::ui::result_key(outcome.result));
     let reason = i18n.t(crate::ui::reason_key(outcome.reason));
@@ -1381,9 +1494,33 @@ fn panel_body(
                 intents.push(PanelIntent::List);
             }
         }
+        if view.fics_incoming > 0 {
+            ui.add_space(8.0);
+            let text = if view.fics_incoming == 1 {
+                i18n.t("fics-panel-incoming-one")
+            } else {
+                i18n.t_with(
+                    "fics-panel-incoming-other",
+                    &[("count", &view.fics_incoming.to_string())],
+                )
+            };
+            icon_line(ui, icon::SWORD, p.accent, &text);
+            ui.add_space(4.0);
+            if ui
+                .add(
+                    CsButton::new(&i18n.t("fics-panel-see-challenges"))
+                        .variant(ButtonVariant::Subtle),
+                )
+                .clicked()
+            {
+                intents.push(PanelIntent::FicsChallenges);
+            }
+        }
         recent_notices(ui, i18n, notices);
         return;
     };
+    let provider = Provider::of_key(&online.provider).unwrap_or_default();
+    let text = |key: &'static str| i18n.t(by_provider(provider, key));
     let snapshot = session.snapshot();
     let over = snapshot.is_over();
     let human = online.opponent == Opponent::Human;
@@ -1402,11 +1539,25 @@ fn panel_body(
             ui,
             StatusTone::Neutral,
             icon::GLOBE,
-            &i18n.t("online-badge-lichess"),
+            &text("online-badge-lichess"),
         );
         link_badge(ui, i18n, view.link, over, view.now);
     });
     ui.add_space(8.0);
+    // FICS: a conexão caiu durante a Partida. O FICS a dá como perdida; nada reconecta.
+    if view.dropped {
+        notice_line(ui, StatusTone::Danger, &i18n.t("fics-dropped-text"));
+        ui.add_space(4.0);
+        muted(ui, i18n.t("fics-dropped-lock"));
+        ui.add_space(4.0);
+        if ui
+            .add(CsButton::new(&i18n.t("fics-discard")).variant(ButtonVariant::Danger))
+            .clicked()
+        {
+            intents.push(PanelIntent::DiscardFics);
+        }
+        ui.add_space(8.0);
+    }
     let opponent = match online.local_color {
         Color::White => &online.black,
         Color::Black => &online.white,
@@ -1456,8 +1607,14 @@ fn panel_body(
                     .color(p.ink),
             );
         });
-    } else if online_view.is_some_and(|o| o.desync.is_some()) {
-        notice_line(ui, StatusTone::Warning, &i18n.t("online-status-desync"));
+    } else if online_view.is_some_and(|o| o.desync.is_some()) || view.desynced {
+        // Nada é inventado: o tabuleiro fica no último Lance que o Provedor confirmou.
+        notice_line(ui, StatusTone::Warning, &text("online-status-desync"));
+    } else if view.dropped {
+        // O aviso da queda já está acima.
+    } else if view.link.is_none() && provider == Provider::Fics {
+        // A Partida de visitante não continua em outra sessão (FC-08).
+        notice_line(ui, StatusTone::Warning, &text("online-status-not-open"));
     } else if view.link.is_none() {
         notice_line(ui, StatusTone::Info, &i18n.t("online-status-not-open"));
         ui.add_space(4.0);
@@ -1499,7 +1656,7 @@ fn panel_body(
                         .icon(icon::X_CIRCLE)
                         .enabled(live),
                 )
-                .on_hover_text(i18n.t("online-abort-tip"));
+                .on_hover_text(text("online-abort-tip"));
             if abort.clicked() {
                 intents.push(PanelIntent::Board(OnlineIntent::Abort));
             }
@@ -1536,7 +1693,7 @@ fn panel_body(
             ui,
             icon::SHIELD_CHECK,
             p.accent,
-            &i18n.t("online-fairplay-on"),
+            &text("online-fairplay-on"),
         );
     } else {
         icon_line(
@@ -1631,7 +1788,10 @@ fn ended_section(
         }
     });
     ui.add_space(4.0);
-    muted(ui, i18n.t("online-ended-saved"));
+    muted(
+        ui,
+        i18n.t(by_provider(board_provider(session), "online-ended-saved")),
+    );
 }
 
 fn recent_notices(ui: &mut egui::Ui, i18n: &I18n, notices: &[OnlineNotice]) {
@@ -1682,7 +1842,8 @@ pub fn resign_dialog(
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(&ctx, |ui| {
             ui.set_max_width(360.0);
-            ui.add(egui::Label::new(i18n.t("online-resign-text")).wrap());
+            let text = by_provider(board_provider(&session), "online-resign-text");
+            ui.add(egui::Label::new(i18n.t(text)).wrap());
             footer(ui, |ui| {
                 if ui
                     .add(

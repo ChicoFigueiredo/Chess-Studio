@@ -763,6 +763,8 @@ pub fn consent_line_key(provider: ProviderId, capability: Capability) -> Option<
         (ProviderId::Lichess, Capability::Download) => "consent-sends-lichess-download",
         (ProviderId::Lichess, Capability::Play) => "consent-sends-lichess-play",
         (ProviderId::ChessCom, Capability::Query) => "consent-sends-chesscom-query",
+        // Como visitante e em texto puro: a conexão com o FICS não tem criptografia (#254).
+        (ProviderId::Fics, Capability::Play) => "consent-sends-fics-play",
         (ProviderId::ChessApi, Capability::Analyze) => "consent-sends-chessapi-analyze",
         (ProviderId::PlayStrategy, Capability::Query) => "consent-sends-playstrategy-query",
         _ => return None,
@@ -797,7 +799,7 @@ pub fn sends_keys(provider: &Provider, state: CardState) -> Vec<&'static str> {
         return vec![sends_key(provider, state)];
     }
     keys.push(match provider.id {
-        ProviderId::ChessCom => "consent-sends-tail-no-password",
+        ProviderId::ChessCom | ProviderId::Fics => "consent-sends-tail-no-password",
         ProviderId::PlayStrategy => "consent-sends-tail-playstrategy",
         _ => "consent-sends-tail-local-profile",
     });
@@ -823,6 +825,12 @@ pub fn hosts(provider: &Provider) -> Vec<&'static str> {
             out.push(endpoint.host);
         }
     }
+    // O FICS fala ICS (TCP de texto), fora do catálogo HTTP.
+    for endpoint in chess_net::ics_endpoints() {
+        if endpoint.provider == provider.id && !out.contains(&endpoint.host) {
+            out.push(endpoint.host);
+        }
+    }
     out
 }
 
@@ -833,6 +841,8 @@ pub fn auth_keys(provider: &Provider) -> Vec<&'static str> {
         .auth_methods()
         .into_iter()
         .map(|method| match method {
+            // O FICS dá um nome de visitante; o app nunca manda senha (FC-01).
+            AuthMethod::None if provider.id == ProviderId::Fics => "fics-auth-guest",
             AuthMethod::None => "connections-auth-none",
             AuthMethod::PublicId => "connections-auth-public-id",
             AuthMethod::OAuth2Pkce if ready => "connections-auth-oauth",
@@ -996,8 +1006,9 @@ mod tests {
         assert_eq!(state_of(ProviderId::Icc), CardState::NeedsApproval);
         assert_eq!(state_of(ProviderId::Chessify), CardState::Unconfirmed);
         assert_eq!(state_of(ProviderId::StockfishApi), CardState::Unconfirmed);
+        // O FICS joga como visitante (#254): cartão completo, com Switch.
+        assert_eq!(state_of(ProviderId::Fics), CardState::Off);
         // Adaptadores distantes aparecem como "Em breve".
-        assert_eq!(state_of(ProviderId::Fics), CardState::Planned);
         // Partidas públicas prontas: o cartão liga; Partida online segue "numa próxima versão".
         assert_eq!(state_of(ProviderId::PlayStrategy), CardState::Off);
         assert_eq!(state_of(ProviderId::ChessApi), CardState::Off);
@@ -1200,10 +1211,10 @@ mod tests {
         let twic = card_actions(provider(ProviderId::Twic), CardState::ManualImport, false);
         assert_eq!(twic.primary.map(|s| s.action), Some(CardAction::OpenDocs));
         // Cartão menor: nenhuma ação principal, só instruções e termos no menu.
-        let fics = card_actions(provider(ProviderId::Fics), CardState::Planned, false);
-        assert!(fics.primary.is_none());
+        let soon = card_actions(provider(ProviderId::Chessigma), CardState::Planned, false);
+        assert!(soon.primary.is_none());
         assert!(
-            fics.menu
+            soon.menu
                 .iter()
                 .all(|a| matches!(a.action, CardAction::OpenDocs | CardAction::OpenTerms))
         );
@@ -1322,7 +1333,11 @@ mod tests {
     #[test]
     fn the_switch_exists_only_on_full_cards_of_network_providers() {
         assert!(has_switch(provider(ProviderId::Lichess), CardState::Off));
-        assert!(!has_switch(provider(ProviderId::Fics), CardState::Planned));
+        assert!(has_switch(provider(ProviderId::Fics), CardState::Off));
+        assert!(!has_switch(
+            provider(ProviderId::Chessigma),
+            CardState::Planned
+        ));
         assert!(!has_switch(
             provider(ProviderId::Twic),
             CardState::ManualImport
@@ -1369,13 +1384,53 @@ mod tests {
         };
         assert_eq!(twic, ["connections-do-import-file"]);
         assert_eq!(
-            face(provider(ProviderId::Fics), CardState::Planned),
+            face(provider(ProviderId::Chessigma), CardState::Planned),
             Face::Note("connections-face-planned")
         );
         assert_eq!(
             face(provider(ProviderId::Icc), CardState::NeedsApproval),
             Face::Note("connections-face-approval")
         );
+    }
+
+    #[test]
+    fn the_fics_card_plays_as_a_guest_never_asks_for_a_password_and_warns_of_plain_text() {
+        // #254: ligar e desligar pelo Switch (consentimento por Provedor), jogar como
+        // visitante, sem campo de senha nem autorização, e o aviso de texto puro.
+        let fics = provider(ProviderId::Fics);
+        assert_eq!(state_of(ProviderId::Fics), CardState::Off);
+        assert_eq!(
+            card_state(fics, &ProviderState::Available, false, false),
+            CardState::On
+        );
+        for state in [CardState::Off, CardState::On] {
+            assert!(has_switch(fics, state));
+            assert_eq!(face(fics, state), Face::Can(vec!["connections-do-play"]));
+            assert!(card_fields(fics, state).is_empty(), "sem campo nenhum");
+            assert!(key_fields(fics, state).is_empty(), "sem campo de segredo");
+            let actions = card_actions(fics, state, false);
+            assert!(actions.primary.is_none());
+            assert!(!actions.menu.iter().any(|a| matches!(
+                a.action,
+                CardAction::Authorize
+                    | CardAction::Reauthorize
+                    | CardAction::EnterKey
+                    | CardAction::Link
+                    | CardAction::Test
+            )));
+            assert_eq!(
+                sends_keys(fics, state),
+                ["consent-sends-fics-play", "consent-sends-tail-no-password"]
+            );
+        }
+        assert_eq!(auth_keys(fics), ["fics-auth-guest"]);
+        assert_eq!(hosts(fics), ["freechess.org"]);
+        let i18n = I18n::pt_br();
+        let sends = sends_text(&i18n, fics, CardState::Off);
+        assert!(sends.contains("texto puro") && sends.contains("criptografia"));
+        assert!(sends.contains("Nenhuma senha"), "{sends}");
+        let guest = i18n.t("fics-auth-guest").to_lowercase();
+        assert!(guest.contains("visitante") && guest.contains("sem senha"));
     }
 
     #[test]

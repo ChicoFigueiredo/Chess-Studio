@@ -73,6 +73,12 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 | CX-HOM-51 | Engine remota sob a Trava de fair play | sim | UNVERIFIED |
 | CX-HOM-52 | Engine online: ligar, esperar, jogar e parar | sim | UNVERIFIED |
 | CX-HOM-53 | Engine online: limites, conta BOT e falha da Engine | sim | UNVERIFIED |
+| CX-HOM-55 | FICS na Central: aviso, ligar e desligar | não | UNVERIFIED |
+| CX-HOM-56 | FICS: entrar como visitante e sair | sim | UNVERIFIED |
+| CX-HOM-57 | FICS: buscar adversário, jogar e terminar | sim | UNVERIFIED |
+| CX-HOM-58 | FICS: desafios recebidos e variantes | sim | UNVERIFIED |
+| CX-HOM-59 | FICS: queda de conexão durante a Partida | sim | UNVERIFIED |
+| CX-HOM-60 | FICS: observar uma Partida | sim | UNVERIFIED |
 
 ## Itens
 
@@ -677,6 +683,59 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Esperado:** cada desafio fora dos limites é recusado com o motivo certo e aparece em **Atividade recente**; o último é aceito e, atingido o máximo, a tela passa a **Parando** com a razão **Limite de Partidas atingido**; desafios durante a Partida são recusados. A conversão só acontece depois do aviso e da confirmação marcada, uma vez; numa conta com Partidas o Lichess recusa e a tela diz que a conta precisa ser nova. Se a Engine não inicia, a Partida é abandonada e a atividade diz que a Engine não iniciou (o relógio não corre). Nunca há Lance ilegal enviado.
 - **Com o serviço real:** a conversão em BOT é **irreversível**: use só uma conta criada para o teste.
 - **Evidência:** [`engine_online/tests.rs`](../../crates/chess-studio/src/engine_online/tests.rs).
+
+### CX-HOM-55. FICS na Central: aviso, ligar e desligar
+
+- **Passos:**
+  1. Arquivo > Conexões; em **Jogar online**, encontre o cartão **FICS** e abra **Detalhes**.
+  2. Ligue o Switch; depois desligue.
+  3. Início > Nova Partida > **Online (Lichess ou FICS)**; escolha **FICS · visitante** com o FICS desligado e clique em **Ligar o FICS…**.
+- **Esperado:** o cartão diz, antes de ligar, **Conexão sem criptografia** (texto puro), **Só como visitante** (nome GuestXXXX, sem rating, **nunca pede nem envia senha**), **Sem reconexão automática** e **Sem timeseal**. Não há campo de senha, chave nem botão de autorizar. **Como se identifica: Visitante, sem senha**; **O que é enviado** fala em texto puro e **nenhuma senha**. O diálogo **Ligar FICS?** mostra o mesmo texto e **freechess.org**. Desligado, nada sai: a barra de status não mostra conexão com o FICS.
+- **Evidência:** [`connections/model.rs`](../../crates/chess-studio/src/connections/model.rs) (`the_fics_card_plays_as_a_guest_never_asks_for_a_password_and_warns_of_plain_text`), [`online/fics_tests.rs`](../../crates/chess-studio/src/online/fics_tests.rs) (`with_the_fics_off_no_connection_is_ever_opened`, `the_fics_screen_draws_every_state_in_plain_language_with_no_password_field`), capturas em [`docs/evidencias/fics-visitante/`](../evidencias/fics-visitante/).
+
+### CX-HOM-56. FICS: entrar como visitante e sair
+
+- **Pré-condição:** FICS ligado (CX-HOM-55); internet.
+- **Passos:**
+  1. Na tela da Partida online, **FICS · visitante** > **Entrar como visitante**.
+  2. Espere **No FICS como Guest…**; depois **Sair do FICS**.
+- **Esperado:** a entrada mostra **Entrando como visitante** e termina com o nome de visitante que o FICS deu. Nenhuma senha é pedida em momento algum. **Sair do FICS** encerra a conexão na hora.
+- **Com o serviço real (UNVERIFIED):** os textos de entrada do FICS real (`login:`, "Press return to enter the server as…", "Starting FICS session as…") são os que o app reconhece; até aqui só foram testados com transcrições **sintéticas**. Se a entrada não terminar em 60 s, o app diz que o FICS não confirmou a entrada a tempo; anote o que apareceu.
+
+### CX-HOM-57. FICS: buscar adversário, jogar e terminar
+
+- **Passos:**
+  1. Conectado como visitante, **Buscar adversário** > Blitz 5+0 > **Buscar adversário**; uma vez, **Cancelar busca**, e busque de novo.
+  2. Quando a Partida começar, jogue pelos gestos de sempre (3D e 2D, arrastando e com dois cliques), inclusive um roque e, se der, uma promoção.
+  3. Use **Propor empate**, **Abortar** (logo no começo de outra Partida) e **Abandonar** (confirme).
+  4. Depois do fim, **Analisar** e **Ver na Biblioteca**.
+- **Esperado:** pareado, a tela fecha e a Partida vai ao tabuleiro com o Painel **Partida online** (selos **FICS · visitante** e **Ao vivo**, **sem rating**). Cada Lance aparece no destino com **Enviando …** até o FICS confirmar e nunca é reenviado. Durante a Partida a Trava de fair play desliga Engines, Explorador, finais e análise; só cai com o fim confirmado pelo FICS. A Partida está na Biblioteca com **Partida online · FICS (visitante) · Partida N**.
+- **Com o serviço real (UNVERIFIED):** o **formato do Lance enviado** (`e2e4`, `o-o`, `o-o-o`, `e7e8=q`) é aceito pelo FICS real; os textos de criação (`{Game N (…) Creating …}`), de fim, de empate e de abortar são reconhecidos. Um Lance recusado aparece como **O FICS recusou o Lance** e a peça volta.
+
+### CX-HOM-58. FICS: desafios recebidos e variantes
+
+- **Passos:**
+  1. Conectado como visitante, de outro cliente do FICS (outro visitante), desafie o nome mostrado em xadrez padrão (por exemplo `match GuestXXXX 3 0`) e, depois, numa variante (`match GuestXXXX 3 0 wild 1`).
+  2. Na aba **Desafios**, **Recusar** um e **Aceitar** o outro.
+- **Esperado:** o desafio aparece na aba **Desafios (1)** e no Painel (**1 desafio recebido no FICS**). O de variante diz que o app só joga xadrez padrão e não tem **Aceitar**. Uma Partida de variante que comece mesmo assim é recusada com aviso e não vai ao tabuleiro nem à Biblioteca.
+- **Com o serviço real (UNVERIFIED):** o texto do desafio (`Challenge: … unrated blitz 3 0.`) do FICS real é reconhecido.
+
+### CX-HOM-59. FICS: queda de conexão durante a Partida
+
+- **Passos:**
+  1. Numa Partida de visitante, solte uma peça e desligue a internet logo em seguida (ou feche a conexão pelo sistema).
+  2. Tente mover de novo; tente ligar a Análise.
+  3. Religue a internet. No Painel, **Descartar a sessão**.
+- **Esperado:** o Painel e a tela avisam: **A conexão com o FICS caiu durante a Partida. No FICS, a Partida de visitante que cai é dada como perdida; o resultado não pôde ser confirmado e o app não reconecta sozinho.** O Lance sem confirmação volta e não é reenviado; o tabuleiro não aceita Lance. A Trava de fair play continua até **Descartar a sessão**; só então a Análise liga. Nada reconecta sozinho; **Entrar de novo como visitante** é outra sessão, outro nome. Na Biblioteca, a Partida fica sem resultado.
+
+### CX-HOM-60. FICS: observar uma Partida
+
+- **Passos:**
+  1. Conectado como visitante, aba **Observar**: digite o número de uma Partida em andamento no FICS (veja no site ou em outro cliente) e **Observar**.
+  2. Espere alguns Lances; **Parar de observar**.
+- **Esperado:** um tabuleiro pequeno mostra a Partida, com nomes, relógios e o último Lance. Nada vai ao tabuleiro principal nem à Biblioteca, e a Trava de fair play não liga. Uma Partida de variante é recusada com aviso.
+- **Com o serviço real (UNVERIFIED):** os textos de observação (`You are now observing game N.`, `Game N: …`, `Removing game N from observation list.`) do FICS real são reconhecidos.
+- **Evidência:** [`online/fics_tests.rs`](../../crates/chess-studio/src/online/fics_tests.rs), [decisões FC-13 a FC-21](../decisoes/2026-11-11-fics.md).
 
 ## Fora deste roteiro
 

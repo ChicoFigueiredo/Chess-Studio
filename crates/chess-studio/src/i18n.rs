@@ -79,6 +79,7 @@ const PT_BR: &[(&str, &str)] = &[
         "online.ftl",
         include_str!("../assets/i18n/pt-BR/online.ftl"),
     ),
+    ("fics.ftl", include_str!("../assets/i18n/pt-BR/fics.ftl")),
     (
         "authorization.ftl",
         include_str!("../assets/i18n/pt-BR/authorization.ftl"),
