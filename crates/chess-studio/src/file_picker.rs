@@ -247,7 +247,7 @@ impl FilePickButton {
             Some(PickOutcome::Chosen(path)) => Some(path),
             _ => None,
         };
-        if self.unavailable {
+        if self.is_unavailable() {
             ui.small(i18n.t("file-picker-unavailable"));
             return chosen;
         }
