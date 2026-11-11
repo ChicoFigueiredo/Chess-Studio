@@ -19,6 +19,8 @@ chess-core.workspace = true
 chess-game.workspace = true
 chess-input.workspace = true
 chess-store.workspace = true
+chess-net.workspace = true
+chess-providers.workspace = true
 chess-uci.workspace = true
 chess-pgn.workspace = true
 chess-training.workspace = true
@@ -61,6 +63,8 @@ egui-phosphor = "0.14"
 
 [dev-dependencies]
 png = "0.18"
+# Servidor falso da camada de rede (CX-17): só nos testes, nunca serviço real.
+chess-net = { workspace = true, features = ["testing"] }
 
 [lints]
 workspace = true

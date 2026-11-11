@@ -180,7 +180,7 @@ pub struct ActionEnv<'w> {
     board2d: Option<ResMut<'w, crate::board2d_panel::Board2dPanel>>,
     appearance: ResMut<'w, crate::ui_theme::Appearance>,
     flip: ResMut<'w, crate::board2d::BoardFlip>,
-    ribbon: Option<Res<'w, crate::ribbon::RibbonState>>,
+    ribbon: Option<ResMut<'w, crate::ribbon::RibbonState>>,
     resumable: Option<Res<'w, ResumableGame>>,
     persistence: Option<Res<'w, crate::persistence::PersistenceHandle>>,
     pub(crate) palette: ResMut<'w, crate::palette::PaletteState>,
@@ -259,6 +259,14 @@ impl ActionEnv<'_> {
             Action::OpenOptions => {
                 self.options_ui.open = true;
                 // Vinda da Paleta: ela fecha, o diálogo é modal.
+                self.palette.close();
+            }
+            Action::OpenConnections => {
+                // Os bastidores abrem na Central; a Paleta fecha (a página cobre a janela).
+                let Some(ribbon) = self.ribbon.as_mut() else {
+                    return false;
+                };
+                ribbon.backstage = Some(crate::ribbon::BackstagePage::Connections);
                 self.palette.close();
             }
             Action::OpenPalette => self.palette.toggle(),

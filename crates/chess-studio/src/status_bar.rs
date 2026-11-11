@@ -12,6 +12,7 @@ use crate::analysis::Analysis;
 use crate::dock::Dock;
 use crate::focus::ViewState;
 use crate::i18n::I18n;
+use crate::net_service::{NetService, NetSummary};
 use crate::profiles::{FactoryProfile, InterfaceProfiles, ProfileKey, ProfileRequest};
 use crate::session::Session;
 use crate::ui_theme::{self, Appearance, Palette, Tokens};
@@ -38,6 +39,17 @@ pub enum Tone {
     Warning,
 }
 
+/// Situação da rede na barra: a palavra acompanha sempre o ícone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NetTone {
+    /// Nenhum Provedor ligado (o padrão): neutro, não é um problema.
+    Offline,
+    /// Provedores ligados e sem problema.
+    Online,
+    /// Algum Provedor ligado está limitado ou com falha.
+    Attention,
+}
+
 /// O que a barra sabe, sem Bevy nem egui.
 #[derive(Clone, Debug, PartialEq)]
 pub struct StatusSnapshot {
@@ -57,6 +69,8 @@ pub struct StatusSnapshot {
     pub hovered: Option<Square>,
     /// Vista da câmera; `None` é a câmera livre.
     pub view: Option<CameraView>,
+    /// Estado da rede (Provedores ligados, limitados, com falha; Trava de fair play).
+    pub network: NetSummary,
 }
 
 /// Engine e consentimento: o ponto leva a cor do `tone`; o texto, a palavra.
@@ -67,11 +81,19 @@ pub struct EngineChip {
     pub tone: Tone,
 }
 
+/// O indicador de rede: ícone (pelo `tone`) e palavras. Clicar abre a Central de Conexões.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NetChip {
+    pub text: String,
+    pub tone: NetTone,
+}
+
 /// Os textos da barra, prontos para desenhar.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StatusText {
     pub profile: String,
     pub engine: EngineChip,
+    pub network: NetChip,
     pub turn: String,
     /// "Casa: e4" (vazio fora do tabuleiro) e "Vista: Padrão".
     pub hover: Option<String>,
@@ -95,6 +117,50 @@ pub fn low_clock(reading: &ClockReading) -> Option<(Side, u64)> {
 fn clock_text(ms: u64) -> String {
     let secs = ms.div_ceil(1000);
     format!("{}:{:02}", secs / 60, secs % 60)
+}
+
+/// "Rede: offline" · "Rede: 2 Provedores ligados · 1 limitado" · "... · Trava de fair play".
+pub fn network_chip(summary: &NetSummary, i18n: &I18n) -> NetChip {
+    let count = |n: usize, one: &str, many: &str| {
+        if n == 1 {
+            i18n.t(one)
+        } else {
+            i18n.t_with(many, &[("count", &n.to_string())])
+        }
+    };
+    let mut parts = vec![if summary.is_offline() {
+        i18n.t("statusbar-net-offline")
+    } else {
+        count(summary.enabled, "statusbar-net-one", "statusbar-net-many")
+    }];
+    if summary.limited > 0 {
+        parts.push(count(
+            summary.limited,
+            "statusbar-net-limited-one",
+            "statusbar-net-limited-many",
+        ));
+    }
+    if summary.failing > 0 {
+        parts.push(count(
+            summary.failing,
+            "statusbar-net-failing-one",
+            "statusbar-net-failing-many",
+        ));
+    }
+    if summary.fair_play {
+        parts.push(i18n.t("statusbar-net-fairplay"));
+    }
+    let tone = if summary.needs_attention() {
+        NetTone::Attention
+    } else if summary.is_offline() {
+        NetTone::Offline
+    } else {
+        NetTone::Online
+    };
+    NetChip {
+        text: parts.join(" · "),
+        tone,
+    }
 }
 
 /// Deriva os textos da barra do instantâneo.
@@ -168,6 +234,7 @@ pub fn status_text(snapshot: &StatusSnapshot, i18n: &I18n) -> StatusText {
         view: i18n.t_with("view-label", &[("name", &view_name)]),
         profile: i18n.t_with("statusbar-profile", &[("name", &snapshot.profile)]),
         engine,
+        network: network_chip(&snapshot.network, i18n),
         turn,
         warnings,
         fps: snapshot
@@ -219,6 +286,7 @@ fn status_bar(
     hovered: Res<crate::picking::HoveredSquare>,
     rig: Res<crate::camera::CameraRig>,
     capture: Option<Res<crate::capture::CaptureMode>>,
+    net: Res<NetService>,
     mut fps: Local<f32>,
 ) -> Result {
     // Média móvel: o número não pisca a cada quadro.
@@ -251,6 +319,7 @@ fn status_bar(
         scale_percent: appearance.scale.percent(),
         hovered: hovered.0,
         view: rig.view,
+        network: net.summary(),
     };
     let text = status_text(&status, &i18n);
 
@@ -294,6 +363,12 @@ fn status_bar(
                     .on_hover_text(i18n.t("statusbar-engine-hint"));
                 if engine.clicked() && !analysis_visible {
                     actions.write(ActionRequested(Action::PanelAnalysis));
+                }
+                let network = network_chip_ui(ui, p, &text.network)
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .on_hover_text(i18n.t("statusbar-net-hint"));
+                if network.clicked() {
+                    actions.write(ActionRequested(Action::OpenConnections));
                 }
                 ui.label(&text.turn);
                 if let Some(hover) = &text.hover {
@@ -350,6 +425,31 @@ fn engine_chip(ui: &mut egui::Ui, p: &Palette, chip: &EngineChip) -> egui::Respo
     .interact(egui::Sense::click())
 }
 
+/// Ícone e palavras da rede, depois do chip da Engine. A cor leva o sinal; o ícone e o texto
+/// dizem o mesmo (nunca só a cor).
+fn network_chip_ui(ui: &mut egui::Ui, p: &Palette, chip: &NetChip) -> egui::Response {
+    let (glyph, color) = match chip.tone {
+        NetTone::Offline => (egui_phosphor::regular::WIFI_SLASH, p.ink_muted),
+        NetTone::Online => (egui_phosphor::regular::WIFI_HIGH, p.success),
+        NetTone::Attention => (egui_phosphor::regular::WARNING, p.warning),
+    };
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        ui.label(
+            egui::RichText::new(glyph)
+                .font(crate::ui_theme::icon_font(ui.ctx(), 14.0))
+                .color(color),
+        );
+        ui.label(egui::RichText::new(&chip.text).color(match chip.tone {
+            NetTone::Offline => p.ink_muted,
+            NetTone::Online => p.ink,
+            NetTone::Attention => p.warning,
+        }));
+    })
+    .response
+    .interact(egui::Sense::click())
+}
+
 /// O seletor de Perfil de interface (os mesmos perfis da janela principal).
 fn profile_menu(
     ui: &mut egui::Ui,
@@ -393,6 +493,7 @@ mod tests {
             scale_percent: 100,
             hovered: None,
             view: Some(CameraView::Standard),
+            network: NetSummary::default(),
         }
     }
 
@@ -475,6 +576,45 @@ mod tests {
         });
         assert_eq!(t.fps.as_deref(), Some("60 FPS"));
         assert_eq!(t.scale, "Escala 125%");
+    }
+
+    #[test]
+    fn the_network_chip_says_offline_by_default_with_a_neutral_tone() {
+        let t = text(&snapshot());
+        assert_eq!(t.network.text, "Rede: offline");
+        assert_eq!(t.network.tone, NetTone::Offline);
+    }
+
+    #[test]
+    fn the_network_chip_counts_providers_and_flags_limits_failures_and_the_fair_play_guard() {
+        let chip = |enabled, limited, failing, fair_play| {
+            network_chip(
+                &NetSummary {
+                    enabled,
+                    limited,
+                    failing,
+                    active_requests: 0,
+                    fair_play,
+                },
+                &I18n::pt_br(),
+            )
+        };
+        let one = chip(1, 0, 0, false);
+        assert_eq!(one.text, "Rede: 1 Provedor ligado");
+        assert_eq!(one.tone, NetTone::Online);
+        let many = chip(3, 1, 0, false);
+        assert_eq!(many.text, "Rede: 3 Provedores ligados · 1 limitado");
+        assert_eq!(many.tone, NetTone::Attention);
+        let failing = chip(2, 0, 2, true);
+        assert_eq!(
+            failing.text,
+            "Rede: 2 Provedores ligados · 2 com falha · Trava de fair play"
+        );
+        assert_eq!(failing.tone, NetTone::Attention);
+        // A Trava sozinha, offline, não é um problema da rede.
+        let locked = chip(0, 0, 0, true);
+        assert_eq!(locked.text, "Rede: offline · Trava de fair play");
+        assert_eq!(locked.tone, NetTone::Offline);
     }
 
     fn reading(running: Option<Side>, paused: bool, white_ms: u64, black_ms: u64) -> ClockReading {

@@ -312,3 +312,17 @@ fn the_token_goes_only_where_the_provider_documents_authentication() {
         }
     }
 }
+
+#[test]
+fn the_lichess_explorer_is_free_with_signup_and_says_it_needs_an_authorized_connection() {
+    // Medido em 2026-11-11: sem token o Explorador do Lichess responde 401.
+    let explore = provider(ProviderId::Lichess)
+        .service(Capability::Explore)
+        .expect("Explorador listado");
+    assert_eq!(explore.cost, Cost::FreeWithSignup);
+    assert!(
+        explore
+            .note
+            .contains("Conexão autorizada do Lichess (etapa 3)")
+    );
+}
