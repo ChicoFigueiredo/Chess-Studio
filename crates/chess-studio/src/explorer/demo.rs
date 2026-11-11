@@ -142,7 +142,7 @@ fn rook_endgame() -> EndgameTable {
             mv("Kd3", Outlook::Draw, None, Some(0), None),
             mv("Rg7", Outlook::Loss, None, Some(-4), Some(-9)),
         ],
-        origin: lichess_origin(How::Queried(Age::Minutes(3))),
+        origin: lichess_origin(How::Queried(Age::Minutes(3), Timestamp::from_millis(now_ms() - 180_000))),
     }
 }
 
@@ -165,8 +165,8 @@ fn scene(name: &str) -> Option<Scene> {
     let table = |t: OpeningsTable| OpeningsView::Table(t);
     let notice = |n: Notice| OpeningsView::Notice(n);
     Some(match name {
-        "masters" | "lichess-filters" => Scene {
-            openings: Some(table(masters_table(How::Queried(Age::Minutes(3))))),
+        "masters" | "lichess-filters" | "reference-opening" | "reference-failed" => Scene {
+            openings: Some(table(masters_table(How::Queried(Age::Minutes(3), Timestamp::from_millis(now_ms() - 180_000))))),
             ..Scene::default()
         },
         "stale" => Scene {
@@ -297,6 +297,18 @@ pub fn apply_demo(
         "masters" | "stale" | "limited" | "nodata" | "signin" | "off" => {
             state.explorer.source = Source::Masters;
         }
+        // A Partida de referência sendo aberta, ou que não deu para abrir (#239).
+        "reference-opening" | "reference-failed" => {
+            state.explorer.source = Source::Masters;
+            state.reference.demo(if name == "reference-opening" {
+                super::reference::Status::Opening("AbCdEfGh".into())
+            } else {
+                super::reference::Status::Failed {
+                    id: "AbCdEfGh".into(),
+                    key: "explorer-reference-failed-gone",
+                }
+            });
+        }
         // A fonte Lichess com ritmos e faixas de rating marcados (os filtros do Painel).
         "lichess-filters" => {
             state.explorer.source = Source::Lichess;
@@ -317,6 +329,8 @@ pub fn apply_demo(
             | "cloud"
             | "masters"
             | "lichess-filters"
+            | "reference-opening"
+            | "reference-failed"
             | "stale"
             | "signin"
             | "toomany"

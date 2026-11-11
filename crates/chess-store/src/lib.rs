@@ -41,6 +41,7 @@ mod library;
 pub mod migrations;
 mod openings;
 mod origin;
+mod remote_lookup;
 mod scoresheet;
 mod store;
 mod training;

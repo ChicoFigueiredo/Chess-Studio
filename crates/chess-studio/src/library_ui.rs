@@ -454,6 +454,8 @@ impl Detail {
 /// Estado do painel Biblioteca.
 #[derive(Resource)]
 pub struct LibraryUi {
+    /// Partida importada a abrir no próximo quadro (pedida pelo Explorador).
+    pending_open: Option<ImportedId>,
     tab: Tab,
     text: String,
     player: String,
@@ -495,6 +497,7 @@ pub struct LibraryUi {
 impl Default for LibraryUi {
     fn default() -> Self {
         Self {
+            pending_open: None,
             tab: Tab::default(),
             text: String::new(),
             player: String::new(),
@@ -563,13 +566,14 @@ impl LibraryUi {
         self.dirty = true;
     }
 
-    /// Procura as Partidas de um jogador (vinda do Explorador: "Partidas de referência").
-    pub fn focus_player(&mut self, name: &str) {
+    /// Abre a Partida importada `id` (vinda do Explorador: "Partidas de referência"). A Lista
+    /// se refaz, porque a Partida pode ter acabado de entrar.
+    pub fn open_imported(&mut self, id: ImportedId) {
         self.tab = Tab::Games;
-        self.detail = None;
         self.text.clear();
-        self.player = name.trim().to_owned();
+        self.player.clear();
         self.page = 0;
+        self.pending_open = Some(id);
         self.touch();
     }
 
@@ -1009,16 +1013,31 @@ fn origin_line(i18n: &I18n, origin: &Origin) -> String {
             || i18n.t("library-origin-unknown"),
             |s| i18n.t(source_key(s)),
         );
-    let when = origin.retrieved_at_ms / 1000 / 86_400;
+    let day = import_day(origin.retrieved_at_ms);
     i18n.t_with(
         "library-origin-line",
         &[
             ("provider", &provider),
             ("mode", &i18n.t(mode_key(origin.mode))),
-            ("day", &civil_date(when)),
+            ("day", &day),
             ("file", origin.source.as_deref().unwrap_or("-")),
         ],
     )
+}
+
+/// O dia da importação, `dd/mm/aaaa`, na hora local do computador; sem fuso do sistema, o dia
+/// em UTC (#239).
+fn import_day(at_ms: i64) -> String {
+    crate::local_time::LocalClock::current()
+        .date(at_ms)
+        .unwrap_or_else(|| {
+            let iso = civil_date(at_ms.div_euclid(1000).div_euclid(86_400));
+            let mut parts = iso.splitn(3, '-');
+            match (parts.next(), parts.next(), parts.next()) {
+                (Some(y), Some(m), Some(d)) => format!("{d}/{m}/{y}"),
+                _ => iso,
+            }
+        })
 }
 
 /// `AAAA-MM-DD` de um número de dias desde 1970-01-01 (calendário gregoriano proléptico).
@@ -1255,6 +1274,10 @@ fn library_panel(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
                 );
                 lib.refresh(handle);
                 draw(ui, i18n, &mut lib, &session, swapped, &mut actions);
+                // Pedida pelo Explorador (Partida de referência): abre depois de desenhar.
+                if let Some(id) = lib.pending_open.take() {
+                    actions.push(Action::OpenImported(id));
+                }
             }
             let mut opened_played = false;
             for action in actions {
@@ -2232,6 +2255,19 @@ mod tests {
         assert_eq!(civil_date(0), "1970-01-01");
         assert_eq!(civil_date(19_723), "2024-01-01");
         assert_eq!(civil_date(20_593), "2026-05-20");
+    }
+
+    #[test]
+    fn the_import_day_is_local_and_falls_back_to_utc() {
+        use crate::local_time::{LocalClock, testing};
+        // 2026-11-12 01:30 UTC = 2026-11-11 22:30 em Brasília.
+        let at = 1_794_447_000_000;
+        testing::with(LocalClock::fixed(-180), || {
+            assert_eq!(import_day(at), "11/11/2026");
+        });
+        testing::with(LocalClock::unknown(), || {
+            assert_eq!(import_day(at), "12/11/2026");
+        });
     }
 
     #[test]

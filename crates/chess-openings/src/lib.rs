@@ -9,6 +9,10 @@
 //!
 //! Sem dependência de Bevy nem de SQLite (ADR-0001): só regras do `chess-core`.
 
+mod pt_br;
+
+pub use pt_br::name_pt_br;
+
 use chess_core::{CanonicalPosition, RepetitionKey};
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -31,6 +35,13 @@ pub struct Opening {
     pub name: String,
     /// Meios-lances da linha que define a abertura.
     pub plies: usize,
+}
+
+impl Opening {
+    /// O nome em português (regras em `pt_br`); o original continua em `name`.
+    pub fn name_pt_br(&self) -> String {
+        name_pt_br(&self.name)
+    }
 }
 
 /// Índice Posição -> abertura.

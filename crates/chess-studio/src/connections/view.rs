@@ -13,6 +13,7 @@ use super::model::{
 };
 use super::{CentralParams, ConnectionsUi, LinkForm, Op, RenameForm};
 use crate::i18n::I18n;
+use crate::local_time::LocalClock;
 use crate::net_service::NetService;
 use crate::persistence::PersistenceHandle;
 use crate::provider_consent::ConsentDialog;
@@ -77,7 +78,8 @@ pub(super) fn page(
     profile_name: Option<&str>,
 ) {
     state.sync(service, handle);
-    let status = service.net().status();
+    let mut status = service.net().status();
+    apply_capture_state(&mut status);
     let last = model::last_queries(&service.net().recent_operations());
     let now = NetService::now();
     let mut ops = Vec::new();
@@ -258,7 +260,8 @@ impl View<'_> {
 
     /// Os cartões de uma faixa, em uma ou duas colunas conforme a largura.
     fn cards(&mut self, ui: &mut Ui, providers: &[&'static Provider]) {
-        let columns = if ui.available_width() >= TWO_COLUMNS_FROM {
+        // Um cartão só na faixa usa a largura toda: a coluna da direita não fica vazia (#239).
+        let columns = if ui.available_width() >= TWO_COLUMNS_FROM && providers.len() > 1 {
             2
         } else {
             1
@@ -507,18 +510,15 @@ impl View<'_> {
             ui.label(RichText::new(items.join(" · ")).color(p.ink));
         });
         cs_detail_row(ui, &i18n.t("connections-detail-cost"), |ui| {
+            // Uma linha por custo: o custo em destaque e, depois, só os nomes dos serviços,
+            // separados por pontos (uma lista curta, não uma frase).
             for (cost, services) in model::cost_groups(provider) {
-                let cost_text = i18n.t(model::cost_key(cost));
-                let line = if services.is_empty() {
-                    cost_text
-                } else {
-                    let names: Vec<String> = services.iter().map(|key| i18n.t(key)).collect();
-                    i18n.t_with(
-                        "connections-cost-line",
-                        &[("cost", &cost_text), ("services", &self.join(&names))],
-                    )
-                };
-                ui.label(RichText::new(line).color(p.ink));
+                let names: Vec<String> = services.iter().map(|key| i18n.t(key)).collect();
+                ui.label(two_tone(
+                    &i18n.t(model::cost_key(cost)),
+                    &names.join(" \u{b7} "),
+                    p,
+                ));
             }
         });
         if !model::requirements(provider).is_empty() && state != CardState::Authorized {
@@ -536,23 +536,18 @@ impl View<'_> {
                 ));
             });
         }
-        let later = model::later(provider);
+        let later = model::later_services(provider);
         if !later.is_empty() {
             cs_detail_row(ui, &i18n.t("connections-detail-later"), |ui| {
-                ui.label(
-                    RichText::new(i18n.t_with(
-                        "connections-detail-later-list",
-                        &[("list", &self.verbs(&later))],
-                    ))
-                    .color(p.ink),
-                );
+                let names: Vec<String> = later.iter().map(|key| i18n.t(key)).collect();
+                ui.label(RichText::new(names.join(" \u{b7} ")).color(p.ink));
             });
         }
         if provider.uses_network() {
             cs_detail_row(ui, &i18n.t("connections-detail-last"), |ui| {
                 let text = match self.last.get(&id) {
                     None => i18n.t("connections-last-never"),
-                    Some(at) => self.age_text(model::age(self.now, *at)),
+                    Some(at) => self.when_text(*at),
                 };
                 ui.label(RichText::new(text).color(p.ink));
             });
@@ -643,6 +638,18 @@ impl View<'_> {
             .t_with("connections-minutes", &[("count", &minutes.to_string())])
     }
 
+    /// Quando foi: "agora há pouco", "às 14:32", "ontem às 09:10" na hora local do computador;
+    /// sem fuso do sistema, "há 3 min" (#239).
+    fn when_text(&self, at: Timestamp) -> String {
+        let age = model::age(self.now, at);
+        if age == Age::JustNow {
+            return self.age_text(age);
+        }
+        LocalClock::current()
+            .when(self.i18n, self.now.as_millis(), at.as_millis())
+            .unwrap_or_else(|| self.age_text(age))
+    }
+
     fn age_text(&self, age: Age) -> String {
         let count = |n: u64| n.to_string();
         match age {
@@ -709,7 +716,8 @@ impl View<'_> {
             .icon(Self::action_icon(spec.action))
             .variant(ButtonVariant::Secondary)
             .enabled(enabled);
-        if ui.add(button).clicked() && enabled {
+        let response = ui.add(button);
+        if response.clicked() && enabled {
             self.perform(provider, spec.action);
         }
     }
@@ -844,7 +852,7 @@ impl View<'_> {
                 i18n.t("connections-test-running"),
             ),
             TestState::Done(report) => {
-                let when = self.age_text(model::age(self.now, report.at));
+                let when = self.when_text(report.at);
                 let source = report.source.info().name;
                 let fide = id == ProviderId::Fide;
                 let base = [("when", when.as_str()), ("source", source)];
@@ -1180,6 +1188,62 @@ impl View<'_> {
                 });
             }
         }
+    }
+}
+
+/// "Gratuito, sem cadastro  ·  Avaliações prontas · Finais exatos": o destaque em `ink` e a
+/// lista que vem depois em `ink-muted`, no mesmo parágrafo.
+fn two_tone(head: &str, list: &str, p: &Palette) -> egui::text::LayoutJob {
+    let mut job = egui::text::LayoutJob::default();
+    let font = egui::FontId::proportional(13.0);
+    job.append(
+        head,
+        0.0,
+        egui::TextFormat {
+            font_id: font.clone(),
+            color: p.ink,
+            ..Default::default()
+        },
+    );
+    if !list.is_empty() {
+        job.append(
+            &format!("  \u{b7}  {list}"),
+            0.0,
+            egui::TextFormat {
+                font_id: font,
+                color: p.ink_muted,
+                ..Default::default()
+            },
+        );
+    }
+    job
+}
+
+/// Só nas capturas de evidência (`--connections-state limited|failing`): mostra o Lichess em
+/// pausa ou com falha, estados que não dá para provocar sem um servidor de verdade.
+fn apply_capture_state(status: &mut chess_net::NetworkStatus) {
+    let Some(which) = crate::capture::option_value("--connections-state") else {
+        return;
+    };
+    let now = NetService::now();
+    let state = match which.as_str() {
+        "limited" => ProviderState::Limited {
+            until: Timestamp::from_millis(now.as_millis() + 4 * 60_000),
+        },
+        "failing" => ProviderState::Failing {
+            since: now,
+            error: chess_net::NetError::Timeout {
+                provider: ProviderId::Lichess,
+            },
+        },
+        _ => return,
+    };
+    if let Some(slot) = status
+        .providers
+        .iter_mut()
+        .find(|(id, _)| *id == ProviderId::Lichess)
+    {
+        slot.1 = state;
     }
 }
 
@@ -1589,8 +1653,11 @@ mod tests {
     }
 
     #[test]
-    fn minutes_and_ages_read_in_plain_portuguese() {
-        let found = render("dark", Density::Comfortable, 1600.0, true, |_, _| {});
+    fn ages_read_in_plain_portuguese_when_the_system_has_no_time_zone() {
+        use crate::local_time::{LocalClock, testing};
+        let found = testing::with(LocalClock::unknown(), || {
+            render("dark", Density::Comfortable, 1600.0, true, |_, _| {})
+        });
         let all: Vec<&str> = found.iter().map(|(t, _)| t.as_str()).collect();
         assert!(
             all.iter().any(|t| t.contains("há 3 min")),
@@ -1599,6 +1666,40 @@ mod tests {
         assert!(
             all.iter().all(|t| !t.contains("UTC")),
             "nada de UTC na tela"
+        );
+    }
+
+    #[test]
+    fn times_read_in_the_local_zone_when_there_is_one() {
+        use crate::local_time::{LocalClock, testing};
+        let found = testing::with(LocalClock::fixed(-180), || {
+            render("dark", Density::Comfortable, 1600.0, true, |_, _| {})
+        });
+        let all: Vec<&str> = found.iter().map(|(t, _)| t.as_str()).collect();
+        let tested = all
+            .iter()
+            .find(|t| t.contains("Testado"))
+            .expect("o teste do demo aparece");
+        assert!(
+            tested.contains(" às ") && !tested.contains("há 3 min"),
+            "hora local, não relativo: {tested}"
+        );
+        assert!(all.iter().all(|t| !t.contains("UTC")), "nada de UTC");
+    }
+
+    #[test]
+    fn details_use_short_lists_not_sentences() {
+        let found = render("dark", Density::Comfortable, 1600.0, true, |_, _| {});
+        let all: Vec<&str> = found.iter().map(|(t, _)| t.as_str()).collect();
+        // Custo: o custo e os serviços separados por pontos, sem "e" nem ":" no meio.
+        assert!(
+            all.iter().any(|t| t.starts_with("Gratuito, sem cadastro  \u{b7}  ")),
+            "{all:?}"
+        );
+        // O que vem depois: nomes de serviço, não verbos numa frase.
+        assert!(
+            all.iter().all(|t| !t.contains("Explorar aberturas, ver")),
+            "a lista de 'depois' deixou de ser frase"
         );
     }
 

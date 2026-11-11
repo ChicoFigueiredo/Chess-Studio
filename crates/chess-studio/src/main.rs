@@ -44,6 +44,7 @@ mod i18n;
 mod layout;
 mod library_ui;
 mod load_control;
+mod local_time;
 mod local_profiles;
 mod net_service;
 mod new_game;

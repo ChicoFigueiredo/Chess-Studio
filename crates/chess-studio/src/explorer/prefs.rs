@@ -1,7 +1,8 @@
 //! O que o Painel Explorador lembra entre sessões, por Perfil local (#231): a aba, a fonte, o
 //! jogador consultado, a cor, os ritmos e as faixas de rating. Vai para as preferências do
 //! Perfil local (`ui_preferences`, chave [`KEY`]) como um JSON pequeno; nunca guarda Posição,
-//! resultado ou autorização.
+//! resultado ou autorização. Fica no Perfil local, e não no Perfil de interface, de propósito:
+//! ver `docs/decisoes/2026-11-11-preferencias-do-explorador.md` (#239).
 
 use super::driver::Explorer;
 use super::model::{Source, Tab};

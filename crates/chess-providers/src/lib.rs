@@ -90,6 +90,7 @@ mod dates;
 mod error;
 mod eval;
 mod explorer;
+mod game_export;
 mod games;
 mod lichess;
 mod pgn;
@@ -116,6 +117,7 @@ pub use explorer::{
     ExplorerEvent, ExplorerMove, ExplorerPosition, ExplorerStream, LichessFilter, MastersFilter,
     OpeningName, Outcomes, PlayerFilter, ReferenceGame, ReferencePlayer, explorer_license,
 };
+pub use game_export::ExportedGame;
 pub use games::{
     DEFAULT_MAX_GAMES, GamesEvent, GamesFeed, GamesFilter, GamesProgress, GamesReader,
     import_options,
