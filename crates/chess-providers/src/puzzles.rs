@@ -170,6 +170,11 @@ impl Lichess {
             last: PuzzleProgress::default(),
             done: false,
         };
+        if self.profile.id != PROVIDER {
+            // Os problemas são do Lichess: os outros Provedores da família não os têm.
+            let _ = tx.send(PuzzleEvent::Failed(self.not_offered("problemas")));
+            return job;
+        }
         let net_request = Request::get(PROVIDER, format!("https://{PUZZLE_HOST}{PUZZLE_PATH}"));
         let download = self.net.download(net_request);
         let provenance = Provenance {

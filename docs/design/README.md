@@ -78,5 +78,6 @@ Todo Painel pode estar encaixado, flutuante ou destacado (janela do SO). O Perfi
 - Um módulo `ui_theme` lê estes tokens (cores por Tema, espaçamentos, raios, alturas) e preenche `egui::Style`/`Visuals`: `widgets.{inactive,hovered,active,noninteractive}`, `selection`, `window_*`, `menu_*`, `extreme_bg_color` e `spacing.{item_spacing,button_padding,interact_size}`.
 - Densidade e Escala mudam `Spacing` e `pixels_per_point`; o Tema troca o `Visuals` inteiro: parte da base (Escuro ou Claro) e aplica as cores do Tema escolhido em `themes.json`.
 - Números tabulares: confira se o texto do egui aplica `tnum`; se não aplicar, embuta uma Inter com `tnum` fixado para o relógio, a notação e a avaliação.
+- As diretrizes de cada componente moram em `componentes/`. Os das integrações são `StatusBadge`, `OverflowMenu`, `Card`, `Segmented`, `ExplorerPanel`, `SecretField` (senha-mestra e chave pessoal: mascarado, sem área de transferência, sem rastro) e `ThemeCard` (galeria de Temas). Widget `cs_*` novo leva a diretriz no mesmo PR.
 - Componentes são widgets do projeto (`cs_button`, `toggle_switch`, `ribbon_group`, `panel_tabs`…), nunca `egui::Button` com estilo ad hoc.
 - As fontes Inter e JetBrains Mono entram por `FontDefinitions`, com a licença registrada (ADR-0004).

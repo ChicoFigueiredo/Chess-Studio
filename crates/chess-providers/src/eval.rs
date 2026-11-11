@@ -119,6 +119,9 @@ impl Lichess {
     /// Avaliação em cache de `fen` com até `multi_pv` linhas (1 a 5). `Ok(None)` é "sem
     /// avaliação". Validade do cache: [`ttl::CLOUD_EVAL`]; "sem avaliação": [`ttl::NO_EVAL`].
     pub fn cloud_eval(&self, fen: &str, multi_pv: u8) -> Query<Option<CloudEval>> {
+        if !self.profile.has_cloud_eval {
+            return Query::failed(self.not_offered("a avaliação em cache"));
+        }
         if !(1..=5).contains(&multi_pv) {
             return Query::failed(ProviderError::invalid("MultiPV vai de 1 a 5"));
         }

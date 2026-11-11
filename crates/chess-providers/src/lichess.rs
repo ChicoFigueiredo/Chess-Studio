@@ -3,11 +3,15 @@
 //! (Partidas públicas) e [`crate::profile`] (perfil e FIDE). Aqui ficam o cliente e as
 //! constantes de endereço.
 
+use crate::family::ProviderProfile;
 use chess_net::{Clock, ConnectionId, Net, ProviderId, Timestamp};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
+// Os módulos do Explorador, da avaliação em cache e dos finais são só do Lichess: guardam
+// o Provedor e os hosts como constantes. O perfil ([`ProviderProfile`]) diz se o cliente
+// oferece cada um.
 pub(crate) const PROVIDER: ProviderId = ProviderId::Lichess;
 pub(crate) const EXPLORER_HOST: &str = "explorer.lichess.org";
 pub(crate) const API_HOST: &str = "lichess.org";
@@ -21,10 +25,12 @@ pub(crate) struct NoEval {
     pub(crate) provenance: chess_net::Provenance,
 }
 
-/// Cliente tipado do Lichess sobre `chess_net::Net`. Barato de clonar; os clones compartilham
-/// a rede e a memória do "sem avaliação".
+/// Cliente tipado do Lichess sobre `chess_net::Net`, ou de outro Provedor da família
+/// ([`ProviderProfile`]). Barato de clonar; os clones compartilham a rede e a memória do
+/// "sem avaliação".
 #[derive(Clone)]
 pub struct Lichess {
+    pub(crate) profile: ProviderProfile,
     pub(crate) net: Net,
     pub(crate) clock: Arc<dyn Clock>,
     pub(crate) no_eval: Arc<Mutex<HashMap<String, NoEval>>>,
@@ -42,12 +48,30 @@ impl Lichess {
     /// `clock` é o relógio injetado (o mesmo da `Net`): nele se baseiam a Origem das respostas
     /// em fluxo e o prazo do "sem avaliação".
     pub fn new(net: Net, clock: Arc<dyn Clock>) -> Self {
+        Self::with_profile(ProviderProfile::LICHESS, net, clock)
+    }
+
+    /// O mesmo cliente para o PlayStrategy: perfil, Partidas públicas e (pelos outros
+    /// clientes) jogo. O que o PlayStrategy não tem (Explorador, avaliação em cache, finais,
+    /// FIDE) responde [`crate::ProviderError::NotOffered`] sem tocar a rede.
+    pub fn playstrategy(net: Net, clock: Arc<dyn Clock>) -> Self {
+        Self::with_profile(ProviderProfile::PLAYSTRATEGY, net, clock)
+    }
+
+    /// Cliente de um Provedor da família do Lichess.
+    pub fn with_profile(profile: ProviderProfile, net: Net, clock: Arc<dyn Clock>) -> Self {
         Self {
+            profile,
             net,
             clock,
             no_eval: Arc::default(),
             connection: Arc::default(),
         }
+    }
+
+    /// O perfil do Provedor deste cliente.
+    pub fn provider_profile(&self) -> &ProviderProfile {
+        &self.profile
     }
 
     /// Conexão do Lichess (autorizada, no Cofre) que o Explorador usa; `None` desliga. Vale
@@ -67,9 +91,18 @@ impl Lichess {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
+    /// O Provedor deste cliente não tem `what`: recusado antes de qualquer pedido.
+    pub(crate) fn not_offered(&self, what: &'static str) -> crate::ProviderError {
+        crate::ProviderError::NotOffered {
+            provider: self.profile.id,
+            what,
+        }
+    }
+
     /// Pedido ao Explorador, pela Conexão escolhida (se houver).
     pub(crate) fn explorer_request(&self, path: &str) -> chess_net::Request {
-        let request = chess_net::Request::get(PROVIDER, format!("https://{EXPLORER_HOST}{path}"));
+        let host = self.profile.explorer_host.unwrap_or(self.profile.api_host);
+        let request = chess_net::Request::get(self.profile.id, format!("https://{host}{path}"));
         match self.connection() {
             Some(connection) => request.connection(connection),
             None => request,
