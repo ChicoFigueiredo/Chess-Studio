@@ -477,8 +477,11 @@ pub fn online_dialog(
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(&ctx, |ui| {
             ui.set_width(DIALOG_W);
+            // Alta até caber na janela; o que passa disso rola (a aba Desafiar com desafios
+            // recebidos é a mais longa).
             egui::ScrollArea::vertical()
                 .max_height(max_height)
+                .min_scrolled_height(max_height)
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
                     dialog_body(ui, &i18n, &mut ui_state, &view, &mut intents);
@@ -623,10 +626,17 @@ fn dialog_body(
 /// Rodapé com os botões à direita (o primário por último, à direita).
 fn footer(ui: &mut egui::Ui, buttons: impl FnOnce(&mut egui::Ui)) {
     ui.add_space(16.0);
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        ui.spacing_mut().item_spacing.x = 8.0;
-        buttons(ui);
-    });
+    // Uma linha da altura de um controle: sem isso o layout da direita ocuparia o resto da
+    // janela e o rodapé flutuaria no meio dela.
+    let height = ui.spacing().interact_size.y;
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), height),
+        egui::Layout::right_to_left(egui::Align::Center),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = 8.0;
+            buttons(ui);
+        },
+    );
 }
 
 fn fairplay_note(ui: &mut egui::Ui, i18n: &I18n) {
@@ -1377,7 +1387,15 @@ fn panel_body(
     let snapshot = session.snapshot();
     let over = snapshot.is_over();
     let human = online.opponent == Opponent::Human;
-    // Selos: Provedor, Conexão e rating.
+    if over {
+        // Acabou: o resultado vem primeiro (o grupo do dock costuma ser baixo).
+        ended_section(ui, i18n, session, intents);
+        ui.add_space(12.0);
+        players_block(ui, i18n, session, online);
+        recent_notices(ui, i18n, notices);
+        return;
+    }
+    // Selos: Provedor e Conexão.
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
         cs_status_badge(
@@ -1393,12 +1411,39 @@ fn panel_body(
         Color::White => &online.black,
         Color::Black => &online.white,
     };
-    if over {
-        ended_section(ui, i18n, session, intents);
-        ui.add_space(12.0);
-        players_block(ui, i18n, session, online);
-        recent_notices(ui, i18n, notices);
-        return;
+    // O que pede resposta vem primeiro: proposta de empate e adversário ausente.
+    if let Some(by) = snapshot.pending_draw_offer {
+        if by == online.local_color {
+            muted(ui, i18n.t("online-draw-offered-by-you"));
+        } else {
+            let text = i18n.t_with("online-draw-offered-by-them", &[("name", &opponent.name)]);
+            notice_line(ui, StatusTone::Info, &text);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                if ui
+                    .add(CsButton::new(&i18n.t("online-accept")).variant(ButtonVariant::Primary))
+                    .clicked()
+                {
+                    intents.push(PanelIntent::Board(OnlineIntent::AcceptDraw));
+                }
+                if ui.add(CsButton::new(&i18n.t("online-decline"))).clicked() {
+                    intents.push(PanelIntent::Board(OnlineIntent::DeclineDraw));
+                }
+            });
+        }
+    }
+    // Adversário ausente.
+    if view.opponent_gone {
+        notice_line(ui, StatusTone::Warning, &i18n.t("online-opponent-gone"));
+        if ui
+            .add(CsButton::new(&i18n.t("online-claim-victory")).enabled(view.can_claim))
+            .clicked()
+        {
+            intents.push(PanelIntent::Board(OnlineIntent::ClaimVictory));
+        }
+    }
+    if snapshot.pending_draw_offer.is_some() || view.opponent_gone {
+        ui.add_space(8.0);
     }
     // Estado da vez.
     let online_view = snapshot.online.as_ref();
@@ -1440,39 +1485,6 @@ fn panel_body(
             (icon::HOURGLASS, p.ink_muted, "online-status-their-turn")
         };
         icon_line(ui, glyph, tint, &i18n.t(key));
-    }
-    // Proposta de empate.
-    if let Some(by) = snapshot.pending_draw_offer {
-        ui.add_space(8.0);
-        if by == online.local_color {
-            muted(ui, i18n.t("online-draw-offered-by-you"));
-        } else {
-            let text = i18n.t_with("online-draw-offered-by-them", &[("name", &opponent.name)]);
-            notice_line(ui, StatusTone::Info, &text);
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 8.0;
-                if ui
-                    .add(CsButton::new(&i18n.t("online-accept")).variant(ButtonVariant::Primary))
-                    .clicked()
-                {
-                    intents.push(PanelIntent::Board(OnlineIntent::AcceptDraw));
-                }
-                if ui.add(CsButton::new(&i18n.t("online-decline"))).clicked() {
-                    intents.push(PanelIntent::Board(OnlineIntent::DeclineDraw));
-                }
-            });
-        }
-    }
-    // Adversário ausente.
-    if view.opponent_gone {
-        ui.add_space(8.0);
-        notice_line(ui, StatusTone::Warning, &i18n.t("online-opponent-gone"));
-        if ui
-            .add(CsButton::new(&i18n.t("online-claim-victory")).enabled(view.can_claim))
-            .clicked()
-        {
-            intents.push(PanelIntent::Board(OnlineIntent::ClaimVictory));
-        }
     }
     // Ações da Partida.
     let live = view.link.is_some_and(|l| l != LinkStatus::Closed);

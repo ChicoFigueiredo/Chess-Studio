@@ -317,7 +317,12 @@ pub fn show_demo_panel(
 }
 
 /// Põe a cena na tela: o estado da interface, a Partida no tabuleiro e o Painel.
-fn enter(scene: Scene, ui: &mut OnlineUi, session: &mut Session, dock: Option<&mut crate::dock::Dock>) {
+fn enter(
+    scene: Scene,
+    ui: &mut OnlineUi,
+    session: &mut Session,
+    dock: Option<&mut crate::dock::Dock>,
+) {
     *ui = OnlineUi::default();
     if let Some(tab) = scene.dialog_tab() {
         ui.open_at(tab);
