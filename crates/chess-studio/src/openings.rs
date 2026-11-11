@@ -331,7 +331,10 @@ fn draw(
 ) {
     match &state.opening {
         Some(o) => {
-            ui.strong(i18n.t_with("openings-current", &[("eco", &o.eco), ("name", &o.name)]));
+            ui.strong(i18n.t_with(
+                "openings-current",
+                &[("eco", &o.eco), ("name", &o.name_pt_br())],
+            ));
         }
         None => {
             ui.weak(i18n.t("openings-unnamed"));

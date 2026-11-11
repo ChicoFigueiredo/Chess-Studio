@@ -14,6 +14,7 @@ mod view;
 
 use crate::actions::ActionRequested;
 use bevy::prelude::*;
+use bevy::window::WindowFocused;
 use bevy_egui::EguiPrimaryContextPass;
 use bevy_egui::egui;
 use bevy_egui::input::EguiWantsInput;
@@ -254,8 +255,11 @@ fn apply_capture_options(state: &mut RibbonState) {
         state.backstage = Some(BackstagePage::Profiles);
     }
     // `--backstage-page connections`: a Central de Conexões aberta, para a evidência.
-    if option_value("--backstage-page").as_deref() == Some("connections") {
-        state.backstage = Some(BackstagePage::Connections);
+    match option_value("--backstage-page").as_deref() {
+        Some("connections") => state.backstage = Some(BackstagePage::Connections),
+        // `--backstage-page local-profile`: a página Perfil local (rating FIDE, #242).
+        Some("local-profile") => state.backstage = Some(BackstagePage::LocalProfile),
+        _ => {}
     }
 }
 
@@ -316,14 +320,31 @@ fn is_alt(key: KeyCode) -> bool {
 
 /// Alt apertado e solto sozinho liga os KeyTips; depois as letras os conduzem. Enquanto
 /// estão ativos, as teclas do quadro não viram atalhos (`keys_captured`).
+///
+/// Como no Office, os KeyTips acabam sozinhos quando o contexto muda (#239): um clique do
+/// mouse, a janela perder o foco ou os bastidores abrirem por outro caminho (a Central de
+/// Conexões aberta pelo Explorador, por exemplo). Sem isso as letras ficavam sobre o título da
+/// página aberta e as teclas seguiam capturadas.
+#[allow(clippy::too_many_arguments)] // parâmetros de sistema do Bevy
 fn keytips_input(
     keys: Res<ButtonInput<KeyCode>>,
+    mouse: Res<ButtonInput<MouseButton>>,
+    mut focus: MessageReader<WindowFocused>,
     egui: Option<Res<EguiWantsInput>>,
     context: Res<RibbonActionContext>,
     mut state: ResMut<RibbonState>,
     mut out: MessageWriter<ActionRequested>,
     mut alt_armed: Local<bool>,
 ) {
+    let lost_focus = focus.read().any(|f| !f.focused);
+    if lost_focus {
+        *alt_armed = false;
+    }
+    if state.keytips.is_active()
+        && (lost_focus || state.backstage.is_some() || mouse.get_just_pressed().next().is_some())
+    {
+        state.keytips.close();
+    }
     let was_active = state.keytips.is_active();
     let typing = egui.is_some_and(|e| e.wants_keyboard_input());
     let mut inputs: Vec<KeyTipInput> = Vec::new();
@@ -345,7 +366,8 @@ fn keytips_input(
     }
     if keys.any_just_released([KeyCode::AltLeft, KeyCode::AltRight]) && *alt_armed {
         *alt_armed = false;
-        if !typing || was_active {
+        // Com os bastidores abertos o Ribbon está coberto: não há o que mostrar.
+        if state.backstage.is_none() && (!typing || was_active) {
             inputs.push(KeyTipInput::AltTap);
         }
     }
@@ -410,7 +432,9 @@ mod tests {
 
     fn app() -> App {
         let mut app = test_app();
-        app.init_resource::<RibbonState>()
+        app.add_message::<WindowFocused>()
+            .init_resource::<ButtonInput<MouseButton>>()
+            .init_resource::<RibbonState>()
             .init_resource::<RibbonActionContext>()
             .add_systems(
                 Update,
@@ -485,6 +509,52 @@ mod tests {
         assert!(app.world().resource::<crate::hud::HudSettings>().enabled);
         assert!(app.world().resource::<RibbonState>().keytips.is_active());
         press(&mut app, KeyCode::Escape);
+        assert!(!app.world().resource::<RibbonState>().keytips.is_active());
+    }
+
+    #[test]
+    fn a_mouse_click_ends_the_keytips() {
+        let mut app = app();
+        tap_alt(&mut app);
+        assert!(app.world().resource::<RibbonState>().keytips.is_active());
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .press(MouseButton::Left);
+        app.update();
+        assert!(!app.world().resource::<RibbonState>().keytips.is_active());
+        assert!(!app.world().resource::<RibbonState>().keys_captured);
+    }
+
+    #[test]
+    fn losing_the_window_focus_ends_the_keytips_and_disarms_alt() {
+        let mut app = app();
+        tap_alt(&mut app);
+        assert!(app.world().resource::<RibbonState>().keytips.is_active());
+        let window = app.world_mut().spawn_empty().id();
+        app.world_mut().write_message(WindowFocused {
+            window,
+            focused: false,
+        });
+        app.update();
+        assert!(!app.world().resource::<RibbonState>().keytips.is_active());
+    }
+
+    #[test]
+    fn opening_the_backstage_by_any_route_ends_the_keytips() {
+        let mut app = app();
+        tap_alt(&mut app);
+        assert!(app.world().resource::<RibbonState>().keytips.is_active());
+        // Por exemplo, "Abrir a Central de Conexões" pelo Explorador.
+        app.world_mut().resource_mut::<RibbonState>().backstage = Some(BackstagePage::Connections);
+        app.update();
+        assert!(!app.world().resource::<RibbonState>().keytips.is_active());
+    }
+
+    #[test]
+    fn alt_does_not_show_keytips_over_the_open_backstage() {
+        let mut app = app();
+        app.world_mut().resource_mut::<RibbonState>().backstage = Some(BackstagePage::Connections);
+        tap_alt(&mut app);
         assert!(!app.world().resource::<RibbonState>().keytips.is_active());
     }
 

@@ -169,10 +169,15 @@ pub fn age_of(age: Duration) -> Age {
     }
 }
 
-/// `dd/mm` (UTC) de um instante, para "do cache, de 09/11".
+/// `dd/mm` de um instante, para "do cache, de 09/11": na hora local do computador; sem fuso
+/// do sistema, em UTC (a data muda no máximo em um dia, e a linha nunca some).
 pub fn day_month(at: Timestamp) -> String {
-    let text = crate::openings::last_used_text(at.as_millis());
-    text.get(..5).unwrap_or(&text).to_owned()
+    crate::local_time::LocalClock::current()
+        .day_month(at.as_millis())
+        .unwrap_or_else(|| {
+            let text = crate::openings::last_used_text(at.as_millis());
+            text.get(..5).unwrap_or(&text).to_owned()
+        })
 }
 
 /// Quanto falta para `until`, arredondado para cima em minutos (mínimo 1).
@@ -181,10 +186,10 @@ pub fn minutes_until(now: Timestamp, until: Timestamp) -> u64 {
     u64::try_from(ms).unwrap_or(0).div_ceil(60_000).max(1)
 }
 
-/// `HH:MM UTC` de um instante.
-pub fn clock_utc(at: Timestamp) -> String {
-    let secs = at.as_millis().div_euclid(1000).rem_euclid(86_400);
-    format!("{:02}:{:02} UTC", secs / 3600, (secs / 60) % 60)
+/// `HH:MM` de um instante na hora local; `None` sem fuso do sistema (a tela diz só "em cerca
+/// de N min").
+pub fn clock_local(at: Timestamp) -> Option<String> {
+    crate::local_time::LocalClock::current().clock(at.as_millis())
 }
 
 // --- Aba Aberturas -----------------------------------------------------------------------
@@ -247,8 +252,9 @@ pub struct OriginNote {
 pub enum How {
     /// Da Biblioteca do Perfil, sem rede.
     Local,
-    /// Da rede, agora ou há pouco.
-    Queried(Age),
+    /// Da rede, agora ou há pouco: a idade e o instante da consulta (para "consultado às
+    /// 14:32" na hora local).
+    Queried(Age, Timestamp),
     /// Do cache, dentro da validade, consultado em `queried_at`.
     Cached(Timestamp),
     /// Do cache vencido, porque a rede falhou: mostrar com a idade.
@@ -259,7 +265,9 @@ impl OriginNote {
     pub fn from_answer<T>(answer: &Answer<T>) -> Self {
         let queried_at = answer.provenance.queried_at;
         let how = match &answer.freshness {
-            Freshness::Network | Freshness::Revalidated => How::Queried(age_of(answer.age)),
+            Freshness::Network | Freshness::Revalidated => {
+                How::Queried(age_of(answer.age), queried_at)
+            }
             Freshness::Cache => How::Cached(queried_at),
             Freshness::Stale { .. } => How::Stale(queried_at),
         };
@@ -295,6 +303,18 @@ pub struct OpeningsTable {
 }
 
 impl OpeningsTable {
+    /// O nome da abertura do livro local, quando ele conhece a Posição (a mesma abertura pelo
+    /// ECO e pela Posição, com transposição); senão fica o do Provedor (#239).
+    pub fn prefer_local_opening(
+        &mut self,
+        book: &chess_openings::OpeningBook,
+        position: &chess_core::CanonicalPosition,
+    ) {
+        if let Some(local) = book.lookup(position) {
+            self.opening = Some((local.eco.clone(), local.name.clone()));
+        }
+    }
+
     /// Alguma linha tem rating médio: a coluna aparece.
     pub fn has_ratings(&self) -> bool {
         self.rows.iter().any(|r| r.rating.is_some())
@@ -691,8 +711,15 @@ mod tests {
     #[test]
     fn dates_and_waits_are_readable() {
         let at = Timestamp::from_millis(1_794_398_400_000); // 2026-11-11T12:00Z
-        assert_eq!(day_month(at), "11/11");
-        assert_eq!(clock_utc(at), "12:00 UTC");
+        // Sem fuso do sistema (injetado), cai em UTC; com fuso, vale o dia e a hora locais.
+        crate::local_time::testing::with(crate::local_time::LocalClock::unknown(), || {
+            assert_eq!(day_month(at), "11/11");
+            assert_eq!(clock_local(at), None);
+        });
+        crate::local_time::testing::with(crate::local_time::LocalClock::fixed(-180), || {
+            assert_eq!(day_month(at), "11/11");
+            assert_eq!(clock_local(at).as_deref(), Some("09:00"));
+        });
         let until = Timestamp::from_millis(at.as_millis() + 90_000);
         assert_eq!(minutes_until(at, until), 2);
         assert_eq!(minutes_until(until, at), 1);
@@ -768,7 +795,7 @@ mod tests {
     #[test]
     fn origin_says_how_fresh_the_data_is() {
         let fresh = OriginNote::from_answer(&answer((), Freshness::Network, 0));
-        assert_eq!(fresh.how, How::Queried(Age::JustNow));
+        assert!(matches!(fresh.how, How::Queried(Age::JustNow, _)));
         assert_eq!(fresh.provider, "Lichess");
         let cached = OriginNote::from_answer(&answer((), Freshness::Cache, 3600));
         assert!(matches!(cached.how, How::Cached(_)));
@@ -780,6 +807,39 @@ mod tests {
             9000,
         ));
         assert!(stale.is_stale());
+    }
+
+    fn play(sans: &str) -> chess_core::CanonicalPosition {
+        let mut position = chess_core::CanonicalPosition::start();
+        for san in sans.split_whitespace() {
+            let mv = position.parse_san(san).expect("lance legal");
+            position = position.play(mv).expect("jogável");
+        }
+        position
+    }
+
+    #[test]
+    fn the_local_book_names_the_position_and_the_provider_is_the_fallback() {
+        let book = chess_openings::OpeningBook::embedded();
+        let provider_name = Some(("C60".to_owned(), "Ruy Lopez (nome do Provedor)".to_owned()));
+
+        // Posição que o livro conhece: o nome local vale, o do Provedor sai.
+        let mut known = OpeningsTable::from_library(&[], provider_name.clone());
+        known.prefer_local_opening(book, &play("e4 e5 Nf3 Nc6 Bb5"));
+        let (eco, name) = known.opening.expect("nomeada");
+        assert_eq!(eco, "C60");
+        assert!(name.starts_with("Ruy Lopez"), "{name}");
+        assert!(!name.contains("Provedor"), "{name}");
+
+        // Por transposição também: a mesma Posição por outra ordem de Lances.
+        let mut moved = OpeningsTable::from_library(&[], None);
+        moved.prefer_local_opening(book, &play("Nf3 Nc6 e4 e5 Bb5"));
+        assert_eq!(moved.opening.expect("nomeada").0, "C60");
+
+        // Posição fora do livro: fica o nome do Provedor, sem apagá-lo.
+        let mut unknown = OpeningsTable::from_library(&[], provider_name.clone());
+        unknown.prefer_local_opening(book, &play("a4 h5 a5 h4 a6"));
+        assert_eq!(unknown.opening, provider_name);
     }
 
     #[test]

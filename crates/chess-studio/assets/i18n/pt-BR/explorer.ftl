@@ -42,7 +42,15 @@ explorer-legend-black = Pretas
 explorer-bar-tip = Brancas { $white }% · Empates { $draw }% · Pretas { $black }% ({ $decided } com resultado)
 explorer-more-coming = Recebendo mais resultados…
 explorer-references = Partidas de referência
-explorer-reference-tip = Procurar esta Partida na Biblioteca
+explorer-reference-tip = Abrir esta Partida na Biblioteca
+explorer-reference-opening = Abrindo a Partida…
+explorer-reference-failed-gone = Esta Partida não está mais disponível no Lichess.
+explorer-reference-failed-limited = O Lichess pediu uma pausa. Tente de novo daqui a pouco.
+explorer-reference-failed-off = O Lichess está desligado. Ligue-o na Central de Conexões.
+explorer-reference-failed-signin = Autorize sua conexão do Lichess na Central de Conexões.
+explorer-reference-failed-save = A Partida foi baixada, mas não deu para guardá-la na Biblioteca.
+explorer-reference-failed = Não foi possível baixar a Partida agora. Clique de novo para tentar.
+explorer-opening-original = Nome original: { $name }
 explorer-reference-white = Brancas { $rating }
 explorer-reference-black = Pretas { $rating }
 
@@ -53,6 +61,7 @@ explorer-library-error = Não foi possível ler a Biblioteca: { $error }
 ## Origem (rodapé)
 explorer-origin-local = Origem: sua Biblioteca, sem internet
 explorer-origin-queried-now = { $provider } · consultado agora · { $license }
+explorer-origin-queried-at = { $provider } · consultado { $when } · { $license }
 explorer-origin-queried-minutes = { $provider } · consultado há { $count } min · { $license }
 explorer-origin-queried-hours = { $provider } · consultado há { $count } h · { $license }
 explorer-origin-queried-days = { $provider } · consultado há { $count } d · { $license }

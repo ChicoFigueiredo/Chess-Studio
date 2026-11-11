@@ -356,6 +356,38 @@ A pasta de dados do app é:
 | Windows | `%APPDATA%\ChessStudio` |
 | macOS | `~/Library/Application Support/ChessStudio` |
 
+## Rating FIDE
+
+Com um ID da FIDE vinculado, o cartão da FIDE na Central e a página **Arquivo > Perfil local** mostram o jogador: nome, federação, título e os ratings **Standard**, **Rápido** e **Blitz**, cada um na sua caixa. Um ritmo sem rating aparece como **—**. Os três são listas separadas da FIDE: o app nunca os soma nem os compara com ratings do Lichess ou do Chess.com.
+
+A linha de origem diz **FIDE, via Lichess, consultado há N min**. O dado vem do Lichess, que reproduz a FIDE, e o Lichess **não informa de qual mês é a lista**: a data é a da consulta, não a do rating.
+
+### Consultar e atualizar
+
+1. Vincule o ID (veja [Vincular seu nome público](#vincular-seu-nome-público)) ou ache-o pela busca, abaixo.
+2. No cartão da FIDE, clique em **Consultar rating**. Nas próximas vezes, o botão é **Atualizar**.
+3. Se o Lichess estiver desligado, o app pergunta se você quer ligá-lo. **Agora não** não envia nada.
+
+**Atualizar** sempre pergunta de novo ao Lichess, mesmo que a consulta anterior seja recente. O app diz se os ratings **continuam os mesmos**.
+
+O último valor fica guardado neste computador, por Perfil local. Sem internet, ou com o Lichess desligado, você vê esse valor e a data da consulta. A consulta não é bloqueada na Partida competitiva, porque não calcula nada.
+
+### Achar o ID pelo nome
+
+1. No cartão da FIDE, digite o nome em **Buscar jogador da FIDE pelo nome** (de 2 a 60 letras) e clique em **Buscar**.
+2. Cada resultado mostra título, federação, os três ratings e o ID. Clique em **Vincular este ID**.
+3. Para trocar de jogador depois, use **Buscar outro jogador pelo nome**.
+
+## Apagar Partidas importadas por origem
+
+Na Biblioteca, a aba **Origens** lista só as Partidas que vieram de fora (arquivos e Provedores). As que você jogou no Chess Studio **não aparecem ali e nunca são apagadas por ela**.
+
+1. Marque **Tudo de um Provedor** (todas as importações dele) ou uma ou mais importações em **Por importação**, que mostra o nome, o modo, a data e quantas Partidas.
+2. Clique em **Apagar marcadas…**.
+3. A janela diz quantas Partidas serão apagadas e de onde. Confirme com **Apagar N Partidas**, ou cancele.
+
+Se a mesma Partida veio de dois lugares (por exemplo, de um arquivo e do Lichess), ela fica, e a janela diz quantas ficam **porque também vieram de outra origem**. Não dá para desfazer, mas você pode importar de novo.
+
 ## Desligar tudo e apagar o que ficou
 
 ### Desligar
@@ -368,9 +400,16 @@ Não há um botão único para desligar tudo. Cada Provedor tem o seu interrupto
 
 Desligar não apaga nada: as Partidas importadas, as Conexões e o cache continuam aqui.
 
-### Apagar o cache
+### Apagar o cache de todos os Provedores de uma vez
 
-O cache guarda respostas dos Provedores para o app não repetir pedidos.
+O cache guarda respostas dos Provedores para o app não repetir pedidos e funcionar sem rede.
+
+1. No alto da Central, na faixa **Dados guardados**, clique em **Limpar dados guardados…**.
+2. A janela diz o que some e o que fica. **Some:** as respostas guardadas de todos os Provedores neste Perfil local (perfis, ratings, avaliações, Explorador e listas de Partidas). **Fica:** suas Partidas jogadas, as Partidas e os Exercícios importados, suas Conexões e autorizações, o último rating FIDE guardado e o que está ligado ou desligado.
+3. Clique em **Limpar dados guardados** para confirmar, ou em **Cancelar**.
+4. O app diz quantas respostas guardadas apagou. Depois disso, cada consulta pergunta de novo ao Provedor, se ele estiver ligado.
+
+### Apagar o cache de um Provedor só
 
 1. No cartão do Provedor, abra **Mais ações**.
 2. Clique em **Limpar cache**.
@@ -385,6 +424,7 @@ O cache é separado por Perfil local. Cada Provedor tem o seu.
 | Uma autorização | Na Conexão, **Ações da Conexão** e **Desconectar…**. |
 | Um nome vinculado | Na Conexão, **Ações da Conexão** e **Remover**. |
 | Uma Partida importada | Abra-a na Biblioteca e clique em **Excluir da biblioteca**. |
+| Várias Partidas importadas | Na Biblioteca, aba **Origens**: veja [Apagar Partidas importadas por origem](#apagar-partidas-importadas-por-origem). |
 | Um pacote de problemas | No Painel Treino, **Pacotes**, **Remover pacote**. |
 | Tudo de um Perfil local | Exclua o Perfil local (Arquivo > Perfil local). A autorização guardada no cofre é apagada antes. |
 
@@ -412,5 +452,4 @@ Estas coisas **ainda não existem** no app. Os cartões e os textos da Central p
 - **PlayStrategy** e **FICS**.
 - **Engine remota** para análise.
 - **Baixar problemas e bases pela rede**. Hoje você instala um arquivo que já tem.
-- **Rating da FIDE** na tela. Hoje você só vincula e testa o ID.
 - **Escolher o arquivo numa janela do sistema**. Hoje você digita o caminho ou clica num arquivo listado.

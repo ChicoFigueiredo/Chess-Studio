@@ -41,6 +41,8 @@ pub struct PackInfo {
     /// Provedor e licença da Origem dos Exercícios (do primeiro que tiver).
     pub provider: Option<String>,
     pub license: Option<String>,
+    /// Dia (`AAAA-MM-DD`) em que o pacote foi baixado, se veio da rede.
+    pub downloaded_on: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -53,6 +55,8 @@ struct PackFileOut<'a> {
 #[derive(Serialize, Deserialize)]
 struct Meta<'a> {
     name: std::borrow::Cow<'a, str>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    downloaded_on: Option<std::borrow::Cow<'a, str>>,
 }
 
 #[derive(Deserialize)]
@@ -82,7 +86,7 @@ fn io(e: std::io::Error) -> PackError {
     PackError::Io(e.to_string())
 }
 
-fn info_of(id: &str, name: String, catalog: &Catalog) -> PackInfo {
+fn info_of(id: &str, name: String, downloaded_on: Option<String>, catalog: &Catalog) -> PackInfo {
     let origin = catalog.iter().find_map(|e| e.provenance.as_ref());
     PackInfo {
         id: id.to_owned(),
@@ -90,6 +94,7 @@ fn info_of(id: &str, name: String, catalog: &Catalog) -> PackInfo {
         count: catalog.len(),
         provider: origin.map(|o| o.provider.clone()),
         license: origin.map(|o| o.license.clone()),
+        downloaded_on,
     }
 }
 
@@ -106,17 +111,37 @@ pub fn install_pack(
     name: &str,
     exercises: &[Exercise],
 ) -> Result<PackInfo, PackError> {
+    install_pack_dated(dir, id, name, None, exercises)
+}
+
+/// Como [`install_pack`], registrando o dia (`AAAA-MM-DD`) em que o pacote foi baixado: faz
+/// parte da Origem mostrada ao usuário.
+pub fn install_pack_dated(
+    dir: &Path,
+    id: &str,
+    name: &str,
+    downloaded_on: Option<&str>,
+    exercises: &[Exercise],
+) -> Result<PackInfo, PackError> {
     check_id(id)?;
     let text = serde_json::to_string(&PackFileOut {
         format: FORMAT_VERSION,
-        package: Meta { name: name.into() },
+        package: Meta {
+            name: name.into(),
+            downloaded_on: downloaded_on.map(Into::into),
+        },
         exercises,
     })
     .map_err(|e| PackError::Io(e.to_string()))?;
     let catalog = Catalog::from_pack_json(id, &text).map_err(PackError::Invalid)?;
     std::fs::create_dir_all(dir).map_err(io)?;
     write_atomic(&path_of(dir, id), &text)?;
-    Ok(info_of(id, name.to_owned(), &catalog))
+    Ok(info_of(
+        id,
+        name.to_owned(),
+        downloaded_on.map(str::to_owned),
+        &catalog,
+    ))
 }
 
 /// Instala um arquivo de pacote já em JSON (formato do catálogo); recusa o inválido sem
@@ -124,17 +149,21 @@ pub fn install_pack(
 pub fn install_pack_json(dir: &Path, id: &str, text: &str) -> Result<PackInfo, PackError> {
     check_id(id)?;
     let catalog = Catalog::from_pack_json(id, text).map_err(PackError::Invalid)?;
-    let name = pack_name(id, text);
+    let (name, downloaded_on) = pack_meta(id, text);
     std::fs::create_dir_all(dir).map_err(io)?;
     write_atomic(&path_of(dir, id), text)?;
-    Ok(info_of(id, name, &catalog))
+    Ok(info_of(id, name, downloaded_on, &catalog))
 }
 
-fn pack_name(id: &str, text: &str) -> String {
+/// Nome e dia do download do cabeçalho do pacote (o id, se não houver nome).
+fn pack_meta(id: &str, text: &str) -> (String, Option<String>) {
     serde_json::from_str::<PackFileIn>(text)
         .ok()
         .and_then(|f| f.package)
-        .map_or_else(|| id.to_owned(), |m| m.name.into_owned())
+        .map_or_else(
+            || (id.to_owned(), None),
+            |m| (m.name.into_owned(), m.downloaded_on.map(|d| d.into_owned())),
+        )
 }
 
 /// Arquivos `*.json` do diretório, em ordem de nome, com o id (nome sem extensão).
@@ -162,8 +191,8 @@ pub fn list_packs(dir: &Path) -> Vec<PackInfo> {
         .filter_map(|(id, path)| {
             let text = std::fs::read_to_string(path).ok()?;
             let catalog = Catalog::from_pack_json(&id, &text).ok()?;
-            let name = pack_name(&id, &text);
-            Some(info_of(&id, name, &catalog))
+            let (name, downloaded_on) = pack_meta(&id, &text);
+            Some(info_of(&id, name, downloaded_on, &catalog))
         })
         .collect()
 }

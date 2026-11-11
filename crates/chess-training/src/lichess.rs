@@ -101,6 +101,22 @@ pub fn open_puzzle_file(path: &Path) -> Result<Box<dyn BufRead + Send>, PuzzleIm
     }
 }
 
+/// Abre um fluxo de bytes de problemas (por exemplo o corpo de um download): `.csv.zst`
+/// (Zstandard, descomprimido em fluxo) quando `compressed`, senão CSV puro. Nada é carregado
+/// por inteiro: a memória é a do buffer e da janela do descompressor.
+pub fn open_puzzle_reader(
+    source: impl std::io::Read + Send + 'static,
+    compressed: bool,
+) -> Result<Box<dyn BufRead + Send>, PuzzleImportError> {
+    if compressed {
+        let decoder = ruzstd::decoding::StreamingDecoder::new(BufReader::new(source))
+            .map_err(|e| PuzzleImportError(e.to_string()))?;
+        Ok(Box::new(BufReader::with_capacity(64 * 1024, decoder)))
+    } else {
+        Ok(Box::new(BufReader::with_capacity(64 * 1024, source)))
+    }
+}
+
 /// Lê o fluxo e devolve os Exercícios selecionados com o relatório.
 /// `cancel` é consultado a cada linha; `on_progress` a cada mil linhas.
 pub fn import_lichess_csv<R: BufRead>(

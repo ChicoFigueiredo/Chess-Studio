@@ -1,0 +1,2 @@
+explorador: 5.86 ms/quadro (171 quadros/s)
+carregamento da cena: 0.50 s

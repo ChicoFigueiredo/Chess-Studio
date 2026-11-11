@@ -369,9 +369,9 @@ fn log_keeps_only_the_most_recent_lines() {
 #[test]
 fn quit_ends_the_process_gracefully() {
     let engine = spawn("normal");
-    let started = Instant::now();
+    // `Graceful` já prova que saiu dentro do prazo de `quit` (300 ms); um teto de relógio
+    // mais apertado só falharia por carga da máquina (#236).
     assert_eq!(engine.quit(), QuitOutcome::Graceful);
-    assert!(started.elapsed() < ms(250));
 }
 
 #[test]

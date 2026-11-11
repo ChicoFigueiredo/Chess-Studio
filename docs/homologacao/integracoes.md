@@ -51,14 +51,17 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 | CX-HOM-29 | Limpar cache | não | UNVERIFIED |
 | CX-HOM-30 | Linguagem, Temas e janela estreita | não | UNVERIFIED |
 | CX-HOM-31 | Desligar tudo e apagar | não | UNVERIFIED |
-| CX-HOM-32 | Partida online: sem Conexão e Conexão de Engine | não | UNVERIFIED |
-| CX-HOM-33 | Partida online contra a Engine do Lichess | sim | UNVERIFIED |
-| CX-HOM-34 | Buscar adversário, jogar e terminar | sim | UNVERIFIED |
-| CX-HOM-35 | Intenção enviada, recusa e queda de conexão | sim | UNVERIFIED |
-| CX-HOM-36 | Empate, abandono, abortar e adversário ausente | sim | UNVERIFIED |
-| CX-HOM-37 | Desafiar por nome e desafios recebidos | sim | UNVERIFIED |
-| CX-HOM-38 | Correspondência: lista, fechar e reabrir o app | sim | UNVERIFIED |
-| CX-HOM-39 | Trava de fair play na Partida online | sim | UNVERIFIED |
+| CX-HOM-32 | Rating FIDE no Perfil local | sim | UNVERIFIED |
+| CX-HOM-33 | Limpar dados guardados | não | UNVERIFIED |
+| CX-HOM-34 | Apagar Partidas importadas por origem | não | UNVERIFIED |
+| CX-HOM-35 | Partida online: sem Conexão e Conexão de Engine | não | UNVERIFIED |
+| CX-HOM-36 | Partida online contra a Engine do Lichess | sim | UNVERIFIED |
+| CX-HOM-37 | Buscar adversário, jogar e terminar | sim | UNVERIFIED |
+| CX-HOM-38 | Intenção enviada, recusa e queda de conexão | sim | UNVERIFIED |
+| CX-HOM-39 | Empate, abandono, abortar e adversário ausente | sim | UNVERIFIED |
+| CX-HOM-40 | Desafiar por nome e desafios recebidos | sim | UNVERIFIED |
+| CX-HOM-41 | Correspondência: lista, fechar e reabrir o app | sim | UNVERIFIED |
+| CX-HOM-42 | Trava de fair play na Partida online | sim | UNVERIFIED |
 
 ## Itens
 
@@ -436,7 +439,44 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Com o serviço real:** confira nas preferências do Lichess que nenhuma autorização do Chess Studio sobrou.
 - **Evidência:** [`authorized_connections.rs`](../../crates/chess-store/tests/authorized_connections.rs), [`connections/auth_tests.rs`](../../crates/chess-studio/src/connections/auth_tests.rs).
 
-### CX-HOM-32. Partida online: sem Conexão e Conexão de Engine
+### CX-HOM-32. Rating FIDE no Perfil local
+
+- **Pré-condição:** um ID FIDE real (ou o de um amigo); CX-HOM-04 feito.
+- **Passos:**
+  1. No cartão da FIDE, busque o jogador pelo nome e clique em **Vincular este ID**. Com o Lichess desligado, responda **Ligar** ao diálogo.
+  2. Confira nome, federação, título e as caixas **Standard**, **Rápido** e **Blitz**, e a linha **FIDE, via Lichess, consultado ...**.
+  3. Clique em **Atualizar**.
+  4. Abra **Arquivo > Perfil local**.
+  5. Desligue o Lichess e a internet, feche e abra o app, e olhe de novo.
+  6. Inicie uma Partida competitiva e clique em **Atualizar**.
+- **Esperado:** os três ritmos são caixas separadas; um ritmo sem rating mostra **—**. O texto avisa que a data é a da consulta. **Atualizar** diz que atualizou ou que os ratings continuam os mesmos. Sem internet o último valor continua à vista, com a data. Na Partida competitiva a consulta funciona (não é bloqueada). **Agora não** no diálogo não envia nada.
+- **Com o serviço real:** compare com o site da FIDE. O Lichess pode estar um mês atrás; anote a diferença, se houver.
+- **Evidência:** [`fide_and_bulk.rs`](../../crates/chess-store/tests/fide_and_bulk.rs), [`fide_profile.rs`](../../crates/chess-studio/src/fide_profile.rs), [`lichess_queries.rs`](../../crates/chess-providers/tests/lichess_queries.rs), [`docs/evidencias/rating-fide-dados-origem/`](../evidencias/rating-fide-dados-origem/README.md).
+
+### CX-HOM-33. Limpar dados guardados
+
+- **Pré-condição:** CX-HOM-15 e CX-HOM-22 feitos (há cache e Partidas importadas).
+- **Passos:**
+  1. Na Central, clique em **Limpar dados guardados…** e leia a janela.
+  2. Clique em **Cancelar** e confira que nada mudou.
+  3. Repita e clique em **Limpar dados guardados**.
+  4. Abra a Biblioteca, as Partidas jogadas e o rating FIDE do Perfil local.
+- **Esperado:** a janela diz o que some e o que fica. Cancelar não apaga. Depois de limpar, o app diz quantas respostas apagou; as Partidas jogadas e importadas, os Exercícios, as Conexões e o último rating FIDE continuam.
+- **Com o serviço real:** não se aplica.
+- **Evidência:** [`stored_data.rs`](../../crates/chess-studio/src/connections/stored_data.rs).
+
+### CX-HOM-34. Apagar Partidas importadas por origem
+
+- **Pré-condição:** Partidas importadas de dois Provedores e de um arquivo (CX-HOM-22, 23 e 25) e ao menos uma Partida jogada no app.
+- **Passos:**
+  1. Na Biblioteca, abra a aba **Origens**.
+  2. Marque uma importação e clique em **Apagar marcadas…**; leia a janela e confirme.
+  3. Marque **Tudo de um Provedor** e confirme.
+  4. Se tiver uma Partida que veio de dois lugares, apague uma das origens.
+- **Esperado:** a janela traz a contagem e a lista do que será apagado. Marcar o Provedor cobre as importações dele. As Partidas jogadas não aparecem na aba e continuam. A Partida de duas origens fica, e a janela diz que ficou.
+- **Com o serviço real:** não se aplica.
+- **Evidência:** [`fide_and_bulk.rs`](../../crates/chess-store/tests/fide_and_bulk.rs), [`library_bulk.rs`](../../crates/chess-studio/src/library_bulk.rs).
+### CX-HOM-35. Partida online: sem Conexão e Conexão de Engine
 
 - **Pré-condição:** Perfil local do roteiro sem Conexão do Lichess autorizada.
 - **Passos:**
@@ -446,7 +486,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Esperado:** a tela **Partida online no Lichess** explica **Autorize o Lichess para jogar** e leva à Central. Com só a Conexão de Engine, continua pedindo a Conexão do jogador: a de Engine nunca joga como pessoa. Nada sai para o Lichess.
 - **Evidência:** [`online/tests.rs`](../../crates/chess-studio/src/online/tests.rs) (`only_the_authorized_player_connection_plays_never_the_engine_one`).
 
-### CX-HOM-33. Partida online contra a Engine do Lichess
+### CX-HOM-36. Partida online contra a Engine do Lichess
 
 - **Pré-condição:** Lichess ligado e a Conexão do jogador autorizada.
 - **Passos:**
@@ -458,7 +498,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Esperado:** a Partida aparece no tabuleiro do seu lado, com o Painel **Partida online** (selos **Lichess**, **Ao vivo**, **Sem rating**), os relógios do Lichess no Painel Relógio e no relógio 3D, os nomes do Lichess no Painel Relógio e a Notação. Cada Lance aparece com a peça no destino e **Enviando …** até o Lichess confirmar. A Análise roda (contra a Engine do Lichess não há Trava). O fim vem do Lichess; a Partida fica na Biblioteca com **Partida online · Lichess · lichess.org/…**.
 - **Com o serviço real:** confira no site que a Partida tem os mesmos Lances.
 
-### CX-HOM-34. Buscar adversário, jogar e terminar
+### CX-HOM-37. Buscar adversário, jogar e terminar
 
 - **Passos:**
   1. Início > **Buscar adversário**; Rápida 10+5, sem rating; **Buscar adversário**.
@@ -467,7 +507,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
   4. Depois do fim, **Analisar** e **Ver na Biblioteca** no Painel Partida online.
 - **Esperado:** a busca mostra **Procurando adversário** e some ao cancelar. Pareado, a Partida vai ao tabuleiro sozinha. Blitz não aparece na busca (o Lichess só busca a partir do rápido). Durante a Partida, Engines, Explorador, finais e análise ficam desligados e a barra de status mostra **Trava de fair play**. O resultado e o motivo são os do Lichess; só então a Análise liga. A Partida está na Biblioteca com a Origem.
 
-### CX-HOM-35. Intenção enviada, recusa e queda de conexão
+### CX-HOM-38. Intenção enviada, recusa e queda de conexão
 
 - **Passos:**
   1. Numa Partida online contra pessoa, faça um Lance e observe o Painel até a confirmação.
@@ -475,7 +515,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
   3. Faça o adversário terminar a Partida (abandono) enquanto você está sem internet, e religue.
 - **Esperado:** o Lance fica no destino com **Enviando …** até o Lichess confirmar. Sem internet, o selo vira **Reconectando em … s** e o Painel diz que nenhum Lance é reenviado. Ao voltar, o tabuleiro fica como o Lichess diz: se o Lance não chegou, a peça volta e o aviso pede para jogar de novo; nunca há Lance duplicado. Se a Partida terminou sem você, o resultado aparece ao reconectar.
 
-### CX-HOM-36. Empate, abandono, abortar e adversário ausente
+### CX-HOM-39. Empate, abandono, abortar e adversário ausente
 
 - **Passos:**
   1. Logo no começo, **Abortar** (antes de cada lado jogar).
@@ -484,7 +524,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
   4. Peça ao adversário para fechar o navegador e espere.
 - **Esperado:** nada muda até o Lichess confirmar. A Partida abortada fica sem resultado. **Abandonar** sempre pede confirmação. Com o adversário fora, aparece **O adversário saiu da Partida** e **Reclamar vitória** só fica disponível quando o Lichess permitir.
 
-### CX-HOM-37. Desafiar por nome e desafios recebidos
+### CX-HOM-40. Desafiar por nome e desafios recebidos
 
 - **Passos:**
   1. **Desafiar** um usuário seu de teste, em Blitz 3+2; depois **Cancelar desafio**; desafie de novo e aceite no outro usuário.
@@ -492,7 +532,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
   3. Com uma Partida competitiva local em andamento, peça outro desafio.
 - **Esperado:** o desafio aparece como **Aguardando resposta** e some ao cancelar. O desafio recebido traz um aviso discreto no canto (**… desafia você**, com **Ver**), que nunca aparece durante outra Partida competitiva (o desafio espera na aba **Desafiar**). **Recusar** usa o motivo escolhido. O de Chess960 diz que o app só joga xadrez padrão e não tem **Aceitar**.
 
-### CX-HOM-38. Correspondência: lista, fechar e reabrir o app
+### CX-HOM-41. Correspondência: lista, fechar e reabrir o app
 
 - **Passos:**
   1. **Buscar adversário** > Correspondência, 3 dias por Lance (ou desafie seu usuário de teste em correspondência).
@@ -502,7 +542,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
   5. **Atualizar** no aviso; depois **Partidas em andamento** > **Abrir**.
 - **Esperado:** ao abrir, nada sai para a rede: só o aviso **Partidas online em andamento** com **Atualizar**. A lista mostra de quem é a vez e quanto falta. **Abrir** traz o Lance que o adversário fez com o app fechado, na mesma Partida (sem duplicar na Biblioteca). Uma Partida terminada enquanto o app estava fechado mostra o resultado ao atualizar.
 
-### CX-HOM-39. Trava de fair play na Partida online
+### CX-HOM-42. Trava de fair play na Partida online
 
 - **Passos:**
   1. Numa Partida online contra pessoa em tempo real: tente ligar a Análise, abrir o Explorador, ver a avaliação em cache, a aba Finais, a Biblioteca do Explorador e o Painel Aberturas; revise Lances anteriores.

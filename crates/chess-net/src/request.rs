@@ -49,6 +49,8 @@ pub struct Request {
     pub(crate) connection: Option<ConnectionId>,
     pub(crate) cache_ttl: Option<Duration>,
     pub(crate) allow_stale: bool,
+    /// Ignora o cache ainda válido e consulta o Provedor de novo (o botão Atualizar).
+    pub(crate) refresh: bool,
     pub(crate) patience: Duration,
     pub(crate) timeout: Option<Duration>,
     pub(crate) max_body: Option<usize>,
@@ -80,6 +82,7 @@ impl Request {
             connection: None,
             cache_ttl: None,
             allow_stale: true,
+            refresh: false,
             patience: Duration::ZERO,
             timeout: None,
             max_body: None,
@@ -161,6 +164,13 @@ impl Request {
     /// Guarda a resposta 200 no cache por `ttl` (validade por tipo de pedido).
     pub fn cache_for(mut self, ttl: Duration) -> Self {
         self.cache_ttl = Some(ttl);
+        self
+    }
+
+    /// Consulta o Provedor mesmo que o cache ainda esteja válido ("Atualizar"). Com o cache
+    /// presente, o pedido é condicional: um `304` renova a data da consulta sem baixar de novo.
+    pub fn refresh(mut self) -> Self {
+        self.refresh = true;
         self
     }
 

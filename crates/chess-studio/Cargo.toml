@@ -63,6 +63,12 @@ fluent-bundle = "0.16.0"
 unic-langid = "0.9.6"
 egui_tiles = { version = "0.17.1", features = ["serde"] }
 egui-phosphor = "0.14"
+# Hora local (fuso do sistema) para as telas: crate puro em Rust (Unlicense OR MIT), sem `unsafe` no
+# nosso código; o fuso é injetável nos testes (src/local_time.rs).
+jiff = "0.2"
+# Diálogo nativo de abrir/salvar arquivo (MIT): só o portal do desktop no Linux (libdbus carregada
+# em tempo de execução, `zenity` de reserva; sem GTK) e os backends nativos de Windows e macOS.
+rfd = { version = "0.18", default-features = false, features = ["xdg-portal"] }
 
 [dev-dependencies]
 png = "0.18"
