@@ -24,4 +24,4 @@
 mod recorded;
 mod server;
 
-pub use server::{FakeResponse, FakeServer, ReceivedRequest};
+pub use server::{FakeResponse, FakeServer, LiveFeed, ReceivedRequest};

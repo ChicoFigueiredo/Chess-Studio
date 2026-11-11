@@ -363,7 +363,7 @@ fn encode(text: &str) -> String {
     out
 }
 
-fn form(pairs: &[(&str, &str)]) -> String {
+pub(crate) fn form(pairs: &[(&str, &str)]) -> String {
     pairs
         .iter()
         .map(|(k, v)| format!("{k}={}", encode(v)))

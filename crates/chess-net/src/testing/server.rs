@@ -5,11 +5,12 @@
 
 use crate::clock::{Clock, Timestamp};
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -25,6 +26,72 @@ enum Kind {
     Stream(Vec<Vec<u8>>),
     /// Repete o pedaço a cada 50 ms até o cliente fechar.
     StreamForever(Vec<u8>),
+    /// Fluxo que o teste alimenta na hora ([`LiveFeed`]).
+    Live(LiveFeed),
+    /// Lê o pedido e fecha a conexão sem responder (queda no meio do pedido).
+    Drop,
+}
+
+#[derive(Debug, Default)]
+struct LiveState {
+    chunks: VecDeque<Vec<u8>>,
+    closed: bool,
+    connected: bool,
+}
+
+/// Fluxo NDJSON controlado pelo teste: o servidor falso escreve cada linha empurrada na
+/// hora em que ela chega e encerra a resposta em [`LiveFeed::close`]. Clones apontam para o
+/// mesmo fluxo; use um por conexão esperada (`route_seq` para reconexões).
+#[derive(Debug, Clone, Default)]
+pub struct LiveFeed {
+    inner: Arc<(Mutex<LiveState>, Condvar)>,
+}
+
+impl PartialEq for LiveFeed {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
+}
+
+impl Eq for LiveFeed {}
+
+impl LiveFeed {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Acrescenta uma linha (o `\n` vai junto).
+    pub fn push(&self, line: &str) {
+        let mut bytes = line.as_bytes().to_vec();
+        bytes.push(b'\n');
+        let (state, wake) = &*self.inner;
+        lock(state).chunks.push_back(bytes);
+        wake.notify_all();
+    }
+
+    /// Encerra a resposta depois do que já foi empurrado (fim limpo do fluxo).
+    pub fn close(&self) {
+        let (state, wake) = &*self.inner;
+        lock(state).closed = true;
+        wake.notify_all();
+    }
+
+    /// Há um cliente lendo este fluxo agora.
+    pub fn is_connected(&self) -> bool {
+        lock(&self.inner.0).connected
+    }
+
+    /// Espera (tempo real) até um cliente estar lendo este fluxo.
+    pub fn wait_connected(&self, timeout: Duration) -> bool {
+        let start = Instant::now();
+        while start.elapsed() < timeout {
+            if self.is_connected() {
+                return true;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        self.is_connected()
+    }
 }
 
 /// Resposta do servidor falso.
@@ -74,6 +141,23 @@ impl FakeResponse {
         Self {
             kind: Kind::StreamForever(heartbeat.to_vec()),
             ..Self::status(200).header("content-type", "application/x-ndjson")
+        }
+    }
+
+    /// Fluxo NDJSON alimentado pelo teste (ver [`LiveFeed`]).
+    pub fn live(feed: &LiveFeed) -> Self {
+        Self {
+            kind: Kind::Live(feed.clone()),
+            ..Self::status(200).header("content-type", "application/x-ndjson")
+        }
+    }
+
+    /// Lê o pedido inteiro e derruba a conexão sem responder: o cliente não sabe se o
+    /// pedido teve efeito.
+    pub fn drop_connection() -> Self {
+        Self {
+            kind: Kind::Drop,
+            ..Self::status(200)
         }
     }
 
@@ -306,6 +390,8 @@ fn serve(mut stream: TcpStream, state: &State) {
                 }
             }
         }
+        Kind::Live(feed) => serve_live(&mut stream, &response, feed, state),
+        Kind::Drop => {}
         Kind::StreamForever(beat) => {
             if write_head(&mut stream, &response, None).is_ok() {
                 while !state.shutdown.load(Ordering::SeqCst) {
@@ -322,6 +408,40 @@ fn serve(mut stream: TcpStream, state: &State) {
         }
     }
     let _ = stream.shutdown(std::net::Shutdown::Both);
+}
+
+/// Escreve o que o teste empurrar até [`LiveFeed::close`], o cliente sair ou o servidor cair.
+fn serve_live(stream: &mut TcpStream, response: &FakeResponse, feed: &LiveFeed, state: &State) {
+    let (live, wake) = &*feed.inner;
+    lock(live).connected = true;
+    if write_head(stream, response, None).is_ok() {
+        loop {
+            let (chunks, closed) = {
+                let mut guard = lock(live);
+                if guard.chunks.is_empty() && !guard.closed {
+                    guard = wake
+                        .wait_timeout(guard, Duration::from_millis(50))
+                        .map_or_else(|e| e.into_inner().0, |(g, _)| g);
+                }
+                (guard.chunks.drain(..).collect::<Vec<_>>(), guard.closed)
+            };
+            let mut failed = false;
+            for chunk in chunks {
+                if stream
+                    .write_all(&chunk)
+                    .and_then(|()| stream.flush())
+                    .is_err()
+                {
+                    failed = true;
+                    break;
+                }
+            }
+            if failed || closed || state.shutdown.load(Ordering::SeqCst) {
+                break;
+            }
+        }
+    }
+    lock(live).connected = false;
 }
 
 /// Segura a conexão sem responder até o cliente fechar, o servidor cair ou 30 s.

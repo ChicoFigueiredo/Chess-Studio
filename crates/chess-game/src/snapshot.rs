@@ -204,7 +204,7 @@ impl Snapshot {
             infractions_white: state.infractions[0],
             infractions_black: state.infractions[1],
             claimable_draw,
-            online: state.online.then(|| OnlineView {
+            online: state.online.then_some(OnlineView {
                 sent_move: None,
                 desync: None,
                 aborted: state.aborted,
