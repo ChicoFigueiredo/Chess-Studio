@@ -28,6 +28,7 @@ mod end_game;
 mod engine;
 mod engine_consent;
 mod engine_manager;
+mod engine_online;
 mod engine_wizard;
 mod eval_bar;
 mod explorer;
@@ -70,6 +71,7 @@ mod presentation;
 mod profiles;
 mod provider_consent;
 mod ready;
+mod remote_engine;
 mod responsive;
 mod ribbon;
 mod scoresheet;
@@ -134,7 +136,8 @@ fn capture_script() -> capture::CaptureScript {
 /// A captura mostra o invólucro da interface: `--panel`, `--profile` ou qualquer opção que só
 /// faz sentido com ele (Ribbon, KeyTips, bastidores, Opções, Paleta, barra de avaliação).
 fn shell_requested() -> bool {
-    const FLAGS: [&str; 12] = [
+    const FLAGS: [&str; 13] = [
+        "--engine-online-tour",
         "--online-demo",
         "--online-tour",
         "--backstage-page",
@@ -253,6 +256,7 @@ fn main() {
     app.add_plugins((
         net_service::NetServicePlugin,
         provider_consent::ProviderConsentPlugin,
+        remote_engine::RemoteEnginePlugin,
         connections::ConnectionsPlugin,
     ));
     app.add_plugins(actions::ActionsPlugin);
@@ -267,6 +271,7 @@ fn main() {
     app.add_plugins(openings::OpeningsPlugin);
     app.add_plugins(explorer::ExplorerPlugin);
     app.add_plugins(online::OnlinePlugin);
+    app.add_plugins(engine_online::EngineOnlinePlugin);
     app.add_plugins(scoresheet::ScoresheetPlugin);
     app.add_plugins(ui_theme::UiThemePlugin);
     app.add_plugins(options::OptionsPlugin);

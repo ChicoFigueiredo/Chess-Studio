@@ -233,6 +233,7 @@ consent-sends-lichess-query = Os nomes de usuário e os IDs FIDE públicos que v
 consent-sends-lichess-download = Ao baixar problemas, só o pedido do pacote: nada seu vai junto, e o arquivo vem para este computador.
 consent-sends-lichess-play = Em Partidas online, com a sua Conexão autorizada, os seus Lances e os desafios que você fizer.
 consent-sends-chesscom-query = Os nomes de usuário públicos que você consulta e os meses de Partidas que você pede.
+consent-sends-chessapi-analyze = Só quando você escolhe a Engine remota na análise: a Posição analisada (onde estão as peças, de quem é a vez e os direitos de roque) e a profundidade pedida. Sem nomes e sem histórico da Partida.
 consent-sends-playstrategy-query = Os nomes de usuário públicos que você consulta e os pedidos das Partidas públicas que você faz.
 consent-sends-tail-playstrategy = Nenhuma senha. Nesta versão não há Partida online no PlayStrategy.
 consent-sends-tail-local-profile = Nada do seu Perfil local vai junto.

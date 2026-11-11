@@ -45,9 +45,7 @@ pub enum Computation {
     EngineAnalysis,
     /// Dica do HUD, setas de sugestão, casas atacadas e peças ameaçadas.
     Hint,
-    /// Engine remota (a posição sai para um Provedor). O serviço chega no #234; a trava já
-    /// responde por ela.
-    #[allow(dead_code)]
+    /// Engine remota (a posição sai para um Provedor).
     RemoteEngine,
     /// Avaliação em cache de um Provedor.
     CloudEval,
@@ -393,11 +391,27 @@ pub fn opening_stats(
     Ok(store.opening_stats(profile, fen))
 }
 
-/// A Engine de análise (segunda Engine, `chess_uci::AnalysisController`) atrás da trava: só
-/// sobe e só recebe Posição com licença. É o único lugar do app que a cria (teste estático).
+/// A Engine de análise atrás da trava: a segunda Engine local (`chess_uci::AnalysisController`)
+/// ou a Engine remota (`chess_providers::RemoteEngine`). Só sobe e só recebe Posição com
+/// licença. É o único lugar do app que as cria (teste estático).
 #[derive(Debug)]
 pub struct GuardedAnalysis {
-    controller: chess_uci::AnalysisController,
+    backend: Backend,
+}
+
+#[derive(Debug)]
+enum Backend {
+    Local(chess_uci::AnalysisController),
+    /// Num `Mutex` só para o recurso ser `Sync` (as consultas da rede não são); nunca há disputa.
+    Remote(Box<std::sync::Mutex<chess_providers::RemoteEngine>>),
+}
+
+fn unpoisoned(
+    engine: &mut Box<std::sync::Mutex<chess_providers::RemoteEngine>>,
+) -> &mut chess_providers::RemoteEngine {
+    engine
+        .get_mut()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 impl GuardedAnalysis {
@@ -409,8 +423,37 @@ impl GuardedAnalysis {
     ) -> Result<Self, FairPlayLocked> {
         fair.check(Computation::EngineAnalysis, subject)?;
         Ok(Self {
-            controller: chess_uci::AnalysisController::start(config),
+            backend: Backend::Local(chess_uci::AnalysisController::start(config)),
         })
+    }
+
+    /// Prepara a Engine remota para `subject`, se a trava deixar. Nada sai da máquina aqui:
+    /// o pedido só vai em [`GuardedAnalysis::analyze`].
+    pub fn start_remote(
+        fair: &FairPlay,
+        subject: &Subject,
+        api: chess_providers::ChessApi,
+    ) -> Result<Self, FairPlayLocked> {
+        fair.check(Computation::RemoteEngine, subject)?;
+        Ok(Self {
+            backend: Backend::Remote(Box::new(std::sync::Mutex::new(
+                chess_providers::RemoteEngine::new(api),
+            ))),
+        })
+    }
+
+    /// A Engine é a remota (a Posição sai da máquina)?
+    #[cfg(test)]
+    pub fn is_remote(&self) -> bool {
+        matches!(self.backend, Backend::Remote(_))
+    }
+
+    /// O problema tipado do último pedido da Engine remota.
+    pub fn remote_problem(&mut self) -> Option<&chess_providers::ProviderError> {
+        match &mut self.backend {
+            Backend::Remote(engine) => unpoisoned(engine).problem(),
+            Backend::Local(_) => None,
+        }
     }
 
     /// Pede a análise de uma Posição, se a trava deixar; recusada, a Engine para.
@@ -421,24 +464,40 @@ impl GuardedAnalysis {
         spec: chess_uci::PositionSpec,
         multipv: u8,
     ) -> Result<u64, FairPlayLocked> {
-        if let Err(locked) = fair.check(Computation::EngineAnalysis, subject) {
-            self.controller.stop();
+        let computation = match self.backend {
+            Backend::Local(_) => Computation::EngineAnalysis,
+            Backend::Remote(_) => Computation::RemoteEngine,
+        };
+        if let Err(locked) = fair.check(computation, subject) {
+            self.stop();
             return Err(locked);
         }
-        Ok(self.controller.analyze(spec, multipv))
+        Ok(match &mut self.backend {
+            Backend::Local(controller) => controller.analyze(spec, multipv),
+            Backend::Remote(engine) => unpoisoned(engine).analyze(spec, multipv),
+        })
     }
 
     pub fn stop(&mut self) {
-        self.controller.stop();
+        match &mut self.backend {
+            Backend::Local(controller) => controller.stop(),
+            Backend::Remote(engine) => unpoisoned(engine).stop(),
+        }
     }
 
     pub fn poll(&mut self) -> Option<chess_uci::AnalysisEvent> {
-        self.controller.poll()
+        match &mut self.backend {
+            Backend::Local(controller) => controller.poll(),
+            Backend::Remote(engine) => unpoisoned(engine).poll(),
+        }
     }
 
-    /// Plano de carga do governador de FPS (C10): não muda o que se calcula, só quanto.
+    /// Plano de carga do governador de FPS (C10): não muda o que se calcula, só quanto. A
+    /// Engine remota não tem carga local.
     pub fn set_load(&mut self, plan: chess_uci::LoadPlan) {
-        self.controller.set_load(plan);
+        if let Backend::Local(controller) = &mut self.backend {
+            controller.set_load(plan);
+        }
     }
 }
 
@@ -754,6 +813,7 @@ mod tests {
             "AnalysisController::start(",
             ".opening_stats(",
             "AnalysisController>",
+            "RemoteEngine::new(",
         ];
         for file in files {
             if file.ends_with("fair_play.rs") {

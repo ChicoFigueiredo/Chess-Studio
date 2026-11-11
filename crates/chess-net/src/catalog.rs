@@ -22,7 +22,7 @@ use std::fmt;
 use std::time::Duration;
 
 /// Versão dos dados do catálogo; gravada junto do consentimento.
-pub const CATALOG_VERSION: u32 = 5;
+pub const CATALOG_VERSION: u32 = 6;
 
 /// Provedor do catálogo. A chave ([`ProviderId::key`]) é o que se grava no banco e na Origem.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -1037,7 +1037,7 @@ static CATALOG: [Provider; 19] = [
             C::Analyze,
             &[A::None],
             K::FreeLimited,
-            S::Planned { stage: 3 },
+            S::Ready,
             "Stockfish remoto; profundidade 18 e 100 ms de pensar no acesso comum; sem SLA; \
              sem chave (conferido por consulta de leitura em 2026-11-11)",
         )],
