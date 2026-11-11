@@ -90,6 +90,7 @@ mod dates;
 mod error;
 mod eval;
 mod explorer;
+mod fics;
 mod games;
 mod lichess;
 mod pgn;
@@ -115,6 +116,10 @@ pub use eval::{CloudEval, EvalLine, POV, Score};
 pub use explorer::{
     ExplorerEvent, ExplorerMove, ExplorerPosition, ExplorerStream, LichessFilter, MastersFilter,
     OpeningName, Outcomes, PlayerFilter, ReferenceGame, ReferencePlayer, explorer_license,
+};
+pub use fics::{
+    DEFAULT_LOGIN_DEADLINE, Fics, FicsChallenge, FicsError, FicsLogin, FicsNotice, FicsPoll,
+    FicsSession, FicsStatus, ObservedGame,
 };
 pub use games::{
     DEFAULT_MAX_GAMES, GamesEvent, GamesFeed, GamesFilter, GamesProgress, GamesReader,
