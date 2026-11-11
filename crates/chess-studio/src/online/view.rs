@@ -456,15 +456,33 @@ pub fn online_dialog(
             ui.painter().rect_filled(rect, 0.0, palette(ui).scrim);
         });
     let mut intents = Vec::new();
+    // O egui guarda o tamanho da janela: um id por conteúdo faz ela encolher ao trocar de aba
+    // ou de estado, em vez de herdar a altura da aba mais longa.
+    let content = (
+        ui_state.tab,
+        view.connected && view.provider_on,
+        view.seek.map(|(_, _, posted)| posted),
+        view.engine_pending,
+        view.incoming.len(),
+        view.outgoing.len(),
+        view.rows.len(),
+        ui_state.error.is_some(),
+    );
+    let max_height = (ctx.viewport_rect().height() - 160.0).max(240.0);
     egui::Window::new(i18n.t("online-title"))
-        .id(egui::Id::new("online-dialog"))
+        .id(egui::Id::new(("online-dialog", content)))
         .order(egui::Order::Foreground)
         .collapsible(false)
         .resizable(false)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(&ctx, |ui| {
             ui.set_width(DIALOG_W);
-            dialog_body(ui, &i18n, &mut ui_state, &view, &mut intents);
+            egui::ScrollArea::vertical()
+                .max_height(max_height)
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    dialog_body(ui, &i18n, &mut ui_state, &view, &mut intents);
+                });
         });
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         intents.push(Intent::Close);
@@ -800,45 +818,46 @@ fn outgoing_row(
     intents: &mut Vec<Intent>,
 ) {
     let p = palette(ui);
+    let (tone, glyph, key) = match out {
+        OutgoingState::Sending => (
+            StatusTone::Info,
+            icon::PAPER_PLANE_TILT,
+            "online-challenge-sending",
+        ),
+        OutgoingState::Waiting => (
+            StatusTone::Info,
+            icon::HOURGLASS,
+            "online-challenge-waiting",
+        ),
+        OutgoingState::Declined => (
+            StatusTone::Warning,
+            icon::X_CIRCLE,
+            "online-challenge-declined",
+        ),
+        OutgoingState::Canceled => (
+            StatusTone::Neutral,
+            icon::X_CIRCLE,
+            "online-challenge-canceled",
+        ),
+        OutgoingState::Failed(_) => (
+            StatusTone::Danger,
+            icon::WARNING_OCTAGON,
+            "online-challenge-failed",
+        ),
+    };
     cs_card_frame(p, CardEmphasis::Quiet).show(ui, |ui| {
         ui.set_width(ui.available_width());
+        ui.label(
+            egui::RichText::new(i18n.t_with("online-challenge-to", &[("name", name)]))
+                .font(strong_font(ui.ctx(), 14.0))
+                .color(p.ink),
+        );
+        ui.add_space(4.0);
         ui.horizontal(|ui| {
-            ui.vertical(|ui| {
-                ui.label(
-                    egui::RichText::new(i18n.t_with("online-challenge-to", &[("name", name)]))
-                        .font(strong_font(ui.ctx(), 14.0))
-                        .color(p.ink),
-                );
-                muted(ui, time_label(i18n, time));
-            });
+            ui.spacing_mut().item_spacing.x = 8.0;
+            cs_status_badge(ui, tone, glyph, &i18n.t(key));
+            muted(ui, time_label(i18n, time));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let (tone, glyph, key) = match out {
-                    OutgoingState::Sending => (
-                        StatusTone::Info,
-                        icon::PAPER_PLANE_TILT,
-                        "online-challenge-sending",
-                    ),
-                    OutgoingState::Waiting => (
-                        StatusTone::Info,
-                        icon::HOURGLASS,
-                        "online-challenge-waiting",
-                    ),
-                    OutgoingState::Declined => (
-                        StatusTone::Warning,
-                        icon::X_CIRCLE,
-                        "online-challenge-declined",
-                    ),
-                    OutgoingState::Canceled => (
-                        StatusTone::Neutral,
-                        icon::X_CIRCLE,
-                        "online-challenge-canceled",
-                    ),
-                    OutgoingState::Failed(_) => (
-                        StatusTone::Danger,
-                        icon::WARNING_OCTAGON,
-                        "online-challenge-failed",
-                    ),
-                };
                 if matches!(out, OutgoingState::Waiting | OutgoingState::Sending)
                     && ui
                         .add(
@@ -849,7 +868,6 @@ fn outgoing_row(
                 {
                     intents.push(Intent::CancelChallenge(index));
                 }
-                cs_status_badge(ui, tone, glyph, &i18n.t(key));
             });
         });
     });
@@ -1031,9 +1049,15 @@ fn playing_tab(ui: &mut egui::Ui, i18n: &I18n, view: &DialogView, intents: &mut 
     });
     ui.add_space(4.0);
     match view.refreshed {
+        Some(at) if view.now.since(at) < Duration::from_secs(60) => {
+            muted(ui, i18n.t("online-playing-refreshed-now"));
+        }
         Some(at) => muted(
             ui,
-            i18n.t_with("online-playing-refreshed", &[("time", &clock_of_day(at))]),
+            i18n.t_with(
+                "online-playing-refreshed",
+                &[("time", &left_label(i18n, view.now.since(at).as_secs()))],
+            ),
         ),
         None => muted(ui, i18n.t("online-playing-local")),
     }
@@ -1060,15 +1084,6 @@ fn playing_tab(ui: &mut egui::Ui, i18n: &I18n, view: &DialogView, intents: &mut 
             intents.push(Intent::Close);
         }
     });
-}
-
-/// "14:05" (hora local de parede, a partir do instante UTC).
-fn clock_of_day(at: Timestamp) -> String {
-    let ms = at.as_millis();
-    let minutes = ms / 60_000;
-    // Sem fuso: a hora UTC menos 3 h (o app é pt-BR); bastante para "de quando é a lista".
-    let local = (minutes - 180).rem_euclid(24 * 60);
-    format!("{:02}:{:02}", local / 60, local % 60)
 }
 
 fn playing_row(ui: &mut egui::Ui, i18n: &I18n, row: &PlayingRow, intents: &mut Vec<Intent>) {
@@ -1372,12 +1387,6 @@ fn panel_body(
             &i18n.t("online-badge-lichess"),
         );
         link_badge(ui, i18n, view.link, over, view.now);
-        let rated = if online.rated {
-            i18n.t("online-rated-badge")
-        } else {
-            i18n.t("online-casual-badge")
-        };
-        cs_status_badge(ui, StatusTone::Neutral, icon::MEDAL, &rated);
     });
     ui.add_space(8.0);
     let opponent = match online.local_color {
@@ -1569,6 +1578,7 @@ fn players_block(
             },
         ));
     }
+    meta.push(rated_label(i18n, online.rated));
     muted(ui, meta.join(" · "));
 }
 
@@ -1579,45 +1589,37 @@ fn ended_section(
     intents: &mut Vec<PanelIntent>,
 ) {
     let p = palette(ui);
-    cs_card_frame(p, CardEmphasis::Full).show(ui, |ui| {
-        ui.set_width(ui.available_width());
-        ui.label(
-            egui::RichText::new(i18n.t("online-ended-title"))
-                .font(strong_font(ui.ctx(), 14.0))
-                .color(p.ink_muted),
-        );
-        ui.add_space(4.0);
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new(ended_text(i18n, session))
-                    .font(strong_font(ui.ctx(), 16.0))
-                    .color(p.ink),
+    // O resultado primeiro: é o que importa quando a Partida acaba (e cabe num grupo baixo).
+    ui.add(
+        egui::Label::new(
+            egui::RichText::new(ended_text(i18n, session))
+                .font(strong_font(ui.ctx(), 16.0))
+                .color(p.ink),
+        )
+        .wrap(),
+    );
+    ui.add_space(8.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
+        if ui
+            .add(
+                CsButton::new(&i18n.t("online-analyze"))
+                    .icon(icon::CHART_LINE)
+                    .variant(ButtonVariant::Primary),
             )
-            .wrap(),
-        );
-        ui.add_space(4.0);
-        muted(ui, i18n.t("online-ended-saved"));
-        ui.add_space(8.0);
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 8.0;
-            if ui
-                .add(
-                    CsButton::new(&i18n.t("online-analyze"))
-                        .icon(icon::CHART_LINE)
-                        .variant(ButtonVariant::Primary),
-                )
-                .clicked()
-            {
-                intents.push(PanelIntent::Analyze);
-            }
-            if ui
-                .add(CsButton::new(&i18n.t("online-open-library")).icon(icon::BOOKS))
-                .clicked()
-            {
-                intents.push(PanelIntent::Library);
-            }
-        });
+            .clicked()
+        {
+            intents.push(PanelIntent::Analyze);
+        }
+        if ui
+            .add(CsButton::new(&i18n.t("online-open-library")).icon(icon::BOOKS))
+            .clicked()
+        {
+            intents.push(PanelIntent::Library);
+        }
     });
+    ui.add_space(4.0);
+    muted(ui, i18n.t("online-ended-saved"));
 }
 
 fn recent_notices(ui: &mut egui::Ui, i18n: &I18n, notices: &[OnlineNotice]) {
