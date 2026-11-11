@@ -785,6 +785,80 @@ mod engine_online {
         assert!(bot.activity_has(|a| matches!(a, Activity::FairPlayResigned { .. })));
     }
 
+    /// O app fechou no meio de uma Partida da Engine online; ao religar, o Lichess reenvia o
+    /// `gameStart` e a Partida é retomada do banco. Se ela está na Posição da correspondência em
+    /// andamento, a Partida retomada também obedece à Trava: a Engine não calcula.
+    #[test]
+    fn a_resumed_online_engine_game_under_the_lock_does_not_calculate() {
+        let mut bot = bot();
+        // A Partida da Engine no banco, depois de 1.e4 c5 2.Nf3 d6 3.d4 cxd4 4.Nxd4 Nf6.
+        let setup = chess_game::GameSetup::online(
+            chess_game::OnlineGame {
+                provider: crate::engine_online::service::BOT_KEY.into(),
+                remote_id: BOT_GAME.into(),
+                local_color: Color::White,
+                opponent: Opponent::Human,
+                white: chess_game::OnlinePlayer {
+                    name: "Motor".into(),
+                    rating: Some(2500),
+                },
+                black: chess_game::OnlinePlayer {
+                    name: "Salma".into(),
+                    rating: Some(1662),
+                },
+                rated: false,
+                days_per_move: None,
+            },
+            chess_game::Variant::Standard,
+            None,
+        )
+        .unwrap();
+        let mut stored = chess_game::Game::new(setup.clone());
+        feed(&mut stored, &NAJDORF, None);
+        let id = bot
+            .store
+            .create_game_for(
+                bot.profile,
+                &setup,
+                &chess_store::GameMetadata {
+                    title: None,
+                    extra: json!({ "online": {
+                        "provider": crate::engine_online::service::BOT_KEY,
+                        "remote_id": BOT_GAME,
+                    } }),
+                },
+            )
+            .unwrap();
+        bot.store.append_events(id, stored.events()).unwrap();
+        // A correspondência contra pessoa está nessa mesma Posição.
+        let corr = correspondence_after(&NAJDORF);
+        bot.fair.follow_games([&corr]);
+        bot.server.route(&resign_path(), ok());
+        bot.server.route(&move_path("b1c3"), ok());
+        let (factory, searches) = scripted(&["b1c3"]);
+        bot.run
+            .start(&bot.service, spec(), Settings::default(), factory)
+            .unwrap();
+        assert!(bot.events.wait_connected(WAIT));
+        let fen = position_after(&NAJDORF).to_fen();
+        let game = bot.open_game(&fen, "standard");
+        assert!(bot.until(|_| game.wait_connected(Duration::from_millis(1))));
+        game.push(&bot_full("startpos", "standard", &NAJDORF.join(" ")));
+        assert!(bot.until(|b| b.posts_to(&resign_path()) == 1), "abandonada");
+        bot.settle();
+        assert!(
+            bot.activity_has(|a| matches!(a, Activity::GameResumed { .. })),
+            "a Partida foi retomada do banco: {:?}",
+            bot.run
+        );
+        assert!(bot.activity_has(|a| matches!(a, Activity::FairPlayResigned { .. })));
+        assert!(
+            searches.lock().unwrap().is_empty(),
+            "a Engine não recebeu a Posição da Partida retomada"
+        );
+        assert_eq!(bot.posts_to(&move_path("b1c3")), 0, "nenhum Lance saiu");
+    }
+
     /// A Partida aceita antes da Trava: quando ela liga, a próxima busca não chega à Engine (o
     /// jogador não pode repetir nela os Lances da Partida contra pessoa).
     #[test]

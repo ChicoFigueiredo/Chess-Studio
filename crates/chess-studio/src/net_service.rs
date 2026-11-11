@@ -166,6 +166,20 @@ impl NetService {
         Self::in_memory()
     }
 
+    /// Rede dos dados de demonstração (`--demo-data`): o `rede.db` temporário em `db` (com as
+    /// respostas em cache) e o Cofre **falso**, nunca o do sistema nem o do usuário.
+    pub fn open_demo(db: &Path) -> Self {
+        let opened = secrets::volatile_vault(secrets::VolatileKeyring::new(), "cofre-demo");
+        let config = NetConfig::at_path(db).vault(Arc::new(opened.vault.clone()));
+        match Net::open(config) {
+            Ok(net) => Self::with_vault(net, Arc::new(SystemClock), true, opened),
+            Err(err) => {
+                warn!("banco da rede de demonstração indisponível: {err}");
+                Self::in_memory()
+            }
+        }
+    }
+
     /// Rede sem banco em disco (capturas, testes): nada persiste e o Cofre é **falso** (cofre do
     /// sistema em memória, diretório temporário): nunca o cofre real do usuário.
     pub fn in_memory() -> Self {
@@ -425,12 +439,18 @@ impl Plugin for NetServicePlugin {
             .world()
             .get_resource::<crate::engine_manager::DbLocation>()
             .map(|location| location.0.clone());
-        let service = NetService::open(
-            games_db
-                .as_deref()
-                .map(NetService::db_path_beside)
-                .as_deref(),
-        );
+        let net_db = games_db.as_deref().map(NetService::db_path_beside);
+        // `--demo-data`: banco temporário e Cofre falso, nunca o Cofre real.
+        let service = match net_db.as_deref() {
+            Some(db)
+                if app
+                    .world()
+                    .contains_resource::<crate::demo_data::DemoMode>() =>
+            {
+                NetService::open_demo(db)
+            }
+            db => NetService::open(db),
+        };
         app.insert_resource(service.fair_play().clone())
             .insert_resource(service)
             .add_systems(Update, follow_app_state);

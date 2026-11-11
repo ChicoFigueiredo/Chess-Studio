@@ -126,12 +126,15 @@ pub fn allowance(session: &Session) -> Allowance {
     let snapshot = session.snapshot();
     // Partida online abortada não tem resultado, mas terminou (PO-06).
     let stage = GameStage::of(snapshot.is_over(), session.review().is_some());
-    let against_provider_engine = session
+    // Contra a Engine do Provedor, ou a Partida da Engine online (o usuário só assiste à
+    // Engine dele jogar, AD-05): não é Partida de pessoa, nada fica vedado e a trava
+    // competitiva não liga. Se ligasse, a própria Engine online deixaria de calcular (FP-04).
+    let not_a_human_game = session
         .game()
         .setup()
         .online_game()
-        .is_some_and(|o| o.opponent != Opponent::Human);
-    if against_provider_engine {
+        .is_some_and(|o| o.opponent != Opponent::Human || o.is_engine_game());
+    if not_a_human_game {
         return Allowance::ALL;
     }
     Allowance::for_game(snapshot.policy, stage)
@@ -226,5 +229,42 @@ mod tests {
         );
         assert_eq!(GameStage::of(true, false), Finished);
         assert_eq!(GameStage::of(true, true), Review);
+    }
+
+    fn online_session(provider: &str) -> Session {
+        let setup = chess_game::GameSetup::online(
+            chess_game::OnlineGame {
+                provider: provider.into(),
+                remote_id: "En9ineQ1".into(),
+                local_color: chess_core::Color::White,
+                opponent: Opponent::Human,
+                white: chess_game::OnlinePlayer {
+                    name: "Motor".into(),
+                    rating: Some(2500),
+                },
+                black: chess_game::OnlinePlayer {
+                    name: "Salma".into(),
+                    rating: Some(1662),
+                },
+                rated: false,
+                days_per_move: None,
+            },
+            chess_game::Variant::Standard,
+            None,
+        )
+        .expect("setup online");
+        Session::from_game(chess_game::Game::new(setup))
+    }
+
+    /// A Partida da Engine online (FP-04) não é Partida de pessoa: não restringe nada nem liga
+    /// a trava competitiva, senão a própria Engine online deixaria de calcular.
+    #[test]
+    fn the_online_engine_game_is_never_a_human_competitive_game() {
+        let bot = online_session("lichess-bot");
+        assert_eq!(allowance(&bot), Allowance::ALL);
+        assert!(!bot.competitive_in_progress());
+        let human = online_session("lichess");
+        assert_eq!(allowance(&human), Allowance::ONLINE_LIVE);
+        assert!(human.competitive_in_progress());
     }
 }

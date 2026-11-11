@@ -756,3 +756,133 @@ fn every_engine_online_text_exists_in_pt_br_and_uses_the_glossary_term() {
         assert!(!lower.contains(banned), "{banned}");
     }
 }
+
+// ---- Fechar o app, força e retomada (#271) --------------------------------------------------------
+
+/// Uma Partida em andamento em que a vez é do adversário (a Engine é de pretas).
+fn playing_env() -> (Env, LiveFeed) {
+    let mut env = env();
+    let (factory, _) = scripted(&[]);
+    env.start(Settings::default(), factory);
+    let feed = env.open_game(GAME, "Salma");
+    assert!(env.until(|_| feed.wait_connected(Duration::from_millis(1))));
+    feed.push(
+        &full(GAME, "Salma")
+            .to_string()
+            .replace("\"motor\"", "\"salma\""),
+    );
+    assert!(env.until(|e| e.run.state() == RunState::Playing));
+    (env, feed)
+}
+
+#[test]
+fn closing_the_app_asks_only_while_a_game_is_in_progress() {
+    use super::exit::{CloseDecision, ExitChoice, ExitPrompt, apply_choice, decide};
+    let idle = EngineOnline::default();
+    assert_eq!(decide(&idle), CloseDecision::Close, "parada: fecha direto");
+
+    let (mut env, _feed) = playing_env();
+    assert_eq!(decide(&env.run), CloseDecision::Ask { games: 1 });
+
+    let mut ui = EngineOnlineUi::default();
+    let mut prompt = ExitPrompt { open: true };
+    // Cancelar: nada muda e o app segue.
+    assert!(!apply_choice(
+        ExitChoice::Cancel,
+        &mut prompt,
+        &mut ui,
+        &mut env.run
+    ));
+    assert!(!prompt.open && env.run.state() == RunState::Playing);
+    // Parar e esperar: não aceita mais desafios, o app segue aberto e a tela mostra o estado.
+    prompt.open = true;
+    assert!(!apply_choice(
+        ExitChoice::StopAndWait,
+        &mut prompt,
+        &mut ui,
+        &mut env.run
+    ));
+    assert_eq!(env.run.state(), RunState::Stopping);
+    assert_eq!(env.run.stop_reason(), Some(&StopReason::User));
+    assert!(ui.open, "a tela da Engine online abre");
+    assert_eq!(env.posts(), 0, "nada foi enviado ao Lichess");
+    // Sair mesmo assim: o app fecha.
+    prompt.open = true;
+    assert!(apply_choice(
+        ExitChoice::LeaveNow,
+        &mut prompt,
+        &mut ui,
+        &mut env.run
+    ));
+}
+
+#[test]
+fn a_finished_game_no_longer_blocks_closing() {
+    use super::exit::{CloseDecision, decide};
+    let (mut env, feed) = playing_env();
+    feed.push(&state("e2e4", "mate").to_string());
+    feed.close();
+    assert!(env.until(|e| e.run.rows().is_empty()));
+    assert_eq!(decide(&env.run), CloseDecision::Close);
+}
+
+#[test]
+fn the_strength_is_the_same_elo_the_local_opponent_uses() {
+    use super::service::strength_of;
+    use chess_uci::Strength;
+    assert_eq!(strength_of(None), Strength::Full);
+    assert_eq!(strength_of(Some(1500)), Strength::Elo(1500));
+    // Fora da faixa da Engine adversária local, ajusta para ela.
+    assert_eq!(
+        strength_of(Some(100)),
+        Strength::Elo(crate::engine::MIN_ELO)
+    );
+    assert_eq!(
+        strength_of(Some(9000)),
+        Strength::Elo(crate::engine::MAX_ELO)
+    );
+    assert_eq!(Settings::default().elo, None, "força total por padrão");
+}
+
+#[test]
+fn a_game_in_the_database_is_resumed_in_the_same_log_when_the_engine_is_turned_on_again() {
+    let (mut first, _feed) = playing_env();
+    assert!(first.until(|e| e.store.list_games(&GameQuery::default()).unwrap().len() == 1));
+    assert_eq!(
+        first.store.list_games(&GameQuery::default()).unwrap().len(),
+        1
+    );
+
+    // O app fecha e abre de novo: outro serviço, o mesmo banco, o Lichess reenvia o gameStart.
+    let mut second = env();
+    second.store = first.store;
+    second.profile = first.profile;
+    let (factory, _) = scripted(&[]);
+    second.start(Settings::default(), factory);
+    let feed = second.open_game(GAME, "Salma");
+    assert!(second.until(|_| feed.wait_connected(Duration::from_millis(1))));
+    feed.push(
+        &full(GAME, "Salma")
+            .to_string()
+            .replace("\"motor\"", "\"salma\""),
+    );
+    assert!(second.until(|e| e.run.state() == RunState::Playing));
+    assert!(
+        second
+            .run
+            .activity()
+            .any(|a| matches!(a, Activity::GameResumed { .. })),
+        "{:?}",
+        second.run
+    );
+    second.frame();
+    assert_eq!(
+        second
+            .store
+            .list_games(&GameQuery::default())
+            .unwrap()
+            .len(),
+        1,
+        "nunca uma segunda linha na Biblioteca"
+    );
+}

@@ -575,7 +575,8 @@ fn the_online_group_lives_in_home_and_waits_for_the_game_in_progress() {
             Action::SeekOnline,
             Action::ChallengeOnline,
             Action::PlayLichessEngine,
-            Action::OnlineGames
+            Action::OnlineGames,
+            Action::OpenEngineOnline
         ]
     );
     let starting = [

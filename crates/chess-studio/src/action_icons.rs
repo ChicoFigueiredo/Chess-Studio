@@ -28,6 +28,7 @@ pub fn glyph(name: &str) -> &'static str {
         "command" => icon::COMMAND,
         "corners-out" => icon::CORNERS_OUT,
         "cpu" => icon::CPU,
+        "robot" => icon::ROBOT,
         "crosshair" => icon::CROSSHAIR,
         "cube" => icon::CUBE,
         "cube-focus" => icon::CUBE_FOCUS,

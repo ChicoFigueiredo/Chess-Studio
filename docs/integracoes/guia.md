@@ -444,11 +444,14 @@ Apagar uma Conexão ou um Perfil local apaga primeiro a autorização guardada. 
 | **Sem conexão com a internet** | O app mostra o que estava salvo, quando houver. Tente de novo quando a internet voltar. |
 | **Importação manual** | Esse Provedor não tem consulta direta. Baixe o arquivo e importe. |
 
+## Engine online
+
+Já funciona: com a Conexão de Engine do Lichess, uma Engine instalada responde a desafios (Central > Lichess > Abrir a tela da Engine online, ou a Ação **Engine online** do Ribbon e da Paleta). Só sai o que a frase de consentimento diz: Lances calculados, respostas a desafios e, se você pedir, a conversão em conta BOT.
+
 ## Em breve
 
 Estas coisas **ainda não existem** no app. Os cartões e os textos da Central podem citá-las, mas nenhuma funciona hoje.
 
-- **Engine online**: jogar com uma Engine no Lichess. A Central já deixa criar uma autorização separada para isso, mas nada a usa ainda.
 - **PlayStrategy** e **FICS**.
 - **Engine remota** para análise.
 - **Baixar problemas e bases pela rede**. Hoje você instala um arquivo que já tem.

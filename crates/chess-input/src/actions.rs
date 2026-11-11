@@ -197,6 +197,7 @@ pub fn meta(action: Action) -> ActionMeta {
             "online",
             "OP"
         ),
+        A::OpenEngineOnline => item!("open-engine-online", "robot", Command, Home, "online", "OO"),
         // Análise.
         A::ToggleAnalysis => item!(
             "toggle-analysis",

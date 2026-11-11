@@ -304,6 +304,18 @@ fn settings(
                 }
             });
 
+            let mut limited = form.settings.elo.is_some();
+            if cs_checkbox(ui, &mut limited, &i18n.t("engine-online-limit-strength")).changed() {
+                form.settings.elo = limited.then_some(1500);
+            }
+            if let Some(elo) = form.settings.elo.as_mut() {
+                ui.add(
+                    egui::Slider::new(elo, crate::engine::MIN_ELO..=crate::engine::MAX_ELO)
+                        .text(i18n.t("engine-elo-label")),
+                );
+                ui.small(i18n.t("engine-online-strength-hint"));
+            }
+
             ui.label(i18n.t("engine-online-speeds"));
             ui.horizontal_wrapped(|ui| {
                 for (speed, key) in SPEEDS {
@@ -553,6 +565,10 @@ fn activity_text(i18n: &I18n, item: &Activity) -> (StatusTone, String) {
                 "engine-online-act-declined",
                 &[("name", name), ("why", &i18n.t(decline_key(*reason)))],
             ),
+        ),
+        Activity::GameResumed { opponent } => (
+            StatusTone::Info,
+            i18n.t_with("engine-online-act-resumed", &[("name", opponent)]),
         ),
         Activity::GameStarted { opponent } => (
             StatusTone::Info,

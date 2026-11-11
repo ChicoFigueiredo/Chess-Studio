@@ -762,6 +762,7 @@ pub fn consent_line_key(provider: ProviderId, capability: Capability) -> Option<
         (ProviderId::Lichess, Capability::Query) => "consent-sends-lichess-query",
         (ProviderId::Lichess, Capability::Download) => "consent-sends-lichess-download",
         (ProviderId::Lichess, Capability::Play) => "consent-sends-lichess-play",
+        (ProviderId::Lichess, Capability::OnlineEngine) => "consent-sends-lichess-online-engine",
         (ProviderId::ChessCom, Capability::Query) => "consent-sends-chesscom-query",
         // Como visitante e em texto puro: a conexão com o FICS não tem criptografia (#254).
         (ProviderId::Fics, Capability::Play) => "consent-sends-fics-play",
@@ -1362,6 +1363,7 @@ mod tests {
                 "connections-do-query",
                 "connections-do-download",
                 "connections-do-play",
+                "connections-do-online-engine",
             ]
         );
         let Face::Can(authorized) = face(lichess, CardState::Authorized) else {
@@ -1377,7 +1379,10 @@ mod tests {
         let later = later(lichess);
         assert!(!later.contains(&"connections-do-explore"), "já funciona");
         assert!(!later.contains(&"connections-do-play"), "já funciona");
-        assert!(later.contains(&"connections-do-online-engine"));
+        assert!(
+            !later.contains(&"connections-do-online-engine"),
+            "a Engine online já funciona (#262)"
+        );
         assert!(!later.contains(&"connections-do-link"));
         let Face::Can(twic) = face(provider(ProviderId::Twic), CardState::ManualImport) else {
             panic!("importar arquivo é o que o TWIC permite");

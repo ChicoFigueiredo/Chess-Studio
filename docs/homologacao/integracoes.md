@@ -79,6 +79,10 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 | CX-HOM-58 | FICS: desafios recebidos e variantes | sim | UNVERIFIED |
 | CX-HOM-59 | FICS: queda de conexão durante a Partida | sim | UNVERIFIED |
 | CX-HOM-60 | FICS: observar uma Partida | sim | UNVERIFIED |
+| CX-HOM-61 | Engine online: fechar o app com Partida em andamento | sim | UNVERIFIED |
+| CX-HOM-62 | Engine online: Ação no Ribbon e na Paleta | não | UNVERIFIED |
+| CX-HOM-63 | Engine online: força (Elo) da Engine | sim | UNVERIFIED |
+| CX-HOM-64 | Engine online: retomar Partida ao religar | sim | UNVERIFIED |
 | CX-HOM-76 | Explorador: janela temporal, aviso de amostra e privacidade | sim | UNVERIFIED |
 
 ## Itens
@@ -604,7 +608,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Passos:**
   1. Com o Lichess desligado, abra o Explorador (ou **Baixar problemas**): o diálogo **Ligar Lichess?** abre.
   2. Leia **O que será enviado** e **Para onde vai**; abra também o cartão do Lichess na Central (Detalhes).
-- **Esperado:** uma frase para cada uso: Explorador, avaliação em cache, finais, consulta de Partidas e IDs FIDE públicos, download de problemas e Partidas online (com a Conexão autorizada); nenhuma sigla técnica (sem "HTTP", "etapa" ou nome de endpoint). O mesmo texto vale no cartão da Central.
+- **Esperado:** uma frase para cada uso: Explorador, avaliação em cache, finais, consulta de Partidas e IDs FIDE públicos, download de problemas, Partidas online e Engine online (com a Conexão autorizada; a frase da Engine online fala de Lances calculados, respostas a desafios e o pedido para virar Engine (BOT) só se você pedir); nenhuma sigla técnica (sem "HTTP", "etapa" ou nome de endpoint). O mesmo texto vale no cartão da Central.
 - **Evidência:** teste `every_ready_network_service_has_a_consent_line` em [`connections/model.rs`](../../crates/chess-studio/src/connections/model.rs); [capturas](../evidencias/acabamento-etapa-5/README.md).
 ### CX-HOM-46. PlayStrategy: cartão na Central, ligar e testar
 
@@ -754,6 +758,36 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 ## Fora deste roteiro
 
 Chat, premove e reclamar empate por ausência não existem no app (ver [`2026-11-11-partida-online.md`](../decisoes/2026-11-11-partida-online.md)).
+
+### CX-HOM-61. Engine online: fechar o app com Partida em andamento
+
+- **Passos:**
+  1. Ligue a Engine online e deixe uma Partida começar. Feche a janela do app.
+  2. Na pergunta, escolha **Cancelar**; feche de novo e escolha **Parar e esperar terminarem**.
+  3. Com a Partida terminada, feche a janela. Em outra execução, com Partida em andamento, escolha **Sair mesmo assim**.
+- **Esperado:** sem Partida em andamento o app fecha direto. Com Partida, abre **Sair com Partida em andamento?**; Cancelar mantém tudo; **Parar e esperar** deixa a Engine em "Parando" (sem aceitar desafios) e o app aberto; **Sair mesmo assim** fecha e deixa a Partida para o Lichess (o relógio da Engine corre).
+- **Com o serviço real:** confirme o que o Lichess faz com a Partida deixada (derrota por tempo) e que o fechamento pelo sistema (fim de sessão) não trava na pergunta.
+- **Evidência:** teste `closing_the_app_asks_only_while_a_game_is_in_progress`; [capturas](../evidencias/engine-online-lacunas/README.md).
+
+### CX-HOM-62. Engine online: Ação no Ribbon e na Paleta
+
+- **Passos:** na aba Início, grupo Online, clique em **Engine online**; abra a Paleta (Ctrl+K) e digite "Engine online".
+- **Esperado:** nos dois caminhos a tela da Engine online abre (a Paleta fecha). O atalho de teclado pode ser atribuído em Opções > Controles.
+- **Evidência:** [`actions.rs`](../../crates/chess-input/tests/actions.rs).
+
+### CX-HOM-63. Engine online: força (Elo) da Engine
+
+- **Passos:** na tela da Engine online, marque **Limitar a força da Engine**, escolha um Elo baixo e ligue; jogue um desafio.
+- **Esperado:** a Engine joga na força pedida (mesma faixa da Engine adversária local); sem a marca, joga com toda a força. Se a Engine escolhida não tem controle de força, o app usa o que ela oferece (Skill Level) ou avisa.
+- **Com o serviço real:** UNVERIFIED a força efetiva contra pessoas.
+- **Evidência:** teste `the_strength_is_the_same_elo_the_local_opponent_uses`.
+
+### CX-HOM-64. Engine online: retomar Partida ao religar
+
+- **Passos:** com uma Partida da Engine em andamento, saia do app (**Sair mesmo assim**), abra-o e ligue a Engine online de novo antes de o relógio acabar.
+- **Esperado:** o Lichess reenvia a Partida; o app a retoma no mesmo registro da Biblioteca (sem segunda linha) e a atividade diz **Partida … retomada de onde parou**.
+- **Com o serviço real:** UNVERIFIED que o Lichess reenvia `gameStart` das Partidas em andamento ao abrir o fluxo de eventos.
+- **Evidência:** teste `a_game_in_the_database_is_resumed_in_the_same_log_when_the_engine_is_turned_on_again`.
 
 ## O que falta
 
