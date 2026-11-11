@@ -20,6 +20,7 @@
 mod attacks;
 mod error;
 mod position;
+mod position_key;
 mod repetition;
 mod san;
 mod status;
@@ -27,6 +28,7 @@ mod types;
 
 pub use error::{FenError, IllegalMoveError, MoveParseError, SanError, SquareParseError};
 pub use position::CanonicalPosition;
+pub use position_key::position_key;
 pub use repetition::RepetitionKey;
 pub use status::{FIFTY_MOVE_HALFMOVES, GameStatus, SEVENTY_FIVE_MOVE_HALFMOVES};
 pub use types::{Color, Move, Piece, Square};

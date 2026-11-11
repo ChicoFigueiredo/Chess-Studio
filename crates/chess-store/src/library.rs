@@ -17,7 +17,7 @@
 
 use crate::error::{Result, StoreError};
 use crate::store::{GameId, ProfileId, Store};
-use chess_core::{CanonicalPosition, Piece};
+use chess_core::CanonicalPosition;
 use chess_game::{EndReason, Game, GameSetup, PolicyKind};
 use chess_pgn::{MoveNode, PgnGame};
 use chess_training::{Exercise, ExerciseKind};
@@ -115,31 +115,9 @@ pub struct LibraryPage {
     pub entries: Vec<LibraryEntry>,
 }
 
-/// Chave normalizada da Posição: campos de peças, vez, roque e en passant (este só quando
-/// há captura en passant legal). Ignora os contadores de Lances.
-pub fn position_key(position: &CanonicalPosition) -> String {
-    let fen = position.to_fen();
-    let mut fields = fen.split(' ');
-    let board = fields.next().unwrap_or_default();
-    let side = fields.next().unwrap_or("w");
-    let castling = fields.next().unwrap_or("-");
-    let ep = fields.next().unwrap_or("-");
-    let ep = if ep != "-" && en_passant_capturable(position, ep) {
-        ep
-    } else {
-        "-"
-    };
-    format!("{board} {side} {castling} {ep}")
-}
-
-fn en_passant_capturable(position: &CanonicalPosition, target: &str) -> bool {
-    position.legal_moves().into_iter().any(|mv| {
-        mv.to().to_string() == target
-            && mv.from().file() != mv.to().file()
-            && matches!(position.piece_at(mv.from()), Some((_, Piece::Pawn)))
-            && position.piece_at(mv.to()).is_none()
-    })
-}
+/// Chave normalizada da Posição (definida no `chess-core`, a mesma do cache de
+/// consultas por Posição aos Provedores).
+pub use chess_core::position_key;
 
 /// Chave de uma FEN do usuário (erro tipado se o FEN é inválido).
 pub fn fen_key(fen: &str) -> Result<(CanonicalPosition, String)> {
