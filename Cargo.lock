@@ -1923,6 +1923,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "chess-net"
+version = "0.1.0"
+dependencies = [
+ "chess-core",
+ "chess-net",
+ "chess-store",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "ureq",
+]
+
+[[package]]
 name = "chess-openings"
 version = "0.1.0"
 dependencies = [

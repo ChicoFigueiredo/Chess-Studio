@@ -1,0 +1,9 @@
+# Resposta SINTÉTICA no formato NDJSON da exportação de Partidas do Lichess, com heartbeat.
+# Para gravar uma real, fora da suíte (CX-17):
+#   curl -sS -i -H 'Accept: application/x-ndjson' 'https://lichess.org/api/games/user/USUARIO?max=2' > lichess-games-user.http
+HTTP/2 200
+content-type: application/x-ndjson
+
+{"id":"aaaa1111","rated":true,"variant":"standard","speed":"rapid","status":"mate","moves":"e4 e5 Qh5 Nc6 Bc4 Nf6 Qxf7#"}
+
+{"id":"bbbb2222","rated":false,"variant":"chess960","speed":"blitz","status":"resign","moves":"e4"}

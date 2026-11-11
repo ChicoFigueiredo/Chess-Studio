@@ -1,0 +1,10 @@
+# Resposta SINTÉTICA no formato documentado do Explorador do Lichess (mestres, depois de 1. e4).
+# Para gravar uma real, fora da suíte (CX-17):
+#   curl -sS -i 'https://explorer.lichess.org/masters?play=e2e4' > lichess-explorer-masters.http
+HTTP/2 200
+content-type: application/json
+etag: "masters-e2e4"
+transfer-encoding: chunked
+content-length: 9999
+
+{"white":1000,"draws":1200,"black":800,"moves":[{"uci":"c7c5","san":"c5","white":300,"draws":350,"black":280,"averageRating":2500}],"topGames":[],"opening":{"eco":"B00","name":"King's Pawn Game"}}

@@ -146,3 +146,22 @@ fn halfmove_clock_above_100_is_accepted_and_round_trips() {
     assert_eq!(pos.halfmove_clock(), 120);
     assert_eq!(pos.fullmove_number(), 200);
 }
+
+#[test]
+fn position_key_ignores_the_clocks_and_an_en_passant_nobody_can_take() {
+    let key = |fen: &str| chess_core::position_key(&CanonicalPosition::from_fen(fen).unwrap());
+    // Depois de 1. e4 nenhum peão preto pode capturar en passant: e3 sai da chave.
+    assert_eq!(
+        key("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"),
+        "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -"
+    );
+    assert_eq!(
+        key("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 9 40"),
+        key("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1")
+    );
+    // Com captura legal, o en passant fica.
+    assert_eq!(
+        key("rnbqkbnr/ppp1pppp/8/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 3"),
+        "rnbqkbnr/ppp1pppp/8/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6"
+    );
+}
