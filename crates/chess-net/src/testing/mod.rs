@@ -8,16 +8,16 @@
 //! use chess_net::{Net, NetConfig, ProviderId, Request};
 //!
 //! let server = FakeServer::start();
-//! server.route("/masters", FakeResponse::json(r#"{"white":1}"#));
+//! server.route("/standard", FakeResponse::json(r#"{"category":"win"}"#));
 //! let net = Net::open(
-//!     NetConfig::in_memory().route("explorer.lichess.org", &server.base_url()),
+//!     NetConfig::in_memory().route("tablebase.lichess.ovh", &server.base_url()),
 //! )?;
 //! net.set_enabled(ProviderId::Lichess, true)?;
 //! let fetched = net
-//!     .fetch(Request::get(ProviderId::Lichess, "https://explorer.lichess.org/masters"))
+//!     .fetch(Request::get(ProviderId::Lichess, "https://tablebase.lichess.ovh/standard"))
 //!     .wait()?;
-//! assert_eq!(fetched.body, br#"{"white":1}"#);
-//! assert_eq!(server.requests()[0].path, "/masters");
+//! assert_eq!(fetched.body, br#"{"category":"win"}"#);
+//! assert_eq!(server.requests()[0].path, "/standard");
 //! # Ok::<(), chess_net::NetError>(())
 //! ```
 

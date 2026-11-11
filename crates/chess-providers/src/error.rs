@@ -17,9 +17,13 @@ pub enum ProviderError {
     },
     /// A Trava de fair play está ativa (Partida online em andamento) e a consulta calcula.
     FairPlayLocked { provider: ProviderId },
-    /// O Provedor exige uma Conexão autorizada para esta consulta (`401`). Medido em
-    /// 2026-11-11: o Explorador do Lichess passou a responder `401` sem token.
+    /// A consulta requer uma Conexão autorizada do Provedor e não há (nenhuma escolhida,
+    /// Cofre bloqueado, segredo apagado): recusada antes da rede. Também um `401` sem token.
+    /// Medido em 2026-11-11: o Explorador do Lichess passou a responder `401` sem token.
     SignInRequired { provider: ProviderId },
+    /// O Provedor recusou o token da Conexão: `401` (expirado ou revogado) ou `403` (falta
+    /// permissão). A Conexão ficou marcada no Cofre; nada local se perdeu.
+    ConnectionRejected { provider: ProviderId, status: u16 },
     /// O Provedor respondeu, mas não tem dados para esta consulta (Posição fora do Explorador,
     /// sem avaliação em cache, mês sem Partidas, FIDE inexistente).
     NoData,
@@ -109,7 +113,13 @@ impl Missing {
             NetError::Http {
                 provider,
                 status: 401,
-            } => ProviderError::SignInRequired { provider },
+            }
+            | NetError::NotAuthorized { provider, .. } => {
+                ProviderError::SignInRequired { provider }
+            }
+            NetError::ConnectionRejected { provider, status } => {
+                ProviderError::ConnectionRejected { provider, status }
+            }
             other => ProviderError::Net(other),
         }
     }
@@ -134,9 +144,23 @@ impl fmt::Display for ProviderError {
             ),
             Self::SignInRequired { provider } => write!(
                 f,
-                "{provider} exige uma Conexão autorizada para esta consulta; ela ainda não está \
-                 disponível sem entrar na conta."
+                "Esta consulta requer Conexão do {provider} autorizada: autorize em Arquivo > \
+                 Conexões (ou desbloqueie o cofre)."
             ),
+            Self::ConnectionRejected { provider, status } => {
+                if *status == 403 {
+                    write!(
+                        f,
+                        "{provider} recusou a Conexão para esta consulta: falta permissão ao token."
+                    )
+                } else {
+                    write!(
+                        f,
+                        "A Conexão do {provider} expirou ou foi revogada: autorize de novo em \
+                         Arquivo > Conexões."
+                    )
+                }
+            }
             Self::NoData => f.write_str("Sem dados para esta consulta."),
             Self::UnknownName { provider, name } => {
                 write!(f, "O nome «{name}» não existe no {provider}.")

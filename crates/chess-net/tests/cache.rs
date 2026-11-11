@@ -19,7 +19,7 @@ fn a_second_equal_request_within_the_ttl_does_not_touch_the_network() {
     server.route("/masters", FakeResponse::json("{\"moves\":[]}"));
     let net = net_enabled(&server, &clock, &[ProviderId::Lichess]);
     let request = || {
-        Request::get(ProviderId::Lichess, "https://explorer.lichess.org/masters")
+        explorer("/masters")
             .query("play", "e2e4,e7e5")
             .query("since", "1952")
             .cache_for(HOUR)
@@ -31,7 +31,7 @@ fn a_second_equal_request_within_the_ttl_does_not_touch_the_network() {
 
     clock.advance(Duration::from_secs(600));
     // Mesmo pedido com os parâmetros em outra ordem: a chave é normalizada.
-    let reordered = Request::get(ProviderId::Lichess, "https://explorer.lichess.org/masters")
+    let reordered = explorer("/masters")
         .query("since", "1952")
         .query("play", "e2e4,e7e5")
         .cache_for(HOUR);
@@ -218,11 +218,7 @@ fn position_requests_use_the_same_key_as_the_local_index() {
     // nenhum peão pode capturar.
     let a = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
     let b = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 3 7";
-    let request = |fen: &str| {
-        Request::get(ProviderId::Lichess, "https://explorer.lichess.org/masters")
-            .position("fen", fen)
-            .cache_for(HOUR)
-    };
+    let request = |fen: &str| explorer("/masters").position("fen", fen).cache_for(HOUR);
 
     net.fetch(request(a)).wait().expect("rede");
     let second = net.fetch(request(b)).wait().expect("cache");
@@ -244,10 +240,7 @@ fn an_invalid_fen_is_refused_before_the_network() {
     let net = net_enabled(&server, &clock, &[ProviderId::Lichess]);
 
     let err = net
-        .fetch(
-            Request::get(ProviderId::Lichess, "https://explorer.lichess.org/masters")
-                .position("fen", "isto não é FEN"),
-        )
+        .fetch(explorer("/masters").position("fen", "isto não é FEN"))
         .wait()
         .unwrap_err();
 

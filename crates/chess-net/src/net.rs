@@ -550,6 +550,7 @@ fn from_entry(entry: &CacheEntry, now: Timestamp, freshness: Freshness) -> Fetch
         },
         freshness,
         age: now.since(entry.queried_at),
+        oauth_scopes: None,
     }
 }
 
@@ -594,11 +595,22 @@ impl Shared {
                 capability,
             })?;
         self.guard.check(provider, capability)?;
-        let authorization = request
-            .connection
-            .and_then(|c| self.vault.authorization(profile, provider, c))
-            // Nunca entre hosts: o token de lichess.org não vai para explorer.lichess.org.
-            .filter(|a| a.host() == target.host);
+        // O token só vai para os endereços que o catálogo marca como autenticados, e só o
+        // da Conexão deste Provedor: nunca para os finais, a base, outro Provedor ou um
+        // redirecionamento. Pedido que nomeia a Conexão nunca sai sem o cabeçalho em
+        // silêncio (Cofre bloqueado, Conexão de outro Perfil, segredo apagado).
+        let authorization = match request.connection {
+            Some(connection) if endpoint.takes_token => Some(
+                self.vault
+                    .authorization(profile, provider, connection)
+                    .filter(|a| a.provider() == provider)
+                    .ok_or(NetError::NotAuthorized {
+                        provider,
+                        capability,
+                    })?,
+            ),
+            _ => None,
+        };
         if service.requires_connection() && authorization.is_none() {
             return Err(NetError::NotAuthorized {
                 provider,
@@ -903,6 +915,10 @@ impl Shared {
                         .unwrap_or_default();
                     return Err(NetError::RedirectRefused { provider, location });
                 }
+                status @ (401 | 403) if admitted.authorization.is_some() => {
+                    self.mark_ok(provider);
+                    return Err(self.reject(request, job.profile, status));
+                }
                 status => {
                     // O Provedor respondeu: está alcançável, o erro é do pedido.
                     self.mark_ok(provider);
@@ -910,6 +926,15 @@ impl Shared {
                 }
             }
         }
+    }
+
+    /// O Provedor recusou o token: avisa o Cofre (que marca a Conexão) e devolve o erro.
+    fn reject(&self, request: &Request, profile: LocalProfileId, status: u16) -> NetError {
+        let provider = request.provider;
+        if let Some(connection) = request.connection {
+            self.vault.rejected(profile, provider, connection, status);
+        }
+        NetError::ConnectionRejected { provider, status }
     }
 
     /// Espera a próxima repetição de uma falha temporária; `Ok(false)` se não há mais
@@ -946,7 +971,7 @@ impl Shared {
     ) -> Result<Fetched, NetError> {
         let request = &job.request;
         let now = self.clock.now();
-        let entry = CacheEntry {
+        let mut entry = CacheEntry {
             provider: request.provider,
             source_url: source,
             status: head.status,
@@ -962,7 +987,15 @@ impl Shared {
         if request.cache_ttl.is_some() && entry.status == 200 {
             lock(&self.store).put(job.profile, key, &entry)?;
         }
-        Ok(from_entry(&entry, now, Freshness::Network))
+        // O corpo é movido, não copiado: a resposta da troca de código por token não deixa
+        // cópia esquecida na memória (quem a recebe zera o corpo depois de ler o token).
+        let body = std::mem::take(&mut entry.body);
+        let mut fetched = from_entry(&entry, now, Freshness::Network);
+        fetched.body = body;
+        if admitted.authorization.is_some() {
+            fetched.oauth_scopes = head.oauth_scopes;
+        }
+        Ok(fetched)
     }
 
     fn run_stream(
@@ -1035,6 +1068,9 @@ impl Shared {
         };
         match head.status {
             200..=299 => self.mark_ok(provider),
+            status @ (401 | 403) if admitted.authorization.is_some() => {
+                return Err(self.reject(request, profile, status));
+            }
             429 => {
                 let until = head
                     .retry_after
@@ -1102,6 +1138,7 @@ fn empty_fetched(request: &Request, at: Timestamp) -> Fetched {
         },
         freshness: Freshness::Network,
         age: Duration::ZERO,
+        oauth_scopes: None,
     }
 }
 

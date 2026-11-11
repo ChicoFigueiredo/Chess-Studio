@@ -3,10 +3,15 @@
 #![allow(dead_code)]
 
 use chess_net::testing::{FakeResponse, FakeServer};
-use chess_net::{FakeClock, Net, NetConfig, ProviderId, Timestamp};
+use chess_net::{
+    ConnectionId, FakeClock, LocalProfileId, Net, NetConfig, ProviderId, Secret, Timestamp,
+};
 use chess_providers::{ChessCom, Lichess};
-use std::path::Path;
+use chess_vault::testing::MemoryKeyring;
+use chess_vault::{SecretVault, VaultConfig};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 /// 2026-11-11T12:00:00Z.
@@ -19,24 +24,77 @@ pub const HOSTS: [&str; 4] = [
     "api.chess.com",
 ];
 
+/// Conexão autorizada do Lichess que o Explorador usa nos testes (o Explorador exige
+/// Conexão desde 2026-11-11).
+pub const EXPLORER_CONNECTION: ConnectionId = ConnectionId(1);
+pub const EXPLORER_TOKEN: &str = "lip_TOKEN_DO_EXPLORADOR_DE_TESTE";
+
 pub struct Env {
     pub clock: Arc<FakeClock>,
     pub server: FakeServer,
     pub net: Net,
     pub lichess: Lichess,
     pub chesscom: ChessCom,
+    /// Cofre com o cofre do sistema falso (em memória) e o token de [`EXPLORER_CONNECTION`].
+    pub vault: SecretVault,
+    pub keyring: Arc<MemoryKeyring>,
+    /// Diretório de dados do teste (Cofre e, quando pedido, o banco da rede).
+    pub dir: PathBuf,
+}
+
+/// Diretório temporário novo e único (apagado se já existia).
+pub fn temp_dir(name: &str) -> PathBuf {
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    let dir =
+        std::env::temp_dir().join(format!("chess-providers-{name}-{}-{n}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    dir
 }
 
 /// Rede com o servidor falso, sem nenhum Provedor ligado.
 pub fn env() -> Env {
+    env_with(MemoryKeyring::new(), false)
+}
+
+/// Rede com o servidor falso e o Cofre sobre `keyring`; `net_on_disk` grava o banco da rede
+/// no diretório de dados (para varrer o disco atrás de segredo).
+pub fn env_with(keyring: MemoryKeyring, net_on_disk: bool) -> Env {
     let clock = Arc::new(FakeClock::new(T0));
     let server = FakeServer::with_clock(clock.clone());
-    let mut config = NetConfig::in_memory().clock(clock.clone()).jitter_seed(7);
+    let dir = temp_dir("env");
+    let keyring = Arc::new(keyring);
+    let vault = SecretVault::open(
+        VaultConfig::new(dir.join("cofre"))
+            .keyring(keyring.clone())
+            .clock(clock.clone()),
+    )
+    .expect("abre o Cofre");
+    if vault.status() == chess_vault::VaultStatus::System {
+        vault
+            .store(
+                LocalProfileId(1),
+                ProviderId::Lichess,
+                EXPLORER_CONNECTION,
+                Secret::new(EXPLORER_TOKEN),
+            )
+            .expect("guarda o token do Explorador");
+    }
+    let base = if net_on_disk {
+        NetConfig::at_path(dir.join("rede.db"))
+    } else {
+        NetConfig::in_memory()
+    };
+    let mut config = base
+        .clock(clock.clone())
+        .jitter_seed(7)
+        .vault(Arc::new(vault.clone()));
     for host in HOSTS {
         config = config.route(host, &server.base_url());
     }
     let net = Net::open(config).expect("abre a rede");
     let lichess = Lichess::new(net.clone(), clock.clone());
+    lichess.use_connection(Some(EXPLORER_CONNECTION));
     let chesscom = ChessCom::new(net.clone(), clock.clone());
     Env {
         clock,
@@ -44,6 +102,9 @@ pub fn env() -> Env {
         net,
         lichess,
         chesscom,
+        vault,
+        keyring,
+        dir,
     }
 }
 

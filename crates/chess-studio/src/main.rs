@@ -295,7 +295,16 @@ fn main() {
         // `--connections-demo`: Provedores ligados e Conexões de exemplo, para a evidência da
         // Central e do indicador de rede (sem banco, nada disso persiste).
         if std::env::args().any(|a| a == "--connections-demo") {
-            app.insert_resource(connections::ConnectionsUi::demo());
+            let mut demo = connections::ConnectionsUi::demo();
+            // `--connections-open lichess,chesscom`: cartões com os Detalhes abertos.
+            if let Some(keys) = option_value("--connections-open") {
+                demo.open_details(keys.split(','));
+            }
+            if let Some(pixels) = option_value("--connections-scroll").and_then(|v| v.parse().ok())
+            {
+                demo.scrolled(pixels);
+            }
+            app.insert_resource(demo);
             let net = app.world().resource::<net_service::NetService>();
             for provider in [
                 chess_net::ProviderId::Lichess,
@@ -326,7 +335,16 @@ fn main() {
             .as_deref()
             .and_then(ui_theme::ThemeMode::from_storage)
         {
-            app.insert_resource(ui_theme::Appearance { theme, ..default() });
+            // `--density compact` troca a Densidade (o padrão é Confortável).
+            let density = match option_value("--density").as_deref() {
+                Some("compact" | "compacta") => ui_theme::Density::Compact,
+                _ => ui_theme::Density::default(),
+            };
+            app.insert_resource(ui_theme::Appearance {
+                theme,
+                density,
+                ..default()
+            });
         }
         // `--palette [--palette-query <texto>]`: a Paleta de Ações aberta, para a evidência.
         if std::env::args().any(|a| a == "--palette") {

@@ -25,7 +25,7 @@ use chess_store::{
 };
 use model::CostFilter;
 use probe::{Target, TestState};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
 pub use view::section;
@@ -44,6 +44,8 @@ pub(crate) enum Op {
         nickname: String,
     },
     SetDefault(ConnectionId),
+    /// Troca o apelido (vazio tira o apelido).
+    Rename(ConnectionId, String),
     Remove(ConnectionId),
     /// Testa a Conexão padrão do cartão; `feature` é o nome do recurso na frase do diálogo.
     Test {
@@ -57,6 +59,15 @@ pub(crate) enum Op {
 pub(crate) struct LinkForm {
     pub identifier: String,
     pub nickname: String,
+    /// Id Fluent do erro a mostrar abaixo do campo.
+    pub error: Option<&'static str>,
+}
+
+/// Edição do apelido de uma Conexão, na própria linha.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct RenameForm {
+    pub id: ConnectionId,
+    pub text: String,
     /// Id Fluent do erro a mostrar abaixo do campo.
     pub error: Option<&'static str>,
 }
@@ -90,6 +101,17 @@ pub struct ConnectionsUi {
     pub(crate) notes: HashMap<ProviderId, Note>,
     /// O teste de Conexão de cada cartão (em andamento ou o último resultado).
     pub(crate) tests: HashMap<ProviderId, TestState>,
+    /// Os cartões com os detalhes abertos.
+    pub(crate) expanded: HashSet<ProviderId>,
+    /// O apelido em edição, se há um.
+    pub(crate) renaming: Option<RenameForm>,
+    /// A Conexão que espera a confirmação para ser removida.
+    pub(crate) confirm_remove: Option<ConnectionId>,
+    /// Provedores com Conexão **autorizada**. Fica vazio até o Cofre (#224): hoje só nomes e IDs
+    /// públicos se vinculam, e "Autorizado" nunca aparece sem isto.
+    pub(crate) authorized: HashSet<ProviderId>,
+    /// Rolagem vertical inicial, uma vez (`--connections-scroll`, para as capturas).
+    pub(crate) scroll: Option<(f32, u8)>,
     /// As Conexões do Perfil local ativo.
     pub(crate) list: Vec<Connection>,
     loaded_for: Option<ProfileId>,
@@ -108,23 +130,50 @@ pub struct CentralParams<'w> {
 }
 
 impl ConnectionsUi {
-    /// Conexões de exemplo para as capturas (`--connections-demo`): sem banco em disco.
+    /// Conexões de exemplo para as capturas (`--connections-demo`): sem banco em disco. Os nomes
+    /// são fictícios: nunca apelidos de pessoas reais.
     pub fn demo() -> Self {
         let mut ui = Self::default();
         let samples = [
-            NewConnection::new("lichess", ConnectionKind::PublicName, "DrNykterstein")
+            NewConnection::new("lichess", ConnectionKind::PublicName, "ana_exemplo")
                 .nickname("Principal"),
-            NewConnection::new("lichess", ConnectionKind::PublicName, "Hikaru"),
-            NewConnection::new("chesscom", ConnectionKind::PublicName, "MagnusCarlsen"),
-            NewConnection::new("fide", ConnectionKind::PublicId, "1503014"),
+            NewConnection::new("lichess", ConnectionKind::PublicName, "bruno_exemplo")
+                .nickname("Treino"),
+            NewConnection::new("chesscom", ConnectionKind::PublicName, "carla_exemplo"),
+            NewConnection::new("fide", ConnectionKind::PublicId, "9999991"),
         ];
         let _ = with_store(&mut ui.local, None, |store, profile| {
             for sample in &samples {
                 let _ = store.add_connection(profile, sample);
             }
         });
+        // Um teste feito há alguns minutos, para a evidência mostrar o resultado.
+        let now = NetService::now();
+        let at = chess_net::Timestamp::from_millis(now.as_millis() - 3 * 60_000);
+        ui.tests.insert(
+            ProviderId::Lichess,
+            TestState::Done(probe::Report {
+                outcome: probe::Outcome::Confirmed("ana_exemplo".to_owned()),
+                source: ProviderId::Lichess,
+                at,
+            }),
+        );
         ui.dirty = true;
         ui
+    }
+
+    /// A página já rolada `pixels` para baixo (capturas de evidência).
+    pub fn scrolled(&mut self, pixels: f32) {
+        self.scroll = Some((pixels, 8));
+    }
+
+    /// Abre os Detalhes dos Provedores de chave dada (capturas de evidência).
+    pub fn open_details<'a>(&mut self, keys: impl IntoIterator<Item = &'a str>) {
+        for key in keys {
+            if let Some(provider) = ProviderId::from_key(key.trim()) {
+                self.expanded.insert(provider);
+            }
+        }
     }
 
     /// Recarrega as Conexões quando o Perfil local mudou ou algo foi gravado.
@@ -203,10 +252,27 @@ impl ConnectionsUi {
                     });
                     self.dirty = true;
                 }
+                Op::Rename(id, nickname) => {
+                    let result = with_store(&mut self.local, handle, |store, profile| {
+                        store.rename_connection(profile, id, &nickname)
+                    });
+                    match result {
+                        Some(Ok(())) => {
+                            self.renaming = None;
+                            self.dirty = true;
+                        }
+                        _ => {
+                            if let Some(form) = self.renaming.as_mut() {
+                                form.error = Some("connections-rename-error");
+                            }
+                        }
+                    }
+                }
                 Op::Remove(id) => {
                     let _ = with_store(&mut self.local, handle, |store, profile| {
                         store.remove_connection(profile, id)
                     });
+                    self.confirm_remove = None;
                     self.dirty = true;
                 }
                 Op::Test { provider, feature } => {
@@ -470,10 +536,87 @@ mod tests {
     }
 
     #[test]
+    fn renaming_a_nickname_persists_and_a_bad_one_keeps_the_form_with_a_message() {
+        let service = service();
+        let mut ui = ConnectionsUi::default();
+        link(&mut ui, &service, ProviderId::Lichess, "ana_exemplo");
+        let id = ui.of_provider(ProviderId::Lichess)[0].id;
+        ui.renaming = Some(RenameForm {
+            id,
+            text: "Principal".into(),
+            error: None,
+        });
+        ui.apply(
+            vec![Op::Rename(id, "Principal".into())],
+            &service,
+            &mut ConsentDialog::default(),
+            None,
+        );
+        ui.refresh(None);
+        assert_eq!(ui.of_provider(ProviderId::Lichess)[0].nickname, "Principal");
+        assert_eq!(ui.renaming, None, "salvar fecha a edição");
+        // Um apelido longe do limite mantém a edição aberta, com o motivo.
+        ui.renaming = Some(RenameForm {
+            id,
+            text: "x".repeat(200),
+            error: None,
+        });
+        ui.apply(
+            vec![Op::Rename(id, "x".repeat(200))],
+            &service,
+            &mut ConsentDialog::default(),
+            None,
+        );
+        assert_eq!(
+            ui.renaming.as_ref().and_then(|f| f.error),
+            Some("connections-rename-error")
+        );
+        ui.refresh(None);
+        assert_eq!(ui.of_provider(ProviderId::Lichess)[0].nickname, "Principal");
+        // Apelido vazio tira o apelido.
+        ui.apply(
+            vec![Op::Rename(id, String::new())],
+            &service,
+            &mut ConsentDialog::default(),
+            None,
+        );
+        ui.refresh(None);
+        assert!(ui.of_provider(ProviderId::Lichess)[0].nickname.is_empty());
+    }
+
+    #[test]
+    fn removing_clears_the_confirmation_and_the_nobody_is_authorized_yet() {
+        let service = service();
+        let mut ui = ConnectionsUi::default();
+        link(&mut ui, &service, ProviderId::ChessCom, "carla_exemplo");
+        let id = ui.of_provider(ProviderId::ChessCom)[0].id;
+        ui.confirm_remove = Some(id);
+        ui.apply(
+            vec![Op::Remove(id)],
+            &service,
+            &mut ConsentDialog::default(),
+            None,
+        );
+        ui.refresh(None);
+        assert!(ui.of_provider(ProviderId::ChessCom).is_empty());
+        assert_eq!(ui.confirm_remove, None);
+        // Nenhum Provedor tem Conexão autorizada até o Cofre existir.
+        assert!(ui.authorized.is_empty());
+    }
+
+    #[test]
     fn the_demo_has_connections_for_the_captures() {
         let mut ui = ConnectionsUi::demo();
         ui.refresh(None);
         assert_eq!(ui.of_provider(ProviderId::Lichess).len(), 2);
         assert_eq!(ui.of_provider(ProviderId::Fide).len(), 1);
+        // Nomes fictícios: nunca apelidos de pessoas reais.
+        let names: Vec<&str> = ui.list.iter().map(|c| c.identifier.as_str()).collect();
+        assert!(names.contains(&"ana_exemplo"));
+        assert!(
+            names
+                .iter()
+                .all(|n| n.contains("exemplo") || n.chars().all(|c| c.is_ascii_digit()))
+        );
     }
 }

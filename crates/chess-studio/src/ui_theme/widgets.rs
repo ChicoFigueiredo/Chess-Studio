@@ -15,7 +15,13 @@ use egui_phosphor::regular as icon;
 use std::hash::Hash;
 use std::ops::RangeInclusive;
 
+mod badge;
+mod overflow;
+mod surface;
 mod theme_card;
+pub use badge::{StatusTone, cs_status_badge};
+pub use overflow::{MenuItem, cs_overflow_menu};
+pub use surface::{CardEmphasis, cs_card_frame, cs_detail_row, cs_disclosure};
 pub use theme_card::{ThemeCardMark, cs_theme_card};
 
 /// Paleta do Tema em uso no `Ui`.

@@ -4,7 +4,7 @@
 mod common;
 
 use chess_net::testing::FakeResponse;
-use chess_net::{NetError, ProviderId, Request};
+use chess_net::{NetError, ProviderId};
 use common::*;
 use std::time::{Duration, Instant};
 
@@ -53,7 +53,7 @@ fn cancelling_answers_at_once_and_the_worker_is_released() {
         eventually(Duration::from_secs(5), || net.status().active_requests == 0),
         "a thread do Provedor ficou presa"
     );
-    let next = Request::get(ProviderId::Lichess, "https://explorer.lichess.org/lichess");
+    let next = explorer("/lichess");
     net.fetch(next)
         .wait()
         .expect("o Provedor volta a responder");
@@ -69,10 +69,7 @@ fn a_request_cancelled_while_queued_never_reaches_the_network() {
 
     let first = net.fetch(masters().timeout(Duration::from_millis(400)));
     assert!(server.wait_for_requests(1, Duration::from_secs(5)));
-    let mut queued = net.fetch(Request::get(
-        ProviderId::Lichess,
-        "https://explorer.lichess.org/lichess",
-    ));
+    let mut queued = net.fetch(explorer("/lichess"));
     queued.cancel();
     assert_eq!(queued.try_take(), Some(Err(NetError::Cancelled)));
     drop(queued);
@@ -96,10 +93,7 @@ fn dropping_the_pending_handle_cancels_the_request() {
 
     let first = net.fetch(masters().timeout(Duration::from_millis(400)));
     assert!(server.wait_for_requests(1, Duration::from_secs(5)));
-    drop(net.fetch(Request::get(
-        ProviderId::Lichess,
-        "https://explorer.lichess.org/lichess",
-    )));
+    drop(net.fetch(explorer("/lichess")));
 
     let _ = first.wait();
     assert!(eventually(Duration::from_secs(2), || net

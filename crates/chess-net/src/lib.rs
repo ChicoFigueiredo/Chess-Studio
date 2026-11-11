@@ -14,7 +14,10 @@
 //! 3. **Trava de fair play** ([`FairPlayGuard`], ADR-0007): com a trava ativa, pedidos que
 //!    calculam (Explorador, avaliação em cache, finais, Engine remota) são recusados.
 //! 4. **Autorização**: o cabeçalho `Authorization` vem do Cofre ([`AuthorizationSource`],
-//!    etapa 3), preso a um host, e nunca aparece em `Debug`, erro ou log.
+//!    `chess-vault`), preso ao Provedor da Conexão, e só vai para os endereços que o catálogo
+//!    marca como autenticados ([`Endpoint::takes_token`]); nunca aparece em `Debug`, erro ou
+//!    log. Um pedido que nomeia a Conexão nunca sai sem o cabeçalho em silêncio, e um
+//!    `401`/`403` marca a Conexão no Cofre ([`NetError::ConnectionRejected`]).
 //! 5. **Limites**: token bucket por Provedor, `429`/`Retry-After` (o Provedor fica
 //!    "limitado até"), backoff com jitter para falhas temporárias.
 //!
@@ -31,7 +34,7 @@
 //! net.set_enabled(ProviderId::Lichess, true)?; // depois do aviso de consentimento
 //!
 //! let mut pending = net.fetch(
-//!     Request::get(ProviderId::Lichess, "https://explorer.lichess.org/masters")
+//!     Request::get(ProviderId::Lichess, "https://lichess.org/api/cloud-eval")
 //!         .position("fen", "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1")
 //!         .cache_for(Duration::from_secs(7 * 24 * 3600)),
 //! );
@@ -43,6 +46,10 @@
 //! # Ok::<(), chess_net::NetError>(())
 //! ```
 //!
+//! A única escuta de rede do app também mora aqui: o servidor de loopback que recebe o
+//! retorno da autorização pelo navegador ([`LoopbackCallback`]), só em `127.0.0.1`, para
+//! um único retorno, com prazo.
+//!
 //! O tempo vem de um [`Clock`] injetado ([`FakeClock`] nos testes); a suíte usa o servidor
 //! falso de [`testing`] (feature `testing`) e nunca chama serviço real (CX-17).
 
@@ -51,6 +58,7 @@ mod clock;
 mod error;
 mod guard;
 mod limits;
+mod loopback;
 mod ndjson;
 mod net;
 mod request;
@@ -71,11 +79,14 @@ pub use clock::{Clock, FakeClock, SystemClock, Timestamp};
 pub use error::NetError;
 pub use guard::FairPlayGuard;
 pub use limits::RetryPolicy;
+pub use loopback::{CallbackError, CallbackParams, LoopbackCallback};
 pub use ndjson::{NdjsonError, NdjsonItem, NdjsonReader};
 pub use net::{Net, NetConfig, Pending, Stream, StreamEvent};
 pub use request::{Method, Request};
 pub use response::{Fetched, Freshness, ImportMode, Provenance};
-pub use secret::{Authorization, AuthorizationSource, ConnectionId, NoVault, Secret};
+pub use secret::{
+    Authorization, AuthorizationSource, ConnectionId, MAX_TOKEN_LEN, NoVault, Secret,
+};
 pub use status::{NetworkStatus, Operation, ProviderState};
 
 use serde::{Deserialize, Serialize};
