@@ -733,7 +733,10 @@ fn the_fics_screen_draws_every_state_in_plain_language_with_no_password_field() 
             let scene = super::demo::Scene::named(name).unwrap();
             let mut state = super::OnlineUi::default();
             scene.open_dialog(&mut state);
-            assert_eq!(state.provider, Provider::Fics, "{name}");
+            // A cena da queda é do Painel; a tela do FICS também mostra a queda.
+            if name != "fics-dropped" {
+                assert_eq!(state.provider, Provider::Fics, "{name}");
+            }
             let view = scene.fics_view(T0);
             let raw = egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
@@ -756,7 +759,8 @@ fn the_fics_screen_draws_every_state_in_plain_language_with_no_password_field() 
                 }
             }
             assert!(found.len() > 3, "{name}: desenhou");
-            for (text, right) in &found {
+            // Só o que se lê: espaços (separadores de layout) não contam.
+            for (text, right) in found.iter().filter(|(t, _)| !t.trim().is_empty()) {
                 let lower = text.to_lowercase();
                 for banned in [
                     "token",
