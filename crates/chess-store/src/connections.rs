@@ -26,6 +26,10 @@ pub enum ConnectionKind {
     PublicName,
     /// ID público (FIDE ID, ID de jogador).
     PublicId,
+    /// Autorizada pelo navegador (o Provedor confirmou a pessoa); o segredo está no Cofre.
+    AuthorizedBrowser,
+    /// Autorizada por uma chave pessoal colada; o segredo está no Cofre.
+    AuthorizedKey,
 }
 
 impl ConnectionKind {
@@ -33,12 +37,21 @@ impl ConnectionKind {
         match self {
             Self::PublicName => "public_name",
             Self::PublicId => "public_id",
+            Self::AuthorizedBrowser => "authorized_browser",
+            Self::AuthorizedKey => "authorized_key",
         }
+    }
+
+    /// A Conexão tem segredo no Cofre (autorizada pelo navegador ou por chave pessoal).
+    pub const fn is_authorized(self) -> bool {
+        matches!(self, Self::AuthorizedBrowser | Self::AuthorizedKey)
     }
 
     fn from_db(text: &str) -> Self {
         match text {
             "public_id" => Self::PublicId,
+            "authorized_browser" => Self::AuthorizedBrowser,
+            "authorized_key" => Self::AuthorizedKey,
             _ => Self::PublicName,
         }
     }
@@ -116,9 +129,25 @@ pub struct Connection {
     /// A padrão do Provedor (por papel) para o Perfil local.
     pub is_default: bool,
     pub created_at_ms: i64,
+    /// O que o Provedor liberou para esta autorização (vazio nas Conexões sem segredo).
+    pub scopes: Vec<String>,
+    /// Instante da autorização; `None` nas Conexões por nome público e enquanto a autorização
+    /// ainda não terminou.
+    pub authorized_at_ms: Option<i64>,
 }
 
 impl Connection {
+    /// Autorização concluída: tem segredo no Cofre e o Provedor já confirmou a pessoa.
+    pub fn is_authorized(&self) -> bool {
+        self.kind.is_authorized() && self.authorized_at_ms.is_some()
+    }
+
+    /// Autorização reservada e ainda não concluída (o app fechou no meio, ou ela falhou): não
+    /// aparece para a pessoa e é descartada ([`Store::pending_authorizations`]).
+    pub fn is_pending(&self) -> bool {
+        self.kind.is_authorized() && self.authorized_at_ms.is_none()
+    }
+
     /// O nome a mostrar: o apelido, ou o identificador se não há apelido.
     pub fn display_name(&self) -> &str {
         if self.nickname.is_empty() {
@@ -130,7 +159,7 @@ impl Connection {
 }
 
 const COLUMNS: &str = "id, profile_id, provider, role, kind, identifier, nickname, is_default,
-                       created_at_ms";
+                       created_at_ms, scopes, authorized_at_ms";
 
 fn row_to_connection(r: &rusqlite::Row<'_>) -> rusqlite::Result<Connection> {
     let role: String = r.get(3)?;
@@ -145,6 +174,12 @@ fn row_to_connection(r: &rusqlite::Row<'_>) -> rusqlite::Result<Connection> {
         nickname: r.get(6)?,
         is_default: r.get::<_, i64>(7)? != 0,
         created_at_ms: r.get(8)?,
+        scopes: r
+            .get::<_, String>(9)?
+            .split_whitespace()
+            .map(str::to_owned)
+            .collect(),
+        authorized_at_ms: r.get(10)?,
     })
 }
 
@@ -339,5 +374,142 @@ impl Store {
         }
         tx.commit()?;
         Ok(())
+    }
+
+    /// Reserva o `id` de uma Conexão autorizada **antes** de abrir o navegador: o Cofre guarda o
+    /// segredo sob este `id`. A linha nasce pendente (sem nome nem instante) e só passa a
+    /// aparecer quando [`Store::record_authorization`] a conclui; se a autorização falhar ou o
+    /// app fechar no meio, [`Store::pending_authorizations`] a devolve para ser descartada.
+    pub fn begin_authorization(
+        &mut self,
+        profile: ProfileId,
+        provider: &str,
+        role: ConnectionRole,
+        kind: ConnectionKind,
+    ) -> Result<ConnectionId> {
+        if !valid_provider(provider) || !kind.is_authorized() {
+            return Err(StoreError::InvalidConnection(
+                "Provedor ou tipo de autorização inválido".into(),
+            ));
+        }
+        let tx = self.conn.transaction()?;
+        ensure_profile(&tx, profile)?;
+        let pending = tx
+            .query_row(
+                "SELECT 1 FROM connections
+                 WHERE profile_id = ?1 AND provider = ?2 AND role = ?3
+                   AND authorized_at_ms IS NULL
+                   AND kind IN ('authorized_browser', 'authorized_key')",
+                params![profile.0, provider, role.as_str()],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        if pending {
+            return Err(StoreError::ConnectionExists {
+                provider: provider.to_owned(),
+                identifier: String::new(),
+            });
+        }
+        tx.execute(
+            "INSERT INTO connections
+                 (profile_id, provider, role, kind, identifier, nickname, is_default,
+                  created_at_ms)
+             VALUES (?1, ?2, ?3, ?4, '', '', 0, ?5)",
+            params![profile.0, provider, role.as_str(), kind.as_str(), now_ms()],
+        )?;
+        let id = tx.last_insert_rowid();
+        tx.commit()?;
+        Ok(ConnectionId(id))
+    }
+
+    /// Conclui (ou renova) a autorização da Conexão `id`: grava o nome confirmado pelo Provedor,
+    /// o que foi liberado e o instante. Se o Perfil local já vinculava esse mesmo nome público
+    /// ("só o nome"), essa linha é absorvida: o apelido dela passa para a autorizada. A Conexão
+    /// autorizada vira a padrão do papel. Outra Conexão **autorizada** com o mesmo nome é
+    /// recusada ([`StoreError::ConnectionExists`]).
+    pub fn record_authorization(
+        &mut self,
+        profile: ProfileId,
+        id: ConnectionId,
+        kind: ConnectionKind,
+        identifier: &str,
+        scopes: &[String],
+        authorized_at_ms: i64,
+    ) -> Result<()> {
+        if !kind.is_authorized() {
+            return Err(StoreError::InvalidConnection(
+                "tipo de autorização inválido".into(),
+            ));
+        }
+        let target = self.connection_of(profile, id)?;
+        let identifier = clean_identifier(identifier)?;
+        if scopes
+            .iter()
+            .any(|s| s.is_empty() || s.chars().any(|c| c.is_whitespace() || c.is_control()))
+        {
+            return Err(StoreError::InvalidConnection("permissão inválida".into()));
+        }
+        let tx = self.conn.transaction()?;
+        let twin = tx
+            .query_row(
+                &format!(
+                    "SELECT {COLUMNS} FROM connections
+                     WHERE profile_id = ?1 AND provider = ?2 AND role = ?3 AND id <> ?4
+                       AND lower(identifier) = lower(?5)"
+                ),
+                params![
+                    profile.0,
+                    target.provider,
+                    target.role.as_str(),
+                    id.0,
+                    identifier
+                ],
+                row_to_connection,
+            )
+            .optional()?;
+        let mut nickname = target.nickname.clone();
+        if let Some(twin) = twin {
+            if twin.kind.is_authorized() {
+                return Err(StoreError::ConnectionExists {
+                    provider: target.provider,
+                    identifier,
+                });
+            }
+            if nickname.is_empty() {
+                nickname = twin.nickname;
+            }
+            tx.execute("DELETE FROM connections WHERE id = ?1", [twin.id.0])?;
+        }
+        tx.execute(
+            "UPDATE connections SET is_default = 0
+             WHERE profile_id = ?1 AND provider = ?2 AND role = ?3",
+            params![profile.0, target.provider, target.role.as_str()],
+        )?;
+        tx.execute(
+            "UPDATE connections
+             SET kind = ?2, identifier = ?3, nickname = ?4, scopes = ?5,
+                 authorized_at_ms = ?6, is_default = 1
+             WHERE id = ?1",
+            params![
+                id.0,
+                kind.as_str(),
+                identifier,
+                nickname,
+                scopes.join(" "),
+                authorized_at_ms
+            ],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// As autorizações reservadas e nunca concluídas do `profile` (de qualquer Provedor).
+    pub fn pending_authorizations(&self, profile: ProfileId) -> Result<Vec<Connection>> {
+        Ok(self
+            .list_connections(profile, None)?
+            .into_iter()
+            .filter(Connection::is_pending)
+            .collect())
     }
 }

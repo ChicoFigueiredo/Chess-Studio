@@ -395,6 +395,41 @@ CREATE UNIQUE INDEX connections_default
 CREATE INDEX connections_by_profile ON connections (profile_id, provider);
 ";
 
+/// Versão 16: Conexões autorizadas (CX-11, #231). A tabela é refeita para (1) usar
+/// `AUTOINCREMENT`: o `id` de uma Conexão apagada nunca é reaproveitado, então uma Conexão nova
+/// jamais herda o segredo que o Cofre guardava sob o `id` antigo; (2) aceitar os tipos
+/// `authorized_browser` (autorizada pelo navegador) e `authorized_key` (chave pessoal);
+/// (3) guardar o que foi liberado (`scopes`, separados por espaço) e o instante da autorização
+/// (`authorized_at_ms`, `NULL` enquanto a autorização não terminou). **Nunca guarda segredo**: a
+/// ligação com o Cofre é o próprio `id`.
+const V16_AUTHORIZED_CONNECTIONS: &str = "
+CREATE TABLE connections_v16 (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile_id       INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    provider         TEXT NOT NULL,
+    role             TEXT NOT NULL DEFAULT 'player' CHECK (role IN ('player', 'engine')),
+    kind             TEXT NOT NULL CHECK (kind IN
+                         ('public_name', 'public_id', 'authorized_browser', 'authorized_key')),
+    identifier       TEXT NOT NULL,
+    nickname         TEXT NOT NULL DEFAULT '',
+    is_default       INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
+    created_at_ms    INTEGER NOT NULL,
+    scopes           TEXT NOT NULL DEFAULT '',
+    authorized_at_ms INTEGER
+);
+INSERT INTO connections_v16
+    (id, profile_id, provider, role, kind, identifier, nickname, is_default, created_at_ms)
+SELECT id, profile_id, provider, role, kind, identifier, nickname, is_default, created_at_ms
+FROM connections;
+DROP TABLE connections;
+ALTER TABLE connections_v16 RENAME TO connections;
+CREATE UNIQUE INDEX connections_identifier
+    ON connections (profile_id, provider, role, lower(identifier));
+CREATE UNIQUE INDEX connections_default
+    ON connections (profile_id, provider, role) WHERE is_default = 1;
+CREATE INDEX connections_by_profile ON connections (profile_id, provider);
+";
+
 /// Migrações em ordem; o índice + 1 é a versão resultante.
 const MIGRATIONS: &[&str] = &[
     V1_CORE,
@@ -412,6 +447,7 @@ const MIGRATIONS: &[&str] = &[
     V13_IMPORT_ORIGIN,
     V14_EXERCISE_PACKS,
     V15_CONNECTIONS,
+    V16_AUTHORIZED_CONNECTIONS,
 ];
 
 /// Versão de esquema desta build.
