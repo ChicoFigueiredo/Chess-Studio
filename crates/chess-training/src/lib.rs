@@ -39,6 +39,7 @@ mod scoresheet;
 mod scoresheet_check;
 mod scoresheet_history;
 mod scoresheet_pdf;
+mod themes;
 
 pub use aids::{Aid, AidsRecord, Feedback};
 pub use catalog::{Catalog, CatalogError};
@@ -53,12 +54,13 @@ pub use exercise::{
 pub use filter::ExerciseFilter;
 pub use lichess::{
     ImportProgress, ImportReport, PuzzleFilter, PuzzleImportError, import_lichess_csv,
-    open_puzzle_file,
+    open_puzzle_file, open_puzzle_reader,
 };
 pub use memory::{MemoryPhase, MemoryRun, MemorySummary, PlyResult};
 pub use metrics::{Metrics, Tally};
 pub use packs::{
-    PackError, PackInfo, install_pack, install_pack_json, list_packs, load_packs, remove_pack,
+    PackError, PackInfo, install_pack, install_pack_dated, install_pack_json, list_packs,
+    load_packs, remove_pack,
 };
 pub use position_memory::{
     PiecePlacement, PositionJudgment, PositionMemoryRun, PositionMemorySummary, PositionPhase,
@@ -76,4 +78,7 @@ pub use scoresheet_history::{HistoryPeriod, HistoryPoint, ScoresheetHistory};
 pub use scoresheet_pdf::{
     A4_HEIGHT_PT, A4_WIDTH_PT, MAX_BLANK_PAGES, PdfError, ROWS_PER_PAGE, SheetContent, SheetHeader,
     SheetLabels, SheetSpec, page_count, render_scoresheet_pdf, rows_for,
+};
+pub use themes::{
+    HIDDEN_THEMES, OFFICIAL_THEMES, ThemeGroup, canonical_theme, known_themes, themes_in,
 };

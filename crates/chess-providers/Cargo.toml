@@ -22,6 +22,8 @@ chess-net.workspace = true
 chess-vault.workspace = true
 # Ritmo (`Pace`) e Origem/ImportOptions da importação em fluxo da Biblioteca.
 chess-store.workspace = true
+# Leitor de problemas e instalador de pacotes (CX-16): a baixada reaproveita os do #217.
+chess-training.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 # PKCE S256 da autorização do Lichess: SHA-256, base64url e bytes aleatórios do sistema
@@ -34,6 +36,8 @@ zeroize = "1.9"
 [dev-dependencies]
 chess-net = { workspace = true, features = ["testing"] }
 chess-vault = { workspace = true, features = ["testing"] }
+# Gera o .csv.zst sintético dos testes de download de problemas (#238).
+ruzstd = "0.9.1"
 
 [lints]
 workspace = true

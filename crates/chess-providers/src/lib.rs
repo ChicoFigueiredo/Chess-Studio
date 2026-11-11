@@ -46,6 +46,7 @@
 //! | Avaliação em cache | [`Lichess::cloud_eval`] | 7 dias; «sem avaliação» 10 min |
 //! | Finais exatos (até 7 peças) | [`Lichess::tablebase`] | 30 dias |
 //! | Partidas públicas (fluxo) | [`Lichess::games`] | sem cache |
+//! | Pacote de problemas (download em fluxo) | [`Lichess::download_puzzles`] | sem cache; corpo nunca guardado |
 //! | Perfil do Lichess | [`Lichess::profile`] | 10 min |
 //! | FIDE via Lichess | [`Lichess::fide_player`], [`Lichess::fide_search`] | 1 dia |
 //! | Perfil do Chess.com | [`ChessCom::profile`] | 10 min |
@@ -98,6 +99,7 @@ mod games;
 mod lichess;
 mod pgn;
 mod profile;
+mod puzzles;
 mod remote;
 mod tablebase;
 pub mod ttl;
@@ -137,6 +139,10 @@ pub use games::{
 };
 pub use lichess::Lichess;
 pub use profile::{FideRating, LichessProfile, PerfRating};
+pub use puzzles::{
+    MAX_PUZZLES, PUZZLE_HOST, PUZZLE_PATH, PuzzleDownload, PuzzleEvent, PuzzleOutcome,
+    PuzzleProgress, PuzzleRequest,
+};
 pub use remote::{
     ChessApi, DEFAULT_DEPTH as REMOTE_DEFAULT_DEPTH, ENGINE_NAME as REMOTE_ENGINE_NAME,
     MAX_DEPTH as REMOTE_MAX_DEPTH, RemoteEngine, user_message as remote_user_message,

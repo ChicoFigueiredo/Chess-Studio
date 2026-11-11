@@ -15,6 +15,7 @@
 use crate::aids::{AidSettings, ErrorExplanation, NoticeView, notice_view, reason_key};
 use crate::capture::CaptureMode;
 use crate::i18n::I18n;
+use crate::net_service::NetService;
 use crate::persistence::PersistenceHandle;
 use crate::play::PlaySet;
 use crate::session::Session;
@@ -34,10 +35,12 @@ use std::collections::BTreeSet;
 use std::sync::Mutex;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
+mod download;
 mod evolution;
 mod packs;
 mod position;
 mod profiles;
+mod themes;
 
 /// Rodadas máximas de "juiz pede, `Session` aplica" por quadro.
 const MAX_ROUNDS: usize = 16;
@@ -52,7 +55,8 @@ impl Plugin for TrainingPlugin {
                 (training_demo, training_judge).chain().after(PlaySet),
             )
             .add_systems(Update, (position::tick, position::sync_board).chain())
-            .add_systems(Update, packs::poll)
+            .add_systems(Update, (packs::poll, download::poll, download::on_consent))
+            .add_systems(Update, download::demo_system)
             .add_systems(EguiPrimaryContextPass, position::editor);
         crate::dock::register_panel(
             app,
@@ -894,7 +898,7 @@ fn exercise_row(
             );
         }
         if !exercise.themes.is_empty() {
-            text += &format!(" — {}", exercise.themes.join(" "));
+            text += &format!(" — {}", themes::theme_names(i18n, &exercise.themes, 3));
         }
         ui.label(text);
     });
@@ -1211,7 +1215,12 @@ pub fn training_panel(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
                                 .and_then(|p| position::panel(ui, i18n, p, now))
                         }
                         View::Profiles => profiles::view(ui, i18n, &state),
-                        View::Packs => packs::view(ui, i18n, &mut state.packs),
+                        View::Packs => {
+                            state.packs.download.provider_on = world
+                                .get_resource::<NetService>()
+                                .map(|net| net.is_enabled(chess_net::ProviderId::Lichess));
+                            packs::view(ui, i18n, &mut state.packs)
+                        }
                         View::Evolution => evolution::view(ui, i18n, &mut state)
                             .then_some(Action::Show(View::List)),
                         _ => state.review.as_ref().and_then(|r| review_view(ui, i18n, r)),
@@ -1247,6 +1256,9 @@ pub fn training_panel(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
                     state.start(&exercise, &mut session, &aids, handle);
                 }
                 Some(Action::Unfollow) => state.follow_profile(None, handle),
+                Some(Action::Packs(packs::Cmd::StartDownload)) => {
+                    download::begin(&mut state, world, i18n);
+                }
                 Some(Action::Packs(cmd)) => state.apply_packs(cmd, handle),
                 // Sair sem resolver nem desistir descarta a Resolução (não vira erro).
                 Some(Action::BackToList) => state.leave(&mut session, View::List),
@@ -1267,7 +1279,7 @@ pub(crate) fn demo_active() -> bool {
     demo_script().is_some()
 }
 
-fn demo_script() -> Option<String> {
+pub(super) fn demo_script() -> Option<String> {
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         if arg == "--training" {
@@ -1300,6 +1312,10 @@ fn training_demo(
     }
     let Some(script) = demo_script() else { return };
     *frame += 1;
+    if script.starts_with("download") {
+        // Cenas do download de problemas: ver `download::demo_system`.
+        return;
+    }
     if script.starts_with("memory") {
         memory_demo(&mut state, &mut session, &aids, &script, *frame);
         return;
