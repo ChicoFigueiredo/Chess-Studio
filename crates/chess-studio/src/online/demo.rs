@@ -47,6 +47,7 @@ fn challenge(id: &str, name: &str, rating: u32, time: OnlineTime, rated: bool) -
         challenger: ChallengePlayer {
             id: name.to_lowercase(),
             name: name.to_owned(),
+            title: None,
             rating: Some(rating),
         },
         dest: None,

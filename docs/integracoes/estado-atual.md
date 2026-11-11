@@ -1,6 +1,6 @@
 # Estado atual para as integrações (inventário CX-1, atualizado em 11/11/2026)
 
-Inventário do código em `main` para o programa de Provedores e Conexões. A primeira versão (commit `5c27ec8`) cumpriu a "fase zero" da [especificação](especificacao-free-first-2026-11-11.md) (seção 5.1). Esta versão foi atualizada no commit `1626ebb`, depois das etapas 1 e 2, da autorização do Lichess (etapa 3) e do domínio da Partida online (etapa 4, sem interface). Valem as [decisões](../decisoes/2026-11-11-conexoes.md), a [ADR-0006](../adr/0006-rede-offline-por-padrao-provedores-e-conexoes.md) e a [ADR-0007](../adr/0007-partida-online-controlador-segue-o-provedor.md). Quem usa o app lê o [guia](guia.md); quem homologa lê o [roteiro](../homologacao/integracoes.md).
+Inventário do código em `main` para o programa de Provedores e Conexões. A primeira versão (commit `5c27ec8`) cumpriu a "fase zero" da [especificação](especificacao-free-first-2026-11-11.md) (seção 5.1). Esta versão foi atualizada no commit `1626ebb`, depois das etapas 1 e 2, da autorização do Lichess (etapa 3) e da Partida online (etapa 4: domínio, Board API e, no #233, a interface e a Trava de fair play nos serviços). Valem as [decisões](../decisoes/2026-11-11-conexoes.md), a [ADR-0006](../adr/0006-rede-offline-por-padrao-provedores-e-conexoes.md) e a [ADR-0007](../adr/0007-partida-online-controlador-segue-o-provedor.md). Quem usa o app lê o [guia](guia.md); quem homologa lê o [roteiro](../homologacao/integracoes.md).
 
 Só documentação. Cada afirmação aponta o arquivo onde o código ou o teste mora. Não há números de linha: eles envelhecem a cada PR.
 
@@ -29,7 +29,7 @@ Só documentação. Cada afirmação aponta o arquivo onde o código ou o teste 
 | Importação online (Lichess, Chess.com) | EXISTE (UNVERIFIED com serviço real) | [5.3](#53-importação-existe) |
 | Treino: pacotes de Exercícios e leitor do Lichess | EXISTE | [6.2](#62-importar-exercícios-novos-existe) |
 | Download de pacotes pela rede | AUSENTE | [6.2](#62-importar-exercícios-novos-existe) |
-| Partida online: domínio e Board API | EXISTE (sem interface) | [7.1](#71-controlador-e-fontes-de-comando-existe) |
+| Partida online: domínio e Board API | EXISTE | [7.1](#71-controlador-e-fontes-de-comando-existe) |
 | Partida online: interface | EXISTE | [7.1](#71-controlador-e-fontes-de-comando-existe) |
 | Trava de fair play | EXISTE | [7.4](#74-trava-de-fair-play-parcial) |
 | Camada de rede por Provedor | EXISTE | [8.1](#81-rede-existe) |
@@ -263,7 +263,7 @@ Etapas (das [decisões](../decisoes/2026-11-11-conexoes.md)): **E1** Fundação,
 | US-006 | Identidades Chess.com, Queen Alice, ChessBase, FIDE | E2 | PARCIAL | Nome público (Chess.com, Lichess) e ID da FIDE existem ([`connections.rs`](../../crates/chess-store/src/connections.rs)); Queen Alice e ChessBase são só cartões de importação manual ([`catalog.rs`](../../crates/chess-net/src/catalog.rs)). |
 | US-007 | FICS com transporte protegido | E5 | PARCIAL | Só visitante: o FICS não tem canal cifrado comprovado e o login com senha é recusado antes da rede ([`fics/mod.rs`](../../crates/chess-providers/src/fics/mod.rs), [`fics.md`](../decisoes/2026-11-11-fics.md)); transporte ICS pelo gate ([`net/ics.rs`](../../crates/chess-net/src/net/ics.rs)); sem interface. |
 | US-008 | Multicontas, permissões, estados, revogação | E3 | PARCIAL | Várias Conexões, papel, permissões, estados e revogação existem só para o Lichess ([`connections.rs`](../../crates/chess-store/src/connections.rs), [`connections/auth.rs`](../../crates/chess-studio/src/connections/auth.rs)). |
-| US-009 | Stream de eventos e desafios Lichess | E4 | PARCIAL | Fluxo de eventos e desafios no adaptador ([`board/mod.rs`](../../crates/chess-providers/src/board/mod.rs)); sem interface. |
+| US-009 | Stream de eventos e desafios Lichess | E4 | EXISTE (UNVERIFIED) | Fluxo de eventos e desafios no adaptador ([`board/mod.rs`](../../crates/chess-providers/src/board/mod.rs)); no app, desafios recebidos (aceitar, recusar com motivo), desafio por nome e aviso discreto ([`online/`](../../crates/chess-studio/src/online/mod.rs)). |
 | US-010 | Jogar humano de ponta a ponta | E4 | EXISTE (UNVERIFIED) | Interface e serviço do app ([`online/`](../../crates/chess-studio/src/online/mod.rs)) sobre o domínio e a Board API; validação com o serviço real no [roteiro](../homologacao/integracoes.md), CX-HOM-32 a 39. |
 | US-011 | Reconectar e recuperar estado | E4 | EXISTE (UNVERIFIED) | Reconexão com backoff, reconciliação por retrato e selo "Reconectando" no Painel Partida online. |
 | US-012 | Ações de partida (empate, desistência, abort, chat) | E4 | PARCIAL | Abandono (com confirmação), empate, abortar e reclamar vitória no Painel; chat e reclamar empate por ausência ficam fora ([`partida-online.md`](../decisoes/2026-11-11-partida-online.md)). |
