@@ -4,7 +4,7 @@
 use crate::clock::ClockState;
 use crate::event::{Event, EventKind, PAYLOAD_VERSION};
 use crate::outcome::Outcome;
-use crate::setup::{GameSetup, InfractionStage};
+use crate::setup::{GameSetup, InfractionStage, PolicyKind};
 use chess_core::{CanonicalPosition, Color, Move, Piece, RepetitionKey, Square};
 use std::fmt;
 
@@ -65,10 +65,17 @@ pub(crate) struct GameState {
     pub paused: bool,
     pub clock: Option<ClockState>,
     pub stage: InfractionStage,
+    /// Partida online: o relógio e o fim vêm só do Provedor (ADR-0007).
+    pub online: bool,
+    /// Partida online abortada (fim sem resultado).
+    pub aborted: bool,
+    /// Último relógio informado pelo Provedor (brancas, pretas, quem corre).
+    pub last_clock_report: Option<(u64, u64, Option<Color>)>,
 }
 
 impl GameState {
     pub fn new(setup: &GameSetup) -> Self {
+        let online = setup.policy() == PolicyKind::Online;
         Self {
             start: setup.start().clone(),
             start_key: setup.start().repetition_key(),
@@ -85,11 +92,24 @@ impl GameState {
             infractions: [0; 2],
             claimed_move: None,
             paused: false,
-            clock: setup
-                .time_control()
-                .map(|tc| ClockState::new(tc, setup.start().side_to_move())),
+            clock: setup.time_control().map(|tc| {
+                let mut clock = ClockState::new(tc, setup.start().side_to_move());
+                // Na Partida online o relógio só corre quando o Provedor diz.
+                if online {
+                    clock.running = None;
+                }
+                clock
+            }),
             stage: setup.infraction_stage(),
+            online,
+            aborted: false,
+            last_clock_report: None,
         }
+    }
+
+    /// Terminada: com resultado ou abortada pelo Provedor.
+    pub fn is_over(&self) -> bool {
+        self.outcome.is_some() || self.aborted
     }
 
     /// Posição canônica: a do último Lance **concluído**.
@@ -181,7 +201,10 @@ pub(crate) fn apply(state: &mut GameState, event: &Event) -> Result<(), String> 
             state.played.push(played);
             state.redo.clear();
             state.end_turn();
-            if let Some(clock) = &mut state.clock {
+            // Online, o relógio é o que o Provedor informar (`ClockReported`).
+            if let Some(clock) = &mut state.clock
+                && !state.online
+            {
                 clock.move_completed(*side, true);
             }
         }
@@ -300,6 +323,32 @@ pub(crate) fn apply(state: &mut GameState, event: &Event) -> Result<(), String> 
             state.paused = false;
         }
         EventKind::FlagFell { .. } | EventKind::DrawClaimAccepted { .. } => {}
+        EventKind::ClockReported {
+            white_ms,
+            black_ms,
+            running,
+        } => {
+            let clock = state
+                .clock
+                .as_mut()
+                .ok_or_else(|| bad("relógio informado numa Partida sem relógio"))?;
+            clock.remaining = [*white_ms, *black_ms];
+            clock.since_ms = event.at.mono_ms;
+            clock.running = *running;
+            state.last_clock_report = Some((*white_ms, *black_ms, *running));
+        }
+        EventKind::DrawOfferWithdrawn { .. } => state.draw_offer = None,
+        EventKind::GameAborted => {
+            if state.is_over() {
+                return Err(bad("a Partida já terminou"));
+            }
+            state.aborted = true;
+            state.pending_promotion = None;
+            state.draw_offer = None;
+            if let Some(clock) = &mut state.clock {
+                clock.running = None;
+            }
+        }
         EventKind::DrawClaimRejected {
             intended, penalty, ..
         } => {

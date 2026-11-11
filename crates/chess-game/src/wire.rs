@@ -48,6 +48,27 @@ pub mod color {
     }
 }
 
+pub mod color_opt {
+    use super::*;
+
+    pub fn serialize<S: Serializer>(c: &Option<Color>, s: S) -> Result<S::Ok, S::Error> {
+        c.map(|c| match c {
+            Color::White => "white",
+            Color::Black => "black",
+        })
+        .serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Color>, D::Error> {
+        match Option::<String>::deserialize(d)?.as_deref() {
+            None => Ok(None),
+            Some("white") => Ok(Some(Color::White)),
+            Some("black") => Ok(Some(Color::Black)),
+            Some(other) => Err(D::Error::custom(format!("cor desconhecida: {other:?}"))),
+        }
+    }
+}
+
 pub mod uci_opt {
     use super::*;
 

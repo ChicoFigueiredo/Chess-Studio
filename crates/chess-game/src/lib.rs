@@ -6,6 +6,10 @@
 //! Assistido, Simulação FIDE (Leis de 1/1/2023) e Eliminação Imediata (regra personalizada). Leitura pela UI: [`Game::snapshot`];
 //! o relógio por instante, em [`Game::clock_at`].
 //!
+//! A Partida online (ADR-0007) é uma Partida comum com [`PolicyKind::Online`]: só o
+//! retrato do Provedor ([`Command::Provider`]) a escreve, e o Lance local é uma intenção
+//! enviada ([`Game::send_move`]) fora do log até o Provedor confirmar.
+//!
 //! ```
 //! use chess_game::{Command, Game, GameSetup, PolicyKind, Timestamp};
 //! use chess_core::Square;
@@ -21,6 +25,7 @@ mod command;
 mod event;
 mod fide;
 mod game;
+mod online;
 mod outcome;
 mod pgn;
 mod policy;
@@ -39,6 +44,10 @@ pub use event::{
     DrawBasis, Event, EventKind, IllegalReason, InfractionCause, PAYLOAD_VERSION, TimePenalty,
 };
 pub use game::Game;
+pub use online::{
+    Desync, OnlineGame, OnlinePlayer, OnlineSetupError, OnlineView, Opponent, ProviderClock,
+    ProviderEnd, ProviderSnapshot, SentMove, Variant,
+};
 pub use outcome::{EndReason, GameResult, Outcome};
 pub use pgn::{PgnOptions, pgn_date_from_unix_ms};
 pub use rejection::Rejection;

@@ -1,5 +1,6 @@
 //! Configuração imutável de uma Partida.
 
+use crate::online::{OnlineGame, OnlineSetupError, Variant};
 use crate::time::TimeControl;
 use crate::wire;
 use chess_core::{CanonicalPosition, Color, FenError};
@@ -16,6 +17,9 @@ pub enum PolicyKind {
     /// Eliminação Imediata (`SuddenElimination`): regra **personalizada** de
     /// treinamento, nunca FIDE. A primeira Infração concluída encerra a Partida.
     SuddenElimination,
+    /// Partida online (ADR-0007, CX-19): nenhuma Política local; valem as regras do
+    /// Provedor, e só o que ele confirma entra no log. Nasce por [`GameSetup::online`].
+    Online,
 }
 
 /// Rótulo exposto no snapshot da Eliminação Imediata (AC-06): nunca "FIDE".
@@ -61,6 +65,7 @@ pub struct GameSetup {
     time_control: Option<TimeControl>,
     infraction_stage: InfractionStage,
     engine: Option<EngineSeat>,
+    online: Option<OnlineGame>,
 }
 
 impl GameSetup {
@@ -72,6 +77,7 @@ impl GameSetup {
             time_control: None,
             infraction_stage: InfractionStage::Clock,
             engine: None,
+            online: None,
         }
     }
 
@@ -83,7 +89,41 @@ impl GameSetup {
             time_control: None,
             infraction_stage: InfractionStage::Clock,
             engine: None,
+            online: None,
         })
+    }
+
+    /// Partida online (ADR-0007): o Provedor decide Lances, relógio e resultado. Só xadrez
+    /// padrão; outra variante é recusada antes de criar a Partida. `start_fen` é a Posição
+    /// inicial do Provedor (`None`: a padrão). O controle de tempo, se houver, vem por
+    /// [`GameSetup::with_time_control`].
+    pub fn online(
+        game: OnlineGame,
+        variant: Variant,
+        start_fen: Option<&str>,
+    ) -> Result<Self, OnlineSetupError> {
+        if let Variant::Other(name) = variant {
+            return Err(OnlineSetupError::UnsupportedVariant(name));
+        }
+        let start = match start_fen {
+            Some(fen) => {
+                CanonicalPosition::from_fen(fen.trim()).map_err(OnlineSetupError::InvalidFen)?
+            }
+            None => CanonicalPosition::start(),
+        };
+        Ok(Self {
+            policy: PolicyKind::Online,
+            start,
+            time_control: None,
+            infraction_stage: InfractionStage::Clock,
+            engine: None,
+            online: Some(game),
+        })
+    }
+
+    /// O que o Provedor declarou, se a Partida é online.
+    pub fn online_game(&self) -> Option<&OnlineGame> {
+        self.online.as_ref()
     }
 
     /// Controle de tempo (base + incremento). Em qualquer Política o relógio é
@@ -155,6 +195,8 @@ struct SetupWire {
     infraction_stage: InfractionStage,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     engine: Option<EngineSeat>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    online: Option<OnlineGame>,
 }
 
 impl From<GameSetup> for SetupWire {
@@ -165,20 +207,27 @@ impl From<GameSetup> for SetupWire {
             time_control: s.time_control,
             infraction_stage: s.infraction_stage,
             engine: s.engine,
+            online: s.online,
         }
     }
 }
 
 impl TryFrom<SetupWire> for GameSetup {
-    type Error = FenError;
+    type Error = String;
 
-    fn try_from(w: SetupWire) -> Result<Self, FenError> {
+    fn try_from(w: SetupWire) -> Result<Self, String> {
+        // Dados de Provedor só existem numa Partida online: nenhum caminho do app grava o
+        // contrário, então é log adulterado.
+        if w.online.is_some() && w.policy != PolicyKind::Online {
+            return Err("dados de Provedor numa Partida local".to_owned());
+        }
         Ok(Self {
             policy: w.policy,
-            start: CanonicalPosition::from_fen(&w.start_fen)?,
+            start: CanonicalPosition::from_fen(&w.start_fen).map_err(|e| e.to_string())?,
             time_control: w.time_control,
             infraction_stage: w.infraction_stage,
             engine: w.engine,
+            online: w.online,
         })
     }
 }

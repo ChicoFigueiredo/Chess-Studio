@@ -4,8 +4,10 @@
 //! Formato JSON: `{"version":1,"at":{...},"kind":{"type":"move_completed",...}}`.
 //! Evolução: novas variantes entram em `EventKind` (`non_exhaustive`) sem mudar
 //! as existentes; uma mudança incompatível de campo sobe [`PAYLOAD_VERSION`].
-//! As variantes do B6 (relógio, Simulação FIDE, Reclamações) são aditivas e
-//! continuam na versão 1 do envelope: logs anteriores seguem legíveis.
+//! As variantes do B6 (relógio, Simulação FIDE, Reclamações) e as da Partida online
+//! (#230: relógio do Provedor, proposta retirada, Partida abortada) são aditivas e
+//! continuam na versão 1 do envelope: logs anteriores seguem legíveis
+//! (docs/decisoes/2026-11-11-partida-online.md).
 
 use crate::outcome::Outcome;
 use crate::setup::InfractionStage;
@@ -247,4 +249,21 @@ pub enum EventKind {
     GameEnded {
         outcome: Outcome,
     },
+    /// Partida online: relógios informados pelo Provedor no instante do Evento (a chegada
+    /// do retrato); `running` é quem corre a partir dali. Substitui o relógio derivado.
+    ClockReported {
+        white_ms: u64,
+        black_ms: u64,
+        #[serde(with = "wire::color_opt")]
+        running: Option<Color>,
+    },
+    /// Partida online: a proposta de empate de `by` deixou de valer no Provedor (recusada
+    /// ou retirada; o Provedor não distingue).
+    DrawOfferWithdrawn {
+        #[serde(with = "wire::color")]
+        by: Color,
+    },
+    /// Partida online abortada (ou encerrada pelo Provedor sem resultado). Termina a
+    /// Partida sem resultado.
+    GameAborted,
 }

@@ -4,7 +4,8 @@
 //! que fica no log (DB-04).
 
 use crate::command::CommandKind;
-use chess_core::{Piece, Square};
+use crate::online::Desync;
+use chess_core::{Move, Piece, Square};
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,6 +53,17 @@ pub enum Rejection {
     },
     /// Estado interno incoerente (bug); a Partida não mudou.
     Inconsistent,
+    /// Intenção enviada numa Partida que não é online.
+    NotOnline,
+    /// Partida online: não é a vez do jogador local.
+    NotLocalTurn,
+    /// Partida online: já há um Lance enviado à espera do Provedor (no máximo um).
+    MoveAlreadySent,
+    /// O Lance não é legal na Posição canônica (intenção enviada recusada antes da rede).
+    MoveNotLegal(Move),
+    /// Partida online fora de sincronia com o Provedor: o log não mudou e só um retrato
+    /// coerente a destrava.
+    Desynced(Desync),
 }
 
 impl fmt::Display for Rejection {
@@ -94,6 +106,13 @@ impl fmt::Display for Rejection {
                 "instante {got_ms} ms anterior ao último evento ({last_ms} ms)"
             ),
             Self::Inconsistent => f.write_str("estado interno incoerente"),
+            Self::NotOnline => f.write_str("a Partida não é online"),
+            Self::NotLocalTurn => f.write_str("não é a vez do jogador local"),
+            Self::MoveAlreadySent => {
+                f.write_str("já há um Lance enviado aguardando a confirmação do Provedor")
+            }
+            Self::MoveNotLegal(mv) => write!(f, "o Lance {mv} não é legal"),
+            Self::Desynced(d) => write!(f, "Partida fora de sincronia com o Provedor: {d}"),
         }
     }
 }
