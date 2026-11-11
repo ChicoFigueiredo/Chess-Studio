@@ -205,7 +205,7 @@ impl Row<'_> {
         let start = before.play(opponent).ok()?;
         // A linha do Exercício tem tamanho ímpar: termina num Lance do usuário.
         let mut line: Vec<String> = self.moves[1..].iter().map(|m| (*m).to_owned()).collect();
-        if line.len() % 2 == 0 {
+        if line.len().is_multiple_of(2) {
             line.pop();
         }
         let themes_text = if self.themes.is_empty() {

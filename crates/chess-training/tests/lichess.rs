@@ -165,7 +165,11 @@ impl Read for Synthetic {
             if self.next == self.total {
                 return Ok(0);
             }
-            let themes = if self.next % 10 == 0 { "fork" } else { "pin" };
+            let themes = if self.next.is_multiple_of(10) {
+                "fork"
+            } else {
+                "pin"
+            };
             self.buf = row(
                 &format!("s{:06}", self.next),
                 BEFORE,
