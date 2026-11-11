@@ -173,8 +173,7 @@ impl I18n {
     }
 
     /// A chave existe no idioma ativo?
-    #[cfg(test)]
-    fn has(&self, key: &str) -> bool {
+    pub(crate) fn has(&self, key: &str) -> bool {
         self.bundle.has_message(key)
     }
 }

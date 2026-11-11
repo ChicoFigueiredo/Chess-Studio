@@ -19,7 +19,7 @@ use crate::response::{Fetched, Freshness, ImportMode, Provenance};
 use crate::secret::{Authorization, AuthorizationSource, NoVault};
 use crate::status::{NetworkStatus, Operation, ProviderState};
 use crate::store::{CacheEntry, NetStore};
-use crate::transport::{Failure, Http, Outgoing, ResponseHead};
+use crate::transport::{BodyStream, Failure, Http, Outgoing, ResponseHead};
 use std::collections::hash_map::RandomState;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
@@ -554,6 +554,9 @@ fn from_entry(entry: &CacheEntry, now: Timestamp, freshness: Freshness) -> Fetch
     }
 }
 
+mod download;
+pub use download::{Download, DownloadEvent, DownloadMeter, DownloadReader};
+
 /// Como terminou um fluxo do lado de cá.
 enum StreamEnd {
     Ended,
@@ -1025,13 +1028,15 @@ impl Shared {
         }
     }
 
-    fn stream_inner(
+    /// Passa pelo gate, abre a conexão de um fluxo (sem cache, sem repetição) e confere o
+    /// status: devolve o corpo de uma resposta `2xx`. Compartilhado pelos fluxos NDJSON e
+    /// pelos downloads em fluxo de corpo binário.
+    fn open_body(
         &self,
         request: &Request,
         profile: LocalProfileId,
         cancel: &AtomicBool,
-        events: &Sender<StreamEvent>,
-    ) -> Result<StreamEnd, NetError> {
+    ) -> Result<(ResponseHead, BodyStream), NetError> {
         let provider = request.provider;
         let now = self.clock.now();
         if let Some(until) = self.limited_until(provider, now) {
@@ -1084,6 +1089,18 @@ impl Shared {
                 return Err(NetError::Http { provider, status });
             }
         }
+        Ok((head, body))
+    }
+
+    fn stream_inner(
+        &self,
+        request: &Request,
+        profile: LocalProfileId,
+        cancel: &AtomicBool,
+        events: &Sender<StreamEvent>,
+    ) -> Result<StreamEnd, NetError> {
+        let provider = request.provider;
+        let (_head, body) = self.open_body(request, profile, cancel)?;
         let mut reader = NdjsonReader::new(body, self.max_line);
         loop {
             if cancel.load(Ordering::Acquire) {

@@ -3,6 +3,8 @@
 //! dificuldade. A leitura roda numa thread (arquivo com milhões de linhas), com progresso e
 //! cancelamento; nenhuma chamada de rede (o usuário escolhe um arquivo que já tem).
 
+use super::download::{self, DownloadUi};
+use super::themes::theme_name;
 use super::{Action, TrainingUi, View, with_store};
 use crate::i18n::I18n;
 use crate::persistence::PersistenceHandle;
@@ -13,6 +15,7 @@ use chess_training::{
     Catalog, ExerciseFilter, ImportProgress, ImportReport, PackInfo, PuzzleFilter,
     import_lichess_csv, install_pack, list_packs, load_packs, open_puzzle_file, remove_pack,
 };
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -28,6 +31,8 @@ pub(super) const ROWS_PER_SECTION: usize = 100;
 pub(super) enum Cmd {
     StartImport,
     CancelImport,
+    StartDownload,
+    CancelDownload,
     AskRemove(String),
     ConfirmRemove(String),
     CancelRemove,
@@ -75,7 +80,7 @@ enum Message {
 
 #[derive(Debug)]
 pub(super) struct PacksUi {
-    dir: Option<PathBuf>,
+    pub(super) dir: Option<PathBuf>,
     pub(super) installed: Vec<PackInfo>,
     load_errors: Vec<(String, String)>,
     path: String,
@@ -88,6 +93,10 @@ pub(super) struct PacksUi {
     job: Option<Job>,
     message: Option<Message>,
     confirm_remove: Option<String>,
+    /// Baixar pacotes do Lichess pela rede (#238).
+    pub(super) download: DownloadUi,
+    /// Temas que aparecem nos Exercícios carregados (para o filtro da lista).
+    theme_ids: Vec<String>,
     // Filtro da lista de Exercícios.
     filter_pack: PackChoice,
     filter_theme: String,
@@ -110,6 +119,8 @@ impl Default for PacksUi {
             job: None,
             message: None,
             confirm_remove: None,
+            download: DownloadUi::default(),
+            theme_ids: Vec::new(),
             filter_pack: PackChoice::All,
             filter_theme: String::new(),
             filter_min: String::new(),
@@ -196,7 +207,7 @@ fn slug(path: &Path) -> String {
 }
 
 /// Id livre entre os pacotes instalados (`-2`, `-3`… se o nome já existe).
-fn unique_id(base: String, installed: &[PackInfo]) -> String {
+pub(super) fn unique_id(base: String, installed: &[PackInfo]) -> String {
     if !installed.iter().any(|p| p.id == base) {
         return base;
     }
@@ -217,7 +228,7 @@ impl TrainingUi {
     }
 
     /// Como [`Self::reload_packs`], mas com a pasta já conhecida.
-    fn reload_packs_from(&mut self, dir: Option<PathBuf>) {
+    pub(super) fn reload_packs_from(&mut self, dir: Option<PathBuf>) {
         let bundled = Catalog::bundled().unwrap_or_default();
         let mut catalog = bundled.clone();
         self.packs.installed.clear();
@@ -240,6 +251,11 @@ impl TrainingUi {
         {
             self.packs.filter_pack = PackChoice::All;
         }
+        let themes: BTreeSet<&str> = catalog
+            .iter()
+            .flat_map(|e| e.themes.iter().map(String::as_str))
+            .collect();
+        self.packs.theme_ids = themes.into_iter().map(str::to_owned).collect();
         self.catalog = catalog;
         // O banco precisa conhecer os Exercícios novos antes da próxima Resolução.
         self.synced = false;
@@ -357,6 +373,8 @@ impl TrainingUi {
     pub(super) fn apply_packs(&mut self, cmd: Cmd, handle: Option<&PersistenceHandle>) {
         match cmd {
             Cmd::StartImport => self.start_import(),
+            Cmd::StartDownload => {}
+            Cmd::CancelDownload => self.cancel_download(),
             Cmd::CancelImport => {
                 if let Some(job) = &self.packs.job {
                     job.cancel.store(true, Ordering::Relaxed);
@@ -379,15 +397,31 @@ pub(super) fn poll(mut state: ResMut<TrainingUi>, handle: Option<Res<Persistence
     }
 }
 
+/// Nome do Provedor para a pessoa ("lichess" no arquivo do pacote, "Lichess" na tela).
+fn provider_display(provider: &str) -> String {
+    let mut chars = provider.chars();
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(chars).collect()
+    })
+}
+
 fn origin_line(i18n: &I18n, info: &PackInfo) -> Option<String> {
-    let provider = info.provider.as_deref()?;
-    Some(i18n.t_with(
-        "training-packs-origin",
-        &[
-            ("provider", provider),
-            ("license", info.license.as_deref().unwrap_or("?")),
-        ],
-    ))
+    let provider = provider_display(info.provider.as_deref()?);
+    let license = info.license.as_deref().unwrap_or("?");
+    Some(match info.downloaded_on.as_deref() {
+        Some(day) => i18n.t_with(
+            "training-packs-origin-dated",
+            &[
+                ("provider", &provider),
+                ("license", license),
+                ("date", &download::br_date(day)),
+            ],
+        ),
+        None => i18n.t_with(
+            "training-packs-origin",
+            &[("provider", &provider), ("license", license)],
+        ),
+    })
 }
 
 /// Texto "Origem: lichess, licença CC0-1.0" de um pacote instalado.
@@ -422,14 +456,20 @@ pub(super) fn filter_bar(ui: &mut egui::Ui, i18n: &I18n, packs: &mut PacksUi) {
     cs_dropdown(ui, "training-filter-pack", &mut packs.filter_pack, &options);
     ui.horizontal_wrapped(|ui| {
         ui.set_max_width(ui.available_width());
-        ui.allocate_ui(egui::vec2(150.0, 0.0), |ui| {
-            cs_text_field(
-                ui,
-                &mut packs.filter_theme,
-                &i18n.t("training-filter-theme-hint"),
-                None,
-            );
-        });
+        if !packs.theme_ids.is_empty() || !packs.filter_theme.is_empty() {
+            let mut named: Vec<(String, String)> = packs
+                .theme_ids
+                .iter()
+                .map(|id| (id.clone(), theme_name(i18n, id)))
+                .collect();
+            named.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
+            let mut options = vec![(String::new(), i18n.t("training-filter-theme-any"))];
+            options.extend(named);
+            if !options.iter().any(|(id, _)| *id == packs.filter_theme) {
+                packs.filter_theme.clear();
+            }
+            cs_dropdown(ui, "training-filter-theme", &mut packs.filter_theme, &options);
+        }
         ui.allocate_ui(egui::vec2(80.0, 0.0), |ui| {
             cs_text_field(
                 ui,
@@ -531,6 +571,11 @@ pub(super) fn view(ui: &mut egui::Ui, i18n: &I18n, packs: &mut PacksUi) -> Optio
             "training-packs-load-error",
             &[("id", id), ("reason", reason)],
         ));
+    }
+
+    ui.add_space(8.0);
+    if let Some(chosen) = download::card(ui, i18n, &mut packs.download) {
+        cmd = Some(chosen);
     }
 
     ui.separator();
@@ -756,6 +801,7 @@ mod tests {
             count: 0,
             provider: None,
             license: None,
+            downloaded_on: None,
         }];
         assert_eq!(unique_id("lichess-a".into(), &taken), "lichess-a-2");
     }

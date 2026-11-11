@@ -26,6 +26,8 @@ pub(crate) struct Outgoing<'a> {
 pub(crate) struct ResponseHead {
     pub status: u16,
     pub content_type: Option<String>,
+    /// Tamanho do corpo anunciado (`Content-Length`), se houver.
+    pub content_length: Option<u64>,
     pub etag: Option<String>,
     pub last_modified: Option<String>,
     pub retry_after: Option<String>,
@@ -180,6 +182,7 @@ fn head(response: &ureq::http::Response<ureq::Body>) -> ResponseHead {
     ResponseHead {
         status: response.status().as_u16(),
         content_type: header("content-type"),
+        content_length: header("content-length").and_then(|v| v.trim().parse().ok()),
         etag: header("etag"),
         last_modified: header("last-modified"),
         retry_after: header("retry-after"),
