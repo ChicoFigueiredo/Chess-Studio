@@ -1,6 +1,6 @@
 //! Erros tipados do repositório.
 
-use crate::{EngineId, FavoriteId, GameId, ImportedId, ProfileId, RunId};
+use crate::{ConnectionId, EngineId, FavoriteId, GameId, ImportedId, ProfileId, RunId};
 use chess_game::ReplayError;
 use std::fmt;
 
@@ -67,6 +67,15 @@ pub enum StoreError {
     InvalidScoresheet(chess_training::ScoresheetError),
     /// Só uma Súmula entregue tem conferência gravada.
     ScoresheetNotDelivered(GameId),
+    /// Conexão com Provedor ou identificador inválido (detalhe em português).
+    InvalidConnection(String),
+    /// O Perfil local já tem uma Conexão com este identificador neste Provedor.
+    ConnectionExists {
+        provider: String,
+        identifier: String,
+    },
+    /// Conexão que não existe (ou foi removida).
+    ConnectionNotFound(ConnectionId),
     /// Falha ao ler um arquivo de importação (não existe, sem permissão, disco).
     Io(String),
     /// O `.pgn.gz` descompactado passou do limite configurado (bomba de descompressão).
@@ -134,6 +143,12 @@ impl fmt::Display for StoreError {
                 f,
                 "o arquivo descompactado passa do limite de {limit} bytes e foi interrompido"
             ),
+            Self::InvalidConnection(detail) => write!(f, "Conexão inválida: {detail}"),
+            Self::ConnectionExists {
+                provider,
+                identifier,
+            } => write!(f, "já existe uma Conexão `{identifier}` em `{provider}`"),
+            Self::ConnectionNotFound(id) => write!(f, "Conexão {} não existe", id.0),
             Self::Io(detail) => write!(f, "não foi possível ler o arquivo: {detail}"),
         }
     }

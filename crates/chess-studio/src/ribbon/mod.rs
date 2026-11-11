@@ -253,6 +253,10 @@ fn apply_capture_options(state: &mut RibbonState) {
     if std::env::args().any(|a| a == "--backstage") {
         state.backstage = Some(BackstagePage::Profiles);
     }
+    // `--backstage-page connections`: a Central de Conexões aberta, para a evidência.
+    if option_value("--backstage-page").as_deref() == Some("connections") {
+        state.backstage = Some(BackstagePage::Connections);
+    }
 }
 
 /// Monta o `ActionContext` do quadro com tudo o que o app sabe (e o que é do Ribbon).

@@ -19,6 +19,7 @@ chess-core.workspace = true
 chess-game.workspace = true
 chess-input.workspace = true
 chess-store.workspace = true
+chess-net.workspace = true
 chess-uci.workspace = true
 chess-pgn.workspace = true
 chess-training.workspace = true

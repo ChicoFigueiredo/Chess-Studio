@@ -1,0 +1,2 @@
+3d-profissional-padrao: 10.03 ms/quadro (100 quadros/s)
+carregamento da cena: 0.90 s

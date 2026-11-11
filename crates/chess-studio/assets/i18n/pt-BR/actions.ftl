@@ -14,6 +14,7 @@ ribbon-group-new-game = Nova Partida
 ribbon-group-game = Partida
 ribbon-group-clock = Relógio
 ribbon-group-preferences = Preferências
+ribbon-group-connections = Conexões
 ribbon-group-engine = Engine
 ribbon-group-panels = Painéis
 ribbon-group-library = Biblioteca
@@ -52,6 +53,8 @@ action-open-controls = Controles…
 action-open-controls-desc = Reatribui os atalhos de mouse, trackpad e teclado.
 action-open-options = Opções…
 action-open-options-desc = Abre as preferências persistentes do aplicativo.
+action-open-connections = Central de Conexões
+action-open-connections-desc = Abre a Central de Conexões nos bastidores: liga e desliga Provedores, vincula nomes públicos e mostra o que seria enviado.
 
 # Início.
 action-undo = Desfazer

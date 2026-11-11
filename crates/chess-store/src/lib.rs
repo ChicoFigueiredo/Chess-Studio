@@ -32,6 +32,7 @@
 //! congela no último Evento gravado, DEC-42) e este metadado passa a ser só um
 //! atalho de listagem.
 
+mod connections;
 mod engines;
 mod error;
 mod favorites;
@@ -45,6 +46,10 @@ mod store;
 mod training;
 mod training_profiles;
 
+pub use connections::{
+    Connection, ConnectionId, ConnectionKind, ConnectionRole, MAX_IDENTIFIER_LEN, MAX_NICKNAME_LEN,
+    NewConnection,
+};
 pub use engines::{EngineId, EngineOrigin, EngineRecord};
 pub use error::{Result, StoreError};
 pub use favorites::{Favorite, FavoriteId, FavoriteOrigin, FavoriteQuery, NewFavorite};
