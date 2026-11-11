@@ -129,12 +129,19 @@ impl<R: BufRead> PgnStream<R> {
         }
     }
 
-    /// Próxima partida em bruto. Uma linha que abre com `[` depois de já haver Lances
-    /// começa a partida seguinte.
+    /// Próxima partida em bruto. Uma tag de cabeçalho `[Nome "valor"]` fora de comentário,
+    /// depois de já haver Lances, começa a partida seguinte. O estado léxico (comentário
+    /// `{ }` que atravessa linhas, comentário `;`, linha de escape `%`) é rastreado linha a
+    /// linha, então um `[` no começo de uma linha de comentário (`[%clk ...]`) nunca divide
+    /// a Partida. Estourado o limite de tamanho (por exemplo, `{` nunca fechado), descarta
+    /// o que leu e ressincroniza na próxima tag de cabeçalho depois de uma linha em branco.
     fn next_chunk(&mut self) -> io::Result<Option<RawChunk>> {
         let mut chunk = RawChunk::default();
         let mut buffer = Vec::new();
         let mut in_movetext = false;
+        let mut in_brace = false;
+        let mut resync = false;
+        let mut prev_blank = false;
         loop {
             let (bytes, truncated) = if let Some(p) = self.pending.take() {
                 p
@@ -145,28 +152,53 @@ impl<R: BufRead> PgnStream<R> {
                 }
             };
             let first = bytes.iter().find(|b| !b.is_ascii_whitespace()).copied();
-            if first == Some(b'[') && in_movetext {
+            let blank = first.is_none();
+            let header = !in_brace && is_tag_line(&bytes);
+            if resync {
+                if header && prev_blank {
+                    self.pending = Some((bytes, truncated));
+                    break;
+                }
+                prev_blank = blank;
+                continue;
+            }
+            if header && in_movetext {
                 self.pending = Some((bytes, truncated));
                 break;
             }
-            if first.is_some() && first != Some(b'[') && first != Some(b'%') {
+            if !header && !(bytes.first() == Some(&b'%') && !in_brace) && !blank {
                 in_movetext = true;
+                scan_comments(&bytes, &mut in_brace);
+            } else if in_brace && !blank {
+                scan_comments(&bytes, &mut in_brace);
             }
+            prev_blank = blank;
             if chunk.bytes.is_empty() && !chunk.too_large {
-                if first.is_none() {
+                if blank {
                     continue; // brancos antes da partida
                 }
                 chunk.first_line = self.lines_read;
             }
             chunk.line_too_long |= truncated;
+            if truncated {
+                // O resto da linha foi descartado: o estado léxico é desconhecido. A Partida
+                // vira erro e a leitura ressincroniza na próxima tag de cabeçalho.
+                chunk.bytes = Vec::new();
+                resync = true;
+                in_brace = false;
+                continue;
+            }
             if chunk.bytes.len() + bytes.len() > MAX_GAME_BYTES {
                 chunk.too_large = true;
-            } else if !chunk.too_large {
+                chunk.bytes = Vec::new();
+                resync = true;
+                in_brace = false;
+            } else {
                 chunk.bytes.extend_from_slice(&bytes);
             }
             self.peak = self.peak.max(chunk.bytes.len());
         }
-        Ok((!chunk.bytes.is_empty() || chunk.too_large).then_some(chunk))
+        Ok((!chunk.bytes.is_empty() || chunk.too_large || chunk.line_too_long).then_some(chunk))
     }
 
     fn fill(&mut self) -> io::Result<()> {
@@ -232,5 +264,39 @@ impl<R: BufRead> Iterator for PgnStream<R> {
             return Some(Err(e));
         }
         self.queue.pop_front().map(Ok)
+    }
+}
+
+/// `[Nome "valor"]` no começo da linha (espaços antes permitidos): a forma de uma tag de
+/// cabeçalho. `[%clk 0:05:00]` e texto solto não são.
+fn is_tag_line(line: &[u8]) -> bool {
+    let line = line.trim_ascii();
+    let Some(rest) = line.strip_prefix(b"[") else {
+        return false;
+    };
+    let name = rest
+        .iter()
+        .take_while(|b| b.is_ascii_alphanumeric() || **b == b'_')
+        .count();
+    if name == 0 || !line.ends_with(b"]") {
+        return false;
+    }
+    let after = rest[name..].trim_ascii_start();
+    rest.len() > name && after.first() == Some(&b'"')
+}
+
+/// Atualiza se o fim da linha está dentro de um comentário `{ }` (que não aninha e pode
+/// atravessar linhas). `;` abre comentário até o fim da linha; `%` na coluna 1 é escape.
+fn scan_comments(line: &[u8], in_brace: &mut bool) {
+    if !*in_brace && line.first() == Some(&b'%') {
+        return;
+    }
+    for &b in line {
+        match (*in_brace, b) {
+            (true, b'}') => *in_brace = false,
+            (false, b'{') => *in_brace = true,
+            (false, b';') => return,
+            _ => {}
+        }
     }
 }

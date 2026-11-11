@@ -69,6 +69,10 @@ pub enum StoreError {
     ScoresheetNotDelivered(GameId),
     /// Falha ao ler um arquivo de importação (não existe, sem permissão, disco).
     Io(String),
+    /// O `.pgn.gz` descompactado passou do limite configurado (bomba de descompressão).
+    DecompressedTooLarge {
+        limit: u64,
+    },
 }
 
 impl fmt::Display for StoreError {
@@ -126,6 +130,10 @@ impl fmt::Display for StoreError {
             Self::ScoresheetNotDelivered(id) => {
                 write!(f, "a Súmula da Partida {} não foi entregue", id.0)
             }
+            Self::DecompressedTooLarge { limit } => write!(
+                f,
+                "o arquivo descompactado passa do limite de {limit} bytes e foi interrompido"
+            ),
             Self::Io(detail) => write!(f, "não foi possível ler o arquivo: {detail}"),
         }
     }

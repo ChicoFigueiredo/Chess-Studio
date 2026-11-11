@@ -49,8 +49,8 @@ pub use engines::{EngineId, EngineOrigin, EngineRecord};
 pub use error::{Result, StoreError};
 pub use favorites::{Favorite, FavoriteId, FavoriteOrigin, FavoriteQuery, NewFavorite};
 pub use imported::{
-    DEFAULT_BATCH, ImportOptions, ImportProgress, ImportReport, ImportSummary, ImportedId,
-    ImportedQuery, ImportedSummary, MAX_ERROR_SAMPLES,
+    DEFAULT_BATCH, DEFAULT_MAX_DECOMPRESSED, ImportOptions, ImportProgress, ImportReport,
+    ImportSummary, ImportedId, ImportedQuery, ImportedSummary, MAX_ERROR_SAMPLES,
 };
 pub use library::{
     LibraryEntry, LibraryEntryId, LibraryPage, LibraryQuery, LibrarySource, position_key,

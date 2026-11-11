@@ -527,3 +527,26 @@ fn provenance_carries_provider_mode_instant_license() {
     );
     assert_eq!(o.source.as_deref(), Some("twic1500.pgn"));
 }
+
+#[test]
+fn a_gzip_bomb_stops_at_the_decompressed_limit() {
+    let db = TempDb::new("bomb");
+    let path = db.dir().join("bomba.pgn.gz");
+    let file = std::fs::File::create(&path).unwrap();
+    let mut gz = flate2::write::GzEncoder::new(file, flate2::Compression::best());
+    gz.write_all(b"[Event \"x\"]\n\n1. e4 e5 *\n\n").unwrap();
+    let zeros = vec![b' '; 1 << 20];
+    for _ in 0..8 {
+        gz.write_all(&zeros).unwrap();
+    }
+    gz.finish().unwrap();
+    let mut store = Store::open_in_memory().unwrap();
+    let mut o = opts(ImportSource::Other, "bomba.pgn.gz");
+    o.max_decompressed_bytes = 1 << 20;
+    let err = store
+        .import_pgn_file(ME, &path, &o, &AtomicBool::new(false), &mut no_progress())
+        .unwrap_err();
+    assert!(
+        matches!(err, chess_store::StoreError::DecompressedTooLarge { limit } if limit == 1 << 20)
+    );
+}

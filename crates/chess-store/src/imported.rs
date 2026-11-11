@@ -38,6 +38,42 @@ pub struct ImportOptions {
     pub provenance: Provenance,
     /// Partidas por transação na importação em fluxo.
     pub batch_size: usize,
+    /// Máximo de bytes descompactados lidos de um `.pgn.gz` (protege de bomba de
+    /// descompressão); passar do limite é [`StoreError::DecompressedTooLarge`].
+    pub max_decompressed_bytes: u64,
+}
+
+/// Limite padrão de bytes descompactados de um `.pgn.gz`.
+pub const DEFAULT_MAX_DECOMPRESSED: u64 = 4 << 30;
+
+/// Marca o erro de E/S de um fluxo que passou do limite descompactado.
+#[derive(Debug)]
+struct DecompressionLimit(u64);
+
+impl std::fmt::Display for DecompressionLimit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "limite de {} bytes descompactados", self.0)
+    }
+}
+
+impl std::error::Error for DecompressionLimit {}
+
+/// Lê no máximo `left` bytes; passar disso é erro (não fim de arquivo silencioso).
+struct Limited<R> {
+    inner: R,
+    limit: u64,
+    left: u64,
+}
+
+impl<R: Read> Read for Limited<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        if n as u64 > self.left {
+            return Err(std::io::Error::other(DecompressionLimit(self.limit)));
+        }
+        self.left -= n as u64;
+        Ok(n)
+    }
 }
 
 /// Partidas por lote, por padrão.
@@ -51,6 +87,7 @@ impl ImportOptions {
             source: source.map(str::to_owned),
             provenance,
             batch_size: DEFAULT_BATCH,
+            max_decompressed_bytes: DEFAULT_MAX_DECOMPRESSED,
         }
     }
 }
@@ -156,6 +193,16 @@ pub(crate) fn facts(game: &PgnGame) -> GameFacts {
         pace: Pace::derive(time_control.as_deref(), game.tag("Event")),
         time_control,
         eco: known("ECO").map(|e| e.to_uppercase()),
+    }
+}
+
+fn io_error(e: std::io::Error) -> StoreError {
+    match e
+        .get_ref()
+        .and_then(|r| r.downcast_ref::<DecompressionLimit>())
+    {
+        Some(DecompressionLimit(limit)) => StoreError::DecompressedTooLarge { limit: *limit },
+        None => StoreError::Io(e.to_string()),
     }
 }
 
@@ -415,7 +462,7 @@ impl Store {
                     };
                     in_batch += 1;
                     progress.games_seen += 1;
-                    match item.map_err(|e| StoreError::Io(e.to_string()))? {
+                    match item.map_err(io_error)? {
                         StreamItem::Game(game) => {
                             match writer.store(profile, &game, options, now)? {
                                 Stored::New => summary.new += 1,
@@ -468,7 +515,11 @@ impl Store {
             .map_err(|e| StoreError::Io(e.to_string()))?
             .starts_with(&[0x1f, 0x8b]);
         if gzip {
-            let reader = BufReader::new(flate2::bufread::MultiGzDecoder::new(raw));
+            let reader = BufReader::new(Limited {
+                inner: flate2::bufread::MultiGzDecoder::new(raw),
+                limit: options.max_decompressed_bytes,
+                left: options.max_decompressed_bytes,
+            });
             self.import_stream_counted(
                 profile,
                 reader,
