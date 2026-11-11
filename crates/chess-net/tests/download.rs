@@ -146,3 +146,102 @@ fn resposta_de_erro_vira_erro_tipado_pela_leitura() {
         NetError::Http { status: 503, .. } | NetError::Unreachable { .. }
     ));
 }
+
+fn redirect(to: &str) -> FakeResponse {
+    FakeResponse::status(302).header("Location", to)
+}
+
+fn failure_of(net: &Net) -> NetError {
+    match net.download(request()).next_timeout(WAIT).expect("evento") {
+        DownloadEvent::Failed(err) => err,
+        other => panic!("inesperado: {other:?}"),
+    }
+}
+
+fn read_all(net: &Net) -> Vec<u8> {
+    let mut got = Vec::new();
+    net.download(request())
+        .into_reader()
+        .read_to_end(&mut got)
+        .unwrap();
+    got
+}
+
+#[test]
+fn segue_redirecionamento_para_outro_endereco_de_download_do_catalogo() {
+    let clock = clock();
+    let server = server(&clock);
+    let bytes = body(5000);
+    server.route(PATH, redirect("https://database.lichess.org/outro.zst"));
+    server.route("/outro.zst", FakeResponse::ok(bytes.clone()));
+    let net = net_with_database(&server, &clock);
+    assert_eq!(read_all(&net), bytes);
+}
+
+#[test]
+fn segue_redirecionamento_relativo_no_mesmo_host() {
+    let clock = clock();
+    let server = server(&clock);
+    let bytes = body(300);
+    server.route(PATH, redirect("/espelho/pacote.zst"));
+    server.route("/espelho/pacote.zst", FakeResponse::ok(bytes.clone()));
+    let net = net_with_database(&server, &clock);
+    assert_eq!(read_all(&net), bytes);
+}
+
+#[test]
+fn recusa_redirecionamento_para_fora_do_catalogo_e_nao_pede_la() {
+    let clock = clock();
+    let server = server(&clock);
+    server.route(PATH, redirect("https://evil.example.com/pacote.zst"));
+    let net = net_with_database(&server, &clock);
+    assert!(matches!(failure_of(&net), NetError::RedirectRefused { .. }));
+    assert_eq!(server.requests().len(), 1);
+}
+
+#[test]
+fn recusa_redirecionamento_para_outra_capacidade_sem_https_porta_ou_consulta() {
+    for target in [
+        "https://lichess.org/api/cloud-eval",
+        "https://lichess.org/api/token",
+        "http://database.lichess.org/outro.zst",
+        "https://database.lichess.org:8443/outro.zst",
+        "https://database.lichess.org/outro.zst?assinatura=abc",
+        "//evil.example.com/pacote.zst",
+        "",
+    ] {
+        let clock = clock();
+        let server = server(&clock);
+        server.route(PATH, redirect(target));
+        let net = net_with_database(&server, &clock);
+        assert!(
+            matches!(failure_of(&net), NetError::RedirectRefused { .. }),
+            "{target}"
+        );
+        assert_eq!(server.requests().len(), 1, "{target}");
+    }
+}
+
+#[test]
+fn laco_de_redirecionamentos_para_depois_do_limite_de_saltos() {
+    let clock = clock();
+    let server = server(&clock);
+    server.route(PATH, redirect("https://database.lichess.org/laco.zst"));
+    server.route(
+        "/laco.zst",
+        redirect("https://database.lichess.org/laco.zst"),
+    );
+    let net = net_with_database(&server, &clock);
+    assert!(matches!(failure_of(&net), NetError::RedirectRefused { .. }));
+    assert_eq!(server.requests().len(), 4);
+}
+
+#[test]
+fn redirecionamento_nao_vale_para_consulta_comum() {
+    let clock = clock();
+    let server = server(&clock);
+    server.route(PATH, redirect("https://database.lichess.org/outro.zst"));
+    let net = net_with_database(&server, &clock);
+    let err = net.fetch(request()).wait().unwrap_err();
+    assert!(matches!(err, NetError::RedirectRefused { .. }), "{err:?}");
+}

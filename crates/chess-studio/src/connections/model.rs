@@ -277,13 +277,6 @@ fn has_use_today(provider: &Provider) -> bool {
             .any(|s| s.status == ServiceStatus::Ready)
 }
 
-fn has_ready_network_service(provider: &Provider) -> bool {
-    provider
-        .services
-        .iter()
-        .any(|s| s.capability.uses_network() && s.status == ServiceStatus::Ready)
-}
-
 /// O estado do cartão a partir do catálogo, do estado da rede, de haver nome vinculado e de
 /// haver Conexão autorizada. `authorized` só vale com o Provedor ligado.
 pub fn card_state(
@@ -338,11 +331,15 @@ pub fn card_state_with(
             None => CardState::On,
         },
         ProviderState::Disabled => {
-            // Um serviço de rede pronto (as Partidas públicas do PlayStrategy) basta para o
-            // cartão ser usável, mesmo que Partida online e Engine online venham depois.
-            if has_use_today(provider)
-                && (has_ready_network_service(provider)
-                    || earliest_stage(provider).is_none_or(|stage| stage < PLANNED_FROM_STAGE))
+            // Um serviço pronto basta para ligar; nome ou ID público só vale enquanto o
+            // próximo serviço planejado está perto (o resto fica em "Em breve").
+            let ready = provider
+                .services
+                .iter()
+                .any(|s| s.status == ServiceStatus::Ready);
+            if ready
+                || (has_use_today(provider)
+                    && earliest_stage(provider).is_none_or(|stage| stage < PLANNED_FROM_STAGE))
             {
                 CardState::Off
             } else {
@@ -743,7 +740,6 @@ pub fn sends_key(provider: &Provider, state: CardState) -> &'static str {
     match provider.id {
         ProviderId::Lichess => "connections-sends-lichess",
         ProviderId::ChessCom => "connections-sends-chesscom",
-        ProviderId::PlayStrategy => "connections-sends-playstrategy",
         ProviderId::Fide => "connections-sends-fide",
         _ => match state {
             CardState::ManualImport => "connections-sends-manual",
@@ -752,6 +748,69 @@ pub fn sends_key(provider: &Provider, state: CardState) -> &'static str {
             _ => "connections-sends-generic",
         },
     }
+}
+
+/// A frase de consentimento de cada uso real de rede de um Provedor: o que sai do computador
+/// quando a pessoa usa aquela capacidade. Todo serviço pronto do catálogo precisa de uma
+/// frase aqui (teste `every_ready_network_service_has_a_consent_line`): quem entrega um uso
+/// novo de rede acrescenta a frase junto.
+pub fn consent_line_key(provider: ProviderId, capability: Capability) -> Option<&'static str> {
+    Some(match (provider, capability) {
+        (ProviderId::Lichess, Capability::Explore) => "consent-sends-lichess-explore",
+        (ProviderId::Lichess, Capability::CachedEval) => "consent-sends-lichess-cached-eval",
+        (ProviderId::Lichess, Capability::Endgames) => "consent-sends-lichess-endgames",
+        (ProviderId::Lichess, Capability::Query) => "consent-sends-lichess-query",
+        (ProviderId::Lichess, Capability::Download) => "consent-sends-lichess-download",
+        (ProviderId::Lichess, Capability::Play) => "consent-sends-lichess-play",
+        (ProviderId::ChessCom, Capability::Query) => "consent-sends-chesscom-query",
+        (ProviderId::PlayStrategy, Capability::Query) => "consent-sends-playstrategy-query",
+        _ => return None,
+    })
+}
+
+/// As frases de "O que será enviado" do cartão e do diálogo de consentimento: uma por uso real
+/// de rede do Provedor, mais a nota final dele. Sem uso próprio, volta ao texto do tipo
+/// ([`sends_key`]).
+pub fn sends_keys(provider: &Provider, state: CardState) -> Vec<&'static str> {
+    let in_use = matches!(
+        state,
+        CardState::Off
+            | CardState::On
+            | CardState::Linked
+            | CardState::Authorized
+            | CardState::Limited
+            | CardState::Failing
+    );
+    let mut keys: Vec<&'static str> = Vec::new();
+    if in_use {
+        for service in provider.services {
+            if service.status == ServiceStatus::Ready
+                && service.capability.uses_network()
+                && let Some(key) = consent_line_key(provider.id, service.capability)
+            {
+                keys.push(key);
+            }
+        }
+    }
+    if keys.is_empty() {
+        return vec![sends_key(provider, state)];
+    }
+    keys.push(match provider.id {
+        ProviderId::ChessCom => "consent-sends-tail-no-password",
+        ProviderId::PlayStrategy => "consent-sends-tail-playstrategy",
+        _ => "consent-sends-tail-local-profile",
+    });
+    keys
+}
+
+/// O texto de [`sends_keys`] em pt-BR, uma frase por linha (com marcador quando há mais de uma).
+pub fn sends_text(i18n: &crate::i18n::I18n, provider: &Provider, state: CardState) -> String {
+    let keys = sends_keys(provider, state);
+    let bullet = if keys.len() > 1 { "\u{2022} " } else { "" };
+    keys.into_iter()
+        .map(|key| format!("{bullet}{}", i18n.t(key)))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Os endereços para onde o Provedor pode receber pedidos (sem repetir), para o diálogo de
@@ -1285,6 +1344,8 @@ mod tests {
                 "connections-do-cached-eval",
                 "connections-do-endgames",
                 "connections-do-query",
+                "connections-do-download",
+                "connections-do-play",
             ]
         );
         let Face::Can(authorized) = face(lichess, CardState::Authorized) else {
@@ -1299,7 +1360,8 @@ mod tests {
         assert_eq!(fide[0], "connections-do-link-id");
         let later = later(lichess);
         assert!(!later.contains(&"connections-do-explore"), "já funciona");
-        assert!(later.contains(&"connections-do-play"));
+        assert!(!later.contains(&"connections-do-play"), "já funciona");
+        assert!(later.contains(&"connections-do-online-engine"));
         assert!(!later.contains(&"connections-do-link"));
         let Face::Can(twic) = face(provider(ProviderId::Twic), CardState::ManualImport) else {
             panic!("importar arquivo é o que o TWIC permite");
@@ -1387,6 +1449,52 @@ mod tests {
     }
 
     #[test]
+    fn every_ready_network_service_has_a_consent_line() {
+        // Toda capacidade que o app usa (serviço pronto, com rede) tem frase em "O que será
+        // enviado"; o diálogo de consentimento e o cartão mostram essas frases.
+        let i18n = I18n::pt_br();
+        for p in catalog() {
+            let text = sends_text(&i18n, p, CardState::Off);
+            for service in p.services {
+                if service.status != ServiceStatus::Ready || !service.capability.uses_network() {
+                    continue;
+                }
+                let key = consent_line_key(p.id, service.capability).unwrap_or_else(|| {
+                    panic!(
+                        "{}: {:?} sem frase de consentimento",
+                        p.name, service.capability
+                    )
+                });
+                let line = i18n.t(key);
+                assert_ne!(line, key, "{key} sem texto");
+                assert!(text.contains(&line), "{}: {key} fora do texto", p.name);
+            }
+        }
+    }
+
+    #[test]
+    fn the_lichess_consent_cites_the_problem_pack_download() {
+        let i18n = I18n::pt_br();
+        let text = sends_text(&i18n, provider(ProviderId::Lichess), CardState::Off);
+        assert!(text.contains("baixar problemas"), "{text}");
+        assert!(text.contains("Partidas online"), "{text}");
+    }
+
+    #[test]
+    fn card_and_consent_texts_use_plain_language() {
+        let ftl = include_str!("../../assets/i18n/pt-BR/connections.ftl");
+        for line in ftl.lines().filter(|l| !l.trim_start().starts_with('#')) {
+            let Some((_, value)) = line.split_once('=') else {
+                continue;
+            };
+            let lower = value.to_lowercase();
+            for term in ["endpoint", "http", "ndjson", "etapa", "cx-"] {
+                assert!(!lower.contains(term), "{term} em: {line}");
+            }
+        }
+    }
+
+    #[test]
     fn every_text_key_of_every_card_exists() {
         let i18n = I18n::pt_br();
         for p in catalog() {
@@ -1398,12 +1506,8 @@ mod tests {
                 CardState::Limited,
                 CardState::Failing,
             ] {
-                let mut keys = vec![
-                    state.key(),
-                    state.hint_key(),
-                    category_key(p.category),
-                    sends_key(p, state),
-                ];
+                let mut keys = vec![state.key(), state.hint_key(), category_key(p.category)];
+                keys.extend(sends_keys(p, state));
                 if let Face::Note(key) = face(p, state) {
                     keys.push(key);
                 }

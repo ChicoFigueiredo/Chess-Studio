@@ -62,9 +62,12 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 | CX-HOM-40 | Desafiar por nome e desafios recebidos | sim | UNVERIFIED |
 | CX-HOM-41 | Correspondência: lista, fechar e reabrir o app | sim | UNVERIFIED |
 | CX-HOM-42 | Trava de fair play na Partida online | sim | UNVERIFIED |
-| CX-HOM-43 | PlayStrategy: cartão na Central, ligar e testar | sim | UNVERIFIED |
-| CX-HOM-44 | PlayStrategy: importar Partidas públicas e variantes puladas | sim | UNVERIFIED |
-| CX-HOM-45 | PlayStrategy: Origem, Atualizar e duplicatas | sim | UNVERIFIED |
+| CX-HOM-43 | Seletor de arquivo: escolher e Salvar como… | não (sistema) | UNVERIFIED |
+| CX-HOM-44 | Baixar problemas do Lichess pela rede | sim | UNVERIFIED |
+| CX-HOM-45 | Consentimento do Lichess cita tudo o que o app envia | não | UNVERIFIED |
+| CX-HOM-46 | PlayStrategy: cartão na Central, ligar e testar | sim | UNVERIFIED |
+| CX-HOM-47 | PlayStrategy: importar Partidas públicas e variantes puladas | sim | UNVERIFIED |
+| CX-HOM-48 | PlayStrategy: Origem, Atualizar e duplicatas | sim | UNVERIFIED |
 
 ## Itens
 
@@ -555,7 +558,40 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Com o serviço real:** com o monitor de rede, nenhum pedido ao Explorador, à avaliação em cache ou aos finais sai nesses casos.
 - **Evidência:** [`fair_play.rs`](../../crates/chess-studio/src/fair_play.rs), [`online/tests.rs`](../../crates/chess-studio/src/online/tests.rs), [decisões PO-13 a PO-19](../decisoes/2026-11-11-partida-online.md).
 
-### CX-HOM-43. PlayStrategy: cartão na Central, ligar e testar
+### CX-HOM-43. Seletor de arquivo: escolher e Salvar como…
+
+- **Pré-condição:** um computador com janela de escolha de arquivo do sistema (portal do desktop no Linux; nativa no Windows e no macOS). Repita, se puder, num sistema sem ela (Linux sem portal e sem `zenity`).
+- **Passos:**
+  1. Em **Importar arquivo** (Biblioteca) e em **Instalar problemas** (Treino > Pacotes), clique em **Escolher arquivo…**: escolha um arquivo, depois abra de novo e cancele.
+  2. No Painel Revisão, em **Exportar PGN**, clique em **Salvar como…**, mude a pasta e o nome, confirme. Repita escolhendo um arquivo que já existe (o sistema pergunta se substitui).
+  3. Termine uma Partida (xeque-mate ou abandono): no diálogo de fim, clique em **Salvar como…**; depois em **Exportar PGN** (vai para Documentos).
+  4. No Ribbon, aciona **Exportar PGN**: a janela de **Salvar como** abre com o nome `partida-AAAA-MM-DD-HHMMSS.pgn`.
+  5. Com a Súmula aberta e a notação oculta, confira o diálogo de fim e o Painel Revisão.
+  6. Sem janela de escolha no sistema: confira que os botões **Salvar como…** somem, o campo de caminho continua e **Exportar PGN** do Ribbon grava em Documentos.
+- **Esperado:** o caminho escolhido aparece no campo (itens 1) ou na mensagem **Partida salva em …** (itens 2 a 4); cancelar não muda nada; o arquivo sai com a extensão `.pgn` mesmo se você não a digitou. Com a notação oculta pela Súmula, o **Salvar como…** do fim de Partida fica desativado e o do Painel Revisão não aparece (o PGN revelaria a notação).
+- **Evidência:** [`file_picker.rs`](../../crates/chess-studio/src/file_picker.rs), [`fen_pgn.rs`](../../crates/chess-studio/src/fen_pgn.rs) (testes com seletor falso), [capturas](../evidencias/acabamento-etapa-5/README.md).
+
+### CX-HOM-44. Baixar problemas do Lichess pela rede
+
+- **Pré-condição:** internet; Lichess desligado na Central; Perfil local novo.
+- **Passos:**
+  1. Treino > Pacotes > **Baixar problemas do Lichess**: escolha poucos temas e uma quantidade pequena (200); clique em baixar. O diálogo **Ligar Lichess?** abre: confira que a lista **O que será enviado** cita o download de problemas; clique em **Ligar**.
+  2. Acompanhe o andamento; deixe terminar e abra o pacote em **Pacotes instalados** (**Origem: Lichess, licença CC0**).
+  3. Repita e **Cancele** no meio: nada é instalado.
+  4. Desligue a internet no meio de outro download: a mensagem manda conferir a internet e diz que nada foi instalado.
+  5. Se o Lichess mandar o arquivo para outro endereço (redirecionamento), observe o resultado.
+- **Esperado:** o arquivo vem do endereço de downloads do Lichess; só é aceito redirecionamento para outro endereço de download do próprio Lichess (até 3 saltos, sem porta nem parâmetros); qualquer outro destino mostra **O Lichess mandou o arquivo para um endereço que o Chess Studio não aceita, por segurança … nada foi instalado.** (decisão RD-1).
+- **Com o serviço real:** com o monitor de rede, as conexões vão só para `database.lichess.org` e nenhum dado do Perfil local sai. Anote se houve redirecionamento e para qual endereço: o comportamento real é UNVERIFIED até este passo.
+- **Evidência:** [`download.rs`](../../crates/chess-net/tests/download.rs) (redirecionamento com servidor falso), [`2026-11-11-acabamento-etapa-5.md`](../decisoes/2026-11-11-acabamento-etapa-5.md), [capturas de #238](../evidencias/baixar-problemas/README.md).
+
+### CX-HOM-45. Consentimento do Lichess cita tudo o que o app envia
+
+- **Passos:**
+  1. Com o Lichess desligado, abra o Explorador (ou **Baixar problemas**): o diálogo **Ligar Lichess?** abre.
+  2. Leia **O que será enviado** e **Para onde vai**; abra também o cartão do Lichess na Central (Detalhes).
+- **Esperado:** uma frase para cada uso: Explorador, avaliação em cache, finais, consulta de Partidas e IDs FIDE públicos, download de problemas e Partidas online (com a Conexão autorizada); nenhuma sigla técnica (sem "HTTP", "etapa" ou nome de endpoint). O mesmo texto vale no cartão da Central.
+- **Evidência:** teste `every_ready_network_service_has_a_consent_line` em [`connections/model.rs`](../../crates/chess-studio/src/connections/model.rs); [capturas](../evidencias/acabamento-etapa-5/README.md).
+### CX-HOM-46. PlayStrategy: cartão na Central, ligar e testar
 
 - **Passos:**
   1. **Arquivo > Conexões**: abra o cartão do **PlayStrategy**. Com tudo desligado, leia "O que será enviado".
@@ -565,7 +601,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Com o serviço real:** os formatos do PlayStrategy são os da família do Lichess, mas **só foram escritos a partir do contrato e de respostas sintéticas** (a página de documentação não entrega o texto das rotas): confirme que `/api/user/{nome}` responde assim.
 - **Evidência:** [`connections/model.rs`](../../crates/chess-studio/src/connections/model.rs), [`probe.rs`](../../crates/chess-studio/src/connections/probe.rs), [capturas](../evidencias/playstrategy-central-importacao/README.md).
 
-### CX-HOM-44. PlayStrategy: importar Partidas públicas e variantes puladas
+### CX-HOM-47. PlayStrategy: importar Partidas públicas e variantes puladas
 
 - **Passos:**
   1. **Biblioteca > Importar > PlayStrategy (online)**, com o Provedor desligado: o botão pede para ligar e nada é pedido.
@@ -574,7 +610,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Com o serviço real:** confirme que `/api/games/user/{nome}` aceita os filtros (`since`, `perfType`, `max`) e que o campo `variant` de cada linha vem como `standard`/`fromPosition` para xadrez; se o PlayStrategy usar outros nomes, as Partidas de xadrez seriam puladas por engano.
 - **Evidência:** [`online_import.rs`](../../crates/chess-studio/src/online_import.rs) (testes com servidor falso), [`catalog.rs`](../../crates/chess-net/src/catalog.rs).
 
-### CX-HOM-45. PlayStrategy: Origem, Atualizar e duplicatas
+### CX-HOM-48. PlayStrategy: Origem, Atualizar e duplicatas
 
 - **Passos:**
   1. Depois do item anterior, abra uma Partida importada: a Origem diz "PlayStrategy · API".

@@ -557,6 +557,15 @@ fn from_entry(entry: &CacheEntry, now: Timestamp, freshness: Freshness) -> Fetch
     }
 }
 
+/// O que a primeira resposta de um fluxo trouxe: o corpo ou um redirecionamento.
+enum Opened {
+    Body(ResponseHead, BodyStream),
+    Redirect(ResponseHead),
+}
+
+/// Saltos de redirecionamento que um download aceita (cada um revalidado pelo gate).
+const MAX_DOWNLOAD_REDIRECTS: usize = 3;
+
 mod download;
 pub use download::{Download, DownloadEvent, DownloadMeter, DownloadReader};
 
@@ -1041,6 +1050,71 @@ impl Shared {
         profile: LocalProfileId,
         cancel: &AtomicBool,
     ) -> Result<(ResponseHead, BodyStream), NetError> {
+        match self.open_once(request, profile, cancel)? {
+            Opened::Body(head, body) => Ok((head, body)),
+            Opened::Redirect(head) => Err(NetError::Http {
+                provider: request.provider,
+                status: head.status,
+            }),
+        }
+    }
+
+    /// Como [`Self::open_body`], mas segue redirecionamento (só downloads): cada salto passa
+    /// de novo pelo gate inteiro e precisa cair num endereço do catálogo, do mesmo Provedor e
+    /// com a capacidade Baixar (sem token, sem porta, sem consulta); no máximo
+    /// [`MAX_DOWNLOAD_REDIRECTS`] saltos. Qualquer outro destino é `RedirectRefused`.
+    fn open_following(
+        &self,
+        request: &Request,
+        profile: LocalProfileId,
+        cancel: &AtomicBool,
+    ) -> Result<(ResponseHead, BodyStream), NetError> {
+        let provider = request.provider;
+        let mut current = request.clone();
+        for hop in 0..=MAX_DOWNLOAD_REDIRECTS {
+            let head = match self.open_once(&current, profile, cancel)? {
+                Opened::Body(head, body) => return Ok((head, body)),
+                Opened::Redirect(head) => head,
+            };
+            let location = head.location.as_deref().unwrap_or_default();
+            let refused = || NetError::RedirectRefused {
+                provider,
+                location: sanitized(location).chars().take(80).collect(),
+            };
+            if hop == MAX_DOWNLOAD_REDIRECTS || !matches!(head.status, 301 | 302 | 303 | 307 | 308)
+            {
+                return Err(refused());
+            }
+            let base = current.target()?;
+            let next_url = if location.starts_with('/') && !location.starts_with("//") {
+                format!("https://{}{location}", base.host)
+            } else {
+                location.to_owned()
+            };
+            let mut next = current.clone();
+            next.url = next_url;
+            next.query.clear();
+            next.connection = None;
+            let allowed = self.admit(&next, profile).is_ok_and(|a| {
+                a.endpoint.capability == Capability::Download && a.authorization.is_none()
+            });
+            if !allowed {
+                return Err(refused());
+            }
+            current = next;
+        }
+        Err(NetError::RedirectRefused {
+            provider,
+            location: String::new(),
+        })
+    }
+
+    fn open_once(
+        &self,
+        request: &Request,
+        profile: LocalProfileId,
+        cancel: &AtomicBool,
+    ) -> Result<Opened, NetError> {
         let provider = request.provider;
         let now = self.clock.now();
         if let Some(until) = self.limited_until(provider, now) {
@@ -1089,11 +1163,15 @@ impl Shared {
                 self.set_limited(provider, until);
                 return Err(NetError::RateLimited { provider, until });
             }
+            300..=399 => {
+                self.mark_ok(provider);
+                return Ok(Opened::Redirect(head));
+            }
             status => {
                 return Err(NetError::Http { provider, status });
             }
         }
-        Ok((head, body))
+        Ok(Opened::Body(head, body))
     }
 
     fn stream_inner(

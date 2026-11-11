@@ -1,0 +1,12 @@
+# Decisões: acabamento da etapa 5 (11/11/2026, #255)
+
+Complemento de [`2026-11-11-conexoes.md`](2026-11-11-conexoes.md). Escopo: consentimento, textos do catálogo, exportar PGN e download de problemas.
+
+| # | Decisão | Escolha |
+|---|---|---|
+| RD-1 | Redirecionamento no download de problemas | **Seguir só para o catálogo.** O download (`Net::download`) segue 301, 302, 303, 307 e 308 apenas quando o destino passa de novo por todo o gate: é do mesmo Provedor, com HTTPS, sem porta nem parâmetros, num endereço do catálogo com a capacidade Baixar. No máximo 3 saltos. Qualquer outro destino (outro host, outra capacidade, `http`, porta, `Location` vazio, laço) volta como "redirecionou, não foi seguido" e a interface diz, em linguagem de usuário, que nada foi instalado. Consultas e fluxos (`fetch`, `stream`) continuam sem seguir nada. |
+| RD-2 | Por que não só recusar | O Lichess serve os arquivos da base por hosts próprios e pode redirecionar (CDN). Recusar sempre quebraria o recurso no dia em que isso acontecer, sem ganho de segurança: o gate já revalida cada salto, o token nunca vai a endereços de download e o limite de bytes e a taxa de pedidos valem a cada salto. Parâmetros no `Location` (links assinados) são recusados de propósito: ainda não há caso real, e aceitar exigiria definir o que é "parâmetro permitido". Se o serviço real pedir, é uma decisão nova. |
+| RD-3 | Consentimento = uso real | O texto "O que será enviado" é montado de uma frase por serviço **pronto** do catálogo (`consent_line_key`). Um serviço pronto sem frase quebra a suíte. Quem entrega um novo uso de rede (Engine online, PlayStrategy, FICS…) acrescenta a frase no mesmo PR que muda o estado para pronto. |
+| RD-4 | Estados do Lichess | Baixar (#250) e Jogar (#251) passam a **prontos** no catálogo (o app já os usa); Engine online segue planejada. `CATALOG_VERSION` sobe para 4. |
+| RD-5 | Linguagem do catálogo | Notas, avisos, restrições e licenças do catálogo não levam "HTTP", "endpoint", "NDJSON", "etapa N" nem "CX-N" (teste). Os textos Fluent da Central e do consentimento têm a mesma proibição (teste). |
+| RD-6 | Exportar PGN | **Salvar como…** (seletor do sistema, #243) também no diálogo de fim de Partida e na Ação Exportar PGN do Ribbon, que agora abre a janela de escolha. **Exportar para Documentos** continua no Painel Revisão e no diálogo de fim de Partida; sem janela de escolha no sistema a Ação do Ribbon grava em Documentos, como antes. Com a notação oculta pela Súmula nenhum dos dois exporta. |

@@ -22,7 +22,7 @@ use std::fmt;
 use std::time::Duration;
 
 /// Versão dos dados do catálogo; gravada junto do consentimento.
-pub const CATALOG_VERSION: u32 = 4;
+pub const CATALOG_VERSION: u32 = 5;
 
 /// Provedor do catálogo. A chave ([`ProviderId::key`]) é o que se grava no banco e na Origem.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -511,14 +511,14 @@ static CATALOG: [Provider; 19] = [
                 &[A::OAuth2Pkce, A::PersonalToken],
                 K::FreeWithSignup,
                 S::Ready,
-                "Gratuito com cadastro: requer Conexão autorizada do Lichess (etapa 3); sem token o serviço responde 401 (medido em 2026-11-11). Mestres, Lichess e jogador",
+                "Gratuito com cadastro: requer Conexão autorizada do Lichess; sem ela o serviço recusa o pedido (medido em 2026-11-11). Mestres, Lichess e jogador",
             ),
             svc(
                 C::CachedEval,
                 &[A::None],
                 K::FreeNoSignup,
                 S::Ready,
-                "Só o que já está em cache; 404 é resultado válido, nunca cálculo sob demanda",
+                "Só o que já está em cache; \"sem avaliação\" é resultado válido, nunca cálculo sob demanda",
             ),
             svc(
                 C::Endgames,
@@ -538,15 +538,15 @@ static CATALOG: [Provider; 19] = [
                 C::Download,
                 &[A::None],
                 K::FreeNoSignup,
-                S::Planned { stage: 2 },
-                "Base de Partidas e problemas CC0, como pacote opcional (CX-16); nunca baixar tudo",
+                S::Ready,
+                "Pacotes de problemas CC0, baixados só quando a pessoa pede; nunca a base inteira",
             ),
             svc(
                 C::Play,
                 &[A::OAuth2Pkce, A::PersonalToken],
                 K::FreeWithSignup,
-                S::Planned { stage: 4 },
-                "Board API (board:play); Engine proibida em jogo humano",
+                S::Ready,
+                "Partidas online pelo tabuleiro conectado; Engine proibida em jogo contra pessoa",
             ),
             svc(
                 C::OnlineEngine,
@@ -612,7 +612,7 @@ static CATALOG: [Provider; 19] = [
         terms_url: "https://lichess.org/terms-of-service",
         data_license: "Base, problemas e aberturas CC0; Explorador e consultas sob os termos do Lichess",
         restrictions: &[
-            "Um pedido por vez; depois de 429, esperar o Retry-After ou 60 s",
+            "Um pedido por vez; quando o Lichess pedir uma pausa, esperar o prazo informado ou 60 s",
             "Engine proibida em Partida contra pessoa (inclui correspondência)",
             "Conta BOT separada da conta do jogador",
             "Nunca pedir a senha do Lichess no app",
@@ -622,12 +622,13 @@ static CATALOG: [Provider; 19] = [
             refused: LICHESS_VARIANTS,
         },
         rate_limit: RateLimit::new(4, SECOND),
-        sends: "Posições (FEN) e Lances consultados no Explorador (explorer.lichess.org), na \
+        sends: "As Posições e os Lances que você abre no Explorador (explorer.lichess.org), na \
                 avaliação em cache e nas consultas de Partidas públicas (lichess.org), nos \
-                finais (tablebase.lichess.ovh e tablebase.lichess.org) e nos pacotes da base (database.lichess.org); \
-                nomes e IDs FIDE públicos que você pedir. Com uma Conexão autorizada, o token \
-                dela vai no cabeçalho só para lichess.org (conta e jogo) e explorer.lichess.org, \
-                junto dos seus Lances e desafios. Nada do Perfil local vai junto.",
+                finais (tablebase.lichess.ovh e tablebase.lichess.org) e nos pacotes de \
+                problemas que você baixar (database.lichess.org); nomes e IDs FIDE públicos que \
+                você pedir. Com uma Conexão autorizada, a chave dela vai só para lichess.org \
+                (conta e jogo) e explorer.lichess.org, junto dos seus Lances e desafios. Nada do \
+                Perfil local vai junto.",
         reviewed_on: REVIEWED,
     },
     Provider {
@@ -640,7 +641,7 @@ static CATALOG: [Provider; 19] = [
                 &[A::None, A::PublicId],
                 K::FreeNoSignup,
                 S::Ready,
-                "PubAPI somente leitura: perfil, arquivos mensais e PGN públicos",
+                "Dados públicos somente leitura: perfil, arquivos mensais e PGN públicos",
             ),
             svc(
                 C::IdentityOnly,
@@ -684,7 +685,7 @@ static CATALOG: [Provider; 19] = [
         },
         rate_limit: RateLimit::new(2, SECOND),
         sends: "Os nomes de usuário públicos que você consultar e os meses de Partidas pedidos, \
-                para api.chess.com. Nenhuma senha ou token.",
+                para api.chess.com. Nenhuma senha.",
         reviewed_on: REVIEWED,
     },
     Provider {
@@ -914,7 +915,7 @@ static CATALOG: [Provider; 19] = [
             &[A::None, A::UsernamePasswordApprovedProtocol],
             K::FreeWithSignup,
             S::Planned { stage: 5 },
-            "Protocolo ICS (não HTTP); visitante primeiro; senha só com transporte seguro comprovado (CX-18)",
+            "Protocolo próprio do FICS (não é a web); visitante primeiro; senha só com transporte seguro comprovado",
         )],
         // ICS não passa pelo cliente HTTP: o endereço ICS está em `crate::ics_endpoints`.
         endpoints: &[],
@@ -937,7 +938,7 @@ static CATALOG: [Provider; 19] = [
             ],
         },
         rate_limit: DEFAULT_RATE,
-        sends: "Lances e comandos do protocolo ICS para freechess.org, como visitante (etapa 5).",
+        sends: "Lances e comandos do protocolo do FICS para freechess.org, como visitante.",
         reviewed_on: REVIEWED,
     },
     Provider {
@@ -1049,13 +1050,10 @@ static CATALOG: [Provider; 19] = [
         docs_url: "https://chess-api.com/",
         terms_url: "https://chess-api.com/",
         data_license: "Resultado de Engine sob os termos do Chess-API.com",
-        restrictions: &[
-            "Só por escolha explícita de Engine remota (CX-11)",
-            "Sem SLA",
-        ],
+        restrictions: &["Só por escolha explícita de Engine remota", "Sem SLA"],
         variants: STANDARD_ONLY,
         rate_limit: RateLimit::new(2, Duration::from_secs(2)),
-        sends: "A Posição analisada (FEN) e a profundidade pedida, para chess-api.com.",
+        sends: "A Posição analisada e a profundidade pedida, para chess-api.com.",
         reviewed_on: REVIEWED,
     },
     Provider {

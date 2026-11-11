@@ -320,11 +320,7 @@ fn the_lichess_explorer_is_free_with_signup_and_says_it_needs_an_authorized_conn
         .service(Capability::Explore)
         .expect("Explorador listado");
     assert_eq!(explore.cost, Cost::FreeWithSignup);
-    assert!(
-        explore
-            .note
-            .contains("Conexão autorizada do Lichess (etapa 3)")
-    );
+    assert!(explore.note.contains("Conexão autorizada do Lichess"));
 }
 
 // ---- Etapa 5 (#234): PlayStrategy como Provedor da família do Lichess; Chess-API.com ------------
@@ -402,7 +398,7 @@ fn playstrategy_public_games_are_ready_but_online_play_is_not_yet() {
         );
     }
     // Mudou o que o cartão libera: a versão do catálogo subiu.
-    const { assert!(CATALOG_VERSION >= 4) };
+    const { assert!(CATALOG_VERSION >= 5) };
 }
 
 #[test]
@@ -419,4 +415,50 @@ fn chess_api_is_a_computing_engine_without_token_and_documents_that_no_key_is_ne
     assert_eq!(service.auth, &[AuthMethod::None]);
     assert!(!service.requires_connection());
     assert!(service.note.contains("sem chave"));
+}
+
+/// Termos de quem desenvolve que não podem aparecer em texto de Provedor (notas, avisos,
+/// restrições e licenças): a pessoa lê linguagem de usuário.
+const JARGON: [&str; 9] = [
+    "endpoint",
+    "http",
+    "ndjson",
+    "etapa",
+    "cx-",
+    "retry-after",
+    "ssrf",
+    "pkce",
+    "cabeçalho",
+];
+
+fn jargon_in(text: &str) -> Option<&'static str> {
+    let lower = text.to_lowercase();
+    JARGON.into_iter().find(|term| lower.contains(term))
+}
+
+#[test]
+fn provider_texts_use_plain_language_without_developer_jargon() {
+    for p in catalog() {
+        let mut texts: Vec<&str> = vec![p.sends, p.data_license];
+        texts.extend(p.restrictions);
+        texts.extend(p.services.iter().map(|s| s.note));
+        texts.extend(p.endpoints.iter().map(|e| e.license));
+        for text in texts {
+            assert_eq!(jargon_in(text), None, "{}: {text}", p.name);
+        }
+    }
+}
+
+#[test]
+fn the_jargon_check_catches_the_terms_it_names() {
+    for bad in [
+        "Protocolo ICS (não HTTP)",
+        "chega na etapa 5",
+        "decisão CX-18",
+        "o endpoint responde",
+        "fluxo NDJSON",
+    ] {
+        assert!(jargon_in(bad).is_some(), "{bad}");
+    }
+    assert_eq!(jargon_in("Nada do Perfil local vai junto."), None);
 }
