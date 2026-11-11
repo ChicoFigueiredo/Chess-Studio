@@ -1379,46 +1379,15 @@ fn panel_body(
         };
         cs_status_badge(ui, StatusTone::Neutral, icon::MEDAL, &rated);
     });
-    ui.add_space(12.0);
-    // Jogadores.
+    ui.add_space(8.0);
     let opponent = match online.local_color {
         Color::White => &online.black,
         Color::Black => &online.white,
     };
-    let title = match online.opponent {
-        Opponent::ProviderEngine { level } => {
-            i18n.t_with("online-vs-engine", &[("level", &level.to_string())])
-        }
-        Opponent::Human => i18n.t_with(
-            "online-vs",
-            &[("name", &player_line(&opponent.name, opponent.rating))],
-        ),
-    };
-    ui.label(
-        egui::RichText::new(title)
-            .font(strong_font(ui.ctx(), 16.0))
-            .color(p.ink),
-    );
-    let color = i18n.t(match online.local_color {
-        Color::White => "online-color-white-lower",
-        Color::Black => "online-color-black-lower",
-    });
-    let mut meta = vec![i18n.t_with("online-you-play", &[("color", &color)])];
-    if let Some(days) = online.days_per_move {
-        meta.push(days_label(i18n, u8::try_from(days).unwrap_or(u8::MAX)));
-    } else if let Some(tc) = session.game().setup().time_control() {
-        meta.push(time_label(
-            i18n,
-            OnlineTime::RealTime {
-                base_s: u32::try_from(tc.base_ms / 1000).unwrap_or(u32::MAX),
-                increment_s: u32::try_from(tc.increment_ms / 1000).unwrap_or(u32::MAX),
-            },
-        ));
-    }
-    muted(ui, meta.join(" · "));
-    ui.add_space(12.0);
     if over {
         ended_section(ui, i18n, session, intents);
+        ui.add_space(12.0);
+        players_block(ui, i18n, session, online);
         recent_notices(ui, i18n, notices);
         return;
     }
@@ -1537,7 +1506,10 @@ fn panel_body(
             intents.push(PanelIntent::ConfirmResign);
         }
     });
+    recent_notices(ui, i18n, notices);
     ui.add_space(12.0);
+    players_block(ui, i18n, session, online);
+    ui.add_space(8.0);
     if human {
         icon_line(
             ui,
@@ -1553,7 +1525,51 @@ fn panel_body(
             &i18n.t("online-fairplay-off-engine"),
         );
     }
-    recent_notices(ui, i18n, notices);
+}
+
+/// Contra quem, de que cor e em que ritmo (os nomes e os relógios estão no Painel Relógio).
+fn players_block(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    session: &Session,
+    online: &chess_game::OnlineGame,
+) {
+    let p = palette(ui);
+    let opponent = match online.local_color {
+        Color::White => &online.black,
+        Color::Black => &online.white,
+    };
+    let title = match online.opponent {
+        Opponent::ProviderEngine { level } => {
+            i18n.t_with("online-vs-engine", &[("level", &level.to_string())])
+        }
+        Opponent::Human => i18n.t_with(
+            "online-vs",
+            &[("name", &player_line(&opponent.name, opponent.rating))],
+        ),
+    };
+    ui.label(
+        egui::RichText::new(title)
+            .font(strong_font(ui.ctx(), 16.0))
+            .color(p.ink),
+    );
+    let color = i18n.t(match online.local_color {
+        Color::White => "online-color-white-lower",
+        Color::Black => "online-color-black-lower",
+    });
+    let mut meta = vec![i18n.t_with("online-you-play", &[("color", &color)])];
+    if let Some(days) = online.days_per_move {
+        meta.push(days_label(i18n, u8::try_from(days).unwrap_or(u8::MAX)));
+    } else if let Some(tc) = session.game().setup().time_control() {
+        meta.push(time_label(
+            i18n,
+            OnlineTime::RealTime {
+                base_s: u32::try_from(tc.base_ms / 1000).unwrap_or(u32::MAX),
+                increment_s: u32::try_from(tc.increment_ms / 1000).unwrap_or(u32::MAX),
+            },
+        ));
+    }
+    muted(ui, meta.join(" · "));
 }
 
 fn ended_section(

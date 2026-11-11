@@ -129,8 +129,9 @@ fn capture_script() -> capture::CaptureScript {
 /// A captura mostra o invólucro da interface: `--panel`, `--profile` ou qualquer opção que só
 /// faz sentido com ele (Ribbon, KeyTips, bastidores, Opções, Paleta, barra de avaliação).
 fn shell_requested() -> bool {
-    const FLAGS: [&str; 11] = [
+    const FLAGS: [&str; 12] = [
         "--online-demo",
+        "--online-tour",
         "--backstage-page",
         "--panel",
         "--keytips",

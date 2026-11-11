@@ -161,7 +161,16 @@ pub struct CapturePlugin;
 
 impl Plugin for CapturePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, run_capture.run_if(resource_exists::<CaptureMode>));
+        // O passeio da Partida online (`--online-tour`) tira as próprias fotos e segura esta.
+        app.add_systems(
+            Update,
+            run_capture.run_if(
+                |mode: Option<Res<CaptureMode>>,
+                 hold: Option<Res<crate::online::demo::CaptureHold>>| {
+                    mode.is_some() && hold.is_none()
+                },
+            ),
+        );
     }
 }
 

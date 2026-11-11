@@ -395,6 +395,12 @@ impl DockLayout {
         true
     }
 
+    /// `a` e `b` estão no mesmo grupo de abas do dock.
+    pub fn same_group(&self, a: &str, b: &str) -> bool {
+        let group = |id: &str| self.tile_of(id).and_then(|t| self.tree.tiles.parent_of(t));
+        matches!((group(a), group(b)), (Some(x), Some(y)) if x == y)
+    }
+
     /// Primeiro grupo de abas na ordem da árvore (de cima para baixo).
     pub(crate) fn first_tab_group(&self) -> Option<TileId> {
         let mut stack = vec![self.tree.root()?];

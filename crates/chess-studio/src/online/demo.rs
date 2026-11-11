@@ -3,11 +3,14 @@
 //! banco. As cenas montam a Partida localmente pelo mesmo retrato que o Lichess mandaria.
 //!
 //! Cenas: `dialog`, `offline`, `waiting`, `challenges`, `engine`, `list`, `playing`,
-//! `reconnecting`, `draw`, `toast`, `offer`, `ended`.
+//! `reconnecting`, `draw`, `gone`, `toast`, `offer`, `ended`.
+//!
+//! `--online-tour dialog,playing,...` (com `--screenshot <dir>`) percorre as cenas nos Temas
+//! Escuro e Claro numa só execução e grava `online-<cena>-<tema>.png`.
 
 use super::service::{OutgoingState, PlayingRow};
 use super::view::{Pace, PanelView};
-use super::{OnlineUi, PANEL_ID, Tab};
+use super::{OnlineUi, Tab};
 use crate::session::Session;
 use bevy::prelude::*;
 use chess_core::{Color, Move};
@@ -309,10 +312,135 @@ pub fn show_demo_panel(
     }
     *frames += 1;
     if let Some(mut dock) = dock {
-        if !dock.layout.is_visible(PANEL_ID) {
-            dock.layout.set_visible(PANEL_ID, true);
+        super::reveal_panel(&mut dock.layout);
+    }
+}
+
+/// Põe a cena na tela: o estado da interface, a Partida no tabuleiro e o Painel.
+fn enter(scene: Scene, ui: &mut OnlineUi, session: &mut Session, dock: Option<&mut crate::dock::Dock>) {
+    *ui = OnlineUi::default();
+    if let Some(tab) = scene.dialog_tab() {
+        ui.open_at(tab);
+        if scene.name == "challenges" {
+            ui.form.name = "Peao_Passado".to_owned();
         }
-        dock.layout.activate(PANEL_ID);
+        if scene.name == "dialog" {
+            ui.form.seek_pace = Pace::Rapid10_5;
+            ui.form.seek_rated = true;
+        }
+    }
+    match scene.game() {
+        Some(game) => {
+            session.show_online(game, None, true);
+            if let Some(dock) = dock {
+                super::reveal_panel(&mut dock.layout);
+            }
+        }
+        None if session.is_online() => {
+            let mut fresh = Session::new();
+            fresh.supersede(session);
+            *session = fresh;
+        }
+        None => {}
+    }
+    ui.demo = Some(scene);
+}
+
+/// Segura a captura padrão enquanto o passeio tira as fotos (`--online-tour`).
+#[derive(Resource, Debug)]
+pub struct CaptureHold;
+
+/// O passeio pelas cenas: (cena, Tema) na ordem.
+#[derive(Resource, Debug)]
+pub struct Tour {
+    steps: Vec<(String, crate::ui_theme::ThemeMode, &'static str)>,
+    index: usize,
+    frame: u32,
+}
+
+/// Quadros até a cena assentar (layout, Tema, dock) e até a foto ir ao disco.
+const TOUR_SETTLE: u32 = 50;
+const TOUR_SAVE: u32 = 20;
+
+pub fn start_tour(
+    capture: Option<Res<crate::capture::CaptureMode>>,
+    mut commands: Commands,
+    mut done: Local<bool>,
+) {
+    if capture.is_none() || *done {
+        return;
+    }
+    *done = true;
+    let Some(list) = crate::capture::option_value("--online-tour") else {
+        return;
+    };
+    let mut steps = Vec::new();
+    for name in list.split(',').map(str::trim).filter(|n| !n.is_empty()) {
+        if Scene::named(name).is_none() {
+            warn!("cena desconhecida em --online-tour: {name}");
+            continue;
+        }
+        steps.push((name.to_owned(), crate::ui_theme::ThemeMode::DARK, "dark"));
+        steps.push((name.to_owned(), crate::ui_theme::ThemeMode::LIGHT, "light"));
+    }
+    commands.insert_resource(Tour {
+        steps,
+        index: 0,
+        frame: 0,
+    });
+    commands.insert_resource(CaptureHold);
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_tour(
+    mut commands: Commands,
+    tour: Option<ResMut<Tour>>,
+    capture: Option<Res<crate::capture::CaptureMode>>,
+    ready: Option<Res<crate::ready::SceneReady>>,
+    mut ui: ResMut<OnlineUi>,
+    mut session: ResMut<Session>,
+    mut dock: Option<ResMut<crate::dock::Dock>>,
+    mut appearance: Option<ResMut<crate::ui_theme::Appearance>>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    let (Some(mut tour), Some(capture)) = (tour, capture) else {
+        return;
+    };
+    if !ready.is_some_and(|r| r.is_ready()) {
+        return;
+    }
+    let Some((name, theme, label)) = tour.steps.get(tour.index).cloned() else {
+        exit.write(AppExit::Success);
+        return;
+    };
+    if tour.frame == 0 {
+        if let Some(appearance) = appearance.as_mut()
+            && appearance.theme != theme
+        {
+            appearance.theme = theme;
+        }
+        if let Some(scene) = Scene::named(&name) {
+            enter(scene, &mut ui, &mut session, dock.as_deref_mut());
+        }
+    }
+    // O Painel novo entra no dock alguns quadros depois: a cena insiste até a foto.
+    if tour.frame < TOUR_SETTLE
+        && session.is_online()
+        && let Some(dock) = dock.as_mut()
+    {
+        super::reveal_panel(&mut dock.layout);
+    }
+    tour.frame += 1;
+    if tour.frame == TOUR_SETTLE {
+        let path = capture.dir.join(format!("online-{name}-{label}.png"));
+        info!("captura da Partida online: {}", path.display());
+        commands
+            .spawn(bevy::render::view::screenshot::Screenshot::primary_window())
+            .observe(bevy::render::view::screenshot::save_to_disk(path));
+    }
+    if tour.frame >= TOUR_SETTLE + TOUR_SAVE {
+        tour.index += 1;
+        tour.frame = 0;
     }
 }
 
@@ -348,8 +476,7 @@ pub fn apply_demo(
     if let Some(game) = scene.game() {
         session.show_online(game, None, true);
         if let Some(mut dock) = dock {
-            dock.layout.set_visible(PANEL_ID, true);
-            dock.layout.activate(PANEL_ID);
+            super::reveal_panel(&mut dock.layout);
         }
     }
     ui.demo = Some(scene);

@@ -128,7 +128,13 @@ impl Plugin for OnlinePlugin {
             .init_resource::<OnlineUi>()
             .add_systems(
                 Update,
-                (demo::apply_demo, demo::show_demo_panel, drive_online)
+                (
+                    demo::start_tour,
+                    demo::run_tour,
+                    demo::apply_demo,
+                    demo::show_demo_panel,
+                    drive_online,
+                )
                     .chain()
                     .after(crate::play::PlaySet),
             )
@@ -146,6 +152,25 @@ impl Plugin for OnlinePlugin {
             },
         );
     }
+}
+
+/// Mostra o Painel Partida online. Fechado, ou ainda no lugar em que o dock põe um Painel
+/// novo (o último grupo, junto das Engines), ele vai para o grupo da Notação, logo abaixo do
+/// Relógio; num lugar escolhido pelo usuário, só vai à frente.
+pub fn reveal_panel(layout: &mut crate::dock::DockLayout) {
+    use crate::dock::ids;
+    let closed = !layout.is_visible(PANEL_ID);
+    if closed {
+        layout.set_visible(PANEL_ID, true);
+    }
+    let default_spot = layout.same_group(PANEL_ID, "Engines");
+    if (closed || default_spot)
+        && layout.is_visible(ids::NOTATION)
+        && !layout.same_group(PANEL_ID, ids::NOTATION)
+    {
+        layout.move_into_group_of(PANEL_ID, ids::NOTATION);
+    }
+    layout.activate(PANEL_ID);
 }
 
 /// O quadro da Partida online. Nunca bloqueia.
@@ -188,8 +213,7 @@ pub fn drive_online(
         );
         // A Partida online que vai ao tabuleiro traz o Painel dela.
         if shown && let Some(mut dock) = dock {
-            dock.layout.set_visible(PANEL_ID, true);
-            dock.layout.activate(PANEL_ID);
+            reveal_panel(&mut dock.layout);
         }
         for notice in play.take_notices() {
             ui.push(notice);
