@@ -5,10 +5,13 @@
 use super::driver::CloudRow;
 use super::model::{
     Age, CloudView, EndgameMove, EndgameTable, How, Notice, Nuance, OpeningsTable, OriginNote,
-    Outlook, ReferenceRow, Source, Verdict, clock_utc, day_month, fmt_count, format_eval,
+    Outlook, ReferenceRow, Source, Verdict, clock_local, day_month, fmt_count, format_eval,
     mate_in_moves, minutes_until, white_share,
 };
+use super::reference::Status;
 use crate::i18n::I18n;
+use crate::local_time::LocalClock;
+use crate::net_service::NetService;
 use crate::panel_chrome::radius;
 use crate::ui_theme::{
     ButtonVariant, CsButton, Palette, Tabular, cs_button, icon_font, palette, strong_font,
@@ -34,8 +37,9 @@ pub enum UiAction {
     OpenConnections,
     /// Abrir o Painel Biblioteca.
     OpenLibrary,
-    /// Procurar a Partida de referência na Biblioteca (pelo nome das Brancas).
-    SearchReference { id: String, white: String },
+    /// Abrir a Partida de referência exata (pelo id do Provedor): a da Biblioteca, se já
+    /// está lá; senão baixada e gravada com a Origem.
+    OpenReference { id: String },
     /// Tentar de novo a consulta que falhou.
     Retry,
     /// Voltar da variante para a Partida.
@@ -287,18 +291,21 @@ pub fn openings_table(
     i18n: &I18n,
     table: &OpeningsTable,
     selected: Option<&str>,
+    reference: &Status,
     actions: &mut Vec<UiAction>,
 ) {
     let p = palette(ui);
     // Cabeçalho da Posição: abertura e total de Partidas.
     match &table.opening {
         Some((eco, name)) => {
-            ui.label(
-                egui::RichText::new(
-                    i18n.t_with("explorer-opening", &[("eco", eco), ("name", name)]),
-                )
-                .font(strong_font(ui.ctx(), 14.0)),
+            let label = ui.label(
+                egui::RichText::new(opening_label(i18n, eco, name))
+                    .font(strong_font(ui.ctx(), 14.0)),
             );
+            // O nome original (em inglês) fica na dica, para quem quiser procurá-lo por aí.
+            if chess_openings::name_pt_br(name) != *name {
+                label.on_hover_text(i18n.t_with("explorer-opening-original", &[("name", name)]));
+            }
         }
         None => muted(ui, i18n.t("explorer-opening-unnamed")),
     }
@@ -399,7 +406,7 @@ pub fn openings_table(
         );
         ui.add_space(4.0);
         for game in &table.references {
-            reference_row(ui, i18n, game, actions);
+            reference_row(ui, i18n, game, reference, actions);
         }
     }
 }
@@ -434,8 +441,30 @@ fn reference_meta(i18n: &I18n, game: &ReferenceRow) -> String {
     parts.join(" \u{b7} ")
 }
 
-fn reference_row(ui: &mut Ui, i18n: &I18n, game: &ReferenceRow, actions: &mut Vec<UiAction>) {
+/// "C60 · Ruy Lopez: Defesa Morphy": o nome da abertura em português (regras em
+/// `chess-openings`), com o código ECO.
+pub fn opening_label(i18n: &I18n, eco: &str, name: &str) -> String {
+    i18n.t_with(
+        "explorer-opening",
+        &[("eco", eco), ("name", &chess_openings::name_pt_br(name))],
+    )
+}
+
+fn reference_row(
+    ui: &mut Ui,
+    i18n: &I18n,
+    game: &ReferenceRow,
+    reference: &Status,
+    actions: &mut Vec<UiAction>,
+) {
     let p = palette(ui);
+    // Abrindo esta Partida, ou não deu certo: a linha de baixo diz, sem esconder os jogadores.
+    let (meta_text, meta_color) = match reference {
+        Status::Opening(id) if *id == game.id => (i18n.t("explorer-reference-opening"), p.accent),
+        Status::Failed { id, key } if *id == game.id => (i18n.t(key), p.warning),
+        _ => (reference_meta(i18n, game), p.ink_muted),
+    };
+    let busy = matches!(reference, Status::Opening(_));
     let (rect, response) =
         ui.allocate_exact_size(egui::vec2(ui.available_width(), 44.0), Sense::click());
     if ui.is_rect_visible(rect) {
@@ -463,14 +492,8 @@ fn reference_row(ui: &mut Ui, i18n: &I18n, game: &ReferenceRow, actions: &mut Ve
             right - left - result_text.size.x - 8.0,
         );
         painter.galley(egui::pos2(left, top), galley, p.ink);
-        let meta = ellipsized(
-            &painter,
-            reference_meta(i18n, game),
-            caption(ui),
-            p.ink_muted,
-            right - left,
-        );
-        painter.galley(egui::pos2(left, top + 20.0), meta, p.ink_muted);
+        let meta = ellipsized(&painter, meta_text, caption(ui), meta_color, right - left);
+        painter.galley(egui::pos2(left, top + 20.0), meta, meta_color);
         if response.has_focus() {
             painter.rect_stroke(
                 rect.shrink(1.0),
@@ -480,10 +503,9 @@ fn reference_row(ui: &mut Ui, i18n: &I18n, game: &ReferenceRow, actions: &mut Ve
             );
         }
     }
-    if response.clicked() {
-        actions.push(UiAction::SearchReference {
+    if response.clicked() && !busy {
+        actions.push(UiAction::OpenReference {
             id: game.id.clone(),
-            white: game.white.clone(),
         });
     }
     response
@@ -683,34 +705,41 @@ fn ago_text(i18n: &I18n, age: Age) -> String {
     }
 }
 
-/// "Lichess · consultado há 3 min · CC0", "do cache, de 09/11" ou "Sua Biblioteca, offline".
-pub fn origin_text(i18n: &I18n, origin: &OriginNote) -> String {
-    let args = |extra: &[(&str, String)]| -> String {
-        let mut list: Vec<(&str, &str)> = vec![
-            ("provider", origin.provider.as_str()),
-            ("license", origin.license.as_str()),
-        ];
-        for (k, v) in extra {
-            list.push((k, v.as_str()));
+/// "Lichess · consultado às 14:32 · CC0", "do cache, de 09/11" ou "Sua Biblioteca, offline".
+/// A hora é a local do computador; sem fuso do sistema, "consultado há 3 min" (#239).
+pub fn origin_text(i18n: &I18n, origin: &OriginNote, now: Timestamp) -> String {
+    let mut args: Vec<(&str, String)> = vec![
+        ("provider", origin.provider.clone()),
+        ("license", origin.license.clone()),
+    ];
+    let key = match &origin.how {
+        How::Local => "explorer-origin-local",
+        How::Queried(Age::JustNow, _) => "explorer-origin-queried-now",
+        How::Queried(age, at) => {
+            let local = LocalClock::current().when(i18n, now.as_millis(), at.as_millis());
+            match (local, age) {
+                (Some(when), _) => {
+                    args.push(("when", when));
+                    "explorer-origin-queried-at"
+                }
+                (None, Age::Minutes(n) | Age::Hours(n) | Age::Days(n)) => {
+                    args.push(("count", n.to_string()));
+                    match age {
+                        Age::Minutes(_) => "explorer-origin-queried-minutes",
+                        Age::Hours(_) => "explorer-origin-queried-hours",
+                        _ => "explorer-origin-queried-days",
+                    }
+                }
+                (None, Age::JustNow) => "explorer-origin-queried-now",
+            }
         }
-        let key = match &origin.how {
-            How::Local => "explorer-origin-local",
-            How::Queried(Age::JustNow) => "explorer-origin-queried-now",
-            How::Queried(Age::Minutes(_)) => "explorer-origin-queried-minutes",
-            How::Queried(Age::Hours(_)) => "explorer-origin-queried-hours",
-            How::Queried(Age::Days(_)) => "explorer-origin-queried-days",
-            How::Cached(_) | How::Stale(_) => "explorer-origin-cached",
-        };
-        i18n.t_with(key, &list)
+        How::Cached(at) | How::Stale(at) => {
+            args.push(("date", day_month(*at)));
+            "explorer-origin-cached"
+        }
     };
-    match &origin.how {
-        How::Local => args(&[]),
-        How::Queried(Age::JustNow) => args(&[]),
-        How::Queried(Age::Minutes(n) | Age::Hours(n) | Age::Days(n)) => {
-            args(&[("count", n.to_string())])
-        }
-        How::Cached(at) | How::Stale(at) => args(&[("date", day_month(*at))]),
-    }
+    let list: Vec<(&str, &str)> = args.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    i18n.t_with(key, &list)
 }
 
 /// O aviso de que não há internet e o que está na tela foi salvo antes.
@@ -751,14 +780,14 @@ pub fn stale_notice(ui: &mut Ui, i18n: &I18n, origin: &OriginNote, now: Timestam
 }
 
 /// Rodapé com a Origem: Provedor, idade do dado e licença.
-pub fn footer(ui: &mut Ui, i18n: &I18n, origin: &OriginNote) {
+pub fn footer(ui: &mut Ui, i18n: &I18n, origin: &OriginNote, now: Timestamp) {
     let p = palette(ui);
     ui.add_space(12.0);
     let (line, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), Sense::hover());
     ui.painter()
         .hline(line.x_range(), line.center().y, Stroke::new(1.0, p.border));
     ui.add_space(8.0);
-    muted(ui, origin_text(i18n, origin));
+    muted(ui, origin_text(i18n, origin, now));
 }
 
 // --- Avisos --------------------------------------------------------------------------
@@ -908,10 +937,13 @@ pub fn notice(
                     &[("minutes", &minutes.to_string())],
                 ),
                 |ui| {
-                    muted(
-                        ui,
-                        i18n.t_with("explorer-limited-until", &[("time", &clock_utc(*until))]),
-                    );
+                    // Sem fuso do sistema, o "em cerca de N min" de cima já diz tudo.
+                    if let Some(time) = clock_local(*until) {
+                        muted(
+                            ui,
+                            i18n.t_with("explorer-limited-until", &[("time", &time)]),
+                        );
+                    }
                 },
             );
         }
@@ -1105,5 +1137,67 @@ fn cloud_ready(ui: &mut Ui, i18n: &I18n, view: &CloudView) {
         });
     }
     ui.add_space(4.0);
-    muted(ui, origin_text(i18n, &view.origin));
+    muted(ui, origin_text(i18n, &view.origin, NetService::now()));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::local_time::{LocalClock, testing};
+
+    /// 2026-11-11 15:30 UTC (12:30 em Brasília).
+    const NOW: i64 = 1_794_411_000_000;
+
+    fn text(how: How) -> String {
+        let origin = OriginNote {
+            provider: "Lichess".into(),
+            how,
+            license: "CC0".into(),
+        };
+        origin_text(&I18n::pt_br(), &origin, Timestamp::from_millis(NOW))
+    }
+
+    #[test]
+    fn the_footer_says_the_local_time_of_the_query() {
+        let queried = Timestamp::from_millis(NOW - 3 * 60_000);
+        let line = testing::with(LocalClock::fixed(-180), || {
+            text(How::Queried(Age::Minutes(3), queried))
+        });
+        assert_eq!(line, "Lichess \u{b7} consultado às 12:27 \u{b7} CC0");
+        let yesterday = Timestamp::from_millis(NOW - 24 * 3_600_000);
+        let line = testing::with(LocalClock::fixed(-180), || {
+            text(How::Queried(Age::Days(1), yesterday))
+        });
+        assert_eq!(line, "Lichess \u{b7} consultado ontem às 12:30 \u{b7} CC0");
+    }
+
+    #[test]
+    fn without_a_time_zone_the_footer_falls_back_to_the_relative_age() {
+        let queried = Timestamp::from_millis(NOW - 3 * 60_000);
+        let line = testing::with(LocalClock::unknown(), || {
+            text(How::Queried(Age::Minutes(3), queried))
+        });
+        assert_eq!(line, "Lichess \u{b7} consultado há 3 min \u{b7} CC0");
+        let line = testing::with(LocalClock::unknown(), || {
+            text(How::Queried(Age::JustNow, queried))
+        });
+        assert_eq!(line, "Lichess \u{b7} consultado agora \u{b7} CC0");
+    }
+
+    #[test]
+    fn the_cache_date_is_the_local_day() {
+        // 01:30 UTC de 12/11 ainda é 11/11 em Brasília.
+        let at = Timestamp::from_millis(NOW + 10 * 3_600_000);
+        let line = testing::with(LocalClock::fixed(-180), || text(How::Cached(at)));
+        assert_eq!(line, "Lichess \u{b7} do cache, de 11/11 \u{b7} CC0");
+    }
+
+    #[test]
+    fn the_opening_name_reads_in_portuguese() {
+        let i18n = I18n::pt_br();
+        assert_eq!(
+            opening_label(&i18n, "C60", "Ruy Lopez: Morphy Defense"),
+            "C60 \u{b7} Ruy Lopez: Defesa Morphy"
+        );
+    }
 }

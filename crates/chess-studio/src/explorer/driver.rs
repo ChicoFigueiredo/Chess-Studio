@@ -527,7 +527,7 @@ mod tests {
         assert_eq!(table.opening.as_ref().unwrap().0, "B00");
         assert_eq!(table.references.len(), 2);
         assert_eq!(table.origin.provider, "Lichess");
-        assert!(matches!(table.origin.how, How::Queried(_)));
+        assert!(matches!(table.origin.how, How::Queried(_, _)));
         assert_eq!(env.server.requests().len(), 1);
     }
 

@@ -47,6 +47,7 @@ mod library_bulk;
 mod library_ui;
 mod load_control;
 mod local_profiles;
+mod local_time;
 mod net_service;
 mod new_game;
 mod notation;

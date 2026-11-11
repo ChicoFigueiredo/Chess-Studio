@@ -660,10 +660,7 @@ impl View<'_> {
         let who = i18n.t_with("auth-row-user", &[("name", &connection.identifier)]);
         ui.label(small(who, p.ink_muted));
         if let Some(at) = connection.authorized_at_ms {
-            let when = self.age_text(super::model::age(
-                self.now,
-                chess_net::Timestamp::from_millis(at),
-            ));
+            let when = self.when_text(chess_net::Timestamp::from_millis(at));
             let key = if connection.kind == ConnectionKind::AuthorizedKey {
                 "auth-row-key"
             } else {
@@ -770,7 +767,7 @@ impl View<'_> {
                 result: Ok(name),
                 at,
             } => {
-                let when = self.age_text(super::model::age(self.now, *at));
+                let when = self.when_text(*at);
                 (
                     icon::CHECK_CIRCLE,
                     p.success,

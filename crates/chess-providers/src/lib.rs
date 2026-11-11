@@ -93,6 +93,7 @@ mod eval;
 mod explorer;
 mod family;
 mod fics;
+mod game_export;
 mod games;
 mod lichess;
 mod pgn;
@@ -129,6 +130,7 @@ pub use fics::{
     DEFAULT_LOGIN_DEADLINE, Fics, FicsChallenge, FicsError, FicsLogin, FicsNotice, FicsPoll,
     FicsSession, FicsStatus, ObservedGame,
 };
+pub use game_export::ExportedGame;
 pub use games::{
     DEFAULT_MAX_GAMES, GamesEvent, GamesFeed, GamesFilter, GamesProgress, GamesReader,
     import_options,
