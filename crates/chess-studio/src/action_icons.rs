@@ -14,6 +14,8 @@ pub fn glyph(name: &str) -> &'static str {
         "arrows-left-right" => icon::ARROWS_LEFT_RIGHT,
         "barbell" => icon::BARBELL,
         "books" => icon::BOOKS,
+        "cloud-arrow-down" => icon::CLOUD_ARROW_DOWN,
+        "compass" => icon::COMPASS,
         "camera" => icon::CAMERA,
         "camera-rotate" => icon::CAMERA_ROTATE,
         "caret-line-up" => icon::CARET_LINE_UP,

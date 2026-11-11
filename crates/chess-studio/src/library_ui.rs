@@ -358,6 +358,16 @@ enum Tab {
     Exercises,
 }
 
+/// De onde vêm as Partidas que a pessoa vai importar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum ImportMethod {
+    /// Um arquivo `.pgn`/`.pgn.gz` no computador (sem rede).
+    #[default]
+    File,
+    /// As Partidas públicas de um jogador, direto do Provedor.
+    Online(crate::online_import::Site),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum ResultFilter {
     #[default]
@@ -472,6 +482,10 @@ pub struct LibraryUi {
     import_source: ImportSource,
     import_job: Option<ImportJob>,
     import_result: Option<Result<ImportOutcome, String>>,
+    import_method: ImportMethod,
+    /// Abre a seção de importar na próxima vez que desenhar (Ação "Importar online").
+    import_open: bool,
+    pub(crate) online: crate::online_import_ui::OnlineState,
     pgn_files: Vec<PathBuf>,
     favorite_name: String,
     /// Banco em memória quando o app roda sem persistência (capturas).
@@ -509,6 +523,9 @@ impl Default for LibraryUi {
             import_source: ImportSource::Other,
             import_job: None,
             import_result: None,
+            import_method: ImportMethod::default(),
+            import_open: false,
+            online: crate::online_import_ui::OnlineState::default(),
             pgn_files: Vec::new(),
             favorite_name: String::new(),
             local: None,
@@ -544,6 +561,77 @@ impl LibraryUi {
 
     fn touch(&mut self) {
         self.dirty = true;
+    }
+
+    /// Procura as Partidas de um jogador (vinda do Explorador: "Partidas de referência").
+    pub fn focus_player(&mut self, name: &str) {
+        self.tab = Tab::Games;
+        self.detail = None;
+        self.text.clear();
+        self.player = name.trim().to_owned();
+        self.page = 0;
+        self.touch();
+    }
+
+    /// Cena de evidência (`--explorer-demo import`): importação online em andamento ou concluída.
+    pub(crate) fn demo_online(&mut self, running: bool) {
+        use crate::online_import::{Progress, Site, Summary};
+        // Partidas já importadas deste nome: habilita o "Atualizar".
+        seed_online_demo(&mut self.local);
+        self.show_online_import();
+        self.import_method = ImportMethod::Online(Site::Lichess);
+        if running {
+            self.online.demo_running(
+                Site::Lichess,
+                "ana_alvares",
+                Progress {
+                    received: 184,
+                    new: 151,
+                    duplicates: 33,
+                    errors: 0,
+                },
+            );
+        } else {
+            self.online.demo_finished(
+                Site::Lichess,
+                "ana_alvares",
+                Summary {
+                    received: 212,
+                    new: 179,
+                    duplicates: 33,
+                    errors: 0,
+                    cancelled: false,
+                },
+            );
+        }
+    }
+
+    /// Mostra a importação online (Ação "Importar do Lichess ou Chess.com").
+    pub fn show_online_import(&mut self) {
+        self.tab = Tab::Games;
+        self.detail = None;
+        self.import_open = true;
+        if self.import_method == ImportMethod::File {
+            self.import_method = ImportMethod::Online(self.online.site);
+        }
+    }
+
+    /// Atualiza o formulário da importação online com o estado do app e recolhe a thread.
+    fn sync_online(
+        &mut self,
+        net: Option<&crate::net_service::NetService>,
+        session: &Session,
+        handle: Option<&PersistenceHandle>,
+    ) {
+        self.online.sync(
+            net,
+            session.competitive_in_progress(),
+            handle,
+            &mut self.local,
+        );
+        if self.online.poll() {
+            self.touch();
+        }
     }
 
     /// Recolhe o resultado da importação em andamento, se terminou.
@@ -950,6 +1038,40 @@ fn civil_date(days: i64) -> String {
 /// Importar PGN: de onde veio o arquivo (grava a Origem e mostra a licença daquela fonte),
 /// caminho, andamento com cancelamento e o resumo (novas, repetidas, com erro).
 fn draw_import(ui: &mut egui::Ui, i18n: &I18n, lib: &mut LibraryUi, actions: &mut Vec<Action>) {
+    ui.label(i18n.t("library-import-method-label"));
+    let mut methods = vec![(ImportMethod::File, i18n.t("library-import-method-file"))];
+    methods.extend([
+        (
+            ImportMethod::Online(crate::online_import::Site::Lichess),
+            i18n.t("library-import-method-lichess"),
+        ),
+        (
+            ImportMethod::Online(crate::online_import::Site::ChessCom),
+            i18n.t("library-import-method-chesscom"),
+        ),
+    ]);
+    cs_dropdown(
+        ui,
+        "library-import-method",
+        &mut lib.import_method,
+        &methods,
+    );
+    ui.add_space(8.0);
+    if let ImportMethod::Online(site) = lib.import_method {
+        lib.online.site = site;
+        crate::online_import_ui::draw(ui, i18n, &mut lib.online);
+        return;
+    }
+    draw_file_import(ui, i18n, lib, actions);
+}
+
+/// Importar um arquivo PGN: de onde veio (grava a Origem), caminho, andamento e resumo.
+fn draw_file_import(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    lib: &mut LibraryUi,
+    actions: &mut Vec<Action>,
+) {
     let p = palette(ui);
     ui.small(i18n.t("library-import-help"));
     ui.label(i18n.t("library-import-source-label"));
@@ -1126,6 +1248,11 @@ fn library_panel(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
             {
                 let handle = world.get_resource::<PersistenceHandle>();
                 lib.poll_import();
+                lib.sync_online(
+                    world.get_resource::<crate::net_service::NetService>(),
+                    &session,
+                    handle,
+                );
                 lib.refresh(handle);
                 draw(ui, i18n, &mut lib, &session, swapped, &mut actions);
             }
@@ -1133,6 +1260,14 @@ fn library_panel(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
             for action in actions {
                 let handle = world.get_resource::<PersistenceHandle>();
                 opened_played |= apply(action, &mut lib, &mut session, handle, i18n);
+            }
+            if let Some(site) = lib.online.ask_to_turn_on.take() {
+                crate::explorer::ask_to_turn_on(
+                    world,
+                    i18n,
+                    site.provider(),
+                    "library-online-feature",
+                );
             }
             // Uma Partida reaberta do banco traz as Anotações de estudo dela.
             if opened_played {
@@ -1230,9 +1365,12 @@ fn draw_games(
     swapped: bool,
     actions: &mut Vec<Action>,
 ) {
-    egui::CollapsingHeader::new(i18n.t("library-import-heading")).show(ui, |ui| {
-        draw_import(ui, i18n, lib, actions);
-    });
+    let force_open = std::mem::take(&mut lib.import_open).then_some(true);
+    egui::CollapsingHeader::new(i18n.t("library-import-heading"))
+        .open(force_open)
+        .show(ui, |ui| {
+            draw_import(ui, i18n, lib, actions);
+        });
 
     let before = (
         lib.text.clone(),
@@ -1792,6 +1930,26 @@ const DEMO_PGN: &str = "\
 
 1. d4 d5 2. c4 e6 3. Nc3 Nf6 4. Bg5 Be7 1/2-1/2
 ";
+
+/// Três Partidas fictícias "do Lichess" de `ana_alvares` (só nas capturas).
+fn seed_online_demo(local: &mut Option<Mutex<Store>>) {
+    let pgn = (1..=3).fold(String::new(), |mut out, n| {
+        out.push_str(&format!(
+            "[Event \"Partida rápida {n}\"]\n[Site \"https://lichess.org/Demo000{n}\"]\n\
+             [White \"ana_alvares\"]\n[Black \"jogador{n}\"]\n[Date \"2026.11.0{}\"]\n\
+             [Result \"1-0\"]\n[TimeControl \"600+0\"]\n\n1. e4 e5 2. Nf3 Nc6 1-0\n\n",
+            n + 4
+        ));
+        out
+    });
+    let options = ImportOptions::new(
+        None,
+        Provenance::from_source(ImportSource::Lichess, ImportMode::Api, unix_ms()),
+    );
+    with_store(local, None, |store, profile| {
+        let _ = store.import_pgn_with(profile, &pgn, &options);
+    });
+}
 
 fn seed_demo(store: &mut Store) {
     use chess_game::{Command, Game, GameSetup, Timestamp};

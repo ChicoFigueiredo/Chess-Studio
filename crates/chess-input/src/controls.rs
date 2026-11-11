@@ -89,6 +89,8 @@ pub enum Action {
     PanelAnalysis,
     PanelLibrary,
     PanelOpenings,
+    /// Mostra ou oculta o Painel Explorador (aberturas, finais).
+    PanelExplorer,
     PanelScoresheet,
     PanelBoard2d,
     PanelEngines,
@@ -103,6 +105,10 @@ pub enum Action {
     OpenLibrary,
     /// Mostra e põe à frente o Painel Aberturas.
     OpenOpenings,
+    /// Mostra e põe à frente o Painel Explorador.
+    OpenExplorer,
+    /// Abre a Biblioteca na importação de Partidas do Lichess ou do Chess.com.
+    ImportOnline,
     /// Exporta a Partida atual em PGN para a pasta Documentos.
     ExportPgn,
     /// Mostra e põe à frente o Painel Treino.
@@ -116,7 +122,7 @@ pub enum Action {
 }
 
 impl Action {
-    pub const ALL: [Action; 67] = [
+    pub const ALL: [Action; 70] = [
         Action::Select,
         Action::Adjust,
         Action::Orbit,
@@ -167,6 +173,7 @@ impl Action {
         Action::PanelAnalysis,
         Action::PanelLibrary,
         Action::PanelOpenings,
+        Action::PanelExplorer,
         Action::PanelScoresheet,
         Action::PanelBoard2d,
         Action::PanelEngines,
@@ -178,6 +185,8 @@ impl Action {
         Action::HideAllPanels,
         Action::OpenLibrary,
         Action::OpenOpenings,
+        Action::OpenExplorer,
+        Action::ImportOnline,
         Action::ExportPgn,
         Action::OpenTraining,
         Action::OpenPalette,
@@ -239,6 +248,7 @@ impl Action {
             Action::PanelAnalysis => "panel-analysis",
             Action::PanelLibrary => "panel-library",
             Action::PanelOpenings => "panel-openings",
+            Action::PanelExplorer => "panel-explorer",
             Action::PanelScoresheet => "panel-scoresheet",
             Action::PanelBoard2d => "panel-board2d",
             Action::PanelEngines => "panel-engines",
@@ -250,6 +260,8 @@ impl Action {
             Action::HideAllPanels => "hide-all-panels",
             Action::OpenLibrary => "open-library",
             Action::OpenOpenings => "open-openings",
+            Action::OpenExplorer => "open-explorer",
+            Action::ImportOnline => "import-online",
             Action::ExportPgn => "export-pgn",
             Action::OpenTraining => "open-training",
             Action::OpenPalette => "open-palette",

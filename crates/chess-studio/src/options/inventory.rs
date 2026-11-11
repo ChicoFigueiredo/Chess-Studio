@@ -156,6 +156,7 @@ pub const INVENTORY: &[InventoryItem] = &[
             Action::PanelAnalysis,
             Action::PanelLibrary,
             Action::PanelOpenings,
+            Action::PanelExplorer,
             Action::PanelScoresheet,
             Action::PanelBoard2d,
             Action::PanelEngines,

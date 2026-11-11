@@ -868,14 +868,31 @@ fn analysis_panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
     if let Some(mut manager) = world.get_resource_mut::<EngineManager>() {
         manager.ensure_loaded(db);
     }
+    let mut cloud_actions = Vec::new();
     world.resource_scope(|world, mut session: Mut<Session>| {
+        // A avaliação em cache do Lichess é consultada aqui, mas desenhada em linha própria
+        // (nunca misturada à Engine local): ver `explorer::cloud_prepare`.
+        let cloud = crate::explorer::cloud_prepare(world, &session);
         world.resource_scope(|_, mut analysis: Mut<Analysis>| {
-            panel(ui, i18n, &mut analysis, &mut session);
+            let mut cloud_row = |ui: &mut egui::Ui| {
+                crate::explorer::cloud_draw(ui, i18n, &cloud, &mut cloud_actions)
+            };
+            panel(ui, i18n, &mut analysis, &mut session, &mut cloud_row);
         });
     });
+    crate::explorer::cloud_finish(world, i18n, &cloud_actions);
+    if let Some(wait) = crate::explorer::cloud_wait(world) {
+        ui.ctx().request_repaint_after(wait);
+    }
 }
 
-fn panel(ui: &mut egui::Ui, i18n: &I18n, analysis: &mut Analysis, session: &mut Session) {
+fn panel(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    analysis: &mut Analysis,
+    session: &mut Session,
+    cloud_row: &mut dyn FnMut(&mut egui::Ui),
+) {
     if let Status::Locked(Lock::Training) = analysis.status {
         ui.weak(i18n.t("analysis-locked-training"));
         return;
@@ -888,6 +905,9 @@ fn panel(ui: &mut egui::Ui, i18n: &I18n, analysis: &mut Analysis, session: &mut 
     {
         results(ui, i18n, analysis, session, &shown);
     }
+    ui.add_space(8.0);
+    cloud_row(ui);
+    ui.add_space(4.0);
     ui.separator();
     settings(ui, i18n, analysis);
 }

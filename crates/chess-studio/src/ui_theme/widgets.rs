@@ -682,6 +682,96 @@ pub fn cs_radio_value<T: PartialEq>(
     response
 }
 
+/// Controle segmentado (`Segmented.md`): 2 a 4 opções lado a lado, uma escolhida. Serve para
+/// trocar a vista de um Painel (Aberturas | Finais). A escolhida fica em `accent-subtle` com
+/// contorno `accent`; ocupa a largura disponível, dividida em partes iguais.
+pub fn cs_segmented<T: PartialEq + Clone>(
+    ui: &mut Ui,
+    selected: &mut T,
+    options: &[(T, String)],
+) -> Response {
+    let enabled = ui.is_enabled();
+    let p = palette(ui);
+    let height = ui.spacing().interact_size.y.max(MIN_TARGET);
+    let width = ui.available_width().max(options.len() as f32 * 48.0);
+    let (rect, mut outer) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
+    let corner = radius_m();
+    let count = options.len().max(1) as f32;
+    let before = selected.clone();
+    if ui.is_rect_visible(rect) {
+        ui.painter().rect(
+            rect,
+            corner,
+            p.surface_2,
+            hairline(p.border_strong),
+            StrokeKind::Inside,
+        );
+    }
+    for (i, (value, label)) in options.iter().enumerate() {
+        let seg = Rect::from_min_size(
+            pos2(rect.left() + rect.width() * i as f32 / count, rect.top()),
+            vec2(rect.width() / count, height),
+        );
+        let response = ui.interact(
+            seg,
+            outer.id.with(i),
+            if enabled {
+                Sense::click()
+            } else {
+                Sense::hover()
+            },
+        );
+        let on = value == selected;
+        response.widget_info(|| {
+            egui::WidgetInfo::selected(egui::WidgetType::RadioButton, enabled, on, label.clone())
+        });
+        if response.clicked() {
+            *selected = value.clone();
+        }
+        if ui.is_rect_visible(seg) {
+            let state = visual_state(&response, enabled);
+            let look = toggle_look(p, on, state);
+            let inset = if on { seg } else { seg.shrink(1.0) };
+            if on || state != VisualState::Rest {
+                let fill = if on {
+                    look.fill
+                } else {
+                    button_look(p, ButtonVariant::Subtle, state).fill
+                };
+                ui.painter().rect(
+                    inset,
+                    corner,
+                    fill,
+                    if on { look.stroke } else { Stroke::NONE },
+                    StrokeKind::Inside,
+                );
+            }
+            let color = if on {
+                look.text
+            } else {
+                button_look(p, ButtonVariant::Subtle, state).text
+            };
+            let galley =
+                ui.painter()
+                    .layout_no_wrap(label.clone(), strong_font(ui.ctx(), 14.0), color);
+            let pos = Align2::CENTER_CENTER
+                .align_size_within_rect(galley.size(), seg)
+                .min;
+            ui.painter().galley(pos, galley, color);
+            paint_focus_ring(ui, seg, corner, &response);
+        }
+        response.on_hover_cursor(if enabled {
+            egui::CursorIcon::PointingHand
+        } else {
+            egui::CursorIcon::Default
+        });
+    }
+    if *selected != before {
+        outer.mark_changed();
+    }
+    outer
+}
+
 /// Dropdown (`Dropdown.md`): escolhe um valor numa lista. O item escolhido fica em
 /// `accent-subtle` com visto. Para listas curtas (2 a 5), prefira o rádio.
 pub fn cs_dropdown<T: PartialEq + Clone>(

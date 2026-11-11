@@ -72,6 +72,7 @@ pub fn panel_icon(id: &str) -> &'static str {
         ids::ANALYSIS => icon::CHART_LINE_UP,
         ids::LIBRARY => icon::BOOKS,
         ids::OPENINGS => icon::BOOK_OPEN_TEXT,
+        ids::EXPLORER => icon::COMPASS,
         ids::SCORESHEET => icon::SCROLL,
         ids::BOARD2D => icon::SQUARES_FOUR,
         _ => icon::APP_WINDOW,
@@ -627,6 +628,7 @@ mod tests {
             ids::ANALYSIS,
             ids::LIBRARY,
             ids::OPENINGS,
+            ids::EXPLORER,
             ids::SCORESHEET,
             ids::BOARD2D,
         ];
