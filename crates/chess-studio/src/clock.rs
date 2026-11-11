@@ -880,8 +880,12 @@ fn clock_panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
         ui.colored_label(p.warning, i18n.t("clock-paused"));
     }
     if session.is_online() {
-        // Sem botão nem Infrações: o relógio é do Lichess.
-        ui.small(i18n.t("clock-online"));
+        // Sem botão nem Infrações: o relógio é do Provedor (Lichess ou FICS).
+        let provider = match session.game().setup().online_game() {
+            Some(online) if online.provider == "fics" => "FICS",
+            _ => "Lichess",
+        };
+        ui.small(i18n.t_with("clock-online", &[("provider", provider)]));
         return;
     }
     if session.is_competitive() {

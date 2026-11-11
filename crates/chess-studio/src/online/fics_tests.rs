@@ -763,11 +763,13 @@ fn the_fics_screen_draws_every_state_in_plain_language_with_no_password_field() 
                     "login",
                     "credencial",
                     "password",
-                    "senha:",
+                    "sua senha",
                     "etapa",
                 ] {
                     assert!(!lower.contains(banned), "{banned:?} em {text:?} ({name})");
                 }
+                // Nenhum rótulo de campo de senha ("Senha", "Senha:").
+                assert!(!lower.trim().starts_with("senha"), "{text:?} ({name})");
                 assert!(
                     *right <= WIDTH + 1.0,
                     "{text:?} passa da borda ({name}, {theme})"

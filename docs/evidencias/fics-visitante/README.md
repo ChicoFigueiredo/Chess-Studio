@@ -13,7 +13,9 @@ Capturas nos Temas Escuro (`escuro/`) e Claro (`claro/`), geradas pelo modo `--s
 
 ## O Painel Partida online com a Partida de visitante (o mesmo Painel do Lichess)
 
-- `fics-playing.png`: Partida em andamento, selos **FICS · visitante** e **Ao vivo**, "Enviando Ba4…" (intenção enviada, a peça no destino), Abortar, Propor empate, Abandonar e "Trava de fair play ligada… até o fim confirmado pelo FICS".
+Nestas cenas o Painel fica no grupo do Relógio (o mais alto), para caber inteiro na captura; o Painel Relógio, ao lado, diz "Relógio do FICS".
+
+- `fics-playing.png`: Partida em andamento, selos **FICS · visitante** e **Ao vivo**, "Enviando Ba4…" (intenção enviada, a peça no destino), Propor empate, Abandonar, "Contra Peao_Passado · Blitz 5+3 · sem rating" e "Trava de fair play ligada… até o fim confirmado pelo FICS".
 - `fics-desync.png`: a Partida no app não confere com o tabuleiro do FICS; nada foi mudado e nenhum Lance foi inventado.
 - `fics-dropped.png`: a conexão caiu durante a Partida: "No FICS, a Partida de visitante que cai é dada como perdida; o resultado não pôde ser confirmado e o app não reconecta sozinho", a Trava continua até **Descartar a sessão**.
 - `fics-ended.png`: fim confirmado pelo FICS, **Analisar**, **Ver na Biblioteca** e "Origem FICS (visitante)".
@@ -28,5 +30,5 @@ Capturas nos Temas Escuro (`escuro/`) e Claro (`claro/`), geradas pelo modo `--s
 cargo run -p chess-studio -- --screenshot <dir> --size 1600x900 \
   --online-tour fics-off,fics-guest,fics-lobby,fics-waiting,fics-challenges,fics-observe,fics-playing,fics-desync,fics-dropped,fics-ended
 cargo run -p chess-studio -- --screenshot <dir> --single central --size 1920x1080 \
-  --backstage-page connections --connections-demo --connections-open fics --connections-scroll <pt> [--theme claro]
+  --backstage-page connections --connections-demo --connections-open fics --theme escuro   # ou --theme claro
 ```

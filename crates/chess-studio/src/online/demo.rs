@@ -455,16 +455,28 @@ impl Scene {
             None,
         )
         .ok()?
-        .with_time_control(TimeControl {
-            base_ms: 600_000,
-            increment_ms: 5_000,
+        .with_time_control(if fics {
+            TimeControl {
+                base_ms: 300_000,
+                increment_ms: 3_000,
+            }
+        } else {
+            TimeControl {
+                base_ms: 600_000,
+                increment_ms: 5_000,
+            }
         });
+        let (white_ms, black_ms) = if fics {
+            (212_000, 247_000)
+        } else {
+            (512_000, 547_000)
+        };
         let mut game = Game::new(setup);
         let snapshot = ProviderSnapshot {
             moves: moves.iter().map(|m| (*m).to_owned()).collect(),
             clock: Some(ProviderClock {
-                white_ms: 512_000,
-                black_ms: 547_000,
+                white_ms,
+                black_ms,
                 running: true,
             }),
             draw_offer: offer,
@@ -566,6 +578,13 @@ fn enter(
             session.show_online(game, None, true);
             if let Some(dock) = dock {
                 super::reveal_panel(&mut dock.layout);
+                // Nas cenas do FICS, o Painel vai para o grupo do Relógio (o mais alto), para
+                // caber inteiro na captura: os avisos do FICS são mais longos que os do Lichess.
+                if scene.fics.is_some() {
+                    dock.layout
+                        .move_into_group_of(super::PANEL_ID, crate::dock::ids::CLOCK);
+                    dock.layout.activate(super::PANEL_ID);
+                }
             }
         }
         None if session.is_online() => {

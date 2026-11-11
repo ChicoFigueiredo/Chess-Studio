@@ -21,7 +21,7 @@ notation-note-add = Anotar este lance (Enter salva, Esc cancela, Shift+Enter abr
 notation-note-hint = Nota rápida…
 
 clock-none = Esta Partida não tem relógio.
-clock-online = Relógio do Lichess.
+clock-online = Relógio do { $provider }.
 clock-control = Controle de tempo: { $control }
 clock-penalties = Infrações (cada uma dá 2 min ao adversário) — Brancas: { $white } | Pretas: { $black }
 
