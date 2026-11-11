@@ -1,0 +1,2 @@
+central: 5.63 ms/quadro (178 quadros/s)
+carregamento da cena: 0.70 s

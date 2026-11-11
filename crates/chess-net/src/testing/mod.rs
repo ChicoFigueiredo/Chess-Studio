@@ -1,5 +1,6 @@
 //! Apoio de teste (feature `testing`, só em `[dev-dependencies]`): servidor HTTP falso em
-//! porta efêmera de loopback e respostas gravadas no formato do `curl -i` (CX-17). Com
+//! porta efêmera de loopback, respostas gravadas no formato do `curl -i` (CX-17) e o
+//! servidor ICS falso ([`FakeIcsServer`], TCP de texto, #237). Com
 //! `NetConfig::route`, os hosts oficiais vão para o servidor falso; a suíte nunca chama
 //! serviço real.
 //!
@@ -21,7 +22,9 @@
 //! # Ok::<(), chess_net::NetError>(())
 //! ```
 
+mod ics;
 mod recorded;
 mod server;
 
+pub use ics::FakeIcsServer;
 pub use server::{FakeResponse, FakeServer, LiveFeed, ReceivedRequest};

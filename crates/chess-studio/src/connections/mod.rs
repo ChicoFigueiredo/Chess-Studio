@@ -16,6 +16,7 @@ mod browser;
 pub mod demo;
 pub mod model;
 mod probe;
+pub(crate) mod stored_data;
 mod view;
 
 use crate::net_service::NetService;
@@ -42,6 +43,8 @@ pub use view::section;
 pub(crate) enum Op {
     SetEnabled(ProviderId, bool),
     ClearCache(ProviderId),
+    /// O rating FIDE do Perfil local: consultar, buscar por nome ou vincular (#242).
+    Fide(crate::fide_profile::FideAction),
     OpenDocs(ProviderId),
     OpenTerms(ProviderId),
     Link {
@@ -148,6 +151,10 @@ pub struct ConnectionsUi {
     pub(crate) authorized: HashSet<ProviderId>,
     /// Autorizações em andamento, diálogos do Cofre e situação de cada Conexão autorizada.
     pub(crate) auth: auth::Auth,
+    /// O rating FIDE do Perfil local ativo (cartão da FIDE e página Perfil local).
+    pub(crate) fide: crate::fide_profile::FideProfile,
+    /// "Limpar dados guardados": a confirmação e o último resultado.
+    pub(crate) stored: stored_data::StoredData,
     /// Como abrir páginas no navegador (os testes trocam por um gravador).
     pub(crate) opener: auth::Opener,
     /// Rolagem vertical inicial, uma vez (`--connections-scroll`, para as capturas).
@@ -166,7 +173,7 @@ pub struct CentralParams<'w> {
     pub(crate) ui: ResMut<'w, ConnectionsUi>,
     pub(crate) service: Res<'w, NetService>,
     pub(crate) dialog: ResMut<'w, ConsentDialog>,
-    persistence: Option<Res<'w, PersistenceHandle>>,
+    pub(crate) persistence: Option<Res<'w, PersistenceHandle>>,
 }
 
 impl ConnectionsUi {
@@ -198,6 +205,7 @@ impl ConnectionsUi {
                 at,
             }),
         );
+        ui.fide = crate::fide_profile::FideProfile::demo();
         ui.dirty = true;
         ui
     }
@@ -266,6 +274,7 @@ impl ConnectionsUi {
                     };
                     self.notes.insert(provider, note);
                 }
+                Op::Fide(action) => self.fide_action(action, service, dialog, handle),
                 Op::Authorize(slot) => self.authorize(slot, None, service, dialog, handle),
                 Op::Reauthorize(id) => {
                     let slot = self.list.iter().find(|c| c.id == id).and_then(|c| {
@@ -432,6 +441,7 @@ impl ConnectionsUi {
         answers: &[ProviderConsentAnswered],
     ) {
         self.poll_auth(service, dialog, handle, answers);
+        self.fide_drive(service, dialog, handle, answers);
         if !self.tests.is_empty() {
             self.poll(service, answers);
         }

@@ -430,6 +430,28 @@ CREATE UNIQUE INDEX connections_default
 CREATE INDEX connections_by_profile ON connections (profile_id, provider);
 ";
 
+/// Versão 17: último rating FIDE consultado por Perfil local (CX-19, #242), para ver offline.
+/// Uma linha por Perfil local e ID FIDE; standard, rápido e blitz ficam em colunas separadas
+/// (nunca somados nem misturados). `queried_at_ms` é a data da **consulta**: o Lichess, de onde
+/// o dado vem (`source`), não informa a data do rating. Não guarda segredo.
+const V17_FIDE_RATINGS: &str = "
+CREATE TABLE fide_ratings (
+    profile_id    INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    fide_id       INTEGER NOT NULL,
+    name          TEXT NOT NULL,
+    federation    TEXT,
+    title         TEXT,
+    birth_year    INTEGER,
+    standard      INTEGER,
+    rapid         INTEGER,
+    blitz         INTEGER,
+    inactive      INTEGER NOT NULL DEFAULT 0 CHECK (inactive IN (0, 1)),
+    queried_at_ms INTEGER NOT NULL,
+    source        TEXT NOT NULL,
+    PRIMARY KEY (profile_id, fide_id)
+);
+";
+
 /// Migrações em ordem; o índice + 1 é a versão resultante.
 const MIGRATIONS: &[&str] = &[
     V1_CORE,
@@ -448,6 +470,7 @@ const MIGRATIONS: &[&str] = &[
     V14_EXERCISE_PACKS,
     V15_CONNECTIONS,
     V16_AUTHORIZED_CONNECTIONS,
+    V17_FIDE_RATINGS,
 ];
 
 /// Versão de esquema desta build.

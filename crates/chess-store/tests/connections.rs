@@ -192,7 +192,7 @@ fn migration_16_applies_on_a_version_14_database_and_keeps_everything() {
         assert_eq!(chess_store::migrations::current_version(&conn).unwrap(), 14);
     }
     let mut store = Store::open(db.path()).unwrap();
-    assert_eq!(store.schema_version().unwrap(), 16);
+    assert!(store.schema_version().unwrap() >= 16);
     let ana = chess_store::ProfileId(2);
     assert_eq!(store.profile(ana).unwrap().name, "Ana");
     assert_eq!(

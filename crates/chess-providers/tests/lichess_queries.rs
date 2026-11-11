@@ -373,6 +373,35 @@ fn fide_returns_standard_rapid_and_blitz_separately_with_origin() {
 }
 
 #[test]
+fn refreshing_a_fide_rating_asks_the_provider_again_and_moves_the_query_date() {
+    let env = env_enabled();
+    env.server.route(
+        "/api/fide/player/1503014",
+        fixture("lichess-fide-player.http"),
+    );
+    let first = env.lichess.fide_player(1_503_014).wait().expect("FIDE");
+    assert_eq!(first.provenance.queried_at, T0);
+    env.clock.advance(Duration::from_secs(3600));
+
+    // Sem "Atualizar", o cache ainda válido responde e a data da consulta não muda.
+    let cached = env.lichess.fide_player(1_503_014).wait().expect("FIDE");
+    assert_eq!(cached.provenance.queried_at, T0);
+    assert_eq!(env.server.requests().len(), 1);
+
+    let fresh = env
+        .lichess
+        .fide_player_refreshed(1_503_014)
+        .wait()
+        .expect("FIDE");
+    assert_eq!(env.server.requests().len(), 2, "foi ao Provedor de novo");
+    assert_eq!(
+        fresh.provenance.queried_at,
+        T0.plus(Duration::from_secs(3600))
+    );
+    assert_eq!(fresh.value, first.value);
+}
+
+#[test]
 fn fide_search_lists_players_and_failures_are_typed() {
     let env = env_enabled();
     env.server

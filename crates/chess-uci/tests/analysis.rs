@@ -174,11 +174,19 @@ fn stop_pauses_the_analysis_and_resuming_works() {
     update_at_depth(&mut ctrl, 5);
     ctrl.stop();
     assert!(!ctrl.is_analyzing());
+    // O `stop` chega à Engine de forma assíncrona: espera pelo rastro, em vez de supor o
+    // tempo (#236). Atualizações emitidas antes dele podem já estar na fila; descarta-as.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !trace_lines(&trace).iter().any(|l| l == "stop") {
+        assert!(Instant::now() < deadline, "stop não chegou à Engine");
+        std::thread::sleep(ms(5));
+    }
+    while ctrl.poll().is_some() {}
+    // Daí em diante, nenhuma atualização nova.
     std::thread::sleep(ms(200));
     while let Some(event) = ctrl.poll() {
         assert!(!matches!(event, AnalysisEvent::Update(_)), "{event:?}");
     }
-    assert!(trace_lines(&trace).iter().any(|l| l == "stop"));
     ctrl.analyze(PositionSpec::startpos(), 1);
     update_at_depth(&mut ctrl, 5);
 }

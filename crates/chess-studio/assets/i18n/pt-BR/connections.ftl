@@ -97,7 +97,6 @@ connections-cost-free-limited = Gratuito, com limites
 connections-cost-paid = Pago, opcional
 connections-cost-approval = Requer aprovação do Provedor
 connections-cost-unconfirmed = Custo ainda não confirmado
-connections-cost-line = { $cost }: { $services }
 
 connections-auth-none = Sem identificação
 connections-auth-public-id = Nome ou ID público, sem senha
@@ -130,7 +129,6 @@ connections-detail-later = O que vem depois
 connections-detail-last = Última consulta
 connections-detail-status = Situação
 connections-detail-links = Instruções e termos
-connections-detail-later-list = { $list }.
 connections-last-never = Nenhuma nesta sessão
 connections-ago-now = agora há pouco
 connections-ago-minutes = há { $count } min
