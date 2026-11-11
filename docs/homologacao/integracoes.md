@@ -79,6 +79,8 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 | CX-HOM-58 | FICS: desafios recebidos e variantes | sim | UNVERIFIED |
 | CX-HOM-59 | FICS: queda de conexão durante a Partida | sim | UNVERIFIED |
 | CX-HOM-60 | FICS: observar uma Partida | sim | UNVERIFIED |
+| CX-HOM-61 | Log detalhado sem segredo | sim | UNVERIFIED |
+| CX-HOM-62 | Problemas do Lichess depois do limite de linha | sim | UNVERIFIED |
 
 ## Itens
 
@@ -736,6 +738,27 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Esperado:** um tabuleiro pequeno mostra a Partida, com nomes, relógios e o último Lance. Nada vai ao tabuleiro principal nem à Biblioteca, e a Trava de fair play não liga. Uma Partida de variante é recusada com aviso.
 - **Com o serviço real (UNVERIFIED):** os textos de observação (`You are now observing game N.`, `Game N: …`, `Removing game N from observation list.`) do FICS real são reconhecidos.
 - **Evidência:** [`online/fics_tests.rs`](../../crates/chess-studio/src/online/fics_tests.rs), [decisões FC-13 a FC-21](../decisoes/2026-11-11-fics.md).
+
+### CX-HOM-61. Log detalhado sem segredo
+
+- **Pré-condição:** uma Conexão do Lichess autorizada (CX-HOM-09 ou CX-HOM-11); internet; terminal.
+- **Passos:**
+  1. Abra o app pelo terminal com o log mais detalhado e guarde a saída: `RUST_LOG=trace cargo run -p chess-studio 2> log-trace.txt` (no pacote: `RUST_LOG=trace chess-studio 2> log-trace.txt`).
+  2. Use o Explorador do Lichess (fonte Mestres) numa Posição qualquer; depois, na Central, **Autorizar** de novo pelo navegador e conclua.
+  3. Feche o app e procure o começo do seu token no arquivo (`grep -c "lio_" log-trace.txt` e `grep -ci "authorization" log-trace.txt`).
+- **Esperado:** nenhuma linha com o token, com `Authorization: Bearer`, com o código de autorização ou com o verificador PKCE, nem em texto nem no despejo hexadecimal. As linhas de `DEBUG` da rede mostram só método, endereço sem consulta e cabeçalhos seguros.
+- **Com o serviço real (UNVERIFIED):** o teste automático usa o servidor falso; só aqui o pedido real ao Lichess passa pelo log.
+- **Evidência:** [`log_secrets.rs`](../../crates/chess-net/tests/log_secrets.rs), [revisão de segurança SEC-01](../seguranca/revisao-v4.md#sec-01-token-código-e-verificador-pkce-no-log-em-trace).
+
+### CX-HOM-62. Problemas do Lichess depois do limite de linha
+
+- **Pré-condição:** internet; Lichess ligado.
+- **Passos:**
+  1. Refaça os passos 1 e 2 do CX-HOM-44 (200 problemas de poucos temas).
+  2. Instale também, de arquivo, o `lichess_db_puzzle.csv.zst` baixado do site (passos do CX-HOM-27).
+- **Esperado:** os dois terminam como antes, com o pacote instalado: as linhas reais (uns 200 bytes) ficam muito abaixo do limite de 64 KiB. Um arquivo que não é a base (uma linha gigante) para com **linha acima de 65536 bytes: não é a base de problemas do Lichess** e nada é instalado.
+- **Com o serviço real (UNVERIFIED):** confirma que nenhuma linha da base real passa do limite.
+- **Evidência:** [`lichess.rs`](../../crates/chess-training/tests/lichess.rs), [`puzzles.rs`](../../crates/chess-providers/tests/puzzles.rs), [revisão de segurança SEC-02](../seguranca/revisao-v4.md#sec-02-bomba-de-descompressão-nos-problemas-do-lichess).
 
 ## Fora deste roteiro
 

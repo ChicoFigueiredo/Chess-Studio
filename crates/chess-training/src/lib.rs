@@ -53,8 +53,8 @@ pub use exercise::{
 };
 pub use filter::ExerciseFilter;
 pub use lichess::{
-    ImportProgress, ImportReport, PuzzleFilter, PuzzleImportError, import_lichess_csv,
-    open_puzzle_file, open_puzzle_reader,
+    ImportProgress, ImportReport, MAX_PUZZLE_LINE, PuzzleFilter, PuzzleImportError,
+    import_lichess_csv, open_puzzle_file, open_puzzle_reader,
 };
 pub use memory::{MemoryPhase, MemoryRun, MemorySummary, PlyResult};
 pub use metrics::{Metrics, Tally};

@@ -2,11 +2,12 @@
 //! Leitor do formato de problemas do Lichess (CSV, CC0) e filtro de Exercícios.
 
 use chess_training::{
-    ExerciseFilter, ExerciseKind, ImportProgress, PuzzleFilter, Solution, import_lichess_csv,
-    open_puzzle_file,
+    ExerciseFilter, ExerciseKind, ImportProgress, MAX_PUZZLE_LINE, PuzzleFilter, Solution,
+    import_lichess_csv, open_puzzle_file,
 };
 use std::io::{BufReader, Cursor, Read};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 const HEADER: &str =
     "PuzzleId,FEN,Moves,Rating,RatingDeviation,Popularity,NbPlays,Themes,GameUrl,OpeningTags";
@@ -236,6 +237,64 @@ fn import_can_be_cancelled_midway() {
     .unwrap();
     assert!(report.cancelled);
     assert!(report.lines_read < 20_000, "leu {}", report.lines_read);
+}
+
+/// O que uma bomba de descompressão entrega: `len` bytes sem fim de linha (poucos KiB de
+/// `.zst` viram isso). Conta o que foi lido.
+struct NoNewline {
+    left: u64,
+    read: Arc<AtomicU64>,
+}
+
+impl Read for NoNewline {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = buf
+            .len()
+            .min(usize::try_from(self.left).unwrap_or(usize::MAX));
+        buf[..n].fill(b'a');
+        self.left -= n as u64;
+        self.read.fetch_add(n as u64, Ordering::Relaxed);
+        Ok(n)
+    }
+}
+
+/// Revisão de segurança (#273): uma linha gigante (arquivo errado ou bomba de
+/// descompressão vinda da rede) encerra a leitura com erro sem ser guardada na memória.
+#[test]
+fn a_giant_line_from_a_decompression_bomb_stops_the_import_without_buffering_it() {
+    let read = Arc::new(AtomicU64::new(0));
+    let bomb = NoNewline {
+        left: 64 << 20,
+        read: read.clone(),
+    };
+    let cancel = AtomicBool::new(false);
+    let result = import_lichess_csv(
+        BufReader::with_capacity(64 * 1024, bomb),
+        &PuzzleFilter::default(),
+        &cancel,
+        &mut |_| {},
+    );
+    let error = result.expect_err("linha gigante é erro, não Exercício nem linha inválida");
+    assert!(error.to_string().contains("linha"), "{error}");
+    let consumed = read.load(Ordering::Relaxed);
+    assert!(
+        consumed <= MAX_PUZZLE_LINE as u64 + 128 * 1024,
+        "a leitura parou logo depois do limite da linha, sem ler a bomba inteira ({consumed} bytes)"
+    );
+}
+
+/// Uma linha longa, mas abaixo do limite, ainda é lida (e recusada como malformada, como
+/// qualquer outra).
+#[test]
+fn a_long_line_below_the_limit_is_just_an_invalid_row() {
+    let long = "x".repeat(MAX_PUZZLE_LINE - 1);
+    let text = format!(
+        "{HEADER}\n{long}\n{}",
+        row("0009B", BEFORE, "b7b6 a1a8", "1500", "mate")
+    );
+    let (exercises, report) = import(&text, &PuzzleFilter::default());
+    assert_eq!(report.invalid, 1);
+    assert_eq!(exercises.len(), 1);
 }
 
 #[test]

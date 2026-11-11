@@ -231,3 +231,42 @@ fn client_errors_are_not_retried() {
         &ProviderState::Available
     );
 }
+
+/// Revisão de segurança (#273): uma resposta gigante é cortada no limite do pedido, vira
+/// erro tipado e não vai para o cache.
+#[test]
+fn a_giant_response_is_cut_at_the_limit_and_never_cached() {
+    let clock = clock();
+    let server = server(&clock);
+    server.route("/masters", FakeResponse::ok(vec![b'x'; 2 << 20]));
+    let net = net_enabled(&server, &clock, &[ProviderId::Lichess]);
+    let request = masters().max_body(1 << 20).cache_for(secs(3600));
+
+    let err = net.fetch(request.clone()).wait().unwrap_err();
+
+    assert_eq!(
+        err,
+        NetError::BodyTooLarge {
+            provider: ProviderId::Lichess,
+            limit: 1 << 20
+        }
+    );
+    assert!(net.read_cache(&request).unwrap().is_none(), "nada no cache");
+}
+
+/// Revisão de segurança (#273): um corpo sem tamanho anunciado que nunca acaba também para
+/// no limite (não depende de `Content-Length`).
+#[test]
+fn an_endless_body_is_cut_at_the_limit() {
+    let clock = clock();
+    let server = server(&clock);
+    server.route("/masters", FakeResponse::stream_forever(&[b'x'; 16 * 1024]));
+    let net = net_enabled(&server, &clock, &[ProviderId::Lichess]);
+
+    let err = net.fetch(masters().max_body(64 * 1024)).wait().unwrap_err();
+
+    assert!(
+        matches!(err, NetError::BodyTooLarge { limit, .. } if limit == 64 * 1024),
+        "{err:?}"
+    );
+}
