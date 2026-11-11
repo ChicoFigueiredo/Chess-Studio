@@ -6,8 +6,10 @@
 //! ([`Query`]); `player` responde em fluxo NDJSON, que a interface lê por quadro com
 //! [`ExplorerStream::try_next`]: cada linha é um resultado parcial melhor que o anterior.
 //!
-//! Medido em 2026-11-11: o serviço respondia `401` sem autenticação nos três endereços
-//! (ver [`crate::ProviderError::SignInRequired`]).
+//! Medido em 2026-11-11: o serviço responde `401` sem autenticação nos três endereços. Com
+//! uma Conexão do Lichess escolhida ([`Lichess::use_connection`]), os pedidos levam o token
+//! dela (do Cofre); sem ela, a consulta é recusada antes da rede com
+//! [`crate::ProviderError::SignInRequired`] ("requer Conexão do Lichess").
 
 use crate::answer::{Answer, Query, fetch, json, license_of, stream_provenance};
 use crate::dates::YearMonth;
@@ -15,7 +17,7 @@ use crate::error::{Missing, ProviderError};
 use crate::lichess::{EXPLORER_HOST, Lichess, PROVIDER};
 use crate::ttl;
 use chess_core::Color;
-use chess_net::{Freshness, Provenance, Request, Stream, StreamEvent};
+use chess_net::{Freshness, Provenance, Stream, StreamEvent};
 use chess_store::Pace;
 use serde::Deserialize;
 use std::fmt;
@@ -293,7 +295,8 @@ impl Lichess {
     /// Corpus de mestres (partidas de torneios de elite) na Posição `fen`. Validade do cache:
     /// [`ttl::MASTERS`].
     pub fn masters(&self, fen: &str, filter: &MastersFilter) -> Query<ExplorerPosition> {
-        let mut request = Request::get(PROVIDER, format!("https://{EXPLORER_HOST}/masters"))
+        let mut request = self
+            .explorer_request("/masters")
             .position("fen", fen)
             .cache_for(ttl::MASTERS);
         if let Some(year) = filter.since_year {
@@ -319,7 +322,8 @@ impl Lichess {
                 "faixa de rating {bad} não existe no Explorador (use {RATING_BANDS:?})"
             )));
         }
-        let mut request = Request::get(PROVIDER, format!("https://{EXPLORER_HOST}/lichess"))
+        let mut request = self
+            .explorer_request("/lichess")
             .position("fen", fen)
             .query("variant", "standard")
             .cache_for(ttl::LICHESS_EXPLORER);
@@ -362,7 +366,8 @@ impl Lichess {
             Ok(name) => name,
             Err(e) => return ExplorerStream::failed(e, self.provenance()),
         };
-        let mut request = Request::get(PROVIDER, format!("https://{EXPLORER_HOST}/player"))
+        let mut request = self
+            .explorer_request("/player")
             .position("fen", fen)
             .query("player", name)
             .query(

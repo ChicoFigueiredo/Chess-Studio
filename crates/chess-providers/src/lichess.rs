@@ -3,7 +3,7 @@
 //! (Partidas públicas) e [`crate::profile`] (perfil e FIDE). Aqui ficam o cliente e as
 //! constantes de endereço.
 
-use chess_net::{Clock, Net, ProviderId, Timestamp};
+use chess_net::{Clock, ConnectionId, Net, ProviderId, Timestamp};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Mutex};
@@ -28,6 +28,8 @@ pub struct Lichess {
     pub(crate) net: Net,
     pub(crate) clock: Arc<dyn Clock>,
     pub(crate) no_eval: Arc<Mutex<HashMap<String, NoEval>>>,
+    /// Conexão do Lichess que autoriza o Explorador (que exige token desde 2026-11-11).
+    pub(crate) connection: Arc<Mutex<Option<ConnectionId>>>,
 }
 
 impl fmt::Debug for Lichess {
@@ -44,6 +46,33 @@ impl Lichess {
             net,
             clock,
             no_eval: Arc::default(),
+            connection: Arc::default(),
+        }
+    }
+
+    /// Conexão do Lichess (autorizada, no Cofre) que o Explorador usa; `None` desliga. Vale
+    /// para todos os clones. Sem ela, o Explorador responde
+    /// [`crate::ProviderError::SignInRequired`] sem tocar a rede.
+    pub fn use_connection(&self, connection: Option<ConnectionId>) {
+        *self
+            .connection
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = connection;
+    }
+
+    pub fn connection(&self) -> Option<ConnectionId> {
+        *self
+            .connection
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Pedido ao Explorador, pela Conexão escolhida (se houver).
+    pub(crate) fn explorer_request(&self, path: &str) -> chess_net::Request {
+        let request = chess_net::Request::get(PROVIDER, format!("https://{EXPLORER_HOST}{path}"));
+        match self.connection() {
+            Some(connection) => request.connection(connection),
+            None => request,
         }
     }
 }

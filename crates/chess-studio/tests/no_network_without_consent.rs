@@ -8,6 +8,13 @@
 //!
 //! Nenhum outro crate declara cliente HTTP nem abre socket. Teste estático: varre as fontes e
 //! os manifestos e falha se surgir um terceiro caminho de rede.
+//!
+//! **Única escuta de rede permitida:** o servidor de loopback do retorno da autorização pelo
+//! navegador (OAuth2 PKCE do Lichess, #224), em `chess-net/src/loopback.rs`. É uma exceção
+//! legítima e só ela: o RFC 8252 (OAuth2 em app nativo) exige receber o código num endereço
+//! de loopback, e o arquivo escuta só em `127.0.0.1`, porta efêmera, para um único retorno,
+//! com prazo, e não fala com Provedor nenhum (a troca do código passa pelo gate). Qualquer
+//! outro arquivo com socket continua reprovado.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -16,8 +23,10 @@ use std::path::{Path, PathBuf};
 const HTTP_CLIENTS: [&str; 2] = ["chess-net/src/transport.rs", "chess-uci/src/install.rs"];
 /// Os únicos crates que declaram `ureq`.
 const HTTP_CRATES: [&str; 2] = ["chess-net", "chess-uci"];
-/// Sockets crus só no servidor falso dos testes (feature `testing` do chess-net).
+/// Sockets crus só no servidor falso dos testes (feature `testing` do chess-net)...
 const SOCKET_DIR: &str = "chess-net/src/testing/";
+/// ...e no servidor de loopback do retorno da autorização (a única escuta de produção).
+const LOOPBACK_FILE: &str = "chess-net/src/loopback.rs";
 
 fn workspace_crates() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
@@ -117,15 +126,33 @@ fn only_the_engine_installer_and_the_provider_layer_speak_http() {
 }
 
 #[test]
-fn raw_sockets_exist_only_in_the_fake_server_of_the_tests() {
+fn raw_sockets_exist_only_in_the_fake_server_and_the_oauth_loopback() {
     for socket in ["TcpStream", "UdpSocket", "TcpListener", "std::net::"] {
         for file in files_containing(socket) {
             assert!(
-                file.starts_with(SOCKET_DIR),
-                "{socket} fora do servidor falso: {file}"
+                file.starts_with(SOCKET_DIR) || file == LOOPBACK_FILE,
+                "{socket} fora do servidor falso e do loopback da autorização: {file}"
             );
         }
     }
+    // O loopback só escuta (TcpListener) e só em 127.0.0.1: nunca abre conexão para fora.
+    let loopback = fs::read_to_string(workspace_crates().join(LOOPBACK_FILE)).expect("loopback");
+    let code = non_test_part(&loopback);
+    assert!(
+        !code.contains("TcpStream::connect"),
+        "o loopback não abre conexão"
+    );
+    assert!(!code.contains("UdpSocket"), "o loopback não usa UDP");
+    assert!(!code.contains("ureq"), "o loopback não é cliente HTTP");
+    assert!(
+        code.contains("Ipv4Addr::LOCALHOST") && !code.contains("UNSPECIFIED"),
+        "o loopback escuta só em 127.0.0.1"
+    );
+    assert_eq!(
+        code.matches("TcpListener::bind(").count(),
+        1,
+        "um único ponto de escuta"
+    );
     let lib = fs::read_to_string(workspace_crates().join("chess-net/src/lib.rs")).expect("lib.rs");
     assert!(
         lib.contains("#[cfg(feature = \"testing\")]\npub mod testing;"),

@@ -11,6 +11,8 @@ use std::time::Duration;
 pub enum Method {
     Get,
     Post,
+    /// Só a revogação de token (`DELETE /api/token` no Lichess).
+    Delete,
 }
 
 impl Method {
@@ -18,6 +20,7 @@ impl Method {
         match self {
             Self::Get => "GET",
             Self::Post => "POST",
+            Self::Delete => "DELETE",
         }
     }
 }
@@ -32,9 +35,10 @@ const FORBIDDEN_HEADERS: [&str; 6] = [
     "if-modified-since",
 ];
 
-/// Um pedido a um Provedor. Construa com [`Request::get`] ou [`Request::post`] e envie com
-/// `Net::fetch` ou `Net::stream`.
-#[derive(Debug, Clone)]
+/// Um pedido a um Provedor. Construa com [`Request::get`], [`Request::post`] ou
+/// [`Request::delete`] e envie com `Net::fetch` ou `Net::stream`. O `Debug` mostra o tamanho
+/// do corpo, não o conteúdo (a troca de código por token leva o código e o verificador).
+#[derive(Clone)]
 pub struct Request {
     pub(crate) provider: ProviderId,
     pub(crate) method: Method,
@@ -59,6 +63,10 @@ impl Request {
 
     pub fn post(provider: ProviderId, url: impl Into<String>) -> Self {
         Self::new(provider, Method::Post, url.into())
+    }
+
+    pub fn delete(provider: ProviderId, url: impl Into<String>) -> Self {
+        Self::new(provider, Method::Delete, url.into())
     }
 
     fn new(provider: ProviderId, method: Method, url: String) -> Self {
@@ -231,6 +239,32 @@ impl Request {
             self.canonical_url(target),
             headers.join(","),
         )
+    }
+}
+
+impl std::fmt::Debug for Request {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Request")
+            .field("provider", &self.provider)
+            .field("method", &self.method)
+            .field("url", &sanitized(&self.url))
+            .field("query", &self.query)
+            .field("headers", &self.headers)
+            .field(
+                "body",
+                &self
+                    .body
+                    .as_ref()
+                    .map(|(t, b)| format!("{t}, {} bytes", b.len())),
+            )
+            .field("connection", &self.connection)
+            .field("cache_ttl", &self.cache_ttl)
+            .field("allow_stale", &self.allow_stale)
+            .field("patience", &self.patience)
+            .field("timeout", &self.timeout)
+            .field("max_body", &self.max_body)
+            .field("invalid", &self.invalid)
+            .finish()
     }
 }
 

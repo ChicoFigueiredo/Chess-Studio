@@ -74,6 +74,9 @@ pub struct Fetched {
     pub freshness: Freshness,
     /// Idade do conteúdo: agora menos `provenance.queried_at`.
     pub age: Duration,
+    /// Escopos que o Provedor diz que o token da Conexão tem (`X-OAuth-Scopes` do Lichess);
+    /// só em respostas da rede a pedidos autenticados.
+    pub oauth_scopes: Option<String>,
 }
 
 impl Fetched {
@@ -93,6 +96,7 @@ impl fmt::Debug for Fetched {
             .field("provenance", &self.provenance)
             .field("freshness", &self.freshness)
             .field("age", &self.age)
+            .field("oauth_scopes", &self.oauth_scopes)
             .finish()
     }
 }

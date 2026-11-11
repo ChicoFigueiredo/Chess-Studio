@@ -22,7 +22,7 @@ use std::fmt;
 use std::time::Duration;
 
 /// Versão dos dados do catálogo; gravada junto do consentimento.
-pub const CATALOG_VERSION: u32 = 1;
+pub const CATALOG_VERSION: u32 = 2;
 
 /// Provedor do catálogo. A chave ([`ProviderId::key`]) é o que se grava no banco e na Origem.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -308,6 +308,10 @@ pub struct Endpoint {
     pub path_prefix: &'static str,
     pub capability: Capability,
     pub license: &'static str,
+    /// Recebe o `Authorization` da Conexão (o token do Cofre). Só os endereços em que o
+    /// Provedor documenta autenticação; os demais nunca veem o token, mesmo que o pedido
+    /// nomeie uma Conexão.
+    pub takes_token: bool,
 }
 
 /// Token bucket: rajada de até `burst` pedidos, depois um a cada `every`.
@@ -448,6 +452,7 @@ const fn svc(
     }
 }
 
+/// Endereço que nunca recebe o token da Conexão.
 const fn at(
     host: &'static str,
     path_prefix: &'static str,
@@ -459,6 +464,20 @@ const fn at(
         path_prefix,
         capability,
         license,
+        takes_token: false,
+    }
+}
+
+/// Endereço autenticado: recebe o `Authorization` da Conexão do mesmo Provedor.
+const fn authed(
+    host: &'static str,
+    path_prefix: &'static str,
+    capability: Capability,
+    license: &'static str,
+) -> Endpoint {
+    Endpoint {
+        takes_token: true,
+        ..at(host, path_prefix, capability, license)
     }
 }
 
@@ -488,9 +507,8 @@ static CATALOG: [Provider; 19] = [
         services: &[
             svc(
                 C::Explore,
-                // O gate só exige a Conexão quando todo método precisa de segredo; o Explorador
-                // continua aberto no gate até o Cofre (etapa 3) e responde `SignInRequired`.
-                &[A::None],
+                // Só com segredo do Cofre: sem Conexão, o gate recusa antes da rede (#224).
+                &[A::OAuth2Pkce, A::PersonalToken],
                 K::FreeWithSignup,
                 S::Planned { stage: 2 },
                 "Gratuito com cadastro: requer Conexão autorizada do Lichess (etapa 3); sem token o serviço responde 401 (medido em 2026-11-11). Mestres, Lichess e jogador",
@@ -539,7 +557,8 @@ static CATALOG: [Provider; 19] = [
             ),
         ],
         endpoints: &[
-            at(
+            // Desde 2026-11-11 o Explorador responde 401 sem token: recebe o da Conexão.
+            authed(
                 "explorer.lichess.org",
                 "/",
                 C::Explore,
@@ -580,11 +599,14 @@ static CATALOG: [Provider; 19] = [
             at("lichess.org", "/api/games/user/", C::Query, LICHESS_TERMS),
             at("lichess.org", "/game/export/", C::Query, LICHESS_TERMS),
             at("lichess.org", "/api/user/", C::Query, LICHESS_TERMS),
-            at("lichess.org", "/api/account", C::Play, LICHESS_TERMS),
-            at("lichess.org", "/api/stream/event", C::Play, LICHESS_TERMS),
-            at("lichess.org", "/api/board/", C::Play, LICHESS_TERMS),
-            at("lichess.org", "/api/challenge/", C::Play, LICHESS_TERMS),
-            at("lichess.org", "/api/bot/", C::OnlineEngine, LICHESS_TERMS),
+            // Troca do código por token (vai sem token) e revogação (`DELETE`, com o token):
+            // não calcula nem joga; o gate trata como consulta.
+            authed("lichess.org", "/api/token", C::Query, LICHESS_TERMS),
+            authed("lichess.org", "/api/account", C::Play, LICHESS_TERMS),
+            authed("lichess.org", "/api/stream/event", C::Play, LICHESS_TERMS),
+            authed("lichess.org", "/api/board/", C::Play, LICHESS_TERMS),
+            authed("lichess.org", "/api/challenge/", C::Play, LICHESS_TERMS),
+            authed("lichess.org", "/api/bot/", C::OnlineEngine, LICHESS_TERMS),
         ],
         docs_url: "https://lichess-org.github.io/api/",
         terms_url: "https://lichess.org/terms-of-service",
@@ -603,8 +625,9 @@ static CATALOG: [Provider; 19] = [
         sends: "Posições (FEN) e Lances consultados no Explorador (explorer.lichess.org), na \
                 avaliação em cache e nas consultas de Partidas públicas (lichess.org), nos \
                 finais (tablebase.lichess.ovh e tablebase.lichess.org) e nos pacotes da base (database.lichess.org); \
-                nomes e IDs FIDE públicos que você pedir. Com uma Conexão autorizada, também os \
-                seus Lances e desafios. Nada do Perfil local vai junto.",
+                nomes e IDs FIDE públicos que você pedir. Com uma Conexão autorizada, o token \
+                dela vai no cabeçalho só para lichess.org (conta e jogo) e explorer.lichess.org, \
+                junto dos seus Lances e desafios. Nada do Perfil local vai junto.",
         reviewed_on: REVIEWED,
     },
     Provider {
@@ -795,19 +818,19 @@ static CATALOG: [Provider; 19] = [
             ),
         ],
         endpoints: &[
-            at(
+            authed(
                 "playstrategy.org",
                 "/api/stream/event",
                 C::Play,
                 "Termos do PlayStrategy",
             ),
-            at(
+            authed(
                 "playstrategy.org",
                 "/api/board/",
                 C::Play,
                 "Termos do PlayStrategy",
             ),
-            at(
+            authed(
                 "playstrategy.org",
                 "/api/bot/",
                 C::OnlineEngine,

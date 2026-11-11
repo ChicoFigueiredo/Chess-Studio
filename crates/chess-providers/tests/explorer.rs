@@ -148,7 +148,8 @@ fn explorer_http_failures_are_typed() {
         .expect_err("404");
     assert_eq!(error, ProviderError::NoData);
 
-    // A resposta real de 2026-11-11: o Explorador passou a exigir autenticação.
+    // A resposta real de 2026-11-11 (401): com o token da Conexão, quer dizer que ela
+    // expirou ou foi revogada; a Conexão fica marcada no Cofre e o token continua lá.
     env.server
         .route("/masters", fixture("lichess-explorer-masters-401.http"));
     let other = "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq d3 0 1";
@@ -159,11 +160,108 @@ fn explorer_http_failures_are_typed() {
         .expect_err("401");
     assert_eq!(
         error,
+        ProviderError::ConnectionRejected {
+            provider: ProviderId::Lichess,
+            status: 401
+        }
+    );
+    assert!(
+        error.to_string().contains("expirou ou foi revogada"),
+        "{error}"
+    );
+    let reference = env
+        .vault
+        .reference(EXPLORER_CONNECTION)
+        .expect("referência");
+    assert_eq!(reference.rejected.map(|r| r.status), Some(401));
+    assert!(
+        env.vault.read(EXPLORER_CONNECTION).is_ok(),
+        "nada local se perde"
+    );
+}
+
+#[test]
+fn without_a_lichess_connection_the_explorer_says_so_before_the_network() {
+    let env = env_enabled();
+    env.lichess.use_connection(None);
+
+    let error = env
+        .lichess
+        .masters(AFTER_E4, &MastersFilter::default())
+        .wait()
+        .expect_err("sem Conexão");
+    assert_eq!(
+        error,
         ProviderError::SignInRequired {
             provider: ProviderId::Lichess
         }
     );
-    assert!(error.to_string().contains("Conexão autorizada"));
+    assert!(
+        error.to_string().contains("requer Conexão do Lichess"),
+        "{error}"
+    );
+    let error = env
+        .lichess
+        .explorer(AFTER_E4, &LichessFilter::default())
+        .wait()
+        .expect_err("sem Conexão");
+    assert!(matches!(error, ProviderError::SignInRequired { .. }));
+    let mut stream =
+        env.lichess
+            .player_explorer(AFTER_E4, "someone", Color::White, &PlayerFilter::default());
+    let event = eventually_event(&mut stream);
+    assert!(
+        matches!(
+            event,
+            Some(ExplorerEvent::Failed(ProviderError::SignInRequired { .. }))
+        ),
+        "{event:?}"
+    );
+    assert_eq!(env.server.connections(), 0, "nada saiu sem a Conexão");
+
+    // Conexão escolhida, mas o segredo foi apagado do Cofre: a mesma recusa, sem rede.
+    env.lichess.use_connection(Some(EXPLORER_CONNECTION));
+    env.vault.delete(EXPLORER_CONNECTION).expect("apaga");
+    let error = env
+        .lichess
+        .masters(AFTER_E4, &MastersFilter::default())
+        .wait()
+        .expect_err("sem segredo");
+    assert!(matches!(error, ProviderError::SignInRequired { .. }));
+    assert_eq!(env.server.connections(), 0);
+}
+
+#[test]
+fn the_explorer_carries_the_token_of_its_connection_and_nothing_else_does() {
+    let env = env_enabled();
+    env.server
+        .route("/masters", fixture("lichess-explorer-masters.http"));
+    env.server
+        .route("/standard", fixture("lichess-tablebase-kpk.http"));
+
+    env.lichess
+        .masters(AFTER_E4, &MastersFilter::default())
+        .wait()
+        .expect("mestres");
+    let _ = env.lichess.tablebase(KPK).wait();
+
+    let sent = env.server.requests();
+    let bearer = format!("Bearer {EXPLORER_TOKEN}");
+    let masters = sent.iter().find(|r| r.path == "/masters").expect("mestres");
+    assert_eq!(masters.header("authorization"), Some(bearer.as_str()));
+    let finals = sent.iter().find(|r| r.path == "/standard").expect("finais");
+    assert_eq!(finals.header("authorization"), None, "finais sem token");
+}
+
+fn eventually_event(stream: &mut chess_providers::ExplorerStream) -> Option<ExplorerEvent> {
+    let start = std::time::Instant::now();
+    while start.elapsed() < Duration::from_secs(5) {
+        if let Some(event) = stream.try_next() {
+            return Some(event);
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    None
 }
 
 #[test]

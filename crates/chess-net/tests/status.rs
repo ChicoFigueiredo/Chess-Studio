@@ -55,7 +55,8 @@ fn a_failure_shows_until_the_next_success() {
     let unreachable = chess_net::Net::open(
         chess_net::NetConfig::in_memory()
             .clock(clock.clone())
-            .route("explorer.lichess.org", "http://127.0.0.1:9"),
+            .route("explorer.lichess.org", "http://127.0.0.1:9")
+            .vault(std::sync::Arc::new(ExplorerVault)),
     )
     .expect("abre");
     unreachable
