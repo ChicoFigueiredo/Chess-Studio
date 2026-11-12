@@ -44,7 +44,9 @@ mod session;
 mod tracker;
 
 pub use parse::FicsChallenge;
-pub use session::{FicsNotice, FicsPoll, FicsSession, FicsStatus, ObservedGame};
+pub use session::{
+    FicsNotice, FicsPoll, FicsSession, FicsStatus, MAX_FICS_EVENTS_PER_POLL, ObservedGame,
+};
 
 use crate::ProviderError;
 use chess_game::Rejection;

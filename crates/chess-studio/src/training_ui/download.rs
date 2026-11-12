@@ -308,10 +308,7 @@ fn failure_text(i18n: &I18n, error: &ProviderError) -> String {
         ProviderError::Disabled { .. } => i18n.t("training-download-error-disabled"),
         ProviderError::RateLimited { .. } => i18n.t("training-download-error-paused"),
         ProviderError::Malformed { .. } => i18n.t("training-download-error-format"),
-        ProviderError::Net(NetError::Http { status, .. }) => i18n.t_with(
-            "training-download-error-http",
-            &[("status", &status.to_string())],
-        ),
+        ProviderError::Net(NetError::Http { .. }) => i18n.t("training-download-error-http"),
         ProviderError::Net(NetError::Unreachable { .. } | NetError::Timeout { .. }) => {
             i18n.t("training-download-error-offline")
         }

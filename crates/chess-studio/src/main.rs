@@ -2,7 +2,7 @@
 //!
 //! Partida a dois no mesmo computador (Assistido): o intérprete de gestos (`chess_input`)
 //! traduz ponteiro em Comandos, a `Session` os envia à Partida e a cena é reconstruída do
-//! `snapshot()`. `--screenshot <dir>` gera as capturas de evidência e encerra (com
+//! `snapshot()`. `--demo-data` abre um Perfil local de exemplo num banco temporário, sem rede (#275). `--screenshot <dir>` gera as capturas de evidência e encerra (com
 //! `--moves`, `--select`, `--panel`, `--aids physical|training|ghosts` e `--review <n>` opcionais); `--benchmark` liga o modo benchmark.
 
 mod action_icons;
@@ -22,6 +22,7 @@ mod clock;
 mod connections;
 mod controls;
 mod coordinates;
+mod demo_data;
 mod detached;
 mod dock;
 mod end_game;
@@ -45,6 +46,7 @@ mod hud;
 mod hud_draw;
 mod hud_policy;
 mod i18n;
+mod import_preview_ui;
 mod layout;
 mod library_bulk;
 mod library_ui;
@@ -190,18 +192,47 @@ fn main() {
     };
 
     // Banco do usuário (`--db <arquivo>` troca o caminho). Capturas e benchmark não gravam.
+    // `--demo-data`: Perfil local de exemplo num banco temporário, sem rede (#275).
+    let demo = if args.iter().any(|a| a == demo_data::FLAG) && capture.is_none() && bench.is_none()
+    {
+        match demo_data::DemoWorkspace::create() {
+            Ok(demo) => {
+                eprintln!(
+                    "Dados de demonstração em {} (apagados ao sair; o banco real não é tocado)",
+                    demo.dir().display()
+                );
+                Some(demo)
+            }
+            Err(err) => {
+                eprintln!("Erro: não foi possível preparar os dados de demonstração: {err}");
+                std::process::exit(2);
+            }
+        }
+    } else {
+        None
+    };
     let db_path = if capture.is_some() || bench.is_some() {
         None
     } else {
-        persistence::database_location(option_value("--db").map(PathBuf::from))
+        demo_data::resolve_db(
+            demo.as_ref(),
+            option_value("--db").map(PathBuf::from),
+            persistence::database_location,
+        )
     };
 
     let mut app = App::new();
+    if demo.is_some() {
+        app.insert_resource(demo_data::DemoMode);
+    }
     app.add_plugins(
         DefaultPlugins
             .set(WindowPlugin {
                 // Fechar a janela principal encerra o app mesmo com janelas destacadas abertas.
                 exit_condition: bevy::window::ExitCondition::OnPrimaryClosed,
+                // Quem fecha as janelas é `engine_online::exit`, que pergunta antes se há Partida
+                // da Engine online em andamento.
+                close_when_requested: false,
                 primary_window: Some(Window {
                     title: i18n::I18n::pt_br().t("app-title"),
                     resolution,
@@ -316,6 +347,10 @@ fn main() {
             if let Some(keys) = option_value("--connections-open") {
                 demo.open_details(keys.split(','));
             }
+            demo.set_filters(
+                option_value("--connections-filter").as_deref(),
+                option_value("--connections-state-filter").as_deref(),
+            );
             if let Some(pixels) = option_value("--connections-scroll").and_then(|v| v.parse().ok())
             {
                 demo.scrolled(pixels);
@@ -427,7 +462,10 @@ fn main() {
         });
     }
     // Falha de prontidão (B22) e demais erros viram código de saída diferente de zero.
-    if let AppExit::Error(code) = app.run() {
+    let exit = app.run();
+    // O banco temporário da demonstração some antes de qualquer `exit`.
+    drop(demo);
+    if let AppExit::Error(code) = exit {
         std::process::exit(i32::from(code.get()));
     }
 }

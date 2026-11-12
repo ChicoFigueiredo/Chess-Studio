@@ -10,6 +10,7 @@
 //! inacessível numa Partida competitiva (UI-08), como Dicas e Anotações.
 
 use crate::dock::{PanelAccess, PanelDef, ids};
+use crate::fair_play::{FairPlay, FairPlayLocked, Subject};
 use crate::i18n::I18n;
 use crate::persistence::PersistenceHandle;
 use crate::session::Session;
@@ -248,6 +249,10 @@ pub struct ImportOutcome {
     /// Partidas convertidas de Windows-1252/Latin-1 (aviso: conferir os acentos).
     pub converted: usize,
     pub cancelled: bool,
+    /// A fonte gravada na Origem e quantas Partidas novas entraram com licença restrita
+    /// (TWIC, PGN Mentor, ChessBase), para o resumo (#270).
+    pub source: ImportSource,
+    pub restricted: usize,
 }
 
 /// Importa o arquivo (`.pgn` ou `.pgn.gz`) em fluxo, gravando a Origem escolhida
@@ -284,6 +289,12 @@ pub fn import_file(
             .collect(),
         converted: summary.converted_games,
         cancelled: summary.cancelled,
+        source,
+        restricted: if source.is_restricted() {
+            summary.new
+        } else {
+            0
+        },
     })
 }
 
@@ -470,6 +481,8 @@ pub struct LibraryUi {
     date_from: String,
     date_to: String,
     position: String,
+    /// A Trava de fair play recusa a busca pela Posição do filtro (FP-03).
+    locked: Option<FairPlayLocked>,
     page: u32,
     results: Option<LibraryPage>,
     favorites: Vec<Favorite>,
@@ -485,6 +498,7 @@ pub struct LibraryUi {
     import_path: String,
     import_pick: crate::file_picker::FilePickButton,
     import_source: ImportSource,
+    pub(crate) import_preview: crate::import_preview_ui::PreviewState,
     import_job: Option<ImportJob>,
     import_result: Option<Result<ImportOutcome, String>>,
     import_method: ImportMethod,
@@ -514,6 +528,7 @@ impl Default for LibraryUi {
             date_from: String::new(),
             date_to: String::new(),
             position: String::new(),
+            locked: None,
             page: 0,
             results: None,
             favorites: Vec::new(),
@@ -529,6 +544,7 @@ impl Default for LibraryUi {
             import_path: String::new(),
             import_pick: crate::file_picker::FilePickButton::default(),
             import_source: ImportSource::Other,
+            import_preview: crate::import_preview_ui::PreviewState::default(),
             import_job: None,
             import_result: None,
             import_method: ImportMethod::default(),
@@ -625,6 +641,24 @@ impl LibraryUi {
         }
     }
 
+    /// Cena de evidência (`--explorer-demo import-file*`): a prévia da importação de arquivo,
+    /// com dados fictícios e sem ler arquivo nenhum (#270).
+    pub(crate) fn demo_file_import(&mut self, scene: crate::import_preview_ui::DemoScene) {
+        self.tab = Tab::Games;
+        self.detail = None;
+        self.import_open = true;
+        self.import_method = ImportMethod::File;
+        let (path, source, preview, confirmed, outcome) = scene.parts();
+        self.import_path = path.to_owned();
+        self.import_source = source;
+        self.import_preview = crate::import_preview_ui::PreviewState::with_preview(path, preview);
+        if confirmed {
+            self.import_preview.confirm_rights(source);
+        }
+        self.online.demo_scroll_end = true;
+        self.import_result = outcome.map(Ok);
+    }
+
     /// Mostra a importação online (Ação "Importar do Lichess ou Chess.com").
     pub fn show_online_import(&mut self) {
         self.tab = Tab::Games;
@@ -677,8 +711,28 @@ impl LibraryUi {
         }
     }
 
-    /// Releitura do que a aba mostra (a lista também envelhece sozinha).
-    fn refresh(&mut self, handle: Option<&PersistenceHandle>) {
+    /// Releitura do que a aba mostra (a lista também envelhece sozinha). Com filtro de
+    /// Posição, a busca só sai com a licença da Trava de fair play (FP-03), conferida a cada
+    /// quadro: a trava pode ligar depois da busca. `shown`: a Posição do tabuleiro, com o
+    /// caminho até ela, quando é ela que o filtro busca.
+    fn refresh(
+        &mut self,
+        handle: Option<&PersistenceHandle>,
+        fair: Option<&FairPlay>,
+        shown: Option<&Subject>,
+    ) {
+        let refusal = (self.tab == Tab::Games)
+            .then(|| crate::fair_play::check_library_search(fair, shown, &self.position).err())
+            .flatten();
+        if refusal != self.locked {
+            self.locked = refusal;
+            self.dirty = true;
+        }
+        if self.locked.is_some() {
+            // Nada da Posição fica na tela.
+            self.results = None;
+            return;
+        }
         let due = self.refreshed.is_none_or(|at| at.elapsed() >= AUTO_REFRESH);
         if !self.dirty && !due {
             return;
@@ -689,13 +743,21 @@ impl LibraryUi {
         let favorite_text = self.favorite_text.clone();
         let (kind, exercise_text) = (self.exercise_kind, self.exercise_text.clone());
         let filters = self.query();
+        let mut refused = None;
         let data = with_store(&mut self.local, handle, |store, profile| match tab {
-            Tab::Games => store
-                .search_library(&LibraryQuery {
+            Tab::Games => {
+                let query = LibraryQuery {
                     profile: Some(profile),
                     ..filters
-                })
-                .map(|p| (Some(p), None, None)),
+                };
+                match crate::fair_play::search_library(fair, shown, store, &query) {
+                    Ok(found) => found.map(|p| (Some(p), None, None)),
+                    Err(locked) => {
+                        refused = Some(locked);
+                        Ok((None, None, None))
+                    }
+                }
+            }
             Tab::Favorites => store
                 .list_favorites(&FavoriteQuery {
                     text: Some(favorite_text),
@@ -708,6 +770,11 @@ impl LibraryUi {
             }
             Tab::Imports => Ok((None, None, None)),
         });
+        if let Some(locked) = refused {
+            self.locked = Some(locked);
+            self.results = None;
+            return;
+        }
         match data {
             Some(Ok((page, favorites, exercises))) => {
                 self.error = None;
@@ -781,6 +848,16 @@ enum Action {
     Import(PathBuf),
     CancelImport,
     OpenFavoriteSource(FavoriteOrigin),
+}
+
+/// A Posição do tabuleiro, com o caminho até ela, quando é ela que o filtro `fen` busca (a
+/// Trava de fair play vale também para o que descende de uma Posição travada, PO-13).
+fn shown_if_searched(session: &Session, fen: &str) -> Option<Subject> {
+    let wanted = CanonicalPosition::from_fen(fen.trim()).ok()?;
+    let shown = CanonicalPosition::from_fen(&current_position(session).0).ok()?;
+    (chess_core::position_key(&wanted) == chess_core::position_key(&shown))
+        .then(|| Subject::shown(session))
+        .flatten()
 }
 
 /// Posição que o tabuleiro mostra agora (revisão ou ao vivo) e o meio-lance dela.
@@ -1154,8 +1231,17 @@ fn draw_file_import(
     }) {
         lib.import_path = file.display().to_string();
     }
+    if lib
+        .import_preview
+        .refresh(&lib.import_path, &mut lib.import_source)
+    {
+        ui.ctx().request_repaint();
+    }
+    crate::import_preview_ui::draw(ui, i18n, &mut lib.import_preview, lib.import_source);
     let busy = lib.import_job.is_some();
-    let ready = !lib.import_path.trim().is_empty() && !busy;
+    let ready = !lib.import_path.trim().is_empty()
+        && !busy
+        && lib.import_preview.can_import(lib.import_source);
     ui.add_enabled_ui(ready, |ui| {
         if cs_button(ui, &i18n.t("library-import-button"), ButtonVariant::Primary).clicked() {
             actions.push(Action::Import(PathBuf::from(lib.import_path.trim())));
@@ -1228,6 +1314,18 @@ fn draw_file_import(
                     ],
                 ),
             );
+            if outcome.restricted > 0 {
+                ui.colored_label(
+                    p.warning,
+                    i18n.t_with(
+                        "import-summary-restricted",
+                        &[
+                            ("count", &outcome.restricted.to_string()),
+                            ("source", &i18n.t(source_key(outcome.source))),
+                        ],
+                    ),
+                );
+            }
             if outcome.converted > 0 {
                 ui.colored_label(
                     p.warning,
@@ -1313,7 +1411,11 @@ fn library_panel(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
                     &session,
                     handle,
                 );
-                lib.refresh(handle);
+                let fair = world.get_resource::<FairPlay>();
+                let shown = (!lib.position.trim().is_empty())
+                    .then(|| shown_if_searched(&session, &lib.position))
+                    .flatten();
+                lib.refresh(handle, fair, shown.as_ref());
                 lib.refresh_bulk(handle);
                 draw(ui, i18n, &mut lib, &session, swapped, &mut actions);
                 // Pedida pelo Explorador (Partida de referência): abre depois de desenhar.
@@ -1599,6 +1701,13 @@ fn draw_games(
     mark_current_row(ui, i18n, lib, session, actions);
     ui.separator();
 
+    // Trava de fair play (FP-03): a busca por Posição não responde; o resto da Biblioteca segue.
+    if let Some(locked) = lib.locked {
+        let p = palette(ui);
+        ui.colored_label(p.warning, i18n.t("library-position-fairplay"));
+        ui.label(i18n.t(locked.message_key()));
+        return;
+    }
     let Some(page) = lib.results.clone() else {
         return;
     };
@@ -2152,14 +2261,16 @@ fn library_demo(
             lib.exercise_kind = Some(ExerciseKind::Mate);
         }
         "detail" => {
+            let query = LibraryQuery {
+                source: Some(LibrarySource::Imported),
+                text: Some("siciliana".into()),
+                ..Default::default()
+            };
             let id = with_store(&mut lib.local, None, |store, _| {
-                store
-                    .search_library(&LibraryQuery {
-                        source: Some(LibrarySource::Imported),
-                        text: Some("siciliana".into()),
-                        ..Default::default()
-                    })
+                // Sem filtro de Posição: a Trava de fair play não tem o que conferir.
+                crate::fair_play::search_library(None, None, store, &query)
                     .ok()
+                    .and_then(Result::ok)
                     .and_then(|p| p.entries.first().map(|e| e.ref_id))
             })
             .flatten();
@@ -2317,6 +2428,72 @@ mod tests {
         assert_eq!(origin.provider.as_deref(), Some("twic"));
         assert_eq!(origin.mode, ImportMode::Manual);
         assert_eq!(origin.source.as_deref(), Some("twic.pgn"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// Trava de fair play (#261): a busca por Posição é a estatística da Biblioteca por outro
+    /// caminho. Com a trava ligada a lista não sai; os outros filtros continuam.
+    #[test]
+    fn the_position_search_is_refused_under_the_fair_play_lock_and_the_rest_stays() {
+        let mut lib = LibraryUi::default();
+        with_store(&mut lib.local, None, |store, _| {
+            store.import_pgn(DEMO_PGN, None).unwrap();
+        });
+        let fair = crate::fair_play::FairPlay::new(chess_net::FairPlayGuard::new());
+        // 1. e4 c5 2. Nf3 d6: a Siciliana do estudo passa por aqui.
+        lib.position = "rnbqkbnr/pp2pppp/3p4/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 0 3".into();
+        lib.touch();
+        lib.refresh(None, Some(&fair), None);
+        assert_eq!(lib.results.as_ref().map(|p| p.total), Some(1), "sem trava");
+        // Uma Partida online contra pessoa começa: a lista some na hora, sem esperar a releitura.
+        let hold = fair.guard().hold("Partida online contra pessoa");
+        lib.refresh(None, Some(&fair), None);
+        assert!(
+            lib.results.is_none(),
+            "nenhuma Partida da Posição com a trava ligada: {:?}",
+            lib.results
+        );
+        assert_eq!(
+            lib.locked.map(|l| l.computation),
+            Some(crate::fair_play::Computation::LibrarySearch)
+        );
+        // Sem filtro de Posição, a Biblioteca segue (estudar outras Partidas é livre).
+        lib.position.clear();
+        lib.text = "siciliana".into();
+        lib.touch();
+        lib.refresh(None, Some(&fair), None);
+        assert_eq!(lib.results.as_ref().map(|p| p.total), Some(1));
+        assert!(lib.locked.is_none());
+        // Sem o ponto único da Trava, a busca por Posição não sai.
+        drop(hold);
+        lib.position = "rnbqkbnr/pp2pppp/3p4/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 0 3".into();
+        lib.touch();
+        lib.refresh(None, None, None);
+        assert!(lib.results.is_none());
+    }
+
+    #[test]
+    fn games_from_a_restricted_source_are_counted_in_the_summary() {
+        let dir = temp_dir("restricted");
+        let path = dir.join("twic.pgn");
+        std::fs::write(&path, DEMO_PGN).unwrap();
+        let mut store = Store::open_in_memory().unwrap();
+        let twic = quick_import(&mut store, &path).unwrap();
+        assert!(twic.imported > 0);
+        assert_eq!(
+            (twic.restricted, twic.source),
+            (twic.imported, ImportSource::Twic)
+        );
+        let lichess = import_file(
+            &mut Store::open_in_memory().unwrap(),
+            ProfileId(1),
+            &path,
+            ImportSource::Lichess,
+            &AtomicBool::new(false),
+            &mut |_| {},
+        )
+        .unwrap();
+        assert_eq!(lichess.restricted, 0);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

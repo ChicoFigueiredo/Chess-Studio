@@ -21,6 +21,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// Quantas linhas entre dois avisos de progresso.
 const PROGRESS_EVERY: u64 = 1000;
 
+/// Linha máxima do CSV de problemas, em bytes. Uma linha da base do Lichess tem uns
+/// 200 bytes; uma linha acima disto é arquivo errado ou bomba de descompressão (poucos KiB
+/// de `.zst` viram GiB sem fim de linha) e encerra a leitura com erro, sem ser guardada.
+pub const MAX_PUZZLE_LINE: usize = 64 * 1024;
+
 /// Seleção ao importar. Critérios combinados com "e"; `themes` é "qualquer um destes".
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PuzzleFilter {
@@ -118,7 +123,8 @@ pub fn open_puzzle_reader(
 }
 
 /// Lê o fluxo e devolve os Exercícios selecionados com o relatório.
-/// `cancel` é consultado a cada linha; `on_progress` a cada mil linhas.
+/// `cancel` é consultado a cada linha; `on_progress` a cada mil linhas. Uma linha acima de
+/// [`MAX_PUZZLE_LINE`] bytes encerra a leitura com erro sem ser guardada (#273).
 pub fn import_lichess_csv<R: BufRead>(
     mut reader: R,
     filter: &PuzzleFilter,
@@ -136,11 +142,17 @@ pub fn import_lichess_csv<R: BufRead>(
             break;
         }
         line.clear();
-        let n = reader
+        // No máximo uma linha do limite (e o fim de linha) fica na memória.
+        let n = std::io::Read::take(&mut reader, MAX_PUZZLE_LINE as u64 + 1)
             .read_until(b'\n', &mut line)
             .map_err(|e| PuzzleImportError(e.to_string()))?;
         if n == 0 {
             break;
+        }
+        if line.len() > MAX_PUZZLE_LINE && line.last() != Some(&b'\n') {
+            return Err(PuzzleImportError(format!(
+                "linha acima de {MAX_PUZZLE_LINE} bytes: não é a base de problemas do Lichess"
+            )));
         }
         bytes += n as u64;
         let is_first = std::mem::take(&mut first);

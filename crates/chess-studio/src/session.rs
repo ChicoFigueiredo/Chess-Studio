@@ -13,6 +13,7 @@
 //! intenção enviada aparece no tabuleiro como o Lance feito (peça no destino) até o Provedor
 //! confirmar ou recusar.
 
+use crate::fair_play::{FairPlay, FairPlayLocked, GuardedOpponent};
 use crate::new_game::{NewGameConfig, Opponent};
 use bevy::prelude::{Resource, Vec3, warn};
 use chess_core::{Color, FenError, Move, Piece, Square};
@@ -111,10 +112,14 @@ pub struct Session {
     always_queen: bool,
     hint: Option<SettleHint>,
     illegal_at: Option<Instant>,
-    /// Engine adversária (B9); `None` em Partida entre dois jogadores locais.
-    engine: Option<EnginePlayer>,
-    /// Lado da Engine numa Partida reaberta, ainda sem processo: aguarda `resume_engine`.
+    /// Engine adversária (B9), atrás da Trava de fair play (FP-01); `None` em Partida entre
+    /// dois jogadores locais.
+    engine: Option<GuardedOpponent>,
+    /// Lado da Engine numa Partida reaberta (ou recusada pela Trava de fair play), ainda sem
+    /// processo: aguarda `resume_engine`.
     pending_engine: Option<EngineSeat>,
+    /// A última recusa da Trava de fair play à Engine adversária (a interface explica).
+    engine_locked: Option<FairPlayLocked>,
     illegal: Option<IllegalNotice>,
     /// A explicação "após tentativa" foi pedida para o aviso atual.
     illegal_revealed: bool,
@@ -155,7 +160,7 @@ impl Session {
         session
     }
 
-    fn with_engine(game: Game, engine: Option<EnginePlayer>) -> Self {
+    fn with_engine(game: Game, engine: Option<GuardedOpponent>) -> Self {
         let mono_offset = game.events().last().map_or(0, |e| e.at.mono_ms);
         let config = NewGameConfig::from_setup(game.setup());
         let online = game.setup().online_game().map(|_| OnlineBoard::default());
@@ -171,6 +176,7 @@ impl Session {
             illegal_at: None,
             engine,
             pending_engine: None,
+            engine_locked: None,
             illegal: None,
             illegal_revealed: false,
             mono_offset,
@@ -469,23 +475,42 @@ impl Session {
         self.replace_game(Game::new(GameSetup::standard(PolicyKind::Assisted)));
     }
 
-    /// Começa a Partida da tela de Nova Partida. Passa por `replace_with` (época nova), então
-    /// a persistência a grava e a torna retomável, em qualquer Política. Com
-    /// `Opponent::Engine` e `engine_config`, a Engine joga o lado oposto ao do usuário; sem
-    /// `engine_config` a Partida é entre dois jogadores locais.
-    pub fn start(&mut self, config: &NewGameConfig, engine_config: Option<EngineConfig>) {
-        let engine_config = engine_config.filter(|_| config.opponent == Opponent::Engine);
+    /// Começa a Partida da tela de Nova Partida entre dois jogadores locais. Passa por
+    /// `replace_with` (época nova), então a persistência a grava e a torna retomável, em
+    /// qualquer Política. Contra a Engine é [`Session::start_vs_engine`].
+    pub fn start(&mut self, config: &NewGameConfig) {
         let mut config = config.clone();
-        if engine_config.is_none() {
-            config.opponent = Opponent::TwoLocal;
-        }
+        config.opponent = Opponent::TwoLocal;
         let game = Game::new(config.to_setup());
-        let engine = engine_config
-            .zip(game.setup().engine())
-            .map(|(c, seat)| EnginePlayer::new(seat, c));
-        let mut fresh = Self::with_engine(game, engine);
+        let mut fresh = Self::with_engine(game, None);
         fresh.config = config;
         self.replace_with(fresh);
+    }
+
+    /// Começa a Partida da tela de Nova Partida contra a Engine em `engine`, que joga o lado
+    /// oposto ao do usuário, se a Trava de fair play deixar (FP-01). Recusada, nada muda: a
+    /// Partida atual continua no tabuleiro. Com outro adversário em `config`, é
+    /// [`Session::start`].
+    pub fn start_vs_engine(
+        &mut self,
+        config: &NewGameConfig,
+        engine: EngineConfig,
+        fair: &FairPlay,
+    ) -> Result<(), FairPlayLocked> {
+        let game = Game::new(config.to_setup());
+        let seat = game
+            .setup()
+            .engine()
+            .filter(|_| config.opponent == Opponent::Engine);
+        let Some(seat) = seat else {
+            self.start(config);
+            return Ok(());
+        };
+        let opponent = GuardedOpponent::start(fair, &game, seat, engine)?;
+        let mut fresh = Self::with_engine(game, Some(opponent));
+        fresh.config = config.clone();
+        self.replace_with(fresh);
+        Ok(())
     }
 
     pub fn config(&self) -> &NewGameConfig {
@@ -599,15 +624,21 @@ impl Session {
     // --- Engine adversária (B9) ---------------------------------------------
 
     /// Começa uma Partida Assistido contra a Engine em `config` (ponto de extensão da
-    /// tela de Nova Partida: ela só precisa chamar isto com o lado, o Elo e a Engine).
-    pub fn start_engine_game(&mut self, seat: EngineSeat, config: EngineConfig) {
+    /// tela de Nova Partida: ela só precisa chamar isto com o lado, o Elo e a Engine), se a
+    /// Trava de fair play deixar (FP-01).
+    pub fn start_engine_game(
+        &mut self,
+        seat: EngineSeat,
+        config: EngineConfig,
+        fair: &FairPlay,
+    ) -> Result<(), FairPlayLocked> {
         let new = NewGameConfig {
             user_side: seat.color.opposite(),
             opponent: Opponent::Engine,
             engine_elo: seat.elo,
             ..NewGameConfig::default()
         };
-        self.start(&new, Some(config));
+        self.start_vs_engine(&new, config, fair)
     }
 
     /// A Engine joga neste momento (a interface ignora o ponteiro)?
@@ -615,23 +646,45 @@ impl Session {
         let seat = self
             .engine
             .as_ref()
-            .map(|e| e.seat())
+            .map(GuardedOpponent::seat)
             .or(self.pending_engine);
         seat.is_some_and(|seat| {
             self.snapshot.outcome.is_none() && self.snapshot.side_to_move == seat.color
         })
     }
 
-    /// Partida contra a Engine reaberta, com a Engine ainda desligada (aguarda o usuário).
+    /// Partida contra a Engine reaberta (ou recusada pela Trava de fair play), com a Engine
+    /// ainda desligada (aguarda o usuário).
     pub fn engine_pending(&self) -> Option<EngineSeat> {
         self.pending_engine
     }
 
-    /// Liga a Engine de uma Partida reaberta, com um executável já liberado pelo usuário.
-    /// Sem Engine pendente não faz nada.
-    pub fn resume_engine(&mut self, config: EngineConfig) {
-        if let Some(seat) = self.pending_engine.take() {
-            self.engine = Some(EnginePlayer::new(seat, config));
+    /// A última recusa da Trava de fair play à Engine adversária desta Partida (FP-01).
+    pub fn engine_locked(&self) -> Option<FairPlayLocked> {
+        self.engine_locked
+    }
+
+    /// Liga a Engine de uma Partida reaberta, com um executável já liberado pelo usuário, se a
+    /// Trava de fair play deixar (FP-01). Sem Engine pendente não faz nada.
+    pub fn resume_engine(
+        &mut self,
+        config: EngineConfig,
+        fair: &FairPlay,
+    ) -> Result<(), FairPlayLocked> {
+        let Some(seat) = self.pending_engine else {
+            return Ok(());
+        };
+        match GuardedOpponent::start(fair, &self.game, seat, config) {
+            Ok(engine) => {
+                self.pending_engine = None;
+                self.engine = Some(engine);
+                self.engine_locked = None;
+                Ok(())
+            }
+            Err(locked) => {
+                self.engine_locked = Some(locked);
+                Err(locked)
+            }
         }
     }
 
@@ -641,7 +694,7 @@ impl Session {
     }
 
     pub fn engine(&self) -> Option<&EnginePlayer> {
-        self.engine.as_ref()
+        self.engine.as_ref().map(GuardedOpponent::player)
     }
 
     pub fn engine_retry(&mut self) {
@@ -656,17 +709,29 @@ impl Session {
         }
     }
 
-    /// Chamado a cada quadro: não bloqueia (a Engine vive em thread própria).
-    pub fn tick_engine(&mut self) {
+    /// Chamado a cada quadro: não bloqueia (a Engine vive em thread própria). A Engine só
+    /// joga com a licença da Trava de fair play (FP-01); recusada, ela sai (o processo termina
+    /// e a resposta pendente nunca entra) e o lado dela fica pendente, como numa Partida
+    /// reaberta, até a Trava deixar e o usuário a religar.
+    pub fn tick_engine(&mut self, fair: &FairPlay) {
         let at = self.now();
         let Some(engine) = &mut self.engine else {
             return;
         };
-        if engine.drive(&mut self.game, at) {
-            self.snapshot = self.game.snapshot();
-            self.revision = self.revision.wrapping_add(1);
-            self.interpreter
-                .handle(GestureEvent::Resync, &self.snapshot);
+        match engine.drive(fair, &mut self.game, at) {
+            Ok(true) => {
+                self.snapshot = self.game.snapshot();
+                self.revision = self.revision.wrapping_add(1);
+                self.interpreter
+                    .handle(GestureEvent::Resync, &self.snapshot);
+            }
+            Ok(false) => {}
+            Err(locked) => {
+                let seat = engine.seat();
+                self.engine = None;
+                self.pending_engine = Some(seat);
+                self.engine_locked = Some(locked);
+            }
         }
     }
 
@@ -1061,6 +1126,11 @@ impl Session {
 mod tests {
     use super::*;
     use chess_game::{EndReason, GameResult};
+
+    /// Sem trava ligada (nenhuma Partida online contra pessoa em andamento).
+    fn unlocked() -> FairPlay {
+        FairPlay::new(chess_net::FairPlayGuard::new())
+    }
     use chess_input::{Modifiers, PointerButton};
 
     fn sq(name: &str) -> Square {
@@ -1354,7 +1424,9 @@ mod tests {
                 elo: 1500,
             },
             EngineConfig::new("/nao/existe/engine"),
-        );
+            &unlocked(),
+        )
+        .unwrap();
         assert!(s.engine_active());
         tap(&mut s, "e2", "e4");
         assert!(s.engine_turn());
@@ -1386,7 +1458,8 @@ mod tests {
         drag(&mut s, "e7", "e5");
         assert_eq!(s.snapshot().history.len(), 1);
         // Ação explícita (já com caminho liberado): agora sim a Engine existe.
-        s.resume_engine(EngineConfig::new("/nao/existe/engine"));
+        s.resume_engine(EngineConfig::new("/nao/existe/engine"), &unlocked())
+            .unwrap();
         assert!(s.engine_active());
         assert_eq!(s.engine_pending(), None);
     }
@@ -1394,7 +1467,8 @@ mod tests {
     #[test]
     fn resume_without_pending_engine_is_a_no_op() {
         let mut s = Session::new();
-        s.resume_engine(EngineConfig::new("/nao/existe/engine"));
+        s.resume_engine(EngineConfig::new("/nao/existe/engine"), &unlocked())
+            .unwrap();
         assert!(!s.engine_active());
     }
 
@@ -1451,7 +1525,7 @@ mod tests {
 
     fn competitive(policy: PolicyKind) -> Session {
         let mut s = Session::new();
-        s.start(&NewGameConfig::for_policy(policy), None);
+        s.start(&NewGameConfig::for_policy(policy));
         s
     }
 
@@ -1560,7 +1634,7 @@ mod tests {
     fn a_new_game_starts_with_the_configuration_and_competitive_has_no_auto_queen() {
         let mut s = Session::new();
         s.set_always_queen(true);
-        s.start(&NewGameConfig::for_policy(PolicyKind::FideSimulation), None);
+        s.start(&NewGameConfig::for_policy(PolicyKind::FideSimulation));
         assert_eq!(s.snapshot().policy, PolicyKind::FideSimulation);
         assert!(!s.always_queen(), "sem dama automática nas competitivas");
         s.set_always_queen(true);

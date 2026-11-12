@@ -7,9 +7,9 @@
 vault-system-title = Segredos guardados no cofre do sistema
 vault-system-text = O seu computador protege as autorizações. O Chess Studio não guarda nenhuma senha.
 vault-loading-title = Abrindo o cofre do sistema…
-vault-loading-text = O sistema pode pedir que você desbloqueie o chaveiro. As autorizações voltam quando ele responder.
+vault-loading-text = O sistema pode pedir que você desbloqueie o cofre do sistema. As autorizações voltam quando ele responder.
 vault-system-failed-title = O cofre do sistema não respondeu
-vault-system-failed-text = As autorizações ficam suspensas e nada novo é guardado. Desbloqueie o chaveiro do sistema e abra o Chess Studio de novo.
+vault-system-failed-text = As autorizações ficam suspensas e nada novo é guardado. Desbloqueie o cofre do sistema e abra o Chess Studio de novo.
 vault-own-open-title = Cofre do Chess Studio desbloqueado
 vault-own-open-text = As autorizações estão disponíveis nesta sessão. Bloqueie o cofre quando terminar.
 vault-own-locked-title = Cofre do Chess Studio bloqueado

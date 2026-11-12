@@ -26,6 +26,8 @@ fide-federation = Federação { $code }
 fide-id = ID { $id }
 
 fide-origin = FIDE, via Lichess, consultado { $when }.
+fide-license-fide-via-lichess = Dados da FIDE reproduzidos pelo Lichess; os direitos são da FIDE (reprodução restrita, só para uso pessoal).
+fide-license-other = Licença dos dados não identificada; os direitos são da FIDE.
 fide-explain = Cada ritmo é uma lista própria da FIDE e não se compara com ratings online. A data é a da consulta: o Lichess não informa de qual mês é a lista.
 fide-offline = O Lichess está desligado: este é o último valor guardado neste computador.
 

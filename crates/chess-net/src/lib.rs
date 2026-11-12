@@ -85,7 +85,7 @@ pub use error::NetError;
 pub use guard::{FairPlayGuard, FairPlayHold};
 pub use ics::{
     DEFAULT_ICS_MAX_LINE, IcsEndpoint, IcsEvent, IcsItem, IcsLink, IcsReader, IcsRequest,
-    MAX_ICS_COMMAND, ics_endpoint, ics_endpoints,
+    MAX_ICS_COMMAND, MAX_ICS_PENDING, ics_endpoint, ics_endpoints,
 };
 pub use limits::RetryPolicy;
 pub use loopback::{CallbackError, CallbackParams, LoopbackCallback};

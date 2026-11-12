@@ -50,3 +50,8 @@ promotion-knight = Cavalo
 promotion-always-queen = Sempre promover a dama
 promotion-cancel-hint = Esc cancela o lance
 promotion-competitive-hint = Esc retrata o Lance. Acionar o relógio sem escolher é Lance ilegal (art. 7.5.2).
+
+# Trava de fair play: o motivo da recusa de um serviço que calcula (#261)
+fairplay-locked-everything = Trava de fair play: há uma Partida online contra uma pessoa (ou uma Partida competitiva) em andamento. Nada que calcula funciona até ela terminar.
+fairplay-locked-game = Trava de fair play: esta Partida online ainda está em andamento. Nada calcula para ela até o Provedor confirmar o fim.
+fairplay-locked-position = Trava de fair play: esta Posição é de uma Partida por correspondência em andamento, ou vem dela. Outras Posições continuam livres.

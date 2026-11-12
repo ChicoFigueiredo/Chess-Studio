@@ -5,7 +5,7 @@
 use super::driver::CloudRow;
 use super::model::{
     Age, CloudView, EndgameMove, EndgameTable, How, Notice, Nuance, OpeningsTable, OriginNote,
-    Outlook, ReferenceRow, Source, Verdict, clock_local, day_month, fmt_count, format_eval,
+    Outlook, ReferenceRow, Source, Verdict, Window, clock_local, day_month, fmt_count, format_eval,
     mate_in_moves, minutes_until, white_share,
 };
 use super::reference::Status;
@@ -788,6 +788,19 @@ pub fn footer(ui: &mut Ui, i18n: &I18n, origin: &OriginNote, now: Timestamp) {
         .hline(line.x_range(), line.center().y, Stroke::new(1.0, p.border));
     ui.add_space(8.0);
     muted(ui, origin_text(i18n, origin, now));
+    muted(ui, window_text(i18n, origin));
+    muted(ui, i18n.t("explorer-sample-note"));
+}
+
+/// A janela temporal da base consultada, ou a admissão de que a fonte não a informa.
+pub fn window_text(i18n: &I18n, origin: &OriginNote) -> String {
+    match origin.window {
+        Window::Library => i18n.t("explorer-window-library"),
+        Window::NotReported => i18n.t_with(
+            "explorer-window-unreported",
+            &[("provider", origin.provider.as_str())],
+        ),
+    }
 }
 
 // --- Avisos --------------------------------------------------------------------------
@@ -1161,6 +1174,7 @@ mod tests {
             provider: "Lichess".into(),
             how,
             license: "CC0".into(),
+            window: Window::NotReported,
         };
         origin_text(&I18n::pt_br(), &origin, Timestamp::from_millis(NOW))
     }
@@ -1197,7 +1211,42 @@ mod tests {
         // 01:30 UTC de 12/11 ainda é 11/11 em Brasília.
         let at = Timestamp::from_millis(NOW + 10 * 3_600_000);
         let line = testing::with(LocalClock::fixed(-180), || text(How::Cached(at)));
-        assert_eq!(line, "Lichess \u{b7} avaliação guardada em 11/11 \u{b7} CC0");
+        assert_eq!(
+            line,
+            "Lichess \u{b7} avaliação guardada em 11/11 \u{b7} CC0"
+        );
+    }
+
+    #[test]
+    fn the_footer_says_the_time_window_or_that_it_is_not_reported() {
+        let i18n = I18n::pt_br();
+        let mut origin = OriginNote {
+            provider: "Lichess".into(),
+            how: How::Local,
+            license: "CC0".into(),
+            window: Window::NotReported,
+        };
+        let line = window_text(&i18n, &origin);
+        assert!(line.contains("Lichess não informa"), "{line}");
+        assert!(line.contains("não filtra por data"), "{line}");
+        origin.window = Window::Library;
+        assert!(window_text(&i18n, &origin).contains("todas as Partidas da sua Biblioteca"));
+    }
+
+    #[test]
+    fn the_sample_note_says_it_is_history_not_evaluation() {
+        let note = I18n::pt_br().t("explorer-sample-note");
+        assert!(note.contains("histórica"), "{note}");
+        assert!(note.contains("não é avaliação"), "{note}");
+        assert!(note.contains("melhor Lance"), "{note}");
+    }
+
+    #[test]
+    fn the_off_text_does_not_claim_that_nothing_about_you_is_sent() {
+        let text = I18n::pt_br().t_with("explorer-off-text", &[("provider", "Lichess")]);
+        assert!(!text.contains("nenhum dado seu"), "{text}");
+        assert!(text.contains("chave da sua conexão"), "{text}");
+        assert!(text.contains("Um jogador"), "{text}");
     }
 
     #[test]

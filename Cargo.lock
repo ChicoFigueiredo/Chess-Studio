@@ -2099,6 +2099,7 @@ dependencies = [
  "chess-core",
  "chess-net",
  "chess-store",
+ "log",
  "rusqlite",
  "serde",
  "serde_json",

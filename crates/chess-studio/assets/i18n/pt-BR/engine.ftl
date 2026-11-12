@@ -12,6 +12,7 @@ engine-not-found = Nenhuma Engine configurada. Use o assistente ou o gerenciador
 engine-pending-title = Partida contra a Engine pausada
 engine-pending-hint = Ao reabrir, nenhuma Engine foi executada. Conecte uma Engine para o adversário voltar a jogar.
 engine-resume = Conectar Engine e retomar
+engine-fairplay-title = A Engine adversária não joga agora
 engine-confirm-title = Executar este arquivo?
 engine-confirm-body = O arquivo "{ $path }" será executado no seu computador para verificar se é uma Engine UCI. Continue só se você confia nele.
 engine-confirm-run = Executar e verificar
