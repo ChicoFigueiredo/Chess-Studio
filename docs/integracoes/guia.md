@@ -198,7 +198,7 @@ O Painel funciona como qualquer outro: encaixado, flutuante ou destacado.
 
 Filtros:
 
-- **Ritmos** (Bullet, Blitz, Rápida, Clássica, Correspondência): valem para **Todos os jogadores** e **Um jogador**. Sem nenhum marcado, vale todos.
+- **Ritmos** (Relâmpago, Blitz, Rápida, Clássica, Correspondência): valem para **Todos os jogadores** e **Um jogador**. Sem nenhum marcado, vale todos.
 - **Faixas de rating**: valem só para **Todos os jogadores**.
 
 O app lembra a aba, a fonte, o jogador, a cor e os filtros por Perfil local.
@@ -531,6 +531,12 @@ Se o usuário ainda não for um usuário BOT, abra **O usuário ainda não é um
 Se a Engine falhar (não iniciar, propor dois Lances ilegais seguidos ou fechar), a Partida é abandonada e a **Atividade recente** diz o que houve. Um Lance ilegal nunca é enviado. As Partidas terminadas ficam na Biblioteca como Partidas da Engine.
 
 A **Trava de fair play** vale: a Engine online não liga durante uma Partida online em tempo real contra pessoa, e uma Partida que começa sob a Trava é abandonada pela Engine.
+
+### Ver a Partida da Engine no tabuleiro
+
+Em **Partidas em andamento**, **Ver no tabuleiro** abre o **modo espectador**: o tabuleiro (3D ou 2D) mostra a Partida da Engine e acompanha cada Lance que o Lichess confirma. É só para ver: nenhum gesto move peça, as Ações de jogo (abandonar, empate, relógio, desfazer) ficam desabilitadas, a Trava de fair play não liga e nada é gravado de novo (quem grava é a própria Engine online). Os selos **Engine online** e **Modo espectador** ficam no canto do tabuleiro e no Painel **Partida online**, com os relógios do Lichess e quem joga.
+
+Se a sua Partida estiver em andamento no tabuleiro, o app pergunta antes (**Ver a Partida da Engine?**): ela fica guardada como está, sem ser encerrada; a local com relógio fica em **Pausa**, e a online continua no Lichess (o relógio dela não para). **Sair do modo espectador** devolve o tabuleiro como estava. Começar outra Partida, abrir uma da Biblioteca ou uma Partida online sua que comece também saem do modo espectador. Enquanto ele está aberto, as Anotações e a Súmula ficam indisponíveis (são da sua Partida), e a Trava da sua Partida competitiva, se houver, continua valendo para a Engine online.
 
 ## Salvar e exportar uma Partida
 

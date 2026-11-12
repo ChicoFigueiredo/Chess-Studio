@@ -52,6 +52,8 @@ pub struct ViewModel {
     /// Aceitos, recusados e terminados nesta execução.
     pub counts: (u32, u32, u32),
     pub conversion: Option<ConversionView>,
+    /// A Partida que o tabuleiro mostra no modo espectador (#302), se há uma.
+    pub watching: Option<String>,
 }
 
 /// O formulário: o que o usuário escolheu (vale só até ligar).
@@ -67,7 +69,7 @@ pub struct Form {
 }
 
 /// O que a tela pediu neste quadro.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Intent {
     Start,
     Stop,
@@ -75,6 +77,10 @@ pub enum Intent {
     Upgrade,
     OpenCenter,
     Close,
+    /// "Ver no tabuleiro": a Partida da Engine (o id no Lichess) no modo espectador (#302).
+    Watch(String),
+    /// "Sair do modo espectador": a Partida do usuário volta ao tabuleiro.
+    LeaveSpectator,
 }
 
 /// Ritmos oferecidos (a Engine online não joga ultrabullet nem correspondência).
@@ -231,8 +237,10 @@ pub fn body(
         ui.colored_label(p.danger, text);
     }
 
+    // As Partidas em andamento (com "Ver no tabuleiro") vêm antes dos limites: com a Engine
+    // ligada os limites não se editam, e sem Partida a lista nem aparece.
+    games(ui, ctx, i18n, model, intents);
     settings(ui, ctx, i18n, form, model);
-    games(ui, ctx, i18n, model);
     activity(ui, ctx, i18n, model);
     conversion(ui, ctx, i18n, form, model, intents);
 
@@ -508,7 +516,13 @@ fn stop_now_button(
     }
 }
 
-fn games(ui: &mut egui::Ui, ctx: &egui::Context, i18n: &I18n, model: &ViewModel) {
+fn games(
+    ui: &mut egui::Ui,
+    ctx: &egui::Context,
+    i18n: &I18n,
+    model: &ViewModel,
+    intents: &mut Vec<Intent>,
+) {
     if model.rows.is_empty() {
         return;
     }
@@ -560,8 +574,51 @@ fn games(ui: &mut egui::Ui, ctx: &egui::Context, i18n: &I18n, model: &ViewModel)
                 .text_style(egui::TextStyle::Small)
                 .color(p.ink_muted),
             );
+            watch_row(ui, i18n, model, row, intents);
         });
     }
+}
+
+/// "Ver no tabuleiro" (só para ver, #302); a Partida que o tabuleiro já mostra oferece sair.
+fn watch_row(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    model: &ViewModel,
+    row: &GameRow,
+    intents: &mut Vec<Intent>,
+) {
+    ui.add_space(2.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        if model.watching.as_deref() == Some(row.id.as_str()) {
+            cs_status_badge(
+                ui,
+                StatusTone::Info,
+                icon::EYE,
+                &i18n.t("engine-online-watching"),
+            );
+            if ui
+                .add(
+                    CsButton::new(&i18n.t("engine-online-watch-leave"))
+                        .icon(icon::ARROW_U_UP_LEFT)
+                        .variant(ButtonVariant::Subtle),
+                )
+                .clicked()
+            {
+                intents.push(Intent::LeaveSpectator);
+            }
+        } else if ui
+            .add(
+                CsButton::new(&i18n.t("engine-online-watch"))
+                    .icon(icon::EYE)
+                    .variant(ButtonVariant::Secondary),
+            )
+            .on_hover_text(i18n.t("engine-online-watch-hint"))
+            .clicked()
+        {
+            intents.push(Intent::Watch(row.id.clone()));
+        }
+    });
 }
 
 fn activity_text(i18n: &I18n, item: &Activity) -> (StatusTone, String) {

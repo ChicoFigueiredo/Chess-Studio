@@ -869,9 +869,11 @@ pub(crate) fn follow_game(
     handle: Option<Res<crate::persistence::PersistenceHandle>>,
     mut state: ResMut<ScoresheetUi>,
 ) {
+    // No modo espectador (#302) a Súmula segue a Partida do usuário, guardada por baixo, e fica
+    // suspensa: a Partida no tabuleiro é a da Engine online.
     let (epoch, suspended, persistent) = (
-        session.epoch(),
-        training.session_swapped(),
+        session.own().epoch(),
+        training.session_swapped() || session.is_spectator(),
         handle.is_some(),
     );
     // Sem mudança real, não marca o recurso como alterado todo quadro.

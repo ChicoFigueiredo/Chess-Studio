@@ -12,6 +12,12 @@
 //! [`OnlineIntent`]s que o serviço online recolhe ([`Session::take_online_intents`]); a
 //! intenção enviada aparece no tabuleiro como o Lance feito (peça no destino) até o Provedor
 //! confirmar ou recusar.
+//!
+//! **Modo espectador (#302).** A Partida da Engine online pode ir ao tabuleiro só para ver
+//! ([`Session::watch`], em [`spectator`]): a Sessão do usuário fica guardada por baixo, intacta
+//! ([`Session::own`]), e volta ao sair. Nenhum gesto vira Lance nem intenção.
+
+mod spectator;
 
 use crate::fair_play::{FairPlay, FairPlayLocked, GuardedOpponent};
 use crate::new_game::{NewGameConfig, Opponent};
@@ -137,6 +143,9 @@ pub struct Session {
     notice: Option<(Notice, Instant)>,
     /// Partida online: espelho da sessão do Provedor (só ela escreve).
     online: Option<OnlineBoard>,
+    /// Modo espectador (#302): esta Sessão mostra a Partida da Engine online só para ver, e aqui
+    /// fica a Sessão do usuário, que volta ao tabuleiro ao sair.
+    spectating: Option<Box<Session>>,
 }
 
 impl Default for Session {
@@ -186,6 +195,7 @@ impl Session {
             online,
             config,
             notice: None,
+            spectating: None,
         }
     }
 
@@ -931,6 +941,7 @@ impl Session {
 
     /// A sessão do Provedor da Partida do tabuleiro abriu ou fechou.
     pub fn set_online_live(&mut self, live: bool) {
+        let live = live && self.spectating.is_none();
         if let Some(board) = &mut self.online
             && board.live != live
         {
@@ -962,6 +973,8 @@ impl Session {
         if !same {
             return;
         }
+        // O modo espectador nunca fica ao vivo: os gestos não viram intenção.
+        let live = live && self.spectating.is_none();
         let Some(board) = &mut self.online else {
             return;
         };
@@ -1021,6 +1034,10 @@ impl Session {
 
     /// Pedido ao Provedor (abandonar, empate, abortar, reclamar vitória).
     pub fn online_request(&mut self, intent: OnlineIntent) {
+        // Modo espectador: a Partida é da Engine online; nada do tabuleiro vira pedido.
+        if self.spectating.is_some() {
+            return;
+        }
         if let Some(board) = &mut self.online {
             board.intents.push(intent);
         }

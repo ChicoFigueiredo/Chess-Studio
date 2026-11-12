@@ -111,7 +111,11 @@ fn panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
         return;
     };
     let mut notes = world.remove_resource::<StudyNotes>();
-    let available = crate::study::quick_notes_available(session.competitive_in_progress(), swapped);
+    // No modo espectador (#302) a Partida no tabuleiro não é a do usuário: sem nota rápida.
+    let available = crate::study::quick_notes_available(
+        session.competitive_in_progress(),
+        swapped || session.is_spectator(),
+    );
     let mut open_study = false;
     {
         let quick = notes

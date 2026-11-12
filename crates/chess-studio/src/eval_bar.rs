@@ -109,7 +109,7 @@ pub fn glued_bar_rect(
 }
 
 /// As câmeras do tabuleiro (3D e 2D técnico); só a ativa conta.
-type BoardCameras<'w, 's> = Query<
+pub(crate) type BoardCameras<'w, 's> = Query<
     'w,
     's,
     (
@@ -124,7 +124,7 @@ type BoardCameras<'w, 's> = Query<
 const FRAME_HALF: f32 = chess_input::BOARD_SIZE / 2.0 + 0.6;
 
 /// Caixa, em pontos do egui, do tabuleiro (moldura) visto pela câmera ativa. Sem alocação.
-fn projected_board(
+pub(crate) fn projected_board(
     cameras: &BoardCameras<'_, '_>,
     scale_factor: f32,
     ppp: f32,

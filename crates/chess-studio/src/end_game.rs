@@ -294,7 +294,10 @@ fn end_dialog(
 ) -> Result {
     let outcome = session.snapshot().outcome;
     dialog.state.observe(session.epoch(), outcome.is_some());
-    let (true, Some(outcome)) = (dialog.state.is_open() && !dialog.suppressed, outcome) else {
+    // No modo espectador (#302) a Partida é da Engine online: o fim aparece na faixa e no
+    // Painel, sem diálogo (Nova Partida, Revisar e Exportar são da Partida do usuário).
+    let shown = dialog.state.is_open() && !dialog.suppressed && !session.is_spectator();
+    let (true, Some(outcome)) = (shown, outcome) else {
         return Ok(());
     };
     let hide_notation = scoresheet

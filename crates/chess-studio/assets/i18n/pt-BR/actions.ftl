@@ -220,3 +220,4 @@ reason-no-floating-panel = Não há Painel flutuante para encaixar.
 reason-3d-only = A câmera só existe nas Apresentações em 3D.
 reason-coming-soon = Ainda não disponível.
 reason-pgn-scoresheet = Exportar PGN fica indisponível enquanto a Súmula está aberta.
+reason-spectator = Indisponível no modo espectador: o tabuleiro mostra a Partida da Engine online só para ver.

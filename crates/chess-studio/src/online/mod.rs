@@ -254,7 +254,7 @@ pub fn drive_online(
             let closed = match persistence.as_deref().and_then(|h| h.0.lock().ok()) {
                 Some(mut guard) => {
                     let (store, _) = guard.store_and_profile();
-                    close_unconfirmed(play, &mut session, store, id, now)
+                    close_unconfirmed(play, session.own_mut(), store, id, now)
                 }
                 None => Err(service::Unavailable::Store(String::new())),
             };
@@ -298,8 +298,10 @@ pub fn board_key(session: &Session) -> Option<GameKey> {
     GameKey::of(session.game())
 }
 
-/// Envia à sessão da Partida do tabuleiro, de qualquer Provedor, o que o jogador pediu.
+/// Envia à sessão da Partida do tabuleiro, de qualquer Provedor, o que o jogador pediu. No
+/// modo espectador (#302) o tabuleiro não pede nada: só a Partida do usuário, por baixo.
 pub fn route_intents(play: &mut OnlinePlay, session: &mut Session) {
+    let session = session.own_mut();
     if let Some(key) = board_key(session) {
         for intent in session.take_online_intents() {
             play.apply_to(&key, intent);
@@ -327,7 +329,9 @@ pub fn step(
 }
 
 /// Depois do quadro do serviço: a Partida nova vai ao tabuleiro e a do tabuleiro é espelhada.
-/// Diz se uma Partida foi ao tabuleiro.
+/// Diz se uma Partida foi ao tabuleiro. No modo espectador (#302) a Partida do usuário continua
+/// espelhada por baixo (a sessão dela segue aberta e ela volta em dia); a Partida online que
+/// começa vai ao tabuleiro e encerra o modo espectador.
 pub fn after_frame(
     play: &mut OnlinePlay,
     session: &mut Session,
@@ -351,7 +355,8 @@ pub fn after_frame(
             rig.view = Some(view);
         }
     }
-    let key = board_key(session);
+    let own = session.own_mut();
+    let key = board_key(own);
     if let Some(key) = &key {
         match play
             .session_for(key)
@@ -360,9 +365,9 @@ pub fn after_frame(
             Some((game, link, desynced)) => {
                 // Dessincronizada, a Partida não aceita Lance local (nada é inventado).
                 let live = link != LinkStatus::Closed && !desynced;
-                session.mirror_online(game, live);
+                own.mirror_online(game, live);
             }
-            None => session.set_online_live(false),
+            None => own.set_online_live(false),
         }
     }
     let lichess = key

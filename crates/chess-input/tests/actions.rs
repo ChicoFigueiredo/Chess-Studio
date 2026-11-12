@@ -169,6 +169,35 @@ fn game_actions_need_a_running_game() {
 }
 
 #[test]
+fn game_actions_do_not_apply_to_the_online_engine_game_watched_in_spectator_mode() {
+    // O tabuleiro mostra a Partida da Engine online só para ver (#302): nenhuma Ação de jogo.
+    let watching = ActionContext {
+        spectator: true,
+        online: true,
+        has_clock: true,
+        can_redo: true,
+        ..assisted()
+    };
+    for a in [
+        Action::Resign,
+        Action::OfferDraw,
+        Action::ClaimDraw,
+        Action::PauseClock,
+        Action::ClockPress,
+        Action::Undo,
+        Action::Redo,
+    ] {
+        assert_eq!(
+            state(a, &watching).disabled_reason,
+            Some("reason-spectator"),
+            "{a:?}"
+        );
+    }
+    // Começar outra Partida continua possível (ela sai do modo espectador).
+    assert!(state(Action::NewGame, &watching).is_enabled());
+}
+
+#[test]
 fn clock_actions_need_a_clock() {
     let ctx = assisted();
     assert_eq!(

@@ -503,6 +503,9 @@ pub struct ActionContext {
     /// A Trava de fair play recusa a Engine adversária agora (Partida online contra pessoa em
     /// andamento, no tabuleiro ou fora dele): "Contra a Engine" espera.
     pub fair_play_engine_lock: bool,
+    /// Modo espectador: o tabuleiro mostra a Partida da Engine online só para ver; as Ações de
+    /// jogo (abandonar, empate, relógio, desfazer) não valem nela.
+    pub spectator: bool,
 }
 
 /// Estado de uma Ação num dado [`ActionContext`].
@@ -623,6 +626,17 @@ fn disabled_reason(action: Action, ctx: &ActionContext) -> Option<&'static str> 
             Some("reason-competitive-lock")
         }
         A::ResumeGame if !ctx.resumable_game => Some("reason-no-resumable-game"),
+        A::Resign
+        | A::OfferDraw
+        | A::ClaimDraw
+        | A::PauseClock
+        | A::ClockPress
+        | A::Undo
+        | A::Redo
+            if ctx.spectator =>
+        {
+            Some("reason-spectator")
+        }
         // A Engine adversária calcula: com a Trava de fair play ligada, não começa (FP-01).
         A::NewGameVsEngine if ctx.online_realtime_in_progress || ctx.fair_play_engine_lock => {
             Some("reason-fair-play-engine")

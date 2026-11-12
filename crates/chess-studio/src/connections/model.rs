@@ -1700,7 +1700,7 @@ mod tests {
     }
 
     /// Os textos das integrações (#263) seguem o GLOSSARY: "Conexão" e não "conta"; "cofre do
-    /// sistema" e não "chaveiro"; erro do Provedor sem código HTTP. Lê os `.ftl` das integrações
+    /// sistema" e não "chaveiro"; "Relâmpago" e não "Bullet"; erro do Provedor sem código HTTP. Lê os `.ftl` das integrações
     /// inteiros (só os valores, sem comentários); `training` e `library` entram porque os
     /// textos de rede vivem neles e não têm nenhuma dessas palavras.
     #[test]
@@ -1742,7 +1742,8 @@ mod tests {
                 include_str!("../../assets/i18n/pt-BR/library.ftl"),
             ),
         ];
-        // Palavras inteiras (sem pegar "contagem" nem "conteúdo").
+        // Palavras inteiras (sem pegar "contagem" nem "conteúdo"). O ritmo mais curto é
+        // "Relâmpago" em todo o app, nunca "Bullet" (#302).
         let banned_words = [
             "conta",
             "contas",
@@ -1751,6 +1752,7 @@ mod tests {
             "login",
             "credencial",
             "credenciais",
+            "bullet",
         ];
         // Pedaços que não podem aparecer em nenhum lugar do texto.
         let banned_parts = ["http", "erro { $status", "erro {$status", "código de erro"];
@@ -1784,6 +1786,22 @@ mod tests {
             }
         }
         assert!(checked > 800, "os arquivos foram lidos ({checked} linhas)");
+    }
+
+    /// O ritmo mais curto tem um nome só no app (#302): o Explorador, a Biblioteca, a
+    /// importação online, a Engine online e o FICS dizem "Relâmpago".
+    #[test]
+    fn the_shortest_pace_is_called_relampago_everywhere() {
+        let i18n = I18n::pt_br();
+        for key in [
+            "explorer-pace-bullet",
+            "library-pace-bullet",
+            "library-online-pace-bullet",
+            "engine-online-speed-bullet",
+            "fics-pace-lightning",
+        ] {
+            assert_eq!(i18n.t(key), "Relâmpago", "{key}");
+        }
     }
 
     #[test]

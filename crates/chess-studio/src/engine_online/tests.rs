@@ -26,9 +26,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// 2026-11-11T12:00:00Z.
-const T0: Timestamp = Timestamp::from_millis(1_794_398_400_000);
-const GAME: &str = "En9ineQ1";
-const WAIT: Duration = Duration::from_secs(10);
+pub(super) const T0: Timestamp = Timestamp::from_millis(1_794_398_400_000);
+pub(super) const GAME: &str = "En9ineQ1";
+pub(super) const WAIT: Duration = Duration::from_secs(10);
 const ENGINE_CONNECTION: ConnectionId = ConnectionId(2);
 
 /// Cofre falso: um token de teste para a Conexão de Engine (nunca o cofre real).
@@ -52,7 +52,7 @@ impl chess_net::AuthorizationSource for FakeVault {
 // ---- A Engine roteirizada -------------------------------------------------------------------
 
 #[derive(Default)]
-struct Shared {
+pub(super) struct Shared {
     script: VecDeque<String>,
     requests: usize,
 }
@@ -84,7 +84,7 @@ impl MoveEngine for Scripted {
     }
 }
 
-fn scripted(moves: &[&str]) -> (EngineFactory, Arc<Mutex<Shared>>) {
+pub(super) fn scripted(moves: &[&str]) -> (EngineFactory, Arc<Mutex<Shared>>) {
     let shared = Arc::new(Mutex::new(Shared {
         script: moves.iter().map(|m| (*m).to_owned()).collect(),
         ..Shared::default()
@@ -102,7 +102,7 @@ fn scripted(moves: &[&str]) -> (EngineFactory, Arc<Mutex<Shared>>) {
     )
 }
 
-fn spec() -> EngineSpec {
+pub(super) fn spec() -> EngineSpec {
     EngineSpec {
         name: "Stockfish de teste".to_owned(),
         path: PathBuf::from("/engines/stockfish-de-teste"),
@@ -112,16 +112,16 @@ fn spec() -> EngineSpec {
 
 // ---- Ambiente -------------------------------------------------------------------------------
 
-struct Env {
-    server: FakeServer,
-    service: NetService,
-    run: EngineOnline,
-    store: Store,
-    profile: ProfileId,
-    events: LiveFeed,
+pub(super) struct Env {
+    pub(super) server: FakeServer,
+    pub(super) service: NetService,
+    pub(super) run: EngineOnline,
+    pub(super) store: Store,
+    pub(super) profile: ProfileId,
+    pub(super) events: LiveFeed,
 }
 
-fn env() -> Env {
+pub(super) fn env() -> Env {
     env_with(true, true)
 }
 
@@ -157,19 +157,19 @@ fn env_with(authorized: bool, provider_on: bool) -> Env {
     }
 }
 
-fn ok() -> FakeResponse {
+pub(super) fn ok() -> FakeResponse {
     FakeResponse::json(r#"{"ok":true}"#)
 }
 
 impl Env {
-    fn frame(&mut self) {
+    pub(super) fn frame(&mut self) {
         self.run.frame(Some(StoreAccess {
             store: &mut self.store,
             profile: self.profile,
         }));
     }
 
-    fn until(&mut self, mut cond: impl FnMut(&Self) -> bool) -> bool {
+    pub(super) fn until(&mut self, mut cond: impl FnMut(&Self) -> bool) -> bool {
         let start = Instant::now();
         while start.elapsed() < WAIT {
             self.frame();
@@ -181,14 +181,14 @@ impl Env {
         false
     }
 
-    fn start(&mut self, settings: Settings, factory: EngineFactory) {
+    pub(super) fn start(&mut self, settings: Settings, factory: EngineFactory) {
         self.run
             .start(&self.service, spec(), settings, factory)
             .unwrap();
         assert!(self.events.wait_connected(WAIT), "o fluxo de eventos abriu");
     }
 
-    fn posts_to(&self, path: &str) -> usize {
+    pub(super) fn posts_to(&self, path: &str) -> usize {
         self.server
             .requests()
             .iter()
@@ -196,7 +196,7 @@ impl Env {
             .count()
     }
 
-    fn posts(&self) -> usize {
+    pub(super) fn posts(&self) -> usize {
         self.server
             .requests()
             .iter()
@@ -227,7 +227,7 @@ impl Env {
     }
 
     /// O Lichess abre a Partida `id`: a Engine joga de brancas contra `name`.
-    fn open_game(&self, id: &str, name: &str) -> LiveFeed {
+    pub(super) fn open_game(&self, id: &str, name: &str) -> LiveFeed {
         let feed = LiveFeed::new();
         self.server.route(
             &format!("/api/bot/game/stream/{id}"),
@@ -254,14 +254,14 @@ fn info(id: &str, opponent: &str) -> Value {
     })
 }
 
-fn state(moves: &str, status: &str) -> Value {
+pub(super) fn state(moves: &str, status: &str) -> Value {
     json!({
         "type": "gameState", "moves": moves, "wtime": 300_000, "btime": 300_000,
         "winc": 2000, "binc": 2000, "status": status,
     })
 }
 
-fn full(id: &str, opponent: &str) -> Value {
+pub(super) fn full(id: &str, opponent: &str) -> Value {
     json!({
         "type": "gameFull", "id": id,
         "variant": { "key": "standard", "name": "Standard", "short": "Std" },
@@ -274,7 +274,7 @@ fn full(id: &str, opponent: &str) -> Value {
     })
 }
 
-fn move_path(id: &str, uci: &str) -> String {
+pub(super) fn move_path(id: &str, uci: &str) -> String {
     format!("/api/bot/game/{id}/move/{uci}")
 }
 
@@ -839,7 +839,7 @@ fn every_engine_online_text_exists_in_pt_br_and_uses_the_glossary_term() {
 // ---- Fechar o app, força e retomada (#271) --------------------------------------------------------
 
 /// Uma Partida em andamento em que a vez é do adversário (a Engine é de pretas).
-fn playing_env() -> (Env, LiveFeed) {
+pub(super) fn playing_env() -> (Env, LiveFeed) {
     let mut env = env();
     let (factory, _) = scripted(&[]);
     env.start(Settings::default(), factory);

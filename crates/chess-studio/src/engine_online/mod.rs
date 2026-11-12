@@ -9,12 +9,17 @@
 //! desafios pela política do usuário, avança as sessões das Partidas e grava no banco só o que
 //! o Lichess confirmou. Nada aqui escreve a Partida (ADR-0001): a sessão do Provedor é o
 //! controlador.
+//!
+//! Cada Partida em andamento pode ser vista no tabuleiro, só para ver ([`spectator`], #302).
 
 pub mod demo;
 pub mod exit;
 pub mod service;
+pub mod spectator;
 pub mod view;
 
+#[cfg(test)]
+mod spectator_tests;
 #[cfg(test)]
 mod tests;
 
@@ -65,6 +70,7 @@ impl Plugin for EngineOnlinePlugin {
         app.init_resource::<EngineOnlineService>()
             .init_resource::<exit::ExitPrompt>()
             .init_resource::<EngineOnlineUi>()
+            .init_resource::<spectator::SpectatorUi>()
             .add_systems(
                 Update,
                 (
@@ -72,13 +78,20 @@ impl Plugin for EngineOnlinePlugin {
                     demo::run_tour,
                     follow_central,
                     drive_engine_online,
+                    spectator::follow_spectator,
                 )
                     .chain(),
             )
             .add_systems(Update, exit::guard_close)
             .add_systems(
                 EguiPrimaryContextPass,
-                (engine_online_window, exit::exit_prompt_window),
+                (
+                    engine_online_window,
+                    exit::exit_prompt_window,
+                    // Depois do dock: a área do tabuleiro deste quadro.
+                    spectator::spectator_banner.after(crate::dock::dock_ui),
+                    spectator::confirm_window,
+                ),
             );
     }
 }
@@ -153,6 +166,7 @@ impl ViewModel {
             activity: run.activity().cloned().collect(),
             counts: run.counts(),
             conversion: ConversionView::of(run.conversion()),
+            watching: None,
         }
     }
 }
@@ -167,6 +181,9 @@ pub fn apply_intent(
     open_center: &mut dyn FnMut(),
 ) {
     match intent {
+        // "Ver no tabuleiro" e "Sair do modo espectador" mexem no tabuleiro: quem os aplica é
+        // [`apply_board_intent`], com a Sessão.
+        Intent::Watch(_) | Intent::LeaveSpectator => {}
         Intent::Close => ui.open = false,
         Intent::OpenCenter => {
             ui.open = false;
@@ -202,6 +219,28 @@ pub fn apply_intent(
     }
 }
 
+/// Aplica "Ver no tabuleiro" e "Sair do modo espectador" (as intenções da tela que mexem no
+/// tabuleiro). Vendo a Partida, a tela sai da frente do tabuleiro.
+pub fn apply_board_intent(
+    intent: &Intent,
+    ui: &mut EngineOnlineUi,
+    spectator_ui: &mut spectator::SpectatorUi,
+    session: &mut crate::session::Session,
+    run: &EngineOnline,
+) {
+    match intent {
+        Intent::Watch(id) => {
+            if spectator::request(spectator_ui, session, run, id) == spectator::Watch::Watching {
+                ui.open = false;
+            }
+        }
+        Intent::LeaveSpectator => {
+            session.leave_spectator();
+        }
+        _ => {}
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn engine_online_window(
     mut contexts: EguiContexts,
@@ -212,6 +251,8 @@ fn engine_online_window(
     manager: Option<ResMut<EngineManager>>,
     db: Option<Res<DbLocation>>,
     ribbon: Option<ResMut<crate::ribbon::RibbonState>>,
+    mut session: ResMut<crate::session::Session>,
+    mut spectator_ui: ResMut<spectator::SpectatorUi>,
 ) -> Result {
     if !state.open {
         return Ok(());
@@ -222,7 +263,7 @@ fn engine_online_window(
         manager.ensure_loaded(db.map(|d| d.0.clone()));
         engines = engines_from(&manager);
     }
-    let model = match state.demo.as_ref() {
+    let mut model = match state.demo.as_ref() {
         Some(scene) => scene.model.clone(),
         None => {
             let Some(net) = net.as_deref() else {
@@ -231,6 +272,11 @@ fn engine_online_window(
             service.with(|run| ViewModel::of(run, net, engines.clone()))
         }
     };
+    // A Partida que o tabuleiro mostra no modo espectador (a linha dela oferece sair).
+    model.watching = session
+        .is_spectator()
+        .then(|| session.online_remote_id().map(str::to_owned))
+        .flatten();
     // Sem escolha ainda, a primeira Engine da lista (nunca liga sozinho).
     if state.form.engine.is_none() {
         state.form.engine = model.engines.first().map(|e| e.path.clone());
@@ -276,6 +322,12 @@ fn engine_online_window(
         return Ok(());
     };
     for intent in intents {
+        if matches!(intent, Intent::Watch(_) | Intent::LeaveSpectator) {
+            service.with(|run| {
+                apply_board_intent(&intent, &mut state, &mut spectator_ui, &mut session, run);
+            });
+            continue;
+        }
         service.with(|run| {
             apply_intent(intent, &mut state, run, &net, &engines, &mut || {
                 if let Some(ribbon) = ribbon.as_mut() {

@@ -209,6 +209,10 @@ _Evitar_: engine na nuvem, fallback
 Engine local jogando Partidas online por uma Conexão de Engine, sempre separada da Conexão do jogador. A palavra "BOT" só aparece onde o Provedor a exige.
 _Evitar_: bot, robô
 
+**Modo espectador** (_en_: `Spectator`):
+O tabuleiro mostrando a Partida da Engine online só para ver: segue os Lances que o Provedor confirmou, nenhum gesto vira Lance nem intenção, a Trava de fair play não liga e nada é gravado de novo. A Partida do usuário fica guardada por baixo e volta ao sair.
+_Evitar_: observar (é o do FICS, num tabuleiro à parte), assistir ao vivo
+
 **Anotação de estudo** (_en_: `StudyNotes`):
 Comentário livre do usuário sobre um Lance, fora de Partida competitiva; não altera a Partida e sai no PGN como comentário. Edita-se no Painel Anotações ou, como nota rápida, ao lado do Lance na Notação: é o mesmo texto nas duas vistas.
 _Evitar_: comentário (sozinho), nota rápida (como dado separado)
