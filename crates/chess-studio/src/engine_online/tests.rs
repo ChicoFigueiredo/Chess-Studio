@@ -622,6 +622,72 @@ fn an_engine_that_does_not_start_resigns_instead_of_letting_the_clock_run() {
     );
 }
 
+/// A Engine que a Trava de fair play recusou: devolve o motivo da Trava como falha.
+struct Locked {
+    queue: VecDeque<ControllerEvent>,
+}
+
+impl MoveEngine for Locked {
+    fn search(&mut self, _request: SearchRequest) -> u64 {
+        self.queue.push_back(ControllerEvent::Failed {
+            id: Some(1),
+            failure: chess_uci::Failure::new(
+                chess_uci::FailureKind::Spawn,
+                crate::fair_play::FairPlayLocked {
+                    computation: crate::fair_play::Computation::OnlineEngine,
+                    scope: crate::fair_play::LockScope::Everything,
+                }
+                .to_string(),
+            ),
+        });
+        1
+    }
+
+    fn cancel(&mut self) {}
+
+    fn poll(&mut self) -> Option<ControllerEvent> {
+        self.queue.pop_front()
+    }
+}
+
+#[test]
+fn the_fair_play_lock_stopping_a_game_is_shown_as_the_lock_and_not_as_an_engine_failure() {
+    let mut env = env();
+    env.server.route("/api/challenge/chal0001/accept", ok());
+    env.server
+        .route(&format!("/api/bot/game/{GAME}/resign"), ok());
+    let factory: EngineFactory = Box::new(|_| {
+        Ok(Box::new(Locked {
+            queue: VecDeque::new(),
+        }))
+    });
+    env.start(Settings::default(), factory);
+    env.push_challenge("chal0001", "Salma", "blitz", "standard", None);
+    assert!(env.until(|e| e.posts_to("/api/challenge/chal0001/accept") == 1));
+    let feed = env.open_game(GAME, "Salma");
+    assert!(env.until(|_| feed.wait_connected(Duration::from_millis(1))));
+    feed.push(&full(GAME, "Salma").to_string());
+
+    assert!(env.until(|e| {
+        e.run
+            .activity()
+            .any(|a| matches!(a, Activity::FairPlayStopped { .. }))
+    }));
+    assert!(
+        !env.run
+            .activity()
+            .any(|a| matches!(a, Activity::EngineFailed { .. })),
+        "a Trava não é falha da Engine"
+    );
+    let i18n = crate::i18n::I18n::pt_br();
+    let text = i18n.t_with(
+        "engine-online-act-fairplay-stopped",
+        &[("why", &i18n.t("fairplay-locked-everything"))],
+    );
+    assert!(text.contains("Trava de fair play"), "{text}");
+    assert!(!text.contains("falhou"), "{text}");
+}
+
 #[test]
 fn a_provider_turned_off_while_running_sends_nothing_more() {
     let mut env = env();
@@ -751,6 +817,19 @@ fn every_engine_online_text_exists_in_pt_br_and_uses_the_glossary_term() {
         assert_ne!(i18n.t(key), key, "{key}");
     }
     let lower = all.to_lowercase();
+    // Jargão fora do texto de usuário (as chaves podem citar o ritmo): "FEN", "Threads", "Hash" e
+    // "Bullet" (o app diz "Relâmpago").
+    for line in all.lines().filter(|l| l.contains(" = ")) {
+        let value = line.split_once(" = ").unwrap().1.to_lowercase();
+        for jargon in ["fen", "threads", "hash", "bullet"] {
+            assert!(
+                !value
+                    .split(|c: char| !c.is_alphanumeric())
+                    .any(|w| w == jargon),
+                "{jargon} em: {line}"
+            );
+        }
+    }
     // O termo do GLOSSARY é "Engine online", nunca "bot" solto (só a sigla da conta BOT).
     for banned in ["bot online", "robô", "http", "json", "endpoint", "token"] {
         assert!(!lower.contains(banned), "{banned}");
