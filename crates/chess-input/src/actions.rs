@@ -500,6 +500,9 @@ pub struct ActionContext {
     pub online: bool,
     /// Há uma Partida online em tempo real contra pessoa em andamento (outra não começa).
     pub online_realtime_in_progress: bool,
+    /// A Trava de fair play recusa a Engine adversária agora (Partida online contra pessoa em
+    /// andamento, no tabuleiro ou fora dele): "Contra a Engine" espera.
+    pub fair_play_engine_lock: bool,
 }
 
 /// Estado de uma Ação num dado [`ActionContext`].
@@ -620,6 +623,10 @@ fn disabled_reason(action: Action, ctx: &ActionContext) -> Option<&'static str> 
             Some("reason-competitive-lock")
         }
         A::ResumeGame if !ctx.resumable_game => Some("reason-no-resumable-game"),
+        // A Engine adversária calcula: com a Trava de fair play ligada, não começa (FP-01).
+        A::NewGameVsEngine if ctx.online_realtime_in_progress || ctx.fair_play_engine_lock => {
+            Some("reason-fair-play-engine")
+        }
         A::NewGameOnline | A::SeekOnline | A::ChallengeOnline | A::PlayLichessEngine
             if ctx.online_realtime_in_progress =>
         {

@@ -628,6 +628,33 @@ fn the_online_group_lives_in_home_and_waits_for_the_game_in_progress() {
 }
 
 #[test]
+fn against_the_engine_waits_for_the_online_game_in_progress_with_the_fair_play_reason() {
+    // Trava de fair play (#261): a Engine adversária calcula, então "Contra a Engine" espera.
+    let busy = ActionContext {
+        online_realtime_in_progress: true,
+        ..assisted()
+    };
+    assert_eq!(
+        state(Action::NewGameVsEngine, &busy).disabled_reason,
+        Some("reason-fair-play-engine")
+    );
+    // Dois jogadores e a tela de Nova Partida continuam: não calculam.
+    for a in [Action::NewGame, Action::NewGameTwoPlayers] {
+        assert!(state(a, &busy).is_enabled(), "{a:?}");
+    }
+    // A Trava recusa também com a Partida online no tabuleiro ou por correspondência aberta.
+    let locked = ActionContext {
+        fair_play_engine_lock: true,
+        ..assisted()
+    };
+    assert_eq!(
+        state(Action::NewGameVsEngine, &locked).disabled_reason,
+        Some("reason-fair-play-engine")
+    );
+    assert!(state(Action::NewGameVsEngine, &assisted()).is_enabled());
+}
+
+#[test]
 fn starting_a_game_is_always_possible_but_resuming_needs_another_unfinished_game() {
     let ctx = ActionContext::default();
     for a in [

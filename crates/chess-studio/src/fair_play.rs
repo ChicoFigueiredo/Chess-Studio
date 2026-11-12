@@ -7,6 +7,8 @@
 //! - **Tudo travado** enquanto a [`FairPlayGuard`] da camada de rede estiver ligada (uma
 //!   Partida online contra pessoa com a sessão aberta, ou a Partida competitiva local) ou
 //!   enquanto houver uma Partida online em **tempo real** contra pessoa sem fim confirmado.
+//!   Só a Engine adversária da própria Partida competitiva local joga com a trava dela (FP-02):
+//!   é a adversária, não um auxílio.
 //! - **Correspondência** (PO-13): com uma Partida por correspondência em andamento e a sessão
 //!   dela fechada (o tabuleiro mostra outra coisa), a trava vale para
 //!   1. a própria Partida, em qualquer meio-lance (revisão inclusive);
@@ -21,22 +23,26 @@
 //! - Contra a Engine do Provedor não há trava; a trava só cai quando o Provedor confirma o fim.
 //!
 //! Serviços que consultam: análise da Engine local (linhas e barra de avaliação), dica e setas
-//! do HUD, Engine remota, avaliação em cache, finais, Explorador online e a estatística da
-//! Biblioteca local (Explorador e Painel Aberturas). Os que falam com a rede também passam
-//! pela trava do gate (`chess-net`), que recusa tudo o que calcula enquanto ela está ligada.
+//! do HUD, Engine remota, avaliação em cache, finais, Explorador online, a estatística e a busca
+//! por Posição da Biblioteca local, a Engine adversária local e a Engine online (#261). Os que
+//! falam com a rede também passam pela trava do gate (`chess-net`), que recusa tudo o que
+//! calcula enquanto ela está ligada.
 
 use crate::session::Session;
 use bevy::prelude::Resource;
 use chess_core::{CanonicalPosition, Color, Piece};
 use chess_game::{Game, ReviewView};
-use chess_net::FairPlayGuard;
-use std::collections::{BTreeMap, HashSet};
+use chess_net::{FairPlayGuard, FairPlayHold};
+use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::sync::{Arc, PoisonError, RwLock};
+use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 /// Até quantos meios-lances à frente da Posição atual da correspondência a trava alcança.
 pub const NEAR_PLIES: usize = 2;
+
+/// Motivo (diagnóstico) da trava que a Partida competitiva local segura (PO-15).
+const COMPETITIVE_REASON: &str = "Partida competitiva em andamento";
 
 /// O que um serviço quer calcular.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -55,11 +61,17 @@ pub enum Computation {
     Explorer,
     /// Estatística da Biblioteca local para a Posição (Explorador e Painel Aberturas).
     LibraryStats,
+    /// Busca por Posição na Biblioteca local: as Partidas que passam por ela (FP-03).
+    LibrarySearch,
+    /// Engine adversária local: o Lance que ela joga na Partida contra a Engine (FP-01).
+    OpponentEngine,
+    /// Engine online: a Engine local que joga no Provedor pela Conexão de Engine (FP-04).
+    OnlineEngine,
 }
 
 impl Computation {
     #[cfg(test)]
-    pub const ALL: [Computation; 7] = [
+    pub const ALL: [Computation; 10] = [
         Computation::EngineAnalysis,
         Computation::Hint,
         Computation::RemoteEngine,
@@ -67,6 +79,9 @@ impl Computation {
         Computation::Endgames,
         Computation::Explorer,
         Computation::LibraryStats,
+        Computation::LibrarySearch,
+        Computation::OpponentEngine,
+        Computation::OnlineEngine,
     ];
 }
 
@@ -103,6 +118,17 @@ impl fmt::Display for FairPlayLocked {
 }
 
 impl std::error::Error for FairPlayLocked {}
+
+impl FairPlayLocked {
+    /// Id Fluent do texto de usuário da recusa (a interface explica o que a trava decidiu).
+    pub fn message_key(&self) -> &'static str {
+        match self.scope {
+            LockScope::Everything => "fairplay-locked-everything",
+            LockScope::ThisGame => "fairplay-locked-game",
+            LockScope::ThisPosition => "fairplay-locked-position",
+        }
+    }
+}
 
 /// Estrutura de uma Posição: onde estão os peões de cada lado e quanto material há de cada
 /// tipo e cor. Duas Posições com a mesma estrutura diferem só por manobras de peças.
@@ -201,6 +227,26 @@ impl Subject {
         subject
     }
 
+    /// A Posição de um pedido UCI (`position [fen …] moves …`), com o caminho até ela (a
+    /// Engine online pede assim). `None` se o pedido não se refaz.
+    fn of_spec(spec: &chess_uci::PositionSpec) -> Option<Self> {
+        let mut position = match &spec.fen {
+            Some(fen) => CanonicalPosition::from_fen(fen).ok()?,
+            None => CanonicalPosition::start(),
+        };
+        let mut lineage = Vec::with_capacity(spec.moves.len());
+        for mv in &spec.moves {
+            lineage.push(Structure::of(&position));
+            position = position.play(*mv).ok()?;
+        }
+        Some(Self {
+            structure: Structure::of(&position),
+            lineage,
+            online_in_progress: false,
+            online_id: None,
+        })
+    }
+
     /// A Posição depois de `mv` a partir desta (o Lance que o Explorador mostraria).
     #[cfg(test)]
     fn then(mut self, next: &CanonicalPosition) -> Self {
@@ -268,6 +314,9 @@ struct State {
 pub struct FairPlay {
     guard: FairPlayGuard,
     state: Arc<RwLock<State>>,
+    /// A trava que a Partida competitiva local segura na rede (PO-15), enquanto ela está em
+    /// andamento.
+    competitive: Arc<Mutex<Option<FairPlayHold>>>,
 }
 
 impl FairPlay {
@@ -276,6 +325,38 @@ impl FairPlay {
         Self {
             guard,
             state: Arc::default(),
+            competitive: Arc::default(),
+        }
+    }
+
+    /// Segura a trava da rede enquanto a Partida competitiva local está em andamento e solta
+    /// quando acaba (PO-15). É uma trava própria: nunca solta a de uma Partida online, e a
+    /// Engine adversária dessa mesma Partida joga com ela (FP-02).
+    pub fn follow_competitive(&self, in_progress: bool) {
+        let mut hold = self
+            .competitive
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if in_progress && hold.is_none() {
+            *hold = Some(self.guard.hold(COMPETITIVE_REASON));
+        } else if !in_progress {
+            *hold = None;
+        }
+    }
+
+    /// A trava da rede vale para `computation`? Para a Engine adversária, a trava da Partida
+    /// competitiva local não conta: ela é a adversária dessa Partida, não um auxílio (FP-02).
+    fn network_lock(&self, computation: Computation) -> bool {
+        if computation != Computation::OpponentEngine {
+            return self.guard.is_engaged();
+        }
+        let hold = self
+            .competitive
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        match hold.as_ref() {
+            Some(own) => self.guard.is_engaged_besides(own),
+            None => self.guard.is_engaged(),
         }
     }
 
@@ -333,7 +414,7 @@ impl FairPlay {
     /// A licença para calcular `computation` sobre `subject`, ou a recusa tipada.
     pub fn check(&self, computation: Computation, subject: &Subject) -> Result<(), FairPlayLocked> {
         let refuse = |scope| Err(FairPlayLocked { computation, scope });
-        if self.guard.is_engaged() {
+        if self.network_lock(computation) {
             return refuse(LockScope::Everything);
         }
         // Lock envenenado: na dúvida, trava.
@@ -368,6 +449,60 @@ impl FairPlay {
                 scope: LockScope::Everything,
             }),
             Err(_) => Ok(()),
+        }
+    }
+
+    /// Como [`FairPlay::check`], para a Posição atual de `game` com o caminho até ela (a
+    /// Engine adversária pergunta assim, a cada quadro).
+    pub fn check_game(&self, computation: Computation, game: &Game) -> Result<(), FairPlayLocked> {
+        // Sem trava nenhuma, nem refaz a Partida.
+        if !self.network_lock(computation)
+            && self.followed() == 0
+            && !game.online_human_in_progress()
+        {
+            return Ok(());
+        }
+        match Subject::at(game, game.snapshot().history.len()) {
+            Some(subject) => self.check(computation, &subject),
+            // A Partida não se refaz: na dúvida, trava.
+            None => Err(FairPlayLocked {
+                computation,
+                scope: LockScope::Everything,
+            }),
+        }
+    }
+
+    /// A licença para ligar um serviço antes de saber a Posição (a Engine online): recusa só
+    /// quando nada calcula, em Posição nenhuma.
+    pub fn check_anywhere(&self, computation: Computation) -> Result<(), FairPlayLocked> {
+        let realtime = self
+            .state
+            .read()
+            .map_or(true, |s| s.games.values().any(|g| g.realtime));
+        if self.network_lock(computation) || realtime {
+            return Err(FairPlayLocked {
+                computation,
+                scope: LockScope::Everything,
+            });
+        }
+        Ok(())
+    }
+
+    /// A licença para uma Partida que começa em `start` (`None`: uma Posição que ainda não se
+    /// conhece, como o desafio "a partir de uma Posição"; com qualquer trava ligada, recusa).
+    pub fn check_start(
+        &self,
+        computation: Computation,
+        start: Option<&CanonicalPosition>,
+    ) -> Result<(), FairPlayLocked> {
+        self.check_anywhere(computation)?;
+        match start {
+            Some(position) => self.check(computation, &Subject::position(position)),
+            None if self.any() => Err(FairPlayLocked {
+                computation,
+                scope: LockScope::ThisPosition,
+            }),
+            None => Ok(()),
         }
     }
 }
@@ -498,6 +633,175 @@ impl GuardedAnalysis {
         if let Backend::Local(controller) = &mut self.backend {
             controller.set_load(plan);
         }
+    }
+}
+
+/// Busca da Biblioteca local. Com filtro de Posição, só com a licença da trava (FP-03): a lista
+/// das Partidas que passam por ela, com o que se jogou depois e o resultado, é a estatística da
+/// Biblioteca por outro caminho. É a única chamada de `Store::search_library` no app (teste
+/// estático). `shown`: a Posição do tabuleiro, com o caminho até ela, quando é ela que se busca.
+/// Sem o ponto único da trava (`fair` ausente), a busca por Posição não sai.
+pub fn search_library(
+    fair: Option<&FairPlay>,
+    shown: Option<&Subject>,
+    store: &chess_store::Store,
+    query: &chess_store::LibraryQuery,
+) -> Result<Result<chess_store::LibraryPage, chess_store::StoreError>, FairPlayLocked> {
+    if let Some(fen) = query.position.as_deref() {
+        check_library_search(fair, shown, fen)?;
+    }
+    Ok(store.search_library(query))
+}
+
+/// A licença da busca da Biblioteca pela Posição `fen` (FP-03), sem buscar: a Biblioteca a
+/// confere a cada quadro enquanto há filtro de Posição.
+pub fn check_library_search(
+    fair: Option<&FairPlay>,
+    shown: Option<&Subject>,
+    fen: &str,
+) -> Result<(), FairPlayLocked> {
+    let computation = Computation::LibrarySearch;
+    if fen.trim().is_empty() {
+        return Ok(());
+    }
+    let Some(fair) = fair else {
+        return Err(FairPlayLocked {
+            computation,
+            scope: LockScope::Everything,
+        });
+    };
+    fair.check_fen(computation, fen)?;
+    match shown {
+        Some(shown) => fair.check(computation, shown),
+        None => Ok(()),
+    }
+}
+
+/// A Engine adversária local (Partida contra a Engine) atrás da trava (FP-01): só nasce com
+/// licença para a Posição da Partida e só joga com licença, a cada quadro. Recusada no meio da
+/// Partida, quem a tem a descarta (o processo termina e a resposta pendente nunca entra). É o
+/// único lugar do app que cria um `chess_uci::EnginePlayer` (teste estático).
+#[derive(Debug)]
+pub struct GuardedOpponent {
+    player: chess_uci::EnginePlayer,
+}
+
+impl GuardedOpponent {
+    /// Sobe a Engine adversária de `game`, se a trava deixar.
+    pub fn start(
+        fair: &FairPlay,
+        game: &Game,
+        seat: chess_game::EngineSeat,
+        config: chess_uci::EngineConfig,
+    ) -> Result<Self, FairPlayLocked> {
+        fair.check_game(Computation::OpponentEngine, game)?;
+        Ok(Self {
+            player: chess_uci::EnginePlayer::new(seat, config),
+        })
+    }
+
+    /// Avança a Engine (lê a resposta, joga o Lance, pede o próximo), se a trava deixar.
+    /// Recusada, nada é lido nem pedido.
+    pub fn drive(
+        &mut self,
+        fair: &FairPlay,
+        game: &mut Game,
+        at: chess_game::Timestamp,
+    ) -> Result<bool, FairPlayLocked> {
+        fair.check_game(Computation::OpponentEngine, game)?;
+        Ok(self.player.drive(game, at))
+    }
+
+    /// O estado da Engine para a interface (nome, força, pensando, falha).
+    pub fn player(&self) -> &chess_uci::EnginePlayer {
+        &self.player
+    }
+
+    pub fn seat(&self) -> chess_game::EngineSeat {
+        self.player.seat()
+    }
+
+    /// "Tentar de novo": a próxima jogada ainda passa por [`GuardedOpponent::drive`].
+    pub fn retry(&mut self) {
+        self.player.retry();
+    }
+
+    /// "Trocar Engine": a próxima jogada ainda passa por [`GuardedOpponent::drive`].
+    pub fn replace_engine(&mut self, config: chess_uci::EngineConfig) {
+        self.player.replace_engine(config);
+    }
+}
+
+/// A Engine de cada Partida da Engine online atrás da trava (FP-04): toda busca pede licença
+/// para a Posição pedida. Recusada, a Engine não recebe a Posição, o processo termina e a busca
+/// falha: a política de falha da Partida (AD-08) a abandona. A Engine online só joga por aqui
+/// (teste estático).
+pub struct GuardedMoveEngine {
+    fair: FairPlay,
+    /// `None` depois da primeira recusa: a Engine saiu.
+    engine: Option<Box<dyn chess_providers::MoveEngine>>,
+    refused: VecDeque<chess_uci::ControllerEvent>,
+    next_refused: u64,
+}
+
+impl fmt::Debug for GuardedMoveEngine {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GuardedMoveEngine")
+            .field("engine", &self.engine.is_some())
+            .field("refused", &self.refused.len())
+            .finish_non_exhaustive()
+    }
+}
+
+impl GuardedMoveEngine {
+    pub fn new(fair: FairPlay, engine: Box<dyn chess_providers::MoveEngine>) -> Self {
+        Self {
+            fair,
+            engine: Some(engine),
+            refused: VecDeque::new(),
+            // Longe dos números da Engine: a recusa nunca se confunde com um pedido dela.
+            next_refused: u64::MAX / 2,
+        }
+    }
+}
+
+impl chess_providers::MoveEngine for GuardedMoveEngine {
+    fn search(&mut self, request: chess_uci::SearchRequest) -> u64 {
+        let computation = Computation::OnlineEngine;
+        let licensed = match Subject::of_spec(&request.position) {
+            Some(subject) => self.fair.check(computation, &subject),
+            None => self.fair.check_start(computation, None),
+        };
+        if let (Ok(()), Some(engine)) = (licensed, self.engine.as_mut()) {
+            return engine.search(request);
+        }
+        // Recusada (ou a Engine já saiu numa recusa anterior): a Posição não chega a ela.
+        self.engine = None;
+        let id = self.next_refused;
+        self.next_refused += 1;
+        let locked = licensed.err().unwrap_or(FairPlayLocked {
+            computation,
+            scope: LockScope::Everything,
+        });
+        self.refused.push_back(chess_uci::ControllerEvent::Failed {
+            id: Some(id),
+            failure: chess_uci::Failure::new(chess_uci::FailureKind::Spawn, locked.to_string()),
+        });
+        id
+    }
+
+    fn cancel(&mut self) {
+        // A recusa continua de pé: a Partida precisa saber que a Engine saiu.
+        if let Some(engine) = self.engine.as_mut() {
+            engine.cancel();
+        }
+    }
+
+    fn poll(&mut self) -> Option<chess_uci::ControllerEvent> {
+        if let Some(event) = self.refused.pop_front() {
+            return Some(event);
+        }
+        self.engine.as_mut()?.poll()
     }
 }
 
@@ -792,8 +1096,10 @@ mod tests {
     }
 
     /// Sem atalho: no app, a Engine de análise só nasce e só recebe Posição por
-    /// [`GuardedAnalysis`], e a estatística da Biblioteca só sai por [`opening_stats`]. Teste
-    /// estático: varre as fontes do app (fora deste arquivo).
+    /// [`GuardedAnalysis`], a Engine adversária só por [`GuardedOpponent`], a Engine online só
+    /// joga atrás de [`GuardedMoveEngine`], e a estatística e a busca por Posição da Biblioteca
+    /// só saem por [`opening_stats`] e [`search_library`] (FP-05). Teste estático: varre as
+    /// fontes do app (fora deste arquivo).
     #[test]
     fn computing_services_are_only_reachable_through_the_lock() {
         fn sources(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
@@ -809,14 +1115,25 @@ mod tests {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
         let mut files = Vec::new();
         sources(&root, &mut files);
+        // Em todo o app, testes inclusive.
         let forbidden = [
             "AnalysisController::start(",
             ".opening_stats(",
             "AnalysisController>",
             "RemoteEngine::new(",
+            "EnginePlayer::new(",
         ];
+        // No código de produção: os testes podem ler o banco direto.
+        let production_only = [".search_library("];
+        // O processo UCI só na fábrica da Engine online, cuja Engine joga atrás da trava.
+        let online_factory = std::path::Path::new("engine_online").join("service.rs");
+        let mut factory_seen = false;
         for file in files {
-            if file.ends_with("fair_play.rs") {
+            let name = file
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or_default();
+            if name.starts_with("fair_play") {
                 continue;
             }
             let text = std::fs::read_to_string(&file).unwrap();
@@ -835,7 +1152,147 @@ mod tests {
                     file.display()
                 );
             }
+            let test_file = name == "tests.rs" || name.ends_with("_tests.rs");
+            if !test_file {
+                // O módulo de testes do fim do arquivo não é produção.
+                let production = text
+                    .find("\nmod tests {")
+                    .map_or(&text[..], |at| &text[..at]);
+                for needle in production_only {
+                    assert!(
+                        !production.contains(needle),
+                        "{} usa `{needle}` sem passar pela Trava de fair play",
+                        file.display()
+                    );
+                }
+            }
+            if text.contains("EngineController::start(") {
+                assert!(
+                    file.ends_with(&online_factory),
+                    "{} sobe uma Engine fora da Trava de fair play",
+                    file.display()
+                );
+                assert!(
+                    text.contains("GuardedMoveEngine::new("),
+                    "a Engine online joga sem a Trava de fair play"
+                );
+                factory_seen = true;
+            }
         }
+        assert!(factory_seen, "a fábrica da Engine online mudou de lugar");
+    }
+
+    #[test]
+    fn the_opponent_engine_of_the_local_competitive_game_plays_under_its_own_lock() {
+        let fair = fair();
+        fair.follow_competitive(true);
+        let subject = Subject::at(&local(&["e2e4"]), 1).unwrap();
+        assert_eq!(fair.check(Computation::OpponentEngine, &subject), Ok(()));
+        for computation in Computation::ALL {
+            if computation != Computation::OpponentEngine {
+                assert_eq!(
+                    fair.check(computation, &subject).unwrap_err().scope,
+                    LockScope::Everything,
+                    "{computation:?}"
+                );
+            }
+        }
+        // Uma Partida online contra pessoa por cima: a Engine adversária também para.
+        let online = fair.guard().hold("Partida online contra pessoa");
+        assert!(fair.check(Computation::OpponentEngine, &subject).is_err());
+        assert!(fair.check_anywhere(Computation::OpponentEngine).is_err());
+        drop(online);
+        assert_eq!(fair.check_anywhere(Computation::OpponentEngine), Ok(()));
+        fair.follow_competitive(false);
+        assert!(!fair.any());
+    }
+
+    #[test]
+    fn a_game_that_starts_in_an_unknown_position_waits_for_every_lock() {
+        let fair = fair();
+        assert_eq!(fair.check_start(Computation::OnlineEngine, None), Ok(()));
+        let mut game = online_game("cor1", Some(3), Opponent::Human);
+        feed(&mut game, &SCOTCH, None);
+        fair.follow_games([&game]);
+        assert_eq!(fair.check_anywhere(Computation::OnlineEngine), Ok(()));
+        assert_eq!(
+            fair.check_start(Computation::OnlineEngine, None)
+                .unwrap_err()
+                .scope,
+            LockScope::ThisPosition
+        );
+        let start = CanonicalPosition::start();
+        assert_eq!(
+            fair.check_start(Computation::OnlineEngine, Some(&start)),
+            Ok(())
+        );
+        assert!(
+            fair.check_start(Computation::OnlineEngine, Some(&after(&SCOTCH)))
+                .is_err()
+        );
+    }
+
+    /// Engine que só conta as buscas que chegaram a ela.
+    struct Counting(Arc<Mutex<usize>>);
+
+    impl chess_providers::MoveEngine for Counting {
+        fn search(&mut self, _request: chess_uci::SearchRequest) -> u64 {
+            *self.0.lock().unwrap() += 1;
+            7
+        }
+
+        fn cancel(&mut self) {}
+
+        fn poll(&mut self) -> Option<chess_uci::ControllerEvent> {
+            None
+        }
+    }
+
+    fn request(moves: &[&str]) -> chess_uci::SearchRequest {
+        chess_uci::SearchRequest {
+            position: chess_uci::PositionSpec::startpos()
+                .with_moves(moves.iter().map(|m| m.parse::<Move>().unwrap())),
+            go: chess_uci::GoParams::default(),
+            limit: std::time::Duration::from_secs(1),
+        }
+    }
+
+    #[test]
+    fn the_online_engine_never_receives_a_locked_position_and_leaves_for_good() {
+        use chess_providers::MoveEngine;
+        let fair = fair();
+        let mut game = online_game("cor1", Some(3), Opponent::Human);
+        feed(&mut game, &SCOTCH, None);
+        fair.follow_games([&game]);
+        let searches = Arc::new(Mutex::new(0));
+        let mut engine = GuardedMoveEngine::new(fair.clone(), Box::new(Counting(searches.clone())));
+        // Outra abertura: a Engine pensa.
+        assert_eq!(engine.search(request(&["d2d4", "d7d5"])), 7);
+        assert_eq!(*searches.lock().unwrap(), 1);
+        // A Escocesa da correspondência repetida Lance a Lance, e um passo adiante: recusada.
+        let refused = engine.search(request(&[&SCOTCH[..], &["e4e5"]].concat()));
+        assert_eq!(
+            *searches.lock().unwrap(),
+            1,
+            "a Posição não chegou à Engine"
+        );
+        match engine.poll() {
+            Some(chess_uci::ControllerEvent::Failed { id, failure }) => {
+                assert_eq!(id, Some(refused));
+                assert!(
+                    failure.message.contains("Trava de fair play"),
+                    "{failure:?}"
+                );
+            }
+            other => panic!("esperava a falha da recusa: {other:?}"),
+        }
+        // A Engine saiu: nem outra Posição chega mais a ela.
+        engine.search(request(&["c2c4"]));
+        assert_eq!(*searches.lock().unwrap(), 1);
+        assert!(matches!(
+            engine.poll(),
+            Some(chess_uci::ControllerEvent::Failed { .. })
+        ));
     }
 
     #[test]
@@ -852,3 +1309,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "fair_play_tests.rs"]
+mod service_tests;

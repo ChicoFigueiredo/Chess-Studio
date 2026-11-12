@@ -281,3 +281,48 @@ fn operations_of_the_own_vault_need_the_own_vault() {
     );
     assert!(!own_file(&dir).exists());
 }
+
+/// Revisão de segurança (#273): o arquivo cortado em **qualquer** ponto (queda no meio da
+/// gravação, cópia incompleta) é recusado como corrompido, sem pânico e sem ler nada.
+#[test]
+fn a_file_cut_at_any_length_is_refused_without_panic() {
+    let (dir, keyring, vault) = own_with_token("cortado-em-todo-ponto");
+    drop(vault);
+    let path = own_file(&dir);
+    let original = fs::read(&path).expect("arquivo");
+    for len in 0..original.len() {
+        fs::write(&path, &original[..len]).expect("grava o cortado");
+        let vault = open(&dir, &keyring, &clock());
+        assert_eq!(
+            vault.unlock(&secret(PASSWORD)),
+            Err(VaultError::Corrupted {
+                file: "cofre próprio"
+            }),
+            "cortado em {len} bytes"
+        );
+        assert!(vault.read(CONNECTION).is_err(), "cortado em {len} bytes");
+    }
+}
+
+/// Revisão de segurança (#273): no Unix, o diretório do Cofre é só do usuário (0700) e os
+/// arquivos que ele grava (cofre próprio e índice) também (0600), inclusive depois de
+/// regravar.
+#[cfg(unix)]
+#[test]
+fn the_vault_directory_and_files_are_private_to_the_user() {
+    use std::os::unix::fs::PermissionsExt;
+    let (dir, _keyring, vault) = own_with_token("permissoes");
+    vault
+        .store(PROFILE, LICHESS, CONNECTION, secret("lip_outro_token"))
+        .expect("regrava");
+    let mode = |p: &Path| fs::metadata(p).expect("metadados").permissions().mode() & 0o777;
+    assert_eq!(mode(&dir), 0o700, "diretório do Cofre");
+    assert_eq!(mode(&own_file(&dir)), 0o600, "cofre próprio");
+    assert_eq!(mode(&dir.join("index.json")), 0o600, "índice");
+    let leftovers: Vec<_> = fs::read_dir(&dir)
+        .expect("lista")
+        .filter_map(Result::ok)
+        .filter(|e| e.path().extension().is_some_and(|x| x == "tmp"))
+        .collect();
+    assert!(leftovers.is_empty(), "nenhum temporário fica para trás");
+}

@@ -716,7 +716,7 @@ mod tests {
             .add_systems(Update, update_hud);
         let config = crate::new_game::NewGameConfig::for_policy(policy);
         let mut session = Session::new();
-        session.start(&config, None);
+        session.start(&config);
         app.insert_resource(session);
         app
     }

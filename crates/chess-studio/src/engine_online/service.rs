@@ -14,9 +14,12 @@
 //! - **Autoridade.** Quem escreve a Partida é a `OnlineGameSession` (o controlador); este
 //!   serviço só grava no banco os Eventos que ela devolve. O núcleo de regras valida cada
 //!   Lance da Engine (ADR-0003): Lance ilegal nunca é enviado.
-//! - **Sem Trava de fair play.** É uma Engine declarada (AD-05): a Partida da Engine online
-//!   não liga a Trava, e esta tela não consulta a Engine remota.
+//! - **Sem Trava de fair play própria.** É uma Engine declarada (AD-05): a Partida da Engine
+//!   online não liga a Trava, e esta tela não consulta a Engine remota. Mas a Engine online
+//!   calcula: com a Trava ligada por uma Partida online contra pessoa ela não liga, recusa os
+//!   desafios que a Trava não deixa e cada Lance dela pede licença (FP-04, #261).
 
+use crate::fair_play::{Computation, FairPlay, FairPlayLocked, GuardedMoveEngine};
 use crate::net_service::NetService;
 use crate::online::service::StoreAccess;
 use chess_net::{Clock, ProviderId, Timestamp};
@@ -109,6 +112,8 @@ pub enum Unavailable {
     /// Já está ligada.
     AlreadyRunning,
     Bot(BoardError),
+    /// A Trava de fair play está ligada: a Engine online calcula (FP-04).
+    FairPlay(FairPlayLocked),
 }
 
 /// Em que pé está a Engine online.
@@ -176,6 +181,15 @@ pub enum Activity {
     RequestFailed(ProviderError),
     SessionClosed(BoardError),
     StoreFailed(String),
+    /// Trava de fair play (FP-04): o desafio foi recusado ("mais tarde").
+    FairPlayDeclined {
+        name: String,
+    },
+    /// Trava de fair play (FP-04): a Partida começou numa Posição que a Trava não deixa; a
+    /// Engine não recebe a Posição e a Partida é abandonada.
+    FairPlayResigned {
+        opponent: String,
+    },
 }
 
 /// Uma Partida da Engine em andamento, para a tela.
@@ -269,6 +283,8 @@ pub struct EngineOnline {
     activity: VecDeque<Activity>,
     conversion: Option<Conversion>,
     clock: Option<std::sync::Arc<dyn Clock>>,
+    /// O ponto único da Trava de fair play (o da rede da Conexão), desde que ligou.
+    fair: Option<FairPlay>,
 }
 
 impl std::fmt::Debug for EngineOnline {
@@ -417,10 +433,15 @@ impl EngineOnline {
         if self.active {
             return Err(Unavailable::AlreadyRunning);
         }
+        // FP-04: a Engine online calcula; com tudo travado não liga, antes de qualquer pedido.
+        let fair = net.fair_play().clone();
+        fair.check_anywhere(Computation::OnlineEngine)
+            .map_err(Unavailable::FairPlay)?;
         let bot = self.bot_for(net)?.challenge_policy(settings.policy.clone());
         self.events = Some(bot.events());
         self.bot = Some(bot);
         self.clock = Some(net.clock());
+        self.fair = Some(fair);
         self.spec = Some(spec);
         self.settings = settings;
         self.factory = Some(factory);
@@ -540,9 +561,17 @@ impl EngineOnline {
         if !self.seen.insert(challenge.id.clone()) {
             return;
         }
-        // Parando ou no limite: nenhum desafio é aceito. `max_concurrent = 0` faz a política
-        // recusar com "mais tarde", sem inventar outro caminho de recusa.
-        let blocked = self.stopping.is_some() || self.limit_reached();
+        // FP-04: a Partida começaria numa Posição que a Trava de fair play não deixa (o desafio
+        // "a partir de uma Posição" não diz qual: com qualquer trava ligada, fica de fora).
+        let start =
+            (challenge.variant != "fromPosition").then(chess_core::CanonicalPosition::start);
+        let locked = self.fair.as_ref().is_none_or(|fair| {
+            fair.check_start(Computation::OnlineEngine, start.as_ref())
+                .is_err()
+        });
+        // Parando, no limite ou sob a Trava: nenhum desafio é aceito. `max_concurrent = 0` faz
+        // a política recusar com "mais tarde", sem inventar outro caminho de recusa.
+        let blocked = self.stopping.is_some() || self.limit_reached() || locked;
         let bot = if blocked {
             let mut closed = self.settings.policy.clone();
             closed.max_concurrent = 0;
@@ -561,6 +590,10 @@ impl EngineOnline {
                 if self.limit_reached() {
                     self.begin_stop(StopReason::LimitReached);
                 }
+            }
+            ChallengeDecision::Decline(_) if locked => {
+                self.declined_total += 1;
+                self.note(Activity::FairPlayDeclined { name: name.clone() });
             }
             ChallengeDecision::Decline(reason) => {
                 self.declined_total += 1;
@@ -591,7 +624,9 @@ impl EngineOnline {
         if info.variant != "standard" && info.variant != "fromPosition" {
             return;
         }
-        let (Some(bot), Some(spec)) = (self.bot.clone(), self.spec.clone()) else {
+        let (Some(bot), Some(spec), Some(fair)) =
+            (self.bot.clone(), self.spec.clone(), self.fair.clone())
+        else {
             return;
         };
         let policy = EnginePolicy {
@@ -607,24 +642,40 @@ impl EngineOnline {
             .and_then(|access| stored_game(access, &info.game_id).map(|(id, g)| (access, id, g)));
         let mut resumed = None;
         if let Some((access, id, game)) = stored {
-            let engine = self.make_engine(&spec);
+            // FP-04: a Partida retomada obedece à Trava pela Posição em que está, com o caminho
+            // até ela.
+            let refused = fair.check_game(Computation::OnlineEngine, &game).err();
+            let engine = self.make_engine(&spec, &fair, refused);
             if let Ok(session) = bot.resume_game(game, engine, policy) {
                 access.store.resume_game(id).ok();
-                resumed = Some((id, session));
+                resumed = Some((id, session, refused));
             }
         }
-        let (session, store_id) = if let Some((id, session)) = resumed {
+        let (session, store_id, refused) = if let Some((id, session, refused)) = resumed {
             self.note(Activity::GameResumed {
                 opponent: info.opponent.name.clone(),
             });
-            (session, Some(id))
+            (session, Some(id), refused)
         } else {
-            let engine = self.make_engine(&spec);
+            // FP-04: a Partida começa numa Posição que a Trava de fair play não deixa?
+            let start = info
+                .fen
+                .as_deref()
+                .and_then(|fen| chess_core::CanonicalPosition::from_fen(fen).ok());
+            let refused = fair
+                .check_start(Computation::OnlineEngine, start.as_ref())
+                .err();
+            let engine = self.make_engine(&spec, &fair, refused);
             self.note(Activity::GameStarted {
                 opponent: info.opponent.name.clone(),
             });
-            (bot.open_game(&info, engine, policy), None)
+            (bot.open_game(&info, engine, policy), None, refused)
         };
+        if refused.is_some() {
+            self.note(Activity::FairPlayResigned {
+                opponent: info.opponent.name.clone(),
+            });
+        }
         self.games.push(BotGame {
             session,
             store_id,
@@ -637,25 +688,43 @@ impl EngineOnline {
         });
     }
 
-    /// A Engine de uma Partida; se ela não sobe, uma Engine morta que faz a política abandonar.
-    fn make_engine(&mut self, spec: &EngineSpec) -> Box<dyn MoveEngine> {
-        let built = match self.factory.as_mut() {
-            Some(factory) => factory(spec),
-            None => Err("Nenhuma Engine escolhida.".to_owned()),
-        };
-        match built {
-            Ok(engine) => engine,
-            Err(detail) => {
-                self.note(Activity::EngineStartFailed {
-                    detail: detail.clone(),
-                });
-                Box::new(DeadEngine {
-                    message: detail,
-                    queue: VecDeque::new(),
-                    next: 1,
-                })
+    /// A Engine de uma Partida, sempre atrás da Trava de fair play (FP-04): cada busca pede
+    /// licença e, recusada, a Engine não recebe a Posição e a política abandona a Partida.
+    /// Recusada já ao começar (`refused`), a Engine nem sobe. Se ela não sobe, uma Engine morta
+    /// que faz a política abandonar.
+    fn make_engine(
+        &mut self,
+        spec: &EngineSpec,
+        fair: &FairPlay,
+        refused: Option<FairPlayLocked>,
+    ) -> Box<dyn MoveEngine> {
+        let engine: Box<dyn MoveEngine> = match refused {
+            Some(locked) => Box::new(DeadEngine {
+                message: locked.to_string(),
+                queue: VecDeque::new(),
+                next: 1,
+            }),
+            None => {
+                let built = match self.factory.as_mut() {
+                    Some(factory) => factory(spec),
+                    None => Err("Nenhuma Engine escolhida.".to_owned()),
+                };
+                match built {
+                    Ok(engine) => engine,
+                    Err(detail) => {
+                        self.note(Activity::EngineStartFailed {
+                            detail: detail.clone(),
+                        });
+                        Box::new(DeadEngine {
+                            message: detail,
+                            queue: VecDeque::new(),
+                            next: 1,
+                        })
+                    }
+                }
             }
-        }
+        };
+        Box::new(GuardedMoveEngine::new(fair.clone(), engine))
     }
 
     fn poll_answers(&mut self) {

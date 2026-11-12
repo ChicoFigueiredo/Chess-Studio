@@ -5,18 +5,20 @@
 //! estado da rede (conexões ativas, Provedor falhando).
 //!
 //! A conexão vive numa thread própria, que a cada fatia curta confere o cancelamento e o
-//! consentimento: desligar o Provedor fecha a conexão aberta. Nada aqui interpreta o
-//! protocolo; o adaptador lê as linhas de [`IcsLink`].
+//! consentimento: desligar o Provedor fecha a conexão aberta. Os eventos esperam numa fila
+//! de no máximo [`MAX_ICS_PENDING`]; com ela cheia, a thread para de ler o socket até haver
+//! espaço (#273: o canal não é cifrado, e um despejo de linhas não enche a memória). Nada
+//! aqui interpreta o protocolo; o adaptador lê as linhas de [`IcsLink`].
 
 use super::{Net, Shared};
 use crate::LocalProfileId;
 use crate::error::NetError;
-use crate::ics::{DEFAULT_ICS_MAX_LINE, validate_command};
+use crate::ics::{DEFAULT_ICS_MAX_LINE, MAX_ICS_PENDING, validate_command};
 use crate::ics::{IcsEndpoint, IcsEvent, IcsLink, IcsReader, IcsRequest, ics_endpoint};
 use crate::ics_transport::{IcsAddress, IcsFailure, IcsSocket};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
+use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError};
 use std::thread;
 use std::time::Duration;
 
@@ -41,12 +43,12 @@ impl Net {
         let shared = &self.handle.shared;
         let profile = self.active_profile();
         let provider = request.provider;
-        let (events, events_rx) = mpsc::channel();
+        let (events, events_rx) = mpsc::sync_channel(MAX_ICS_PENDING);
         let (commands_tx, commands) = mpsc::channel();
         let cancel = Arc::new(AtomicBool::new(false));
         let link = IcsLink::new(provider, events_rx, commands_tx, cancel.clone());
         if let Err(err) = shared.admit_ics(&request, profile) {
-            let _ = events.send(IcsEvent::Failed(err));
+            let _ = events.try_send(IcsEvent::Failed(err));
             return link;
         }
         shared.active_requests.fetch_add(1, Ordering::AcqRel);
@@ -59,7 +61,7 @@ impl Net {
         });
         if spawned.is_err() {
             shared.active_requests.fetch_sub(1, Ordering::AcqRel);
-            let _ = failed.send(IcsEvent::Failed(NetError::Unreachable {
+            let _ = failed.try_send(IcsEvent::Failed(NetError::Unreachable {
                 provider,
                 detail: "thread da conexão ICS indisponível".to_owned(),
             }));
@@ -119,16 +121,16 @@ impl Shared {
         request: &IcsRequest,
         profile: LocalProfileId,
         cancel: &AtomicBool,
-        events: &Sender<IcsEvent>,
+        events: &SyncSender<IcsEvent>,
         commands: &Receiver<String>,
     ) {
         match self.ics_inner(request, profile, cancel, events, commands) {
             Ok(IcsEnd::Ended) => {
-                let _ = events.send(IcsEvent::Ended);
+                deliver(events, IcsEvent::Ended, cancel, || true);
             }
             Ok(IcsEnd::Closed) | Err(NetError::Cancelled) => {}
             Err(err) => {
-                let _ = events.send(IcsEvent::Failed(err));
+                deliver(events, IcsEvent::Failed(err), cancel, || true);
             }
         }
     }
@@ -138,10 +140,21 @@ impl Shared {
         request: &IcsRequest,
         profile: LocalProfileId,
         cancel: &AtomicBool,
-        events: &Sender<IcsEvent>,
+        events: &SyncSender<IcsEvent>,
         commands: &Receiver<String>,
     ) -> Result<IcsEnd, NetError> {
         let provider = request.provider;
+        let enabled = || self.is_enabled(profile, provider);
+        // Fila cheia: espera espaço; para se quem lê fechou ou se o Provedor foi desligado.
+        let push = |event: IcsEvent| -> Result<bool, NetError> {
+            if deliver(events, event, cancel, enabled) {
+                Ok(true)
+            } else if cancel.load(Ordering::Acquire) || enabled() {
+                Ok(false)
+            } else {
+                Err(NetError::ProviderDisabled { provider })
+            }
+        };
         if !self.take_token(provider, cancel) {
             return Err(NetError::Cancelled);
         }
@@ -154,7 +167,7 @@ impl Shared {
             Err(failure) => return Err(self.ics_failure(provider, failure)),
         };
         self.mark_ok(provider);
-        if events.send(IcsEvent::Connected).is_err() {
+        if !push(IcsEvent::Connected)? {
             return Ok(IcsEnd::Closed);
         }
         let mut reader = IcsReader::new(request.max_line.unwrap_or(DEFAULT_ICS_MAX_LINE));
@@ -189,7 +202,7 @@ impl Shared {
                 Ok(0) => return Ok(IcsEnd::Ended),
                 Ok(n) => {
                     for item in reader.feed(&buf[..n]) {
-                        if events.send(item.into()).is_err() {
+                        if !push(item.into())? {
                             socket.shutdown();
                             return Ok(IcsEnd::Closed);
                         }
@@ -226,5 +239,29 @@ impl Shared {
         };
         self.mark_failing(provider, self.clock.now(), &error);
         error
+    }
+}
+
+/// Entrega `event` esperando espaço na fila (no máximo [`MAX_ICS_PENDING`] eventos), em fatias
+/// de [`POLL`]. `false`, sem entregar, se quem lê fechou ou descartou o [`IcsLink`] ou se
+/// `keep_going` deixou de valer (Provedor desligado).
+fn deliver(
+    events: &SyncSender<IcsEvent>,
+    mut event: IcsEvent,
+    cancel: &AtomicBool,
+    keep_going: impl Fn() -> bool,
+) -> bool {
+    loop {
+        if cancel.load(Ordering::Acquire) || !keep_going() {
+            return false;
+        }
+        match events.try_send(event) {
+            Ok(()) => return true,
+            Err(TrySendError::Disconnected(_)) => return false,
+            Err(TrySendError::Full(back)) => {
+                event = back;
+                thread::sleep(POLL);
+            }
+        }
     }
 }
