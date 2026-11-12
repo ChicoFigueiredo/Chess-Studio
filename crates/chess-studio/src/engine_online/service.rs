@@ -411,6 +411,16 @@ impl EngineOnline {
             .collect()
     }
 
+    /// A Partida `id` em andamento como o controlador a tem (o modo espectador mostra só o log
+    /// dela, o que o Lichess confirmou). `None` antes do primeiro retrato e depois que ela sai
+    /// da lista.
+    pub fn game(&self, id: &str) -> Option<&chess_game::Game> {
+        self.games
+            .iter()
+            .find(|g| g.session.game_id() == id)
+            .and_then(|g| g.session.game())
+    }
+
     fn now(&self) -> Timestamp {
         self.clock
             .as_ref()

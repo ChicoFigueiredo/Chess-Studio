@@ -48,6 +48,7 @@ study-hint = Escreva sua anotação para este Lance…
 study-note-no-effect = Anotações são só suas: não alteram a Partida e saem como comentários no PGN.
 study-list = Anotações ({ $count })
 study-unavailable-training = Indisponível durante um Exercício de Treino.
+study-unavailable-spectator = Indisponível no modo espectador: o tabuleiro mostra a Partida da Engine online. As suas Anotações voltam quando você sair dele.
 
 board2d-play-here = Jogar por aqui
 board2d-play-here-hint = Desligado, o painel só mostra a posição. Ligado, cliques e arrastos viram as mesmas intenções do tabuleiro principal.

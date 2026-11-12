@@ -225,6 +225,7 @@ impl ActionEnv<'_> {
             engine_consented: self.analysis.engine_available(),
             analysis_on: self.analysis.is_enabled(),
             training_on_screen: self.training.session_swapped(),
+            spectator: self.session.is_spectator(),
             presentation: presentation_id(*self.presentation),
             camera_view: self.rig.view,
             fullscreen: self.view.fullscreen,
@@ -251,7 +252,7 @@ impl ActionEnv<'_> {
                 .is_some_and(|o| o.with(|play| play.realtime_in_progress())),
             // FP-01: o serviço recusaria a Engine adversária (Partida online contra pessoa em
             // andamento, no tabuleiro ou fora dele).
-            fair_play_engine_lock: self.session.game().online_human_in_progress()
+            fair_play_engine_lock: self.session.own().game().online_human_in_progress()
                 || self.fair.as_ref().is_some_and(|fair| {
                     fair.check_anywhere(crate::fair_play::Computation::OpponentEngine)
                         .is_err()

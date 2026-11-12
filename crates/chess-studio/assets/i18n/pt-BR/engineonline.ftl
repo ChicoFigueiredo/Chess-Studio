@@ -107,3 +107,22 @@ engine-online-convert-understood = Entendi que isto não tem volta e que vou usa
 engine-online-convert-act = Converter em usuário BOT
 
 engine-online-footer = Fechar esta janela não para a Engine; use Parar. Se você fechar o Chess Studio, a Engine deixa de responder e as Partidas em andamento no Lichess perdem por tempo.
+
+# Ver a Partida da Engine no tabuleiro, só para ver (#302)
+engine-online-watch = Ver no tabuleiro
+engine-online-watch-hint = Mostra esta Partida no tabuleiro, só para ver. A sua Partida fica guardada e volta quando você sair do modo espectador.
+engine-online-watching = No tabuleiro
+engine-online-watch-leave = Sair do modo espectador
+engine-online-spectator-engine = Engine online
+engine-online-spectator-badge = Modo espectador
+engine-online-spectator-line = A Engine joga de { $side } contra { $opponent } no Lichess.
+engine-online-spectator-readonly = Só para ver: os Lances chegam do Lichess e o tabuleiro não aceita Lances. A Trava de fair play não liga.
+engine-online-spectator-ended = Partida terminada: { $result }.
+engine-online-spectator-ended-plain = Partida terminada.
+engine-online-spectator-gone = A Engine online não acompanha mais esta Partida: o tabuleiro fica no último Lance confirmado.
+engine-online-spectator-panel = Partida da Engine online, só para ver. Para jogar, saia do modo espectador.
+engine-online-confirm-title = Ver a Partida da Engine?
+engine-online-confirm-local = A sua Partida fica guardada como está e volta ao tabuleiro quando você sair do modo espectador. Nada dela é encerrado.
+engine-online-confirm-paused = O relógio dela fica em Pausa enquanto você assiste.
+engine-online-confirm-online = A sua Partida online continua no Lichess e nada dela é encerrado; o relógio dela não para. O tabuleiro volta a ela quando você sair do modo espectador.
+engine-online-confirm-act = Ver a Partida da Engine

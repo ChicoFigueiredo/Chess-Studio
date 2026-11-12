@@ -4,14 +4,19 @@
 //! `engine-online-<cena>-<tema>.png`.
 //!
 //! Cenas da Engine online: `off`, `ready`, `strength`, `resumed`, `exit`, `waiting`, `playing`, `fairplay-stopped`, `stopping`, `lost`,
-//! `convert`. Cenas da Engine remota (Painel Análise): `remote-warning`, `remote-active`,
-//! `remote-disabled`, `remote-limit`, `remote-fairplay`.
+//! `convert`. Modo espectador (#302): `watch-confirm` (a pergunta, com a Partida do usuário em
+//! andamento), `spectator` e `spectator-2d` (a Partida da Engine no tabuleiro, 3D e 2D técnico)
+//! e `spectator-ended`. Cenas da Engine remota (Painel Análise): `remote-warning`,
+//! `remote-active`, `remote-disabled`, `remote-limit`, `remote-fairplay`.
 
+use super::spectator::SpectatorUi;
 use super::view::{ConversionView, Form, ViewModel};
 use super::{EngineOnlineUi, service};
 use crate::analysis::{Analysis, Lock, Shown, Status};
 use crate::dock::ids;
+use crate::presentation::Presentation;
 use crate::remote_engine::RemoteFlow;
+use crate::session::Session;
 use bevy::prelude::*;
 use chess_core::CanonicalPosition;
 use chess_net::ProviderId;
@@ -27,7 +32,97 @@ pub struct Scene {
     pub remote: Option<RemoteScene>,
     /// A pergunta de saída aberta sobre a cena.
     pub exit: bool,
+    /// O que o tabuleiro mostra (modo espectador, #302).
+    pub board: Board,
     form: fn(&mut Form),
+}
+
+/// O tabuleiro de uma cena.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Board {
+    /// O tabuleiro como está (as cenas da tela).
+    Keep,
+    /// A Partida do usuário em andamento, com relógio, e a pergunta antes de trocar a vista.
+    Confirm,
+    /// O modo espectador: a Partida fictícia da Engine no tabuleiro (terminada ou não, no 3D ou
+    /// no 2D técnico).
+    Spectator { ended: bool, two_d: bool },
+}
+
+/// A Partida fictícia da Engine que as cenas do modo espectador mostram.
+const WATCHED: &str = "Hq3vT8aZ";
+/// Giuoco Piano, 22 meios-lances: a vez é da Engine (brancas).
+const GIUOCO: [&str; 22] = [
+    "e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5", "c2c3", "g8f6", "d2d3", "d7d6", "e1g1", "e8g8",
+    "a2a4", "a7a6", "f1e1", "c5a7", "b1d2", "c8e6", "c4e6", "f7e6", "d2f1", "d8e8",
+];
+
+/// A Partida da Engine online como o Lichess a mandaria (apelidos inventados).
+pub(super) fn watched_game(ended: bool) -> Option<chess_game::Game> {
+    use chess_game::{
+        Command, EndReason, Game, GameResult, GameSetup, OnlineGame, OnlinePlayer, Opponent,
+        Outcome, ProviderClock, ProviderEnd, ProviderSnapshot, TimeControl, Timestamp, Variant,
+    };
+    let setup = GameSetup::online(
+        OnlineGame {
+            provider: service::BOT_KEY.into(),
+            remote_id: WATCHED.into(),
+            local_color: chess_core::Color::White,
+            opponent: Opponent::Human,
+            white: OnlinePlayer {
+                name: "Motor_Demo".into(),
+                rating: Some(2310),
+            },
+            black: OnlinePlayer {
+                name: "TorreDeMadeira".into(),
+                rating: Some(1720),
+            },
+            rated: true,
+            days_per_move: None,
+        },
+        Variant::Standard,
+        None,
+    )
+    .ok()?
+    .with_time_control(TimeControl {
+        base_ms: 180_000,
+        increment_ms: 2_000,
+    });
+    let mut game = Game::new(setup);
+    let snapshot = ProviderSnapshot {
+        moves: GIUOCO.iter().map(|m| (*m).to_owned()).collect(),
+        clock: Some(ProviderClock {
+            white_ms: 151_000,
+            black_ms: 128_000,
+            running: !ended,
+        }),
+        draw_offer: None,
+        end: ended.then_some(ProviderEnd::Decided(Outcome {
+            result: GameResult::WhiteWins,
+            reason: EndReason::Resignation,
+        })),
+    };
+    game.handle(Command::Provider(snapshot), Timestamp::mono(1))
+        .ok()?;
+    Some(game)
+}
+
+/// A Partida do usuário em andamento na cena da pergunta: local, com relógio.
+fn own_game() -> Session {
+    let mut session = Session::new();
+    session.start(&crate::new_game::NewGameConfig {
+        time: Some(chess_game::TimeControl {
+            base_ms: 600_000,
+            increment_ms: 5_000,
+        }),
+        ..crate::new_game::NewGameConfig::default()
+    });
+    for (from, to) in [("e2", "e4"), ("c7", "c5"), ("g1", "f3")] {
+        if let (Ok(from), Ok(to)) = (from.parse(), to.parse()) {
+            session.command(chess_game::Command::Release { from, to });
+        }
+    }
+    session
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,6 +160,7 @@ fn base() -> ViewModel {
         activity: Vec::new(),
         counts: (0, 0, 0),
         conversion: None,
+        watching: None,
     }
 }
 
@@ -115,13 +211,21 @@ impl Scene {
             model,
             remote: None,
             exit: false,
+            board: Board::Keep,
             form,
         };
         let remote = |kind| Self {
             model: base(),
             remote: Some(kind),
             exit: false,
+            board: Board::Keep,
             form: |_| {},
+        };
+        let spectator = |ended, two_d| {
+            Some(Self {
+                board: Board::Spectator { ended, two_d },
+                ..Self::named("playing")?
+            })
         };
         Some(match name {
             "off" => scene(
@@ -150,6 +254,13 @@ impl Scene {
                 exit: true,
                 ..Self::named("playing")?
             },
+            "watch-confirm" => Self {
+                board: Board::Confirm,
+                ..Self::named("playing")?
+            },
+            "spectator" => spectator(false, false)?,
+            "spectator-2d" => spectator(false, true)?,
+            "spectator-ended" => spectator(true, false)?,
             "waiting" => scene(
                 ViewModel {
                     state: RunState::Waiting,
@@ -181,7 +292,7 @@ impl Scene {
                     running_engine: Some("Stockfish 17".to_owned()),
                     counts: (2, 2, 0),
                     rows: vec![
-                        row("Hq3vT8aZ", "TorreDeMadeira", 1720, true, 23, true),
+                        row(WATCHED, "TorreDeMadeira", 1720, true, 22, true),
                         row("Pw9xK2mB", "Coruja_Azul", 1648, false, 14, false),
                     ],
                     activity: history(),
@@ -292,6 +403,53 @@ fn remote_shown() -> Option<Shown> {
         base_ply: 0,
         total: 0,
     })
+}
+
+/// O tabuleiro da cena: a Partida do usuário (com a pergunta) ou o modo espectador.
+fn enter_board(
+    scene: &Scene,
+    ui: &mut EngineOnlineUi,
+    session: &mut Session,
+    spectator: &mut SpectatorUi,
+    presentation: &mut Presentation,
+    dock: Option<&mut crate::dock::Dock>,
+) {
+    // Só toca no que muda: a cena 3D se refaz quando a Sessão muda.
+    if session.is_spectator() {
+        session.leave_spectator();
+    }
+    if spectator.confirm.is_some() || spectator.demo {
+        *spectator = SpectatorUi::default();
+    }
+    let wanted = if matches!(scene.board, Board::Spectator { two_d: true, .. }) {
+        Presentation::Technical2d
+    } else {
+        Presentation::Professional3d
+    };
+    if *presentation != wanted {
+        *presentation = wanted;
+    }
+    match scene.board {
+        Board::Keep => {}
+        Board::Confirm => {
+            let mut fresh = own_game();
+            fresh.supersede(session);
+            *session = fresh;
+            spectator.confirm = Some(WATCHED.to_owned());
+            spectator.demo = true;
+        }
+        Board::Spectator { ended, .. } => {
+            if let Some(game) = watched_game(ended) {
+                session.watch(&game);
+            }
+            // O tabuleiro é o que importa: a tela sai da frente e o Painel Partida online
+            // mostra a Partida vista.
+            ui.open = false;
+            if let Some(dock) = dock {
+                crate::online::reveal_panel(&mut dock.layout);
+            }
+        }
+    }
 }
 
 /// Põe a cena na tela.
@@ -424,6 +582,7 @@ pub fn run_tour(
     mut dock: Option<ResMut<crate::dock::Dock>>,
     mut appearance: Option<ResMut<crate::ui_theme::Appearance>>,
     mut exit: MessageWriter<AppExit>,
+    mut board: (ResMut<Session>, ResMut<SpectatorUi>, ResMut<Presentation>),
 ) {
     let (Some(mut tour), Some(capture)) = (tour, capture) else {
         return;
@@ -442,6 +601,8 @@ pub fn run_tour(
             appearance.theme = theme;
         }
         if let Some(scene) = Scene::named(&name) {
+            let (session, spectator, presentation) = &mut board;
+            let shown = scene.clone();
             enter(
                 scene,
                 &mut ui,
@@ -449,7 +610,22 @@ pub fn run_tour(
                 &mut flow,
                 dock.as_deref_mut(),
             );
+            enter_board(
+                &shown,
+                &mut ui,
+                session,
+                spectator,
+                presentation,
+                dock.as_deref_mut(),
+            );
         }
+    }
+    // O Painel novo entra no dock alguns quadros depois: a cena insiste até a foto.
+    if tour.frame < TOUR_SETTLE
+        && board.0.is_spectator()
+        && let Some(dock) = dock.as_mut()
+    {
+        crate::online::reveal_panel(&mut dock.layout);
     }
     tour.frame += 1;
     if tour.frame == TOUR_SETTLE {

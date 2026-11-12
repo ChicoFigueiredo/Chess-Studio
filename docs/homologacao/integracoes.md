@@ -84,7 +84,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 | CX-HOM-62 | Engine online: Ação no Ribbon e na Paleta | não | UNVERIFIED |
 | CX-HOM-63 | Engine online: força (Elo) da Engine | sim | UNVERIFIED |
 | CX-HOM-64 | Engine online: retomar Partida ao religar | sim | UNVERIFIED |
-| CX-HOM-65 | Reservado ao PR em andamento (ver [Em andamento](#em-andamento)) | - | em andamento (#293) |
+| CX-HOM-65 | Engine online no tabuleiro, só para ver (modo espectador) | sim | UNVERIFIED |
 | CX-HOM-66 | Painel da Partida online no dock padrão (1600x900 e 1280x720) | não | UNVERIFIED |
 | CX-HOM-67 | FICS: aviso discreto de desafio recebido | sim | UNVERIFIED |
 | CX-HOM-68 | FICS: desafiar pelo nome | sim | UNVERIFIED |
@@ -99,6 +99,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 | CX-HOM-77 | Log detalhado sem segredo | sim | UNVERIFIED |
 | CX-HOM-78 | Problemas do Lichess depois do limite de linha | sim | UNVERIFIED |
 | CX-HOM-79 | Importar arquivo PGN: prévia, fonte detectada e confirmação de direitos | não | UNVERIFIED |
+| CX-HOM-80 | "Relâmpago" no lugar de "Bullet" em todo o app | não | UNVERIFIED |
 
 ## Itens
 
@@ -301,7 +302,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Pré-condição:** CX-HOM-15.
 - **Passos:**
   1. Em **Todos os jogadores (Lichess)**, marque os ritmos **Blitz** e **Rápida** e uma faixa de rating.
-  2. Em **Um jogador (Lichess)**, marque **Bullet**.
+  2. Em **Um jogador (Lichess)**, marque **Relâmpago**.
   3. Feche o app e reabra.
   4. Troque de Perfil local e volte.
 - **Esperado:** os números mudam com os filtros. **Faixas de rating** só existem na fonte **Todos os jogadores**. Depois de reabrir, o Painel volta com a aba, a fonte, o jogador, a cor e os filtros. Outro Perfil local tem as suas próprias escolhas.
@@ -807,9 +808,19 @@ O número 54 ficou sem item: a numeração do roteiro passa do CX-HOM-53 para o 
 - **Com o serviço real:** UNVERIFIED que o Lichess reenvia `gameStart` das Partidas em andamento ao abrir o fluxo de eventos.
 - **Evidência:** teste `a_game_in_the_database_is_resumed_in_the_same_log_when_the_engine_is_turned_on_again`.
 
-### CX-HOM-65. Reservado (em andamento)
+### CX-HOM-65. Engine online no tabuleiro, só para ver (modo espectador)
 
-Reservado ao PR em andamento da Engine online visual (#293). Até ele entrar no `main`, nada aqui está pronto para homologar. Veja [Em andamento](#em-andamento).
+- **Pré-condição:** CX-HOM-52 (a Engine online ligada, com ao menos uma Partida em andamento no Lichess). Para o passo 4, uma Partida sua em andamento no tabuleiro (local, com relógio).
+- **Passos:**
+  1. Na tela da Engine online, em **Partidas em andamento** (logo abaixo do estado), clique em **Ver no tabuleiro** numa Partida.
+  2. Espere a Engine e o adversário jogarem alguns Lances. Tente mover peças das duas cores (toque e arrasto) e use **Abandonar**, **Propor empate**, **Desfazer** e **Pausar relógio** no Ribbon.
+  3. Troque para o 2D técnico (aba Exibir) e volte ao 3D. Clique em **Sair do modo espectador** (no canto do tabuleiro ou no Painel **Partida online**).
+  4. Comece uma Partida local com relógio, faça dois Lances e, na tela da Engine online, clique em **Ver no tabuleiro**. Na pergunta, escolha **Cancelar**; repita e escolha **Ver a Partida da Engine**. Saia do modo espectador.
+  5. Com o modo espectador aberto, espere a Partida da Engine terminar.
+  6. Com uma Partida online sua contra pessoa em tempo real em andamento, tente ligar a Engine online (FP-04).
+- **Esperado:** o tabuleiro (3D e 2D) mostra a Posição que o Lichess confirmou e acompanha cada Lance confirmado; o Lance que a Engine enviou e o Lichess ainda não confirmou não aparece. No canto do tabuleiro aparecem os selos **Engine online** e **Modo espectador** e **Sair do modo espectador** (com espaço ao lado do tabuleiro, um cartão com **A Engine joga de Brancas contra … no Lichess.** e o aviso de só leitura; sem espaço, uma linha só acima do tabuleiro). O Painel **Partida online** vem à frente com os mesmos selos, os relógios do Lichess, quem joga e **Sair do modo espectador**, sem nenhuma Ação de jogo. Nenhum gesto move peça; Abandonar, Propor empate, Desfazer, Refazer, Reclamar empate, Pausar e Acionar relógio ficam desabilitados com o motivo "Indisponível no modo espectador…". A Trava de fair play não liga (Análise, Explorador e Auxílios seguem livres para a Partida vista). Anotações e nota rápida ficam indisponíveis e a Súmula fica suspensa (são da sua Partida). Sair devolve o tabuleiro exatamente como estava. No passo 4, a pergunta **Ver a Partida da Engine?** avisa que a sua Partida fica guardada e que o relógio dela fica em Pausa; Cancelar não muda nada; ao sair, a sua Partida volta em Pausa, com os mesmos Lances, e a Biblioteca não ganha linha nova (nem a da Engine em dobro). No passo 5, a faixa e o Painel dizem **Partida terminada: …** sem abrir o diálogo de fim. No passo 6, a Engine online continua recusada pela Trava, com ou sem o modo espectador.
+- **Com o serviço real (UNVERIFIED):** o ritmo com que os Lances chegam numa Partida real e a Partida da Engine terminada pelo Lichess enquanto é vista.
+- **Evidência:** testes em [`engine_online/spectator_tests.rs`](../../crates/chess-studio/src/engine_online/spectator_tests.rs) (`no_gesture_or_command_on_the_watched_board_makes_a_move_or_an_intent`, `watching_the_online_engine_does_not_turn_the_fair_play_lock_on`, `nothing_is_stored_twice_and_the_users_game_stays_the_current_one`, `leaving_restores_the_session_that_was_on_the_board`, `the_users_own_competitive_game_still_locks_the_online_engine_while_watching_fp04` e outros), `game_actions_do_not_apply_to_the_online_engine_game_watched_in_spectator_mode` em [`actions.rs`](../../crates/chess-input/tests/actions.rs), `the_users_notes_stay_while_the_online_engines_game_is_watched` em `study.rs`; [capturas](../evidencias/engine-online-tabuleiro/README.md).
 
 ### CX-HOM-66. Painel da Partida online no dock padrão (1600x900 e 1280x720)
 
@@ -961,6 +972,13 @@ Reservado ao PR em andamento da Engine online visual (#293). Até ele entrar no 
 - **Com o serviço real:** não se aplica.
 - **Evidência:** [`chess-store/tests/import_preview.rs`](../../crates/chess-store/tests/import_preview.rs), `import_preview_ui.rs`, [capturas](../evidencias/previa-importacao-pgn/README.md).
 
+### CX-HOM-80. "Relâmpago" no lugar de "Bullet" em todo o app
+
+- **Passos:** abra o Explorador (filtros de ritmo), a Biblioteca (filtro **Qualquer ritmo**), Biblioteca > Importar > **Lichess (online)** (campo **Ritmo**), a tela da Engine online (**Ritmos aceitos**) e a tela do FICS (ritmos).
+- **Esperado:** o ritmo mais curto se chama **Relâmpago** em todos esses lugares; "Bullet" não aparece em nenhum texto.
+- **Com o serviço real:** não se aplica.
+- **Evidência:** `the_shortest_pace_is_called_relampago_everywhere` e `integration_texts_avoid_the_glossary_banned_words_and_http_codes` (com "bullet" entre as palavras proibidas) em `connections/model.rs`.
+
 ## Fora deste roteiro
 
 Chat, premove e reclamar empate por ausência não existem no app (ver [`2026-11-11-partida-online.md`](../decisoes/2026-11-11-partida-online.md)).
@@ -971,7 +989,6 @@ Itens que mudam enquanto estes PRs não entram no `main`. Não percorra os ponto
 
 | Ponto | PR ou issue | O que muda neste roteiro |
 |---|---|---|
-| Engine online visual: diálogo cortado, jargão (FEN, Threads, Hash), "Bullet" no lugar de "Relâmpago", motivo real quando a Trava interrompe a Partida | [#293](https://github.com/ChicoFigueiredo/Chess-Studio/issues/293), em andamento | Pode mudar rótulos de CX-HOM-52, 53, 61 e 63 e a mensagem de "A Engine falhou…" da Trava (CX-HOM-42) |
 | Análise da Engine: o `stop` pode se perder (corrida em `AnalysisController::stop`) | [#296](https://github.com/ChicoFigueiredo/Chess-Studio/issues/296), em investigação | Se for defeito de produto, afeta a Trava (CX-HOM-21, 42 e 51), que derruba a análise com `stop` |
 | `cargo deny check advisories` falha por dependências sem manutenção do cofre do sistema no Linux (SEC-09) | [#285](https://github.com/ChicoFigueiredo/Chess-Studio/issues/285), aberta | Não é item de homologação; é risco registrado na [revisão de segurança](../seguranca/revisao-v4.md) |
 

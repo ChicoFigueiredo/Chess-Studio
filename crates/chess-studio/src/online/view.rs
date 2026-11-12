@@ -1395,6 +1395,8 @@ pub(super) enum PanelIntent {
     CloseUnconfirmed,
     /// FICS: ver os desafios recebidos.
     FicsChallenges,
+    /// Modo espectador (#302): a Partida do usuário volta ao tabuleiro.
+    LeaveSpectator,
 }
 
 pub fn online_panel(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
@@ -1450,6 +1452,9 @@ fn apply_panel_intent(world: &mut World, intent: PanelIntent) {
                     }
                 });
             }
+        }
+        PanelIntent::LeaveSpectator => {
+            world.resource_mut::<Session>().leave_spectator();
         }
         PanelIntent::NewOnline => world.resource_mut::<OnlineUi>().open_at(Tab::Seek),
         PanelIntent::List => world.resource_mut::<OnlineUi>().open_at(Tab::Playing),
@@ -1566,6 +1571,10 @@ pub(super) fn panel_body(
     intents: &mut Vec<PanelIntent>,
 ) {
     let p = palette(ui);
+    if session.is_spectator() {
+        spectator_section(ui, i18n, session, intents);
+        return;
+    }
     let Some(online) = session.game().setup().online_game() else {
         // Nenhuma Partida online no tabuleiro: o caminho para começar e o que há pendente.
         muted(ui, i18n.t("online-panel-none"));
@@ -2019,6 +2028,66 @@ fn clock_row(
                 });
             });
         });
+}
+
+/// O Painel no modo espectador (#302): a Partida da Engine online, só para ver. Os selos, os
+/// relógios do Lichess e quem joga; nenhuma Ação de jogo, só "Sair do modo espectador".
+fn spectator_section(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    session: &Session,
+    intents: &mut Vec<PanelIntent>,
+) {
+    let (Some(online), Some(banner)) = (
+        session.game().setup().online_game(),
+        crate::engine_online::spectator::Banner::of(session, None),
+    ) else {
+        return;
+    };
+    ui.spacing_mut().item_spacing.y = crate::panel_chrome::token("space-1", 4.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
+        cs_status_badge(
+            ui,
+            StatusTone::Accent,
+            icon::ROBOT,
+            &i18n.t("engine-online-spectator-engine"),
+        );
+        cs_status_badge(
+            ui,
+            StatusTone::Info,
+            icon::EYE,
+            &i18n.t("engine-online-spectator-badge"),
+        );
+    });
+    if banner.ended.is_none() {
+        clocks(ui, session, online);
+    }
+    let p = palette(ui);
+    ui.label(
+        egui::RichText::new(banner.line(i18n))
+            .font(strong_font(ui.ctx(), 14.0))
+            .color(p.ink),
+    );
+    if let Some(result) = &banner.ended {
+        let text = match result {
+            Some(result) => i18n.t_with("engine-online-spectator-ended", &[("result", result)]),
+            None => i18n.t("engine-online-spectator-ended-plain"),
+        };
+        ui.label(egui::RichText::new(text).color(p.ink));
+    }
+    muted(ui, i18n.t("engine-online-spectator-panel"));
+    ui.add_space(crate::panel_chrome::token("space-1", 4.0));
+    if ui
+        .add(
+            CsButton::new(&i18n.t("engine-online-watch-leave"))
+                .icon(icon::ARROW_U_UP_LEFT)
+                .variant(ButtonVariant::Secondary),
+        )
+        .clicked()
+    {
+        intents.push(PanelIntent::LeaveSpectator);
+    }
 }
 
 /// Contra quem, de que cor e em que ritmo (os nomes e os relógios estão no Painel Relógio).

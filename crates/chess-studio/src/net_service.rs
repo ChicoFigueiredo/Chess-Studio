@@ -438,6 +438,14 @@ impl NetService {
         *was_engaged = competitive_in_progress;
     }
 
+    /// Segura a trava da Partida competitiva local do **usuário** ([`Self::follow_competitive`]).
+    /// No modo espectador (#302) o tabuleiro mostra a Partida da Engine online, que não liga a
+    /// trava (AD-05); a do usuário, guardada por baixo, continua valendo, inclusive para a
+    /// Engine online (FP-04).
+    pub fn follow_session(&self, session: &Session, was_engaged: &mut bool) {
+        self.follow_competitive(session.own().competitive_in_progress(), was_engaged);
+    }
+
     /// Porta de entrada dos recursos que precisam de um Provedor: devolve [`Readiness::Ready`] se
     /// ele está ligado; se não, abre o diálogo "Ligar <Provedor>?" com o que será enviado e
     /// devolve [`Readiness::Asked`]. `feature` é o nome do recurso na frase do diálogo
@@ -504,7 +512,7 @@ fn follow_app_state(
     if let Some(active) = profiles.as_deref().and_then(LocalProfiles::active) {
         service.follow_profile(active);
     }
-    service.follow_competitive(session.competitive_in_progress(), &mut engaged);
+    service.follow_session(&session, &mut engaged);
 }
 
 #[cfg(test)]

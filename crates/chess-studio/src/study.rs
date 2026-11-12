@@ -173,6 +173,14 @@ fn study_panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
         ui.weak(i18n.t("study-unavailable-training"));
         return;
     }
+    // Modo espectador (#302): a Partida no tabuleiro é a da Engine online, não a do usuário.
+    if world
+        .get_resource::<Session>()
+        .is_some_and(Session::is_spectator)
+    {
+        ui.weak(i18n.t("study-unavailable-spectator"));
+        return;
+    }
     let hide = world
         .get_resource::<crate::scoresheet::ScoresheetUi>()
         .is_some_and(crate::scoresheet::ScoresheetUi::hides_notation);
@@ -216,9 +224,13 @@ fn study_panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
 
 /// Mantém as anotações presas à Partida atual (Treino à parte: a `Session` trocada é a de
 /// um Exercício, então não se mexe nas anotações da Partida guardada).
+///
+/// No modo espectador (#302) o tabuleiro mostra a Partida da Engine online: as anotações seguem
+/// a Partida do usuário, guardada por baixo, e não se apagam.
 fn follow_game(session: Res<Session>, training: Res<TrainingUi>, mut notes: ResMut<StudyNotes>) {
-    if !training.session_swapped() && session.epoch() != notes.epoch {
-        notes.follow(session.epoch());
+    let epoch = session.own().epoch();
+    if !training.session_swapped() && epoch != notes.epoch {
+        notes.follow(epoch);
     }
 }
 
@@ -275,6 +287,66 @@ impl Plugin for StudyPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Uma Partida da Engine online (Bot API), como o serviço dela a escreve.
+    fn online_engine_game() -> chess_game::Game {
+        use chess_game::{GameSetup, OnlineGame, OnlinePlayer, Opponent, Variant};
+        let setup = GameSetup::online(
+            OnlineGame {
+                provider: "lichess-bot".into(),
+                remote_id: "En9ineQ1".into(),
+                local_color: chess_core::Color::White,
+                opponent: Opponent::Human,
+                white: OnlinePlayer {
+                    name: "Motor".into(),
+                    rating: None,
+                },
+                black: OnlinePlayer {
+                    name: "Salma".into(),
+                    rating: None,
+                },
+                rated: false,
+                days_per_move: None,
+            },
+            Variant::Standard,
+            None,
+        )
+        .unwrap_or_else(|e| panic!("{e:?}"));
+        chess_game::Game::new(setup)
+    }
+
+    /// Modo espectador (#302): as Anotações seguem a Partida do usuário, guardada por baixo, e
+    /// não se apagam enquanto o tabuleiro mostra a Partida da Engine online.
+    #[test]
+    fn the_users_notes_stay_while_the_online_engines_game_is_watched() {
+        let session = Session::new();
+        let epoch = session.epoch();
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(TrainingUi::default())
+            .insert_resource(StudyNotes::loaded(
+                epoch,
+                BTreeMap::from([(1, "Ataca e5".to_owned())]),
+            ))
+            .add_systems(Update, follow_game);
+        app.update();
+        assert!(
+            app.world_mut()
+                .resource_mut::<Session>()
+                .watch(&online_engine_game())
+        );
+        app.update();
+        assert_eq!(
+            app.world().resource::<StudyNotes>().get(1),
+            Some("Ataca e5")
+        );
+        assert!(app.world_mut().resource_mut::<Session>().leave_spectator());
+        app.update();
+        assert_eq!(
+            app.world().resource::<StudyNotes>().get(1),
+            Some("Ataca e5")
+        );
+    }
 
     #[test]
     fn notes_are_set_cleared_and_marked_dirty_only_when_they_change() {

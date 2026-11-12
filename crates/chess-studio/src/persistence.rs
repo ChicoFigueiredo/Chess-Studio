@@ -530,6 +530,9 @@ impl Persistence {
     /// Grava o que a [`Session`] fez desde a última chamada: troca de Partida (Nova
     /// Partida, FEN) e Eventos novos. Barato quando nada mudou.
     pub fn sync(&mut self, session: &Session) {
+        // Modo espectador (#302): o tabuleiro mostra a Partida da Engine online, que o serviço
+        // dela grava; aqui segue a Partida do usuário, guardada por baixo.
+        let session = session.own();
         // Partida online: quem grava os Eventos é o serviço online, só com o que o Provedor
         // confirmou (ADR-0007). Aqui só se acompanha qual Partida está no tabuleiro.
         if session.is_online() {
@@ -1209,7 +1212,8 @@ fn persist_notes(
     if training.session_swapped() || !notes.is_dirty() {
         return;
     }
-    if let Some(dirty) = notes.take_dirty(session.epoch()).cloned()
+    // As anotações são da Partida do usuário (no modo espectador, a guardada por baixo, #302).
+    if let Some(dirty) = notes.take_dirty(session.own().epoch()).cloned()
         && let Ok(mut p) = handle.0.lock()
     {
         p.save_notes(&dirty);
