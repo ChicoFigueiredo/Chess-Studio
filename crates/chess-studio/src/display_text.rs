@@ -33,14 +33,12 @@ fn is_deceptive(c: char) -> bool {
 /// Tira controles e marcas de formatação e corta em `max` caracteres (com reticências).
 pub fn clean_with_limit(text: &str, max: usize) -> String {
     let mut out = String::with_capacity(text.len().min(max * 4));
-    let mut count = 0;
-    for c in text.chars().filter(|c| !is_deceptive(*c)) {
+    for (count, c) in text.chars().filter(|c| !is_deceptive(*c)).enumerate() {
         if count == max {
             out.push('…');
             return out;
         }
         out.push(c);
-        count += 1;
     }
     out
 }
