@@ -211,7 +211,7 @@ Os finais não pedem autorização. Pedem só o Lichess ligado. O veredito leva 
 
 ### A Origem e os avisos
 
-O rodapé do Painel diz de onde veio o dado, por exemplo: Lichess, **consultado há 3 min**, licença. Se o dado veio do cache, diz **do cache, de** uma data.
+O rodapé do Painel diz de onde veio o dado, por exemplo: Lichess, **consultado há 3 min**, licença. Se o dado veio de uma avaliação guardada, diz **avaliação guardada em** uma data.
 
 Avisos que você pode ver:
 

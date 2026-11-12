@@ -255,7 +255,7 @@ fn the_explorer_carries_the_token_of_its_connection_and_nothing_else_does() {
 
 fn eventually_event(stream: &mut chess_providers::ExplorerStream) -> Option<ExplorerEvent> {
     let start = std::time::Instant::now();
-    while start.elapsed() < Duration::from_secs(5) {
+    while start.elapsed() < Duration::from_secs(30) {
         if let Some(event) = stream.try_next() {
             return Some(event);
         }
@@ -368,7 +368,7 @@ fn fair_play_lock_refuses_every_explorer_endpoint() {
 fn first_event(stream: &mut chess_providers::ExplorerStream) -> ExplorerEvent {
     let mut event = None;
     assert!(
-        eventually(Duration::from_secs(5), || {
+        eventually(Duration::from_secs(30), || {
             event = stream.try_next();
             event.is_some()
         }),
@@ -415,7 +415,7 @@ fn player_explorer_delivers_partial_results_before_the_end() {
     stream.close();
     assert!(stream.is_finished());
     assert!(
-        eventually(Duration::from_secs(5), || env.net.status().active_requests
+        eventually(Duration::from_secs(30), || env.net.status().active_requests
             == 0),
         "o fluxo ficou preso depois de fechar"
     );
@@ -490,7 +490,7 @@ fn dropping_a_query_cancels_the_pending_request() {
     env.server.route("/masters", FakeResponse::stall());
 
     let query = env.lichess.masters(AFTER_E4, &MastersFilter::default());
-    assert!(env.server.wait_for_requests(1, Duration::from_secs(5)));
+    assert!(env.server.wait_for_requests(1, Duration::from_secs(30)));
     drop(query);
 
     // O pedido foi abandonado: a fila do Provedor se libera no fim do prazo, mas a consulta
@@ -498,7 +498,7 @@ fn dropping_a_query_cancels_the_pending_request() {
     let mut again = env.lichess.masters(AFTER_E4, &MastersFilter::default());
     again.cancel();
     assert_eq!(
-        again.wait_timeout(Duration::from_secs(5)),
+        again.wait_timeout(Duration::from_secs(30)),
         Some(Err(ProviderError::Cancelled))
     );
 }

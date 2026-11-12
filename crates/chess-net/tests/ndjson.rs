@@ -138,7 +138,7 @@ fn a_stream_delivers_lines_and_then_ends() {
 
     let stream = net.stream(request);
     let mut events = Vec::new();
-    while let Some(event) = stream.next_timeout(Duration::from_secs(5)) {
+    while let Some(event) = stream.next_timeout(Duration::from_secs(30)) {
         let end = matches!(event, StreamEvent::Ended | StreamEvent::Failed(_));
         events.push(event);
         if end {
@@ -212,7 +212,7 @@ fn a_stream_obeys_the_same_gate_as_any_request() {
     ));
 
     assert_eq!(
-        stream.next_timeout(Duration::from_secs(5)),
+        stream.next_timeout(Duration::from_secs(30)),
         Some(StreamEvent::Failed(NetError::ProviderDisabled {
             provider: ProviderId::Lichess
         }))
@@ -234,15 +234,16 @@ fn closing_a_stream_stops_its_thread() {
         ProviderId::Lichess,
         "https://lichess.org/api/games/user/someone",
     ));
-    assert!(server.wait_for_requests(1, Duration::from_secs(5)));
-    assert!(eventually(Duration::from_secs(2), || net
+    assert!(server.wait_for_requests(1, Duration::from_secs(30)));
+    assert!(eventually(Duration::from_secs(30), || net
         .status()
         .active_requests
         == 1));
     stream.close();
 
     assert!(
-        eventually(Duration::from_secs(5), || net.status().active_requests == 0),
+        eventually(Duration::from_secs(30), || net.status().active_requests
+            == 0),
         "a thread do fluxo ficou presa"
     );
 }

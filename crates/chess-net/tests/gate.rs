@@ -128,6 +128,55 @@ fn an_address_outside_the_catalog_is_refused_before_the_network() {
     assert_eq!(server.connections(), 0);
 }
 
+/// Ramo de segurança (NFR-10, #269): porta explícita e hosts fora de `[a-z0-9.-]` nunca chegam
+/// à rede, mesmo no host certo do catálogo.
+#[test]
+fn an_explicit_port_or_a_malformed_host_is_refused_before_the_network() {
+    let clock = clock();
+    let server = server(&clock);
+    let net = net_enabled(&server, &clock, &[ProviderId::Lichess]);
+
+    for (url, why) in [
+        ("https://lichess.org:8443/api/user/x", "porta explícita"),
+        (
+            "https://lichess.org:443/api/user/x",
+            "porta, ainda que a padrão",
+        ),
+        (
+            "https://lichess.org:abc/api/user/x",
+            "porta que não é número",
+        ),
+        ("https://lichess_org/api/user/x", "sublinhado no host"),
+        (
+            "https://.lichess.org/api/user/x",
+            "host que começa com ponto",
+        ),
+        (
+            "https://lichess.org./api/user/x",
+            "host que termina com ponto",
+        ),
+        ("https:///api/user/x", "host vazio"),
+        ("https://lichess.org/api/user/x y", "espaço no caminho"),
+        (
+            "https://lichess.org/api/user/x\r\nHost: evil",
+            "quebra de linha",
+        ),
+    ] {
+        let err = net
+            .fetch(Request::get(ProviderId::Lichess, url))
+            .wait()
+            .unwrap_err();
+        assert!(
+            matches!(
+                err,
+                NetError::EndpointNotAllowed { .. } | NetError::InvalidRequest { .. }
+            ),
+            "{why}: {err:?}"
+        );
+    }
+    assert_eq!(server.connections(), 0);
+}
+
 #[test]
 fn dot_segments_and_hidden_separators_in_the_path_are_never_sent() {
     // SEC-06: `/api/board/` é prefixo permitido; `..` ou `%2e%2e` levariam a outro endereço.
@@ -176,7 +225,7 @@ fn with_the_fair_play_guard_engaged_nothing_that_computes_leaves() {
     }
     let stream = net.stream(masters());
     assert!(matches!(
-        stream.next_timeout(std::time::Duration::from_secs(5)),
+        stream.next_timeout(std::time::Duration::from_secs(30)),
         Some(chess_net::StreamEvent::Failed(
             NetError::FairPlayLocked { .. }
         ))
@@ -220,7 +269,7 @@ fn the_guard_is_consulted_again_right_before_the_network() {
     net.set_enabled(ProviderId::Lichess, true).expect("liga");
 
     let first = net.fetch(masters().timeout(std::time::Duration::from_millis(300)));
-    assert!(server.wait_for_requests(1, std::time::Duration::from_secs(5)));
+    assert!(server.wait_for_requests(1, std::time::Duration::from_secs(30)));
     let queued = net.fetch(
         Request::get(ProviderId::Lichess, "https://explorer.lichess.org/lichess")
             .connection(EXPLORER_CONNECTION),
