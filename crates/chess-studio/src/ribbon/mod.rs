@@ -140,6 +140,26 @@ impl Default for RibbonState {
 
 impl RibbonState {
     /// A Ação está na Barra de Acesso Rápido.
+    /// Clique numa aba. Um clique troca de aba (expandido) ou abre e fecha o corpo por cima
+    /// do tabuleiro (recolhido). Dois cliques recolhem ou expandem o Ribbon, como no Office
+    /// (#311); `double` vale para o segundo clique, que chega depois do primeiro já aplicado.
+    /// A aba Arquivo só abre os bastidores.
+    pub fn click_tab(&mut self, view: RibbonView, double: bool) {
+        if view.is_file() {
+            self.backstage = Some(BackstagePage::Profiles);
+            self.body_open = false;
+        } else if double {
+            self.collapsed = !self.collapsed;
+            self.body_open = false;
+            self.active = view;
+        } else if self.collapsed {
+            self.body_open = !(self.body_open && self.active == view);
+            self.active = view;
+        } else {
+            self.active = view;
+        }
+    }
+
     pub fn is_pinned(&self, action: Action) -> bool {
         self.quick_access.contains(&action)
     }
@@ -569,6 +589,73 @@ mod tests {
             .write_message(ActionRequested(Action::ToggleRibbonCollapse));
         app.update();
         assert!(!app.world().resource::<RibbonState>().collapsed);
+    }
+
+    #[test]
+    fn a_double_click_on_a_tab_collapses_and_expands_the_ribbon() {
+        let home = RibbonView::Tab(RibbonTab::Home);
+        let analysis = RibbonView::Tab(RibbonTab::Analysis);
+        let mut state = RibbonState::default();
+        // Expandido: o primeiro clique do par não muda nada na aba corrente; o segundo recolhe.
+        state.click_tab(home, false);
+        assert!(!state.collapsed);
+        state.click_tab(home, true);
+        assert!(state.collapsed);
+        assert!(!state.body_open);
+        assert_eq!(state.active, home);
+        // Recolhido: o primeiro clique abre o corpo por cima do tabuleiro; o segundo expande
+        // o Ribbon com a aba clicada, sem deixar o corpo flutuando.
+        state.click_tab(analysis, false);
+        assert!(state.collapsed && state.body_open);
+        state.click_tab(analysis, true);
+        assert!(!state.collapsed);
+        assert!(!state.body_open);
+        assert_eq!(state.active, analysis);
+        // Dois cliques noutra aba também recolhem, e ela fica sendo a ativa.
+        state.click_tab(home, false);
+        state.click_tab(home, true);
+        assert!(state.collapsed);
+        assert_eq!(state.active, home);
+    }
+
+    #[test]
+    fn a_single_click_on_a_tab_keeps_its_old_meaning() {
+        let home = RibbonView::Tab(RibbonTab::Home);
+        let analysis = RibbonView::Tab(RibbonTab::Analysis);
+        let mut state = RibbonState::default();
+        state.click_tab(analysis, false);
+        assert_eq!(state.active, analysis);
+        assert!(!state.collapsed && !state.body_open);
+        // Recolhido: abre o corpo, troca de aba com ele aberto, fecha ao clicar na mesma.
+        state.collapsed = true;
+        state.click_tab(analysis, false);
+        assert!(state.body_open);
+        state.click_tab(home, false);
+        assert!(state.body_open);
+        assert_eq!(state.active, home);
+        state.click_tab(home, false);
+        assert!(!state.body_open);
+        assert!(state.collapsed);
+    }
+
+    #[test]
+    fn the_file_tab_never_collapses_the_ribbon() {
+        let file = model::visible_tabs(false)
+            .into_iter()
+            .find(|tab| tab.is_file())
+            .expect("a aba Arquivo existe");
+        for collapsed in [false, true] {
+            let mut state = RibbonState {
+                collapsed,
+                ..RibbonState::default()
+            };
+            let active = state.active;
+            state.click_tab(file, false);
+            state.click_tab(file, true);
+            assert_eq!(state.collapsed, collapsed);
+            assert_eq!(state.active, active);
+            assert_eq!(state.backstage, Some(BackstagePage::Profiles));
+        }
     }
 
     #[test]

@@ -791,7 +791,8 @@ fn tab_button(ui: &mut Ui, env: &Env<'_>, view: RibbonView, active: bool) -> (Re
 /// O que o desenho decidiu: aplicado ao estado depois, fora das closures.
 #[derive(Default)]
 struct Decisions {
-    clicked_tab: Option<RibbonView>,
+    /// A aba clicada e se foi o segundo clique de um par (dois cliques).
+    clicked_tab: Option<(RibbonView, bool)>,
     toggle_mode: bool,
     pin: Vec<(Action, bool)>,
 }
@@ -933,7 +934,7 @@ pub(super) fn ribbon_ui(
                         let (response, rect) = tab_button(ui, &env, *view, is_active);
                         tab_rects.push((*view, rect));
                         if response.clicked() {
-                            decisions.clicked_tab = Some(*view);
+                            decisions.clicked_tab = Some((*view, response.double_clicked()));
                         }
                     }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -1004,16 +1005,8 @@ pub(super) fn ribbon_ui(
     set_top_inset(&ctx, area_rect.max.y - screen.min.y);
 
     // --- Aplica o que o desenho decidiu ---
-    if let Some(view) = decisions.clicked_tab {
-        if view.is_file() {
-            ribbon.backstage = Some(super::BackstagePage::Profiles);
-            ribbon.body_open = false;
-        } else if collapsed {
-            ribbon.body_open = !(body_open && active == view);
-            ribbon.active = view;
-        } else {
-            ribbon.active = view;
-        }
+    if let Some((view, double)) = decisions.clicked_tab {
+        ribbon.click_tab(view, double);
     }
     if decisions.toggle_mode {
         ribbon.mode = match mode {
