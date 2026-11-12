@@ -21,13 +21,19 @@ use std::io::{ErrorKind, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Intervalo entre as consultas ao prazo e ao cancelamento (tempo real).
 const POLL: Duration = Duration::from_millis(10);
-/// Quanto uma conexão aceita pode demorar para mandar a requisição (o navegador abre
-/// conexões de reserva que às vezes não usa).
-const READ_TIMEOUT: Duration = Duration::from_secs(2);
+/// Prazo **total** (tempo real, desde o `accept`) para uma conexão mandar o cabeçalho
+/// inteiro (o navegador abre conexões de reserva que às vezes não usa). Vale também contra
+/// um cliente local que mande um byte de vez em quando (SEC-04).
+const HEAD_TIMEOUT: Duration = Duration::from_secs(3);
+/// Fatia de cada leitura: entre uma e outra o cancelamento e o prazo da autorização são
+/// conferidos, então o Cancelar responde mesmo com um cliente lento na linha.
+const READ_SLICE: Duration = Duration::from_millis(50);
+/// Prazo para escrever a resposta.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(2);
 /// Cabeçalho máximo de uma requisição.
 const MAX_HEAD: usize = 8 * 1024;
 
@@ -164,7 +170,7 @@ impl LoopbackCallback {
                     if !accepts_peer(&peer) {
                         continue;
                     }
-                    if let Some(params) = self.serve(stream) {
+                    if let Some(params) = self.serve(stream, clock, deadline, cancel) {
                         return Ok(params);
                     }
                 }
@@ -176,11 +182,17 @@ impl LoopbackCallback {
 
     /// Atende uma conexão. `Some` só para o retorno (o `GET` no caminho combinado, com o
     /// `Host` certo); o resto recebe erro e não conta.
-    fn serve(&self, mut stream: TcpStream) -> Option<CallbackParams> {
+    fn serve(
+        &self,
+        mut stream: TcpStream,
+        clock: &dyn Clock,
+        deadline: Timestamp,
+        cancel: &AtomicBool,
+    ) -> Option<CallbackParams> {
         let _ = stream.set_nonblocking(false);
-        let _ = stream.set_read_timeout(Some(READ_TIMEOUT));
-        let _ = stream.set_write_timeout(Some(READ_TIMEOUT));
-        let head = read_head(&mut stream)?;
+        let _ = stream.set_read_timeout(Some(READ_SLICE));
+        let _ = stream.set_write_timeout(Some(WRITE_TIMEOUT));
+        let head = read_head(&mut stream, clock, deadline, cancel)?;
         let mut lines = head.split("\r\n");
         let mut first = lines.next()?.split(' ');
         let (method, target) = (first.next()?, first.next()?);
@@ -203,10 +215,24 @@ impl LoopbackCallback {
     }
 }
 
-fn read_head(stream: &mut TcpStream) -> Option<String> {
+/// Lê o cabeçalho com prazo total ([`HEAD_TIMEOUT`]); desiste se a autorização foi
+/// cancelada ou seu prazo (relógio injetado) passou.
+fn read_head(
+    stream: &mut TcpStream,
+    clock: &dyn Clock,
+    deadline: Timestamp,
+    cancel: &AtomicBool,
+) -> Option<String> {
+    let started = Instant::now();
     let mut data = Vec::new();
     let mut buf = [0u8; 1024];
     loop {
+        if started.elapsed() >= HEAD_TIMEOUT
+            || cancel.load(Ordering::Acquire)
+            || clock.now() >= deadline
+        {
+            return None;
+        }
         if let Some(end) = data.windows(4).position(|w| w == b"\r\n\r\n") {
             return String::from_utf8(data[..end].to_vec()).ok();
         }
@@ -214,8 +240,10 @@ fn read_head(stream: &mut TcpStream) -> Option<String> {
             return None;
         }
         match stream.read(&mut buf) {
-            Ok(0) | Err(_) => return None,
+            Ok(0) => return None,
             Ok(n) => data.extend_from_slice(&buf[..n]),
+            Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
+            Err(_) => return None,
         }
     }
 }

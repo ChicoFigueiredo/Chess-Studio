@@ -173,7 +173,7 @@ connections-act-link-id = Vincular ID
 connections-act-link-another = Vincular outro nome…
 connections-act-link-another-id = Vincular outro ID…
 connections-act-test = Testar
-connections-act-clear-cache = Limpar cache
+connections-act-clear-cache = Limpar dados guardados
 connections-act-authorize = Autorizar…
 connections-act-reauthorize = Autorizar de novo…
 connections-act-unlock = Desbloquear cofre…
@@ -187,9 +187,9 @@ connections-more = Mais ações
 connections-details = Detalhes
 connections-details-show = Mostrar detalhes
 connections-details-hide = Ocultar detalhes
-connections-cache-cleared-none = O cache já estava vazio.
-connections-cache-cleared-one = 1 item do cache removido.
-connections-cache-cleared-many = { $count } itens do cache removidos.
+connections-cache-cleared-none = Não havia dados guardados.
+connections-cache-cleared-one = 1 item guardado removido.
+connections-cache-cleared-many = { $count } itens guardados removidos.
 connections-open-failed = Não foi possível abrir o navegador. Endereço: { $url }
 
 # Conexões vinculadas.
@@ -225,12 +225,13 @@ connections-link-save = Vincular
 connections-link-cancel = Cancelar
 connections-link-error-empty = Digite o nome ou ID público.
 connections-link-error-invalid = Use só o nome ou ID, sem espaços, com até 64 caracteres.
+connections-link-error-token = Isto parece uma chave de acesso, não um nome. O campo foi limpo. Para usar uma chave, use «Chave pessoal» no cartão do Provedor.
 connections-link-error-exists = Este Perfil local já vincula esse nome neste Provedor.
 connections-link-error-other = Não foi possível gravar a Conexão. Tente de novo.
 
 # Diálogo "Ligar <Provedor>?" (API para os recursos que precisam de um Provedor desligado).
 consent-title = Ligar { $provider }?
-consent-intro-feature = { $feature } precisa de { $provider }, que está desligado.
+consent-intro-feature = { $feature } precisa do { $provider }, que está desligado.
 consent-intro = { $provider } está desligado. Ligar permite consultas a ele.
 consent-sends-label = O que será enviado
 consent-where-label = Para onde vai

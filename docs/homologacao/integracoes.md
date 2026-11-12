@@ -1,8 +1,8 @@
-# Homologação das integrações (épico #211, Gates das etapas 1 a 3)
+# Homologação das integrações (épico #211, V4)
 
-Roteiro manual das integrações com Provedores: Central de Conexões, Cofre, autorização do Lichess, Explorador, importações e pacotes de problemas. Reúne as verificações humanas pedidas nos PRs [#223](https://github.com/ChicoFigueiredo/Chess-Studio/pull/223), [#227](https://github.com/ChicoFigueiredo/Chess-Studio/pull/227), [#229](https://github.com/ChicoFigueiredo/Chess-Studio/pull/229) e [#235](https://github.com/ChicoFigueiredo/Chess-Studio/pull/235), e as decisões [CX](../decisoes/2026-11-11-conexoes.md), [CF](../decisoes/2026-11-11-cofre-e-autorizacao.md) e [AZ](../decisoes/2026-11-11-autorizar-lichess-na-central.md).
+Roteiro manual das integrações com Provedores: Central de Conexões, Cofre, autorização do Lichess, Explorador, importações, pacotes de problemas, Partida online no Lichess e no FICS, PlayStrategy, Engine remota e Engine online. Reúne as verificações humanas pedidas nos PRs de cada etapa (por exemplo [#223](https://github.com/ChicoFigueiredo/Chess-Studio/pull/223), [#227](https://github.com/ChicoFigueiredo/Chess-Studio/pull/227), [#229](https://github.com/ChicoFigueiredo/Chess-Studio/pull/229), [#235](https://github.com/ChicoFigueiredo/Chess-Studio/pull/235), [#251](https://github.com/ChicoFigueiredo/Chess-Studio/pull/251), [#256](https://github.com/ChicoFigueiredo/Chess-Studio/pull/256), [#257](https://github.com/ChicoFigueiredo/Chess-Studio/pull/257), [#259](https://github.com/ChicoFigueiredo/Chess-Studio/pull/259), [#260](https://github.com/ChicoFigueiredo/Chess-Studio/pull/260) e as correções da auditoria final, até o [#297](https://github.com/ChicoFigueiredo/Chess-Studio/pull/297)), e as decisões [CX](../decisoes/2026-11-11-conexoes.md), [CF](../decisoes/2026-11-11-cofre-e-autorizacao.md) e [AZ](../decisoes/2026-11-11-autorizar-lichess-na-central.md).
 
-Vale para o commit `1626ebb` da `main`. O passo a passo para quem usa está em [`docs/integracoes/guia.md`](../integracoes/guia.md); os rótulos abaixo são os mesmos do guia e dos arquivos Fluent.
+Vale para o commit `02cd92a` da `main` (11/11/2026), depois das correções da [auditoria final do V4](../integracoes/auditoria-v4.md#situação-depois-das-correções). O que ainda está em andamento aparece em [Em andamento](#em-andamento). O passo a passo para quem usa está em [`docs/integracoes/guia.md`](../integracoes/guia.md); os rótulos abaixo são os mesmos do guia e dos arquivos Fluent.
 
 **Por que um roteiro manual.** A suíte automatizada nunca chama o serviço real (CX-17): usa servidor falso, relógio falso e cofre falso. Só uma pessoa, com internet e usuário de verdade no Lichess e no Chess.com, confirma que o serviço real ainda responde como as respostas gravadas. A autorização do Lichess e o cofre do sistema só se provam no computador do usuário.
 
@@ -10,9 +10,9 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 
 ## Como preparar
 
-1. Compile e abra o app: `cargo run -p chess-studio`.
+1. Compile e abra o app: `cargo run -p chess-studio`. Para ensaiar a interface sem conta nem internet, use `cargo run -p chess-studio -- --demo-data` (veja o [roteiro de usabilidade](../usabilidade/roteiro-v4.md)); os dados dela são fictícios e **não** verificam nada daqui.
 2. Crie um Perfil local novo para o roteiro (Arquivo > Perfil local), para não misturar com seus dados.
-3. Tenha à mão: um usuário do Lichess (de preferência sem nada importante) e um usuário público do Chess.com; um arquivo `.pgn` de cada origem (Queen Alice, ChessBase, TWIC, PGN Mentor); o arquivo de problemas do Lichess (`.csv` ou `.csv.zst`); um ID da FIDE.
+3. Tenha à mão: um usuário do Lichess (de preferência sem nada importante) e um usuário público do Chess.com; um arquivo `.pgn` de cada origem (Queen Alice, ChessBase, TWIC, PGN Mentor); o arquivo de problemas do Lichess (`.csv` ou `.csv.zst`); um ID da FIDE; um usuário do Lichess novo, só para a Engine online (a conversão em usuário BOT não tem volta); um segundo usuário do Lichess, para desafiar; um monitor de rede (por exemplo `ss -tnp` no Linux). A [lista ordenada por risco](../usabilidade/verificar-com-servico-real.md) diz por onde começar.
 4. Para o cofre próprio, use um computador (ou usuário do sistema) sem cofre do sistema, ou aceite que o item CX-HOM-08 só vale onde o sistema não oferece cofre.
 5. Sempre que o item pedir "com o serviço real", ligue a internet. Nos demais, o servidor falso dos testes já cobre.
 
@@ -38,17 +38,17 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 | CX-HOM-16 | Explorador sem Provedor ou sem autorização | não | UNVERIFIED |
 | CX-HOM-17 | Explorador: filtros e memória por Perfil local | sim | UNVERIFIED |
 | CX-HOM-18 | Explorador, Finais | sim | UNVERIFIED |
-| CX-HOM-19 | Avaliação em cache na Análise | sim | UNVERIFIED |
+| CX-HOM-19 | Avaliação pronta (em cache) na Análise | sim | UNVERIFIED |
 | CX-HOM-20 | Origem, cache e sem internet | sim | UNVERIFIED |
 | CX-HOM-21 | Trava de fair play | sim | UNVERIFIED |
 | CX-HOM-22 | Importar Partidas do Lichess | sim | UNVERIFIED |
 | CX-HOM-23 | Importar Partidas do Chess.com | sim | UNVERIFIED |
 | CX-HOM-24 | Atualizar sem duplicar | sim | UNVERIFIED |
 | CX-HOM-25 | Importar arquivos por origem | não | UNVERIFIED |
-| CX-HOM-26 | Importação de arquivo: duplicatas, acentos, grande, cancelar | não | UNVERIFIED |
+| CX-HOM-26 | Importação de arquivo: duplicatas, acentos, arquivo grande, cancelar | não | UNVERIFIED |
 | CX-HOM-27 | Instalar problemas do Lichess | não | UNVERIFIED |
 | CX-HOM-28 | Pacote: filtros, treino e remoção | não | UNVERIFIED |
-| CX-HOM-29 | Limpar cache | não | UNVERIFIED |
+| CX-HOM-29 | Limpar os dados guardados de um Provedor | não | UNVERIFIED |
 | CX-HOM-30 | Linguagem, Temas e janela estreita | não | UNVERIFIED |
 | CX-HOM-31 | Desligar tudo e apagar | não | UNVERIFIED |
 | CX-HOM-32 | Rating FIDE no Perfil local | sim | UNVERIFIED |
@@ -72,7 +72,8 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 | CX-HOM-50 | Engine remota: análise, limite e Provedor desligado | sim | UNVERIFIED |
 | CX-HOM-51 | Engine remota sob a Trava de fair play | sim | UNVERIFIED |
 | CX-HOM-52 | Engine online: ligar, esperar, jogar e parar | sim | UNVERIFIED |
-| CX-HOM-53 | Engine online: limites, conta BOT e falha da Engine | sim | UNVERIFIED |
+| CX-HOM-53 | Engine online: limites, usuário BOT e falha da Engine | sim | UNVERIFIED |
+| CX-HOM-54 | Número não usado | não se aplica | N/A |
 | CX-HOM-55 | FICS na Central: aviso, ligar e desligar | não | UNVERIFIED |
 | CX-HOM-56 | FICS: entrar como visitante e sair | sim | UNVERIFIED |
 | CX-HOM-57 | FICS: buscar adversário, jogar e terminar | sim | UNVERIFIED |
@@ -83,16 +84,18 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 | CX-HOM-62 | Engine online: Ação no Ribbon e na Paleta | não | UNVERIFIED |
 | CX-HOM-63 | Engine online: força (Elo) da Engine | sim | UNVERIFIED |
 | CX-HOM-64 | Engine online: retomar Partida ao religar | sim | UNVERIFIED |
+| CX-HOM-65 | Reservado ao PR em andamento (ver [Em andamento](#em-andamento)) | - | em andamento (#293) |
 | CX-HOM-66 | Painel da Partida online no dock padrão (1600x900 e 1280x720) | não | UNVERIFIED |
 | CX-HOM-67 | FICS: aviso discreto de desafio recebido | sim | UNVERIFIED |
 | CX-HOM-68 | FICS: desafiar pelo nome | sim | UNVERIFIED |
 | CX-HOM-69 | Correspondência: Lance novo do adversário ao Atualizar | sim | UNVERIFIED |
 | CX-HOM-70 | FICS: Partida sem resultado confirmado e Encerrar sem resultado | sim | UNVERIFIED |
 | CX-HOM-71 | Duas Conexões do Lichess: trocar a padrão no meio da Partida | sim | UNVERIFIED |
-| CX-HOM-76 | Explorador: janela temporal, aviso de amostra e privacidade | sim | UNVERIFIED |
 | CX-HOM-72 | Central: filtros Com cadastro, Manual e por estado | não | UNVERIFIED |
 | CX-HOM-73 | Licença dos dados e Origem (Central, rating FIDE, Engine remota) | não | UNVERIFIED |
 | CX-HOM-74 | Textos das integrações sem "conta", "chaveiro" nem código HTTP | não | UNVERIFIED |
+| CX-HOM-75 | Partida de referência exata, hora local e nomes de abertura em português | sim | UNVERIFIED |
+| CX-HOM-76 | Explorador: janela temporal, aviso de amostra e privacidade | sim | UNVERIFIED |
 | CX-HOM-77 | Log detalhado sem segredo | sim | UNVERIFIED |
 | CX-HOM-78 | Problemas do Lichess depois do limite de linha | sim | UNVERIFIED |
 | CX-HOM-79 | Importar arquivo PGN: prévia, fonte detectada e confirmação de direitos | não | UNVERIFIED |
@@ -276,10 +279,10 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
   1. Fonte **Mestres (Lichess)** na Posição inicial e depois depois de `1.e4 c5`.
   2. Fonte **Todos os jogadores (Lichess)**.
   3. Fonte **Um jogador (Lichess)**: digite seu usuário, escolha **Como Brancas** e **Como Pretas**.
-  4. Clique numa das **Partidas de referência**.
-- **Esperado:** a tabela chega (aos poucos, com **Recebendo mais resultados…**) com Lance, Partidas, barra Brancas/Empates/Pretas e rating. O rodapé diz **Lichess · consultado agora** e a licença. Uma Partida de referência abre a busca na Biblioteca. Navegar rápido com a seta não dispara um pedido por Posição (espera cerca de 0,3 s).
-- **Com o serviço real:** é aqui que se confirma o que a suíte só simula: o Explorador do Lichess só responde com autorização (desde 11/11/2026). Observe: se as três fontes respondem; o formato dos números (milhares); o tempo de resposta; se algum pedido volta como "pausa"; se "Um jogador" aceita nomes com maiúsculas.
-- **Evidência:** [`explorer.rs`](../../crates/chess-providers/tests/explorer.rs), [`explorer/`](../../crates/chess-studio/src/explorer/mod.rs).
+  4. Clique numa das **Partidas de referência** (a de uma Partida que ainda não está na sua Biblioteca). Depois, clique nela de novo.
+- **Esperado:** a tabela chega (aos poucos, com **Recebendo mais resultados…**) com Lance, Partidas, barra Brancas/Empates/Pretas e rating. O rodapé diz **Lichess · consultado agora** (ou a hora local, como **consultado às 14:32**) e a licença. Clicar numa Partida de referência mostra **Abrindo a Partida…** e abre **a Partida exata** (não uma busca pelos jogadores): se ela não estava na Biblioteca, o app a baixa pelo identificador, guarda com a Origem do Lichess (endereço, licença e instante) e a abre; no segundo clique abre direto, sem pedido de rede. Se não der, a linha diz o motivo (a Partida não está mais no Lichess, pausa pedida, Lichess desligado ou sem autorização) e o clique tenta de novo. Navegar rápido com a seta não dispara um pedido por Posição (espera cerca de 0,3 s). O item CX-HOM-75 detalha a Partida de referência, a hora local e os nomes de abertura.
+- **Com o serviço real:** é aqui que se confirma o que a suíte só simula: o Explorador do Lichess só responde com autorização (desde 11/11/2026). Observe: se as três fontes respondem; o formato dos números (milhares); o tempo de resposta; se algum pedido volta como "pausa"; se "Um jogador" aceita nomes com maiúsculas; se o endereço de exportação de uma Partida pelo identificador devolve o PGN esperado.
+- **Evidência:** [`explorer.rs`](../../crates/chess-providers/tests/explorer.rs), [`game_export.rs`](../../crates/chess-providers/tests/game_export.rs), [`explorer/reference.rs`](../../crates/chess-studio/src/explorer/reference.rs) (testes), [`explorer/`](../../crates/chess-studio/src/explorer/mod.rs).
 
 ### CX-HOM-16. Explorador sem Provedor ou sem autorização
 
@@ -289,8 +292,8 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
   2. Clique em **Ligar Lichess** e responda **Ligar**.
   3. Observe o novo estado.
   4. Clique em **Abrir a Central de Conexões** e depois, de volta, em **Usar Minha Biblioteca**.
-- **Esperado:** primeiro **O Lichess está desligado** com **Ligar Lichess**. Depois de ligar: **Requer autorizar sua conexão do Lichess** com **Abrir a Central de Conexões** e **Usar Minha Biblioteca**. Nenhuma consulta de Posição sai antes da autorização.
-- **Com o serviço real:** com o monitor de rede, confirme que nada é enviado ao `explorer` enquanto o estado for "Requer autorizar".
+- **Esperado:** primeiro **O Lichess está desligado** com **Ligar Lichess**. Depois de ligar: **Autorize sua conexão do Lichess** com **Abrir a Central de Conexões** e **Usar Minha Biblioteca**. Nenhuma consulta de Posição sai antes da autorização.
+- **Com o serviço real:** com o monitor de rede, confirme que nada é enviado ao `explorer` enquanto o estado for "Autorize sua conexão".
 - **Evidência:** [`docs/evidencias/explorador/`](../evidencias/explorador/README.md), [`gate.rs`](../../crates/chess-net/tests/gate.rs).
 
 ### CX-HOM-17. Explorador: filtros e memória por Perfil local
@@ -317,15 +320,15 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Com o serviço real:** confira o veredito de 2 ou 3 Posições conhecidas num site de tablebase. Observe se o serviço de finais responde no mesmo prazo do Explorador.
 - **Evidência:** [`lichess_queries.rs`](../../crates/chess-providers/tests/lichess_queries.rs), [`explorer/`](../../crates/chess-studio/src/explorer/mod.rs).
 
-### CX-HOM-19. Avaliação em cache na Análise
+### CX-HOM-19. Avaliação pronta (em cache) na Análise
 
 - **Pré-condição:** Lichess ligado; internet; Painel Análise aberto.
 - **Passos:**
-  1. Na Posição inicial, olhe a linha **Em cache (Lichess)**.
+  1. Na Posição inicial, olhe a linha **Avaliação pronta (Lichess)**.
   2. Navegue por uma abertura popular (`1.e4 e5 2.Nf3 Nc6`).
   3. Vá a uma Posição rara.
   4. Desligue o Lichess.
-- **Esperado:** a linha mostra o valor (do ponto de vista das Brancas), **Profundidade** e a linha principal. Posição rara: **Sem avaliação em cache para esta Posição.** (estado normal). Lichess desligado: **O Lichess está desligado.** A linha nunca substitui nem se mistura com a Engine local.
+- **Esperado:** a linha mostra o valor (do ponto de vista das Brancas), **Profundidade** e a linha principal. Posição rara: **Sem avaliação pronta para esta Posição.** (estado normal). Lichess desligado: **O Lichess está desligado. Ligue para ver avaliações já calculadas por outros.** A linha nunca substitui nem se mistura com a Engine local.
 - **Com o serviço real:** confira o sinal do valor contra um site de análise. Observe linhas com roque (o serviço pode mandar `e1h1`): a linha deve aparecer correta ou ser cortada sem erro.
 - **Evidência:** [`eval.rs`](../../crates/chess-providers/src/eval.rs), [`lichess_queries.rs`](../../crates/chess-providers/tests/lichess_queries.rs).
 
@@ -336,7 +339,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
   1. Volte à mesma Posição.
   2. Desligue a internet e recarregue a Posição.
   3. Vá a uma Posição nunca consultada, ainda sem internet.
-- **Esperado:** o rodapé diz **consultado há N min** ou **do cache, de** DD/MM. Sem internet, com cache: aviso **Sem conexão com a internet. Mostrando o que estava salvo, de** data. Sem internet e sem cache: **Sem conexão com a internet** e "Não há nada salvo para esta Posição."
+- **Esperado:** o rodapé diz **consultado há N min** ou **avaliação guardada em** DD/MM. Sem internet, com cache: aviso **Sem conexão com a internet. Mostrando o que estava salvo, de** data. Sem internet e sem cache: **Sem conexão com a internet** e "Não há nada salvo para esta Posição."
 - **Com o serviço real:** observe a idade do cache e se ele é renovado quando a internet volta.
 - **Evidência:** [`cache.rs`](../../crates/chess-net/tests/cache.rs), [`limits.rs`](../../crates/chess-net/tests/limits.rs).
 
@@ -345,14 +348,14 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Pré-condição:** Lichess ligado e autorizado; Explorador e Painel Análise abertos.
 - **Passos:**
   1. Inicie uma Partida na Simulação FIDE (ou Eliminação Imediata) e faça um Lance.
-  2. Olhe o Explorador, a linha **Em cache (Lichess)**, a aba Biblioteca e a barra de status.
+  2. Olhe o Explorador, a linha **Avaliação pronta (Lichess)**, a aba Biblioteca e a barra de status.
   3. Tente a Ação **Importar do Lichess ou Chess.com**.
   4. Termine a Partida (abandone).
   5. Repita com uma Partida Assistida.
-- **Esperado:** na Partida competitiva, o Explorador mostra **Indisponível durante a Partida**, a avaliação em cache diz **Indisponível durante a Partida.**, a Biblioteca e a importação ficam desabilitadas com o motivo, e a barra de status mostra **Trava de fair play**. Nenhuma consulta sai. Ao terminar a Partida, tudo volta. Na Partida Assistida, a trava não liga.
+- **Esperado:** na Partida competitiva, o Explorador mostra **Indisponível durante a Partida**, a avaliação pronta diz **Indisponível: Trava de fair play.**, a Biblioteca e a importação ficam desabilitadas com o motivo, e a barra de status mostra **Trava de fair play**. Nenhuma consulta sai. Ao terminar a Partida, tudo volta. Na Partida Assistida, a trava não liga.
 - **Com o serviço real:** com o monitor de rede, confirme que nenhum pedido ao Lichess sai durante a Partida competitiva, nem com o Painel reaberto, nem pelo menu.
-- **Evidência:** [`guard.rs`](../../crates/chess-net/src/guard.rs), [`gate.rs`](../../crates/chess-net/tests/gate.rs), [`net_service.rs`](../../crates/chess-studio/src/net_service.rs).
-- **Limite conhecido:** este item cobre a Partida competitiva local. A Partida online contra uma pessoa tem o item próprio, CX-HOM-39.
+- **Evidência:** [`guard.rs`](../../crates/chess-net/src/guard.rs), [`gate.rs`](../../crates/chess-net/tests/gate.rs), [`net_service.rs`](../../crates/chess-studio/src/net_service.rs), [`fair_play_matrix_tests.rs`](../../crates/chess-studio/src/fair_play_matrix_tests.rs) (`matrix_competitive_hold_spares_only_the_opponent_engine`), [matriz dos ramos de segurança e fair play](../seguranca/matriz-ramos-v4.md).
+- **Limite conhecido:** este item cobre a Partida competitiva local. A Partida online contra uma pessoa tem o item próprio, CX-HOM-42. Na Partida competitiva local, a Engine adversária da própria Partida continua jogando (ela é a adversária, não um auxílio: FP-02); o resto que calcula é recusado.
 
 ### CX-HOM-22. Importar Partidas do Lichess
 
@@ -416,8 +419,8 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Pré-condição:** o arquivo de problemas do Lichess no computador (`.csv` ou `.csv.zst`).
 - **Passos:**
   1. Painel Treino > **Pacotes**.
-  2. Em **Instalar problemas do Lichess**, digite o caminho do arquivo.
-  3. Em **Temas**, digite `fork`; em **Quantidade máxima**, `200`; **Instalar pacote**.
+  2. Em **Instalar de um arquivo**, digite o caminho do arquivo (ou clique em **Escolher arquivo…**, CX-HOM-43).
+  3. No campo de temas (**Temas do Lichess, separados por espaço**), digite `fork`; em **Quantidade máxima**, `200`; **Instalar pacote**.
   4. Repita e clique em **Cancelar leitura**.
   5. Tente com um arquivo que não é de problemas.
 - **Esperado:** **Lendo: N problemas, N selecionados**, e no fim **Pacote … instalado: N Exercícios**, com os descartados. Cancelar: **Leitura cancelada: nada foi instalado.** Arquivo errado: **Não foi possível instalar: …** ou **Nenhum problema atende à seleção**. O pacote aparece em **Pacotes instalados** com **Origem: Lichess, licença CC0**.
@@ -437,16 +440,16 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Com o serviço real:** não se aplica.
 - **Evidência:** [`training_packs.rs`](../../crates/chess-store/tests/training_packs.rs), [`training_ui/packs.rs`](../../crates/chess-studio/src/training_ui/packs.rs).
 
-### CX-HOM-29. Limpar cache
+### CX-HOM-29. Limpar os dados guardados de um Provedor
 
 - **Pré-condição:** CX-HOM-15 ou CX-HOM-18 feitos.
 - **Passos:**
-  1. No cartão do Lichess, **Mais ações** > **Limpar cache**.
+  1. No cartão do Lichess, **Mais ações** > **Limpar dados guardados**.
   2. Clique de novo.
   3. Volte a uma Posição já consultada, com a internet desligada.
-- **Esperado:** a primeira vez diz **N itens do cache removidos.**; a segunda, **O cache já estava vazio.**. Sem internet, a Posição não tem mais dado salvo. Os dados de outro Perfil local não mudam.
+- **Esperado:** a primeira vez diz **N itens guardados removidos.** (ou **1 item guardado removido.**); a segunda, **Não havia dados guardados.**. Sem internet, a Posição não tem mais dado salvo. Os dados de outro Perfil local e de outros Provedores não mudam. Para limpar todos os Provedores de uma vez, veja CX-HOM-33.
 - **Com o serviço real:** não se aplica.
-- **Evidência:** [`cache.rs`](../../crates/chess-net/tests/cache.rs).
+- **Evidência:** [`cache.rs`](../../crates/chess-net/tests/cache.rs), [`connections/mod.rs`](../../crates/chess-studio/src/connections/mod.rs) (testes de `Op::ClearCache`).
 
 ### CX-HOM-30. Linguagem, Temas e janela estreita
 
@@ -458,7 +461,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
   4. Navegue só pelo teclado (Tab, Espaço, Enter, Esc).
 - **Esperado:** nenhum texto de interface fala em "etapa", "token", "401", "conta", "login" ou "credencial". Todo selo tem ícone e palavra. Nenhum texto passa da borda; abaixo de 980 pt a Central usa uma coluna e rola inteira. O foco do teclado aparece em todo controle, e Esc fecha menus e janelas.
 - **Com o serviço real:** não se aplica. É aprovação visual do usuário (PRs com `ready-for-human`).
-- **Evidência:** [`docs/evidencias/central-conexoes/`](../evidencias/central-conexoes/README.md), [`docs/evidencias/autorizar-lichess/`](../evidencias/autorizar-lichess/README.md), [`docs/evidencias/explorador/`](../evidencias/explorador/README.md).
+- **Evidência:** [`docs/evidencias/central-conexoes/`](../evidencias/central-conexoes/README.md), [`docs/evidencias/autorizar-lichess/`](../evidencias/autorizar-lichess/README.md), [`docs/evidencias/explorador/`](../evidencias/explorador/README.md), [varredura visual do V4](../evidencias/varredura-v4/) (#274).
 
 ### CX-HOM-31. Desligar tudo e apagar
 
@@ -510,6 +513,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Esperado:** a janela traz a contagem e a lista do que será apagado. Marcar o Provedor cobre as importações dele. As Partidas jogadas não aparecem na aba e continuam. A Partida de duas origens fica, e a janela diz que ficou.
 - **Com o serviço real:** não se aplica.
 - **Evidência:** [`fide_and_bulk.rs`](../../crates/chess-store/tests/fide_and_bulk.rs), [`library_bulk.rs`](../../crates/chess-studio/src/library_bulk.rs).
+
 ### CX-HOM-35. Partida online: sem Conexão e Conexão de Engine
 
 - **Pré-condição:** Perfil local do roteiro sem Conexão do Lichess autorizada.
@@ -531,6 +535,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
   5. Abandone (confirme) ou jogue até o fim.
 - **Esperado:** a Partida aparece no tabuleiro do seu lado, com o Painel **Partida online** (selos **Lichess**, **Ao vivo**, **Sem rating**), os relógios do Lichess no Painel Relógio e no relógio 3D, os nomes do Lichess no Painel Relógio e a Notação. Cada Lance aparece com a peça no destino e **Enviando …** até o Lichess confirmar. A Análise roda (contra a Engine do Lichess não há Trava). O fim vem do Lichess; a Partida fica na Biblioteca com **Partida online · Lichess · lichess.org/…**.
 - **Com o serviço real:** confira no site que a Partida tem os mesmos Lances.
+- **Evidência:** [`online/tests.rs`](../../crates/chess-studio/src/online/tests.rs) (`a_full_game_from_seek_to_checkmate_through_the_board_and_into_the_library`, `against_the_lichess_engine_the_lock_never_engages`), [`board_session.rs`](../../crates/chess-providers/tests/board_session.rs) (`contra_a_engine_do_lichess_a_trava_nao_liga`), capturas em [`docs/evidencias/partida-online/`](../evidencias/partida-online/).
 
 ### CX-HOM-37. Buscar adversário, jogar e terminar
 
@@ -540,6 +545,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
   3. Jogue a Partida até o fim (mate, tempo ou abandono de alguém).
   4. Depois do fim, **Analisar** e **Ver na Biblioteca** no Painel Partida online.
 - **Esperado:** a busca mostra **Procurando adversário** e some ao cancelar. Pareado, a Partida vai ao tabuleiro sozinha. Blitz não aparece na busca (o Lichess só busca a partir do rápido). Durante a Partida, Engines, Explorador, finais e análise ficam desligados e a barra de status mostra **Trava de fair play**. O resultado e o motivo são os do Lichess; só então a Análise liga. A Partida está na Biblioteca com a Origem.
+- **Evidência:** [`online/tests.rs`](../../crates/chess-studio/src/online/tests.rs) (`a_full_game_from_seek_to_checkmate_through_the_board_and_into_the_library`), [`board_actions.rs`](../../crates/chess-providers/tests/board_actions.rs) (`busca_de_adversario_respeita_os_limites_da_board_api`).
 
 ### CX-HOM-38. Intenção enviada, recusa e queda de conexão
 
@@ -548,6 +554,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
   2. Desligue a internet por ~20 s no meio da Partida (de preferência logo depois de soltar uma peça) e religue.
   3. Faça o adversário terminar a Partida (abandono) enquanto você está sem internet, e religue.
 - **Esperado:** o Lance fica no destino com **Enviando …** até o Lichess confirmar. Sem internet, o selo vira **Reconectando em … s** e o Painel diz que nenhum Lance é reenviado. Ao voltar, o tabuleiro fica como o Lichess diz: se o Lance não chegou, a peça volta e o aviso pede para jogar de novo; nunca há Lance duplicado. Se a Partida terminou sem você, o resultado aparece ao reconectar.
+- **Evidência:** [`online/tests.rs`](../../crates/chess-studio/src/online/tests.rs) (`a_refused_move_goes_back_and_never_reaches_the_log`, `a_drop_reconnects_without_resending_and_the_result_that_came_meanwhile_shows`), [`board_session.rs`](../../crates/chess-providers/tests/board_session.rs) (`queda_no_meio_do_envio_nao_repete_o_post_e_confere_o_estado_ao_reconectar`).
 
 ### CX-HOM-39. Empate, abandono, abortar e adversário ausente
 
@@ -557,6 +564,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
   3. **Abandonar** e responda **Continuar jogando**; depois **Abandonar** de novo e confirme.
   4. Peça ao adversário para fechar o navegador e espere.
 - **Esperado:** nada muda até o Lichess confirmar. A Partida abortada fica sem resultado. **Abandonar** sempre pede confirmação. Com o adversário fora, aparece **O adversário saiu da Partida** e **Reclamar vitória** só fica disponível quando o Lichess permitir.
+- **Evidência:** [`board_session.rs`](../../crates/chess-providers/tests/board_session.rs) (`abandonar_e_pedido_a_trava_so_cai_com_a_confirmacao`, `reclamar_vitoria_so_depois_do_prazo_do_adversario_ausente`, `empate_do_lichess_tem_o_motivo_tirado_da_posicao`), [`online/tests.rs`](../../crates/chess-studio/src/online/tests.rs) (`the_end_by_time_and_by_resignation_only_comes_from_the_provider`).
 
 ### CX-HOM-40. Desafiar por nome e desafios recebidos
 
@@ -565,6 +573,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
   2. Do outro usuário, desafie você: em xadrez padrão e em Chess960.
   3. Com uma Partida competitiva local em andamento, peça outro desafio.
 - **Esperado:** o desafio aparece como **Aguardando resposta** e some ao cancelar. O desafio recebido traz um aviso discreto no canto (**… desafia você**, com **Ver**), que nunca aparece durante outra Partida competitiva (o desafio espera na aba **Desafiar**). **Recusar** usa o motivo escolhido. O de Chess960 diz que o app só joga xadrez padrão e não tem **Aceitar**.
+- **Evidência:** [`online/tests.rs`](../../crates/chess-studio/src/online/tests.rs) (`received_challenges_are_declined_with_a_reason_or_accepted_and_the_game_starts`, `a_challenge_by_name_waits_and_can_be_canceled`, `a_non_standard_variant_is_refused_before_anything_starts`).
 
 ### CX-HOM-41. Correspondência: lista, fechar e reabrir o app
 
@@ -575,6 +584,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
   4. Abra o app.
   5. **Atualizar** no aviso; depois **Partidas em andamento** > **Abrir**.
 - **Esperado:** ao abrir, nada sai para a rede: só o aviso **Partidas online em andamento** com **Atualizar**. A lista mostra de quem é a vez e quanto falta. **Abrir** traz o Lance que o adversário fez com o app fechado, na mesma Partida (sem duplicar na Biblioteca). Uma Partida terminada enquanto o app estava fechado mostra o resultado ao atualizar.
+- **Evidência:** [`online/tests.rs`](../../crates/chess-studio/src/online/tests.rs) (`correspondence_survives_closing_and_reopening_the_app_and_continues_by_the_snapshot`), [`board_session.rs`](../../crates/chess-providers/tests/board_session.rs) (`correspondencia_fecha_e_reabre_o_app_e_continua_pelo_retrato`).
 
 ### CX-HOM-42. Trava de fair play na Partida online
 
@@ -593,7 +603,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 
 - **Pré-condição:** um computador com janela de escolha de arquivo do sistema (portal do desktop no Linux; nativa no Windows e no macOS). Repita, se puder, num sistema sem ela (Linux sem portal e sem `zenity`).
 - **Passos:**
-  1. Em **Importar arquivo** (Biblioteca) e em **Instalar problemas** (Treino > Pacotes), clique em **Escolher arquivo…**: escolha um arquivo, depois abra de novo e cancele.
+  1. Em **Importar arquivo** (Biblioteca) e em **Instalar de um arquivo** (Treino > Pacotes), clique em **Escolher arquivo…**: escolha um arquivo, depois abra de novo e cancele.
   2. No Painel Revisão, em **Exportar PGN**, clique em **Salvar como…**, mude a pasta e o nome, confirme. Repita escolhendo um arquivo que já existe (o sistema pergunta se substitui).
   3. Termine uma Partida (xeque-mate ou abandono): no diálogo de fim, clique em **Salvar como…**; depois em **Exportar PGN** (vai para Documentos).
   4. No Ribbon, aciona **Exportar PGN**: a janela de **Salvar como** abre com o nome `partida-AAAA-MM-DD-HHMMSS.pgn`.
@@ -606,8 +616,8 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 
 - **Pré-condição:** internet; Lichess desligado na Central; Perfil local novo.
 - **Passos:**
-  1. Treino > Pacotes > **Baixar problemas do Lichess**: escolha poucos temas e uma quantidade pequena (200); clique em baixar. O diálogo **Ligar Lichess?** abre: confira que a lista **O que será enviado** cita o download de problemas; clique em **Ligar**.
-  2. Acompanhe o andamento; deixe terminar e abra o pacote em **Pacotes instalados** (**Origem: Lichess, licença CC0**).
+  1. Treino > Pacotes > **Baixar do Lichess…**: escolha poucos temas e uma quantidade pequena (200); clique em **Baixar problemas**. O diálogo **Ligar Lichess?** abre: confira que a lista **O que será enviado** cita o download de problemas; clique em **Ligar**.
+  2. Acompanhe o andamento; deixe terminar e abra o pacote em **Pacotes instalados** (**Origem: Lichess, licença CC0, baixado em** a data).
   3. Repita e **Cancele** no meio: nada é instalado.
   4. Desligue a internet no meio de outro download: a mensagem manda conferir a internet e diz que nada foi instalado.
   5. Se o Lichess mandar o arquivo para outro endereço (redirecionamento), observe o resultado.
@@ -622,6 +632,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
   2. Leia **O que será enviado** e **Para onde vai**; abra também o cartão do Lichess na Central (Detalhes).
 - **Esperado:** uma frase para cada uso: Explorador, avaliação em cache, finais, consulta de Partidas e IDs FIDE públicos, download de problemas, Partidas online e Engine online (com a Conexão autorizada; a frase da Engine online fala de Lances calculados, respostas a desafios e o pedido para virar Engine (BOT) só se você pedir); nenhuma sigla técnica (sem "HTTP", "etapa" ou nome de endpoint). O mesmo texto vale no cartão da Central.
 - **Evidência:** teste `every_ready_network_service_has_a_consent_line` em [`connections/model.rs`](../../crates/chess-studio/src/connections/model.rs); [capturas](../evidencias/acabamento-etapa-5/README.md).
+
 ### CX-HOM-46. PlayStrategy: cartão na Central, ligar e testar
 
 - **Passos:**
@@ -649,6 +660,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
   3. Volte ao formulário e use **Atualizar**; depois importe o mesmo nome de novo.
 - **Esperado:** Origem e aba Origens mostram "PlayStrategy" (não "Lichess" nem "Outro"). **Atualizar** pede só o que veio depois da última Partida; repetir a importação não duplica nada (as Partidas voltam como repetidas).
 - **Evidência:** [`origin.rs`](../../crates/chess-store/src/origin.rs), [`import_origin.rs`](../../crates/chess-store/tests/import_origin.rs).
+
 ### CX-HOM-49. Engine remota: escolher, aviso e consentimento
 
 - **Passos:**
@@ -693,16 +705,20 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Com o serviço real:** a Partida joga Lances legais a cada vez (ver CX-HOM-53 para a falha da Engine).
 - **Evidência:** [`engine_online/tests.rs`](../../crates/chess-studio/src/engine_online/tests.rs), [`docs/evidencias/engine-remota-online`](../evidencias/engine-remota-online).
 
-### CX-HOM-53. Engine online: limites, conta BOT e falha da Engine
+### CX-HOM-53. Engine online: limites, usuário BOT e falha da Engine
 
 - **Passos:**
   1. Ligue com só **Blitz**, **Só sem rating**, **Só pessoas**, **1** Partida ao mesmo tempo e máximo **1**; desafie com bullet, depois com rating, depois de outro BOT, depois em Chess960, e por fim com blitz sem rating.
   2. Durante a Partida, desafie de novo.
-  3. Com uma conta nova do Lichess que nunca jogou, abra **A conta ainda não é uma conta BOT?**, leia o aviso, marque a confirmação e clique em **Converter em conta BOT**. Tente também com uma conta que já tem Partidas.
+  3. Com um usuário novo do Lichess que nunca jogou, abra **O usuário ainda não é um usuário BOT?**, leia o aviso, marque **Entendi que isto não tem volta e que vou usar um usuário criado só para a Engine.** e clique em **Converter em usuário BOT**. Tente também com um usuário que já tem Partidas.
   4. Escolha uma Engine cujo arquivo foi movido ou apagado e deixe aceitar uma Partida.
-- **Esperado:** cada desafio fora dos limites é recusado com o motivo certo e aparece em **Atividade recente**; o último é aceito e, atingido o máximo, a tela passa a **Parando** com a razão **Limite de Partidas atingido**; desafios durante a Partida são recusados. A conversão só acontece depois do aviso e da confirmação marcada, uma vez; numa conta com Partidas o Lichess recusa e a tela diz que a conta precisa ser nova. Se a Engine não inicia, a Partida é abandonada e a atividade diz que a Engine não iniciou (o relógio não corre). Nunca há Lance ilegal enviado.
-- **Com o serviço real:** a conversão em BOT é **irreversível**: use só uma conta criada para o teste.
+- **Esperado:** cada desafio fora dos limites é recusado com o motivo certo e aparece em **Atividade recente**; o último é aceito e, atingido o máximo, a tela passa a **Parando** com a razão **Limite de Partidas atingido**; desafios durante a Partida são recusados. A conversão só acontece depois do aviso e da confirmação marcada, uma vez; num usuário com Partidas o Lichess recusa e a tela diz que ele precisa ser novo. Se a Engine não inicia, a Partida é abandonada e a atividade diz que a Engine não iniciou (o relógio não corre). Nunca há Lance ilegal enviado.
+- **Com o serviço real:** a conversão em BOT é **irreversível**: use só um usuário criado para o teste.
 - **Evidência:** [`engine_online/tests.rs`](../../crates/chess-studio/src/engine_online/tests.rs).
+
+### CX-HOM-54. Número não usado
+
+O número 54 ficou sem item: a numeração do roteiro passa do CX-HOM-53 para o CX-HOM-55. Foi mantido assim de propósito, para não quebrar as referências ao FICS (CX-HOM-55 a 60) que já estão na [auditoria do V4](../integracoes/auditoria-v4.md), na [lista do que só o serviço real prova](../usabilidade/verificar-com-servico-real.md) e nas capturas. Nenhum recurso depende dele.
 
 ### CX-HOM-55. FICS na Central: aviso, ligar e desligar
 
@@ -710,7 +726,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
   1. Arquivo > Conexões; em **Jogar online**, encontre o cartão **FICS** e abra **Detalhes**.
   2. Ligue o Switch; depois desligue.
   3. Início > Nova Partida > **Online (Lichess ou FICS)**; escolha **FICS · visitante** com o FICS desligado e clique em **Ligar o FICS…**.
-- **Esperado:** o cartão diz, antes de ligar, **Conexão sem criptografia** (texto puro), **Só como visitante** (nome GuestXXXX, sem rating, **nunca pede nem envia senha**), **Sem reconexão automática** e **Sem timeseal**. Não há campo de senha, chave nem botão de autorizar. **Como se identifica: Visitante, sem senha**; **O que é enviado** fala em texto puro e **nenhuma senha**. O diálogo **Ligar FICS?** mostra o mesmo texto e **freechess.org**. Desligado, nada sai: a barra de status não mostra conexão com o FICS.
+- **Esperado:** o cartão diz, antes de ligar, **Conexão sem criptografia** (texto puro), **Só como visitante** (nome GuestXXXX, sem rating, **nunca pede nem envia senha**), **Sem reconexão automática** e **Sem timeseal**. Não há campo de senha, chave nem botão de autorizar. **Como se identifica: Visitante, sem senha (o FICS dá o nome)**; **O que é enviado** fala em texto puro e **nenhuma senha**. O diálogo **Ligar FICS?** mostra o mesmo texto e **freechess.org**. Desligado, nada sai: a barra de status não mostra conexão com o FICS.
 - **Evidência:** [`connections/model.rs`](../../crates/chess-studio/src/connections/model.rs) (`the_fics_card_plays_as_a_guest_never_asks_for_a_password_and_warns_of_plain_text`), [`online/fics_tests.rs`](../../crates/chess-studio/src/online/fics_tests.rs) (`with_the_fics_off_no_connection_is_ever_opened`, `the_fics_screen_draws_every_state_in_plain_language_with_no_password_field`), capturas em [`docs/evidencias/fics-visitante/`](../evidencias/fics-visitante/).
 
 ### CX-HOM-56. FICS: entrar como visitante e sair
@@ -718,9 +734,10 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Pré-condição:** FICS ligado (CX-HOM-55); internet.
 - **Passos:**
   1. Na tela da Partida online, **FICS · visitante** > **Entrar como visitante**.
-  2. Espere **No FICS como Guest…**; depois **Sair do FICS**.
+  2. Espere **No FICS como** o nome GuestXXXX; depois **Sair do FICS**.
 - **Esperado:** a entrada mostra **Entrando como visitante** e termina com o nome de visitante que o FICS deu. Nenhuma senha é pedida em momento algum. **Sair do FICS** encerra a conexão na hora.
 - **Com o serviço real (UNVERIFIED):** os textos de entrada do FICS real (`login:`, "Press return to enter the server as…", "Starting FICS session as…") são os que o app reconhece; até aqui só foram testados com transcrições **sintéticas**. Se a entrada não terminar em 60 s, o app diz que o FICS não confirmou a entrada a tempo; anote o que apareceu.
+- **Evidência:** [`online/fics_tests.rs`](../../crates/chess-studio/src/online/fics_tests.rs) (`a_guest_game_goes_from_the_seek_through_the_board_and_the_panel_into_the_library`), [`fics.rs`](../../crates/chess-providers/tests/fics.rs) (`a_server_asking_for_a_password_gets_none_and_the_connection_closes`, `the_login_has_a_deadline_on_the_injected_clock`).
 
 ### CX-HOM-57. FICS: buscar adversário, jogar e terminar
 
@@ -731,6 +748,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
   4. Depois do fim, **Analisar** e **Ver na Biblioteca**.
 - **Esperado:** pareado, a tela fecha e a Partida vai ao tabuleiro com o Painel **Partida online** (selos **FICS · visitante** e **Ao vivo**, **sem rating**). Cada Lance aparece no destino com **Enviando …** até o FICS confirmar e nunca é reenviado. Durante a Partida a Trava de fair play desliga Engines, Explorador, finais e análise; só cai com o fim confirmado pelo FICS. A Partida está na Biblioteca com **Partida online · FICS (visitante) · Partida N**.
 - **Com o serviço real (UNVERIFIED):** o **formato do Lance enviado** (`e2e4`, `o-o`, `o-o-o`, `e7e8=q`) é aceito pelo FICS real; os textos de criação (`{Game N (…) Creating …}`), de fim, de empate e de abortar são reconhecidos. Um Lance recusado aparece como **O FICS recusou o Lance** e a peça volta.
+- **Evidência:** [`online/fics_tests.rs`](../../crates/chess-studio/src/online/fics_tests.rs) (`a_guest_game_goes_from_the_seek_through_the_board_and_the_panel_into_the_library`, `draw_resign_and_abort_reach_the_fics_once_and_nothing_changes_until_it_confirms`), [`fics.rs`](../../crates/chess-providers/tests/fics.rs) (`a_full_guest_game_with_repeated_late_and_cut_boards`).
 
 ### CX-HOM-58. FICS: desafios recebidos e variantes
 
@@ -739,6 +757,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
   2. Na aba **Desafios**, **Recusar** um e **Aceitar** o outro.
 - **Esperado:** o desafio aparece na aba **Desafios (1)** e no Painel (**1 desafio recebido no FICS**). O de variante diz que o app só joga xadrez padrão e não tem **Aceitar**. Uma Partida de variante que comece mesmo assim é recusada com aviso e não vai ao tabuleiro nem à Biblioteca.
 - **Com o serviço real (UNVERIFIED):** o texto do desafio (`Challenge: … unrated blitz 3 0.`) do FICS real é reconhecido.
+- **Evidência:** [`online/fics_tests.rs`](../../crates/chess-studio/src/online/fics_tests.rs) (`variants_are_refused_with_a_user_message_and_never_become_a_game`), [`fics.rs`](../../crates/chess-providers/tests/fics.rs) (`variants_are_refused_before_the_network_and_never_become_a_game`).
 
 ### CX-HOM-59. FICS: queda de conexão durante a Partida
 
@@ -747,6 +766,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
   2. Tente mover de novo; tente ligar a Análise.
   3. Religue a internet. No Painel, **Descartar a sessão**.
 - **Esperado:** o Painel e a tela avisam: **A conexão com o FICS caiu durante a Partida. No FICS, a Partida de visitante que cai é dada como perdida; o resultado não pôde ser confirmado e o app não reconecta sozinho.** O Lance sem confirmação volta e não é reenviado; o tabuleiro não aceita Lance. A Trava de fair play continua até **Descartar a sessão**; só então a Análise liga. Nada reconecta sozinho; **Entrar de novo como visitante** é outra sessão, outro nome. Na Biblioteca, a Partida fica sem resultado.
+- **Evidência:** [`online/fics_tests.rs`](../../crates/chess-studio/src/online/fics_tests.rs) (`the_lock_refuses_analysis_and_a_drop_keeps_it_until_the_session_is_discarded`), [`fics.rs`](../../crates/chess-providers/tests/fics.rs) (`losing_the_connection_mid_game_loses_the_unconfirmed_move_and_keeps_the_guard_until_dropped`).
 
 ### CX-HOM-60. FICS: observar uma Partida
 
@@ -756,6 +776,40 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Esperado:** um tabuleiro pequeno mostra a Partida, com nomes, relógios e o último Lance. Nada vai ao tabuleiro principal nem à Biblioteca, e a Trava de fair play não liga. Uma Partida de variante é recusada com aviso.
 - **Com o serviço real (UNVERIFIED):** os textos de observação (`You are now observing game N.`, `Game N: …`, `Removing game N from observation list.`) do FICS real são reconhecidos.
 - **Evidência:** [`online/fics_tests.rs`](../../crates/chess-studio/src/online/fics_tests.rs), [decisões FC-13 a FC-21](../decisoes/2026-11-11-fics.md).
+
+### CX-HOM-61. Engine online: fechar o app com Partida em andamento
+
+- **Passos:**
+  1. Ligue a Engine online e deixe uma Partida começar. Feche a janela do app.
+  2. Na pergunta, escolha **Cancelar**; feche de novo e escolha **Parar e esperar terminarem**.
+  3. Com a Partida terminada, feche a janela. Em outra execução, com Partida em andamento, escolha **Sair mesmo assim**.
+- **Esperado:** sem Partida em andamento o app fecha direto. Com Partida, abre **Sair com Partida em andamento?**; Cancelar mantém tudo; **Parar e esperar** deixa a Engine em "Parando" (sem aceitar desafios) e o app aberto; **Sair mesmo assim** fecha e deixa a Partida para o Lichess (o relógio da Engine corre).
+- **Com o serviço real:** confirme o que o Lichess faz com a Partida deixada (derrota por tempo) e que o fechamento pelo sistema (fim de sessão) não trava na pergunta.
+- **Evidência:** teste `closing_the_app_asks_only_while_a_game_is_in_progress`; [capturas](../evidencias/engine-online-lacunas/README.md).
+
+### CX-HOM-62. Engine online: Ação no Ribbon e na Paleta
+
+- **Passos:** na aba Início, grupo **Online (Lichess)**, clique em **Engine online**; abra a Paleta (Ctrl+K) e digite "Engine online".
+- **Esperado:** nos dois caminhos a tela da Engine online abre (a Paleta fecha). O atalho de teclado pode ser atribuído em Opções > Controles.
+- **Evidência:** [`actions.rs`](../../crates/chess-input/tests/actions.rs).
+
+### CX-HOM-63. Engine online: força (Elo) da Engine
+
+- **Passos:** na tela da Engine online, marque **Limitar a força da Engine**, escolha um Elo baixo e ligue; jogue um desafio.
+- **Esperado:** a Engine joga na força pedida (mesma faixa da Engine adversária local); sem a marca, joga com toda a força. Se a Engine escolhida não tem controle de força, o app usa o que ela oferece (Skill Level) ou avisa.
+- **Com o serviço real:** UNVERIFIED a força efetiva contra pessoas.
+- **Evidência:** teste `the_strength_is_the_same_elo_the_local_opponent_uses`.
+
+### CX-HOM-64. Engine online: retomar Partida ao religar
+
+- **Passos:** com uma Partida da Engine em andamento, saia do app (**Sair mesmo assim**), abra-o e ligue a Engine online de novo antes de o relógio acabar.
+- **Esperado:** o Lichess reenvia a Partida; o app a retoma no mesmo registro da Biblioteca (sem segunda linha) e a atividade diz **Partida … retomada de onde parou**.
+- **Com o serviço real:** UNVERIFIED que o Lichess reenvia `gameStart` das Partidas em andamento ao abrir o fluxo de eventos.
+- **Evidência:** teste `a_game_in_the_database_is_resumed_in_the_same_log_when_the_engine_is_turned_on_again`.
+
+### CX-HOM-65. Reservado (em andamento)
+
+Reservado ao PR em andamento da Engine online visual (#293). Até ele entrar no `main`, nada aqui está pronto para homologar. Veja [Em andamento](#em-andamento).
 
 ### CX-HOM-66. Painel da Partida online no dock padrão (1600x900 e 1280x720)
 
@@ -822,25 +876,6 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Com o serviço real (UNVERIFIED):** a conta A no site do Lichess mostra os Lances; a conta B não participa.
 - **Evidência:** `a_game_stays_with_its_connection_when_the_default_changes_mid_game` em [`online/tests.rs`](../../crates/chess-studio/src/online/tests.rs), [PO-20](../decisoes/2026-11-11-partida-online.md).
 
-### CX-HOM-76. Explorador: janela temporal, aviso de amostra e texto de privacidade
-
-- **Passos:**
-  1. Painel Explorador, fonte **Mestres (Lichess)**, com o Lichess ligado e a conexão autorizada: olhe o rodapé.
-  2. Troque para **Minha Biblioteca** e olhe o rodapé de novo.
-  3. Desligue o Lichess e leia o texto do estado "O Lichess está desligado".
-- **Esperado:** o rodapé traz a Origem, o **Período** (nas fontes do Lichess: "o Lichess não informa as datas desta base, e o app não filtra por data"; na Biblioteca: "todas as Partidas da sua Biblioteca") e a frase de que a estatística é histórica, não é avaliação e que vitórias por cor não mostram vantagem objetiva nem o melhor Lance. O texto do estado desligado diz que vão a Posição, a chave da conexão autorizada e, em "Um jogador", o nome digitado.
-- **Serviço real?** sim, só para ver os números reais; o texto não depende do serviço.
-- **Evidência:** testes em `explorer/view.rs`, [capturas](../evidencias/explorador-janela/README.md).
-### CX-HOM-79. Importar arquivo PGN: prévia, fonte detectada e confirmação de direitos
-
-- **Passos:**
-  1. Biblioteca > Importar > **Arquivo PGN**. Escolha um PGN exportado do Lichess (fonte "Outro ou não sei").
-  2. Veja a prévia sem clicar em Importar; troque a fonte para **TWIC** e tente **Importar** sem marcar a caixa.
-  3. Marque **Confirmo que posso usar estas Partidas** e importe.
-- **Esperado:** assim que o arquivo é escolhido aparece a **Prévia do arquivo** (quantas Partidas, "Cerca de N" quando o arquivo é grande, os cabeçalhos das primeiras e "As tags indicam Lichess"), e a fonte já vem como Lichess; nada foi gravado na Biblioteca. Com fonte restrita (TWIC, PGN Mentor, ChessBase), **Importar** fica desligado até marcar a confirmação. Depois de importar, o resumo traz "N Partidas com licença restrita". Um arquivo do Lichess entra com o id do Lichess (importar de novo conta como repetidas).
-- **Serviço real?** não.
-- **Evidência:** [`chess-store/tests/import_preview.rs`](../../crates/chess-store/tests/import_preview.rs), `import_preview_ui.rs`, [capturas](../evidencias/previa-importacao-pgn/README.md).
-
 ### CX-HOM-72. Central: filtros Com cadastro, Manual e por estado
 
 - **Pré-condição:** CX-HOM-02.
@@ -852,7 +887,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Com o serviço real:** não se aplica.
 - **Evidência:** `connections/model.rs` (testes `signup_and_manual_filters_follow_the_catalog` e `the_state_filter_uses_the_state_of_each_card`), [`docs/evidencias/central-origem-textos/`](../evidencias/central-origem-textos/README.md).
 
-### CX-HOM-73. Licença dos dados e Origem
+### CX-HOM-73. Licença dos dados e Origem (Central, rating FIDE, Engine remota)
 
 - **Pré-condição:** CX-HOM-02; para o rating, um ID da FIDE vinculado (CX-HOM-04 e a consulta do rating).
 - **Passos:**
@@ -863,7 +898,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Com o serviço real (UNVERIFIED):** a resposta real do Chess-API.com (instante e termos) e o rating real da FIDE via Lichess.
 - **Evidência:** `connections/model.rs` e `fide_profile.rs` e `remote_engine_tests.rs` (testes), `chess-store/tests/fide_and_bulk.rs` (migração 18), [`docs/evidencias/central-origem-textos/`](../evidencias/central-origem-textos/README.md).
 
-### CX-HOM-74. Textos sem "conta", "chaveiro" nem código HTTP
+### CX-HOM-74. Textos das integrações sem "conta", "chaveiro" nem código HTTP
 
 - **Pré-condição:** nenhuma.
 - **Passos:**
@@ -871,6 +906,30 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Esperado:** nenhum texto fala em "conta", "chaveiro", "login", "credencial" nem mostra um número de erro; aparecem "Conexão", "usuário BOT", "cofre do sistema" e "O Lichess não respondeu como esperado."
 - **Com o serviço real:** não se aplica.
 - **Evidência:** `connections/model.rs` (teste `integration_texts_avoid_the_glossary_banned_words_and_http_codes`).
+
+### CX-HOM-75. Partida de referência exata, hora local e nomes de abertura em português
+
+- **Pré-condição:** CX-HOM-09 (Lichess autorizado); internet. O fuso você troca nas configurações do sistema.
+- **Passos:**
+  1. Painel Explorador, fonte **Mestres (Lichess)**: clique numa das **Partidas de referência** que não esteja na sua Biblioteca. Veja a linha **Abrindo a Partida…**.
+  2. Confira a Partida aberta: jogadores, resultado e Lances iguais aos do site; no detalhe da Partida, a **Origem** (Lichess, API, endereço, licença CC0 e instante).
+  3. Volte ao Explorador e clique na mesma Partida de referência de novo (com um monitor de rede, nada deve sair). Depois, desligue o Lichess e clique em outra Partida de referência.
+  4. Compare a hora mostrada em **Detalhes** (**Última consulta**) na Central, no rodapé do Explorador (**consultado …**) e no detalhe de uma Partida importada com o relógio do computador. Mude o fuso do sistema, feche e reabra o app e olhe de novo.
+  5. Jogue `1.e4 c5 2.Nf3 d6 3.d4 cxd4 4.Nxd4 Nf6 5.Nc3 a6` e olhe o nome da abertura no cabeçalho do Painel Explorador e no Painel Aberturas. Passe o mouse sobre o nome no Explorador.
+- **Esperado:** (1) a Partida abre pela identificação dela, não por uma busca pelos nomes dos jogadores; (2) fica na Biblioteca com a Origem; (3) o segundo clique abre a mesma Partida sem pedido de rede (sem segunda cópia), e a falha mostra o motivo em palavras (**Esta Partida não está mais disponível no Lichess.**, **O Lichess pediu uma pausa. Tente de novo daqui a pouco.**, **O Lichess está desligado. Ligue-o na Central de Conexões.**) com nova tentativa no clique seguinte; (4) horas e dias aparecem na hora do computador (**às 14:32**, **ontem às 09:10**, **em 09/11 às 21:00**) e não em UTC; sem fuso do sistema o app volta ao relativo (**há 3 min**); (5) o nome vem em português (**Defesa Siciliana: Variante Najdorf**), com o ECO, e a dica do Explorador mostra **Nome original:** com o nome em inglês.
+- **Com o serviço real (UNVERIFIED):** o endereço de exportação de uma Partida pelo identificador (nas fontes de mestres e comum) devolve o PGN; o identificador que o Explorador mostra existe no Lichess; nomes de abertura raros que o app não traduz ficam em inglês (anote quais).
+- **Evidência:** [`explorer/reference.rs`](../../crates/chess-studio/src/explorer/reference.rs) (`a_game_not_in_the_library_is_downloaded_imported_and_then_found`, `a_game_already_in_the_library_is_opened_without_touching_the_network`, `a_failed_download_says_why_in_plain_words_and_can_be_retried`), [`game_export.rs`](../../crates/chess-providers/tests/game_export.rs), [`remote_lookup.rs`](../../crates/chess-store/tests/remote_lookup.rs), [`local_time.rs`](../../crates/chess-studio/src/local_time.rs) (`the_local_day_can_differ_from_the_utc_day`, `without_a_zone_nothing_is_formatted`), [`names_pt_br.rs`](../../crates/chess-openings/tests/names_pt_br.rs), [capturas](../evidencias/acabamento-integracoes/README.md).
+
+### CX-HOM-76. Explorador: janela temporal, aviso de amostra e privacidade
+
+- **Passos:**
+  1. Painel Explorador, fonte **Mestres (Lichess)**, com o Lichess ligado e a conexão autorizada: olhe o rodapé.
+  2. Troque para **Minha Biblioteca** e olhe o rodapé de novo.
+  3. Desligue o Lichess e leia o texto do estado "O Lichess está desligado".
+- **Esperado:** o rodapé traz a Origem, o **Período** (nas fontes do Lichess: "o Lichess não informa as datas desta base, e o app não filtra por data"; na Biblioteca: "todas as Partidas da sua Biblioteca") e a frase de que a estatística é histórica, não é avaliação e que vitórias por cor não mostram vantagem objetiva nem o melhor Lance. O texto do estado desligado diz que vão a Posição, a chave da conexão autorizada e, em "Um jogador", o nome digitado.
+- **Com o serviço real:** só para ver os números reais; o texto não depende do serviço.
+- **Evidência:** testes em `explorer/view.rs`, [capturas](../evidencias/explorador-janela/README.md).
+
 ### CX-HOM-77. Log detalhado sem segredo
 
 - **Pré-condição:** uma Conexão do Lichess autorizada (CX-HOM-09 ou CX-HOM-11); internet; terminal.
@@ -892,39 +951,29 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Com o serviço real (UNVERIFIED):** confirma que nenhuma linha da base real passa do limite.
 - **Evidência:** [`lichess.rs`](../../crates/chess-training/tests/lichess.rs), [`puzzles.rs`](../../crates/chess-providers/tests/puzzles.rs), [revisão de segurança SEC-02](../seguranca/revisao-v4.md#sec-02-bomba-de-descompressão-nos-problemas-do-lichess).
 
+### CX-HOM-79. Importar arquivo PGN: prévia, fonte detectada e confirmação de direitos
+
+- **Passos:**
+  1. Biblioteca > Importar > **Arquivo PGN**. Escolha um PGN exportado do Lichess (fonte "Outro ou não sei").
+  2. Veja a prévia sem clicar em Importar; troque a fonte para **TWIC** e tente **Importar** sem marcar a caixa.
+  3. Marque **Confirmo que posso usar estas Partidas** e importe.
+- **Esperado:** assim que o arquivo é escolhido aparece a **Prévia do arquivo** (quantas Partidas, "Cerca de N" quando o arquivo é grande, os cabeçalhos das primeiras e "As tags indicam Lichess"), e a fonte já vem como Lichess; nada foi gravado na Biblioteca. Com fonte restrita (TWIC, PGN Mentor, ChessBase), **Importar** fica desligado até marcar a confirmação. Depois de importar, o resumo traz "N Partidas com licença restrita". Um arquivo do Lichess entra com o id do Lichess (importar de novo conta como repetidas).
+- **Com o serviço real:** não se aplica.
+- **Evidência:** [`chess-store/tests/import_preview.rs`](../../crates/chess-store/tests/import_preview.rs), `import_preview_ui.rs`, [capturas](../evidencias/previa-importacao-pgn/README.md).
+
 ## Fora deste roteiro
 
 Chat, premove e reclamar empate por ausência não existem no app (ver [`2026-11-11-partida-online.md`](../decisoes/2026-11-11-partida-online.md)).
 
-### CX-HOM-61. Engine online: fechar o app com Partida em andamento
+## Em andamento
 
-- **Passos:**
-  1. Ligue a Engine online e deixe uma Partida começar. Feche a janela do app.
-  2. Na pergunta, escolha **Cancelar**; feche de novo e escolha **Parar e esperar terminarem**.
-  3. Com a Partida terminada, feche a janela. Em outra execução, com Partida em andamento, escolha **Sair mesmo assim**.
-- **Esperado:** sem Partida em andamento o app fecha direto. Com Partida, abre **Sair com Partida em andamento?**; Cancelar mantém tudo; **Parar e esperar** deixa a Engine em "Parando" (sem aceitar desafios) e o app aberto; **Sair mesmo assim** fecha e deixa a Partida para o Lichess (o relógio da Engine corre).
-- **Com o serviço real:** confirme o que o Lichess faz com a Partida deixada (derrota por tempo) e que o fechamento pelo sistema (fim de sessão) não trava na pergunta.
-- **Evidência:** teste `closing_the_app_asks_only_while_a_game_is_in_progress`; [capturas](../evidencias/engine-online-lacunas/README.md).
+Itens que mudam enquanto estes PRs não entram no `main`. Não percorra os pontos abaixo antes disso.
 
-### CX-HOM-62. Engine online: Ação no Ribbon e na Paleta
-
-- **Passos:** na aba Início, grupo Online, clique em **Engine online**; abra a Paleta (Ctrl+K) e digite "Engine online".
-- **Esperado:** nos dois caminhos a tela da Engine online abre (a Paleta fecha). O atalho de teclado pode ser atribuído em Opções > Controles.
-- **Evidência:** [`actions.rs`](../../crates/chess-input/tests/actions.rs).
-
-### CX-HOM-63. Engine online: força (Elo) da Engine
-
-- **Passos:** na tela da Engine online, marque **Limitar a força da Engine**, escolha um Elo baixo e ligue; jogue um desafio.
-- **Esperado:** a Engine joga na força pedida (mesma faixa da Engine adversária local); sem a marca, joga com toda a força. Se a Engine escolhida não tem controle de força, o app usa o que ela oferece (Skill Level) ou avisa.
-- **Com o serviço real:** UNVERIFIED a força efetiva contra pessoas.
-- **Evidência:** teste `the_strength_is_the_same_elo_the_local_opponent_uses`.
-
-### CX-HOM-64. Engine online: retomar Partida ao religar
-
-- **Passos:** com uma Partida da Engine em andamento, saia do app (**Sair mesmo assim**), abra-o e ligue a Engine online de novo antes de o relógio acabar.
-- **Esperado:** o Lichess reenvia a Partida; o app a retoma no mesmo registro da Biblioteca (sem segunda linha) e a atividade diz **Partida … retomada de onde parou**.
-- **Com o serviço real:** UNVERIFIED que o Lichess reenvia `gameStart` das Partidas em andamento ao abrir o fluxo de eventos.
-- **Evidência:** teste `a_game_in_the_database_is_resumed_in_the_same_log_when_the_engine_is_turned_on_again`.
+| Ponto | PR ou issue | O que muda neste roteiro |
+|---|---|---|
+| Engine online visual: diálogo cortado, jargão (FEN, Threads, Hash), "Bullet" no lugar de "Relâmpago", motivo real quando a Trava interrompe a Partida | [#293](https://github.com/ChicoFigueiredo/Chess-Studio/issues/293), em andamento | Pode mudar rótulos de CX-HOM-52, 53, 61 e 63 e a mensagem de "A Engine falhou…" da Trava (CX-HOM-42) |
+| Análise da Engine: o `stop` pode se perder (corrida em `AnalysisController::stop`) | [#296](https://github.com/ChicoFigueiredo/Chess-Studio/issues/296), em investigação | Se for defeito de produto, afeta a Trava (CX-HOM-21, 42 e 51), que derruba a análise com `stop` |
+| `cargo deny check advisories` falha por dependências sem manutenção do cofre do sistema no Linux (SEC-09) | [#285](https://github.com/ChicoFigueiredo/Chess-Studio/issues/285), aberta | Não é item de homologação; é risco registrado na [revisão de segurança](../seguranca/revisao-v4.md) |
 
 ## O que falta
 

@@ -310,7 +310,7 @@ fn failure_text(i18n: &I18n, failure: &Failure, now: Timestamp) -> String {
         Failure::Offline => i18n.t("library-online-fail-offline"),
         Failure::FairPlay => i18n.t("library-online-fail-fairplay"),
         Failure::NoDatabase => i18n.t("library-online-fail-nodb"),
-        Failure::Other(detail) => i18n.t_with("library-online-fail-other", &[("detail", detail)]),
+        Failure::Other => i18n.t("library-online-fail-other"),
     }
 }
 
@@ -644,5 +644,28 @@ fn outcome(ui: &mut egui::Ui, i18n: &I18n, finished: &Finished, now: Timestamp) 
                 ui.add(egui::Label::new(failure_text(i18n, failure, now)).wrap());
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chess_net::ProviderId;
+    use chess_providers::ProviderError;
+
+    const NOW: Timestamp = Timestamp::from_millis(1_794_398_400_000);
+
+    #[test]
+    fn a_malformed_response_never_shows_the_serde_text() {
+        let raw = "invalid type: string \"valor-da-resposta\", expected u32 at line 1 column 9";
+        let error = ProviderError::Malformed {
+            provider: ProviderId::Lichess,
+            detail: raw.into(),
+        };
+        let failure = Failure::of(Site::Lichess, &error);
+        let text = failure_text(&I18n::pt_br(), &failure, NOW);
+        assert!(!text.contains("valor-da-resposta"), "{text}");
+        assert!(!text.contains("invalid type"), "{text}");
+        assert!(!text.contains("library-online"), "chave sem texto: {text}");
     }
 }

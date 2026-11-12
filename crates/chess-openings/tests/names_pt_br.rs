@@ -46,7 +46,7 @@ fn each_part_of_a_long_name_is_translated_and_the_separators_are_kept() {
     );
     assert_eq!(
         pt("Sicilian Defense: Dragon Variation, Classical Variation"),
-        "Defesa Siciliana: Variante Dragon, Variante Clássica"
+        "Defesa Siciliana: Variante Dragão, Variante Clássica"
     );
 }
 
@@ -113,6 +113,53 @@ fn dump() {
         for line in source.lines().skip(1) {
             if let Some(name) = line.split('\t').nth(1) {
                 println!("{name} => {}", pt(name));
+            }
+        }
+    }
+}
+
+#[test]
+fn common_english_leftovers_are_translated() {
+    assert_eq!(pt("Dragon Variation"), "Variante Dragão");
+    assert_eq!(pt("Reversed Dragon"), "Dragão invertido");
+    assert_eq!(pt("Reversed Sicilian"), "Siciliana invertida");
+    assert_eq!(
+        pt("Botvinnik System Reversed"),
+        "Sistema Botvinnik invertido"
+    );
+    assert_eq!(
+        pt("French Defense: Positional Variation"),
+        "Defesa Francesa: Variante Posicional"
+    );
+    assert_eq!(
+        pt("Caro-Kann Defense: Two Knights Attack, Retreat Variation"),
+        "Defesa Caro-Kann: Ataque dos Dois Cavalos, Variante da Retirada"
+    );
+    assert_eq!(
+        pt("Zukertort Opening: Kingside Fianchetto"),
+        "Abertura Zukertort: Fianchetto da Ala do Rei"
+    );
+}
+
+#[test]
+fn the_book_has_no_generic_english_words_left() {
+    for source in [
+        include_str!("../data/a.tsv"),
+        include_str!("../data/b.tsv"),
+        include_str!("../data/c.tsv"),
+        include_str!("../data/d.tsv"),
+        include_str!("../data/e.tsv"),
+    ] {
+        for line in source.lines().skip(1) {
+            let Some(name) = line.split('\t').nth(1) else {
+                continue;
+            };
+            let out = pt(name);
+            for word in ["Dragon", "Positional", "Retreat", "Reversed"] {
+                assert!(
+                    !out.split(|c: char| !c.is_alphabetic()).any(|w| w == word),
+                    "{name} => {out}"
+                );
             }
         }
     }

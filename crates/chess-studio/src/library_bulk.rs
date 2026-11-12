@@ -315,9 +315,13 @@ impl BulkUi {
                     });
                 });
                 ui.label(
-                    RichText::new(i18n.t("bulk-provider-hint"))
-                        .text_style(egui::TextStyle::Small)
-                        .color(p.ink_muted),
+                    RichText::new(i18n.t(if provider.is_some() {
+                        "bulk-provider-hint"
+                    } else {
+                        "bulk-provider-hint-none"
+                    }))
+                    .text_style(egui::TextStyle::Small)
+                    .color(p.ink_muted),
                 );
             });
         }

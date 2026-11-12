@@ -80,7 +80,26 @@ const MODIFIERS: &[(&str, &str, &str)] = &[
     ("Wing", "da Ala", "da Ala"),
     ("Center", "do Centro", "do Centro"),
     ("Vienna", "de Viena", "de Viena"),
+    (
+        "Knight Tour",
+        "do Passeio do Cavalo",
+        "do Passeio do Cavalo",
+    ),
+    ("Kingside", "da Ala do Rei", "da Ala do Rei"),
+    ("Queenside", "da Ala da Dama", "da Ala da Dama"),
+    ("Retreat", "da Retirada", "da Retirada"),
+    ("Castling", "do Roque", "do Roque"),
+    ("Check", "do Xeque", "do Xeque"),
+    ("Pin", "da Cravada", "da Cravada"),
+    ("Hedgehog", "Ouriço", "Ouriço"),
+    ("Elephant", "do Elefante", "do Elefante"),
+    ("New York", "de Nova York", "de Nova York"),
     // Adjetivos.
+    ("Positional", "Posicional", "Posicional"),
+    ("Sharp", "Agudo", "Aguda"),
+    ("Short", "Curto", "Curta"),
+    ("Standard", "Padrão", "Padrão"),
+    ("Dragon", "Dragão", "Dragão"),
     ("Classical", "Clássico", "Clássica"),
     ("Modern", "Moderno", "Moderna"),
     ("Closed", "Fechado", "Fechada"),
@@ -146,6 +165,21 @@ const WHOLE: &[(&str, &str)] = &[
     ("Two Knights", "Dois Cavalos"),
     ("Three Knights", "Três Cavalos"),
     ("Four Knights", "Quatro Cavalos"),
+    ("Dragon", "Dragão"),
+    ("Dragon Transfer", "Transferência para o Dragão"),
+    ("Hyperaccelerated Dragon", "Dragão Hiperacelerado"),
+    ("Reversed Dragon", "Dragão invertido"),
+    ("Kingside Fianchetto", "Fianchetto da Ala do Rei"),
+    ("Queenside Fianchetto", "Fianchetto da Ala da Dama"),
+    ("Fool's Mate", "Mate do Tolo"),
+    ("Endgame Offer", "Oferta de final"),
+    ("Sicilian Invitation", "Convite Siciliano"),
+    ("Old Benoni", "Benoni Antiga"),
+    ("English Orangutan", "Orangotango Inglês"),
+    ("Franco-Sicilian Hybrid", "Híbrido Franco-Siciliano"),
+    ("Vienna Hybrid", "Híbrido de Viena"),
+    ("Maróczy Bind", "Estrutura Maróczy"),
+    ("Closed Sicilian", "Siciliana Fechada"),
     ("Giuoco Piano", "Giuoco Piano"),
     ("Giuoco Pianissimo", "Giuoco Pianissimo"),
 ];
@@ -162,12 +196,30 @@ fn piece(text: &str) -> String {
     if let Some((_, pt)) = WHOLE.iter().find(|(en, _)| *en == text) {
         return (*pt).to_owned();
     }
+    // "Hungarian Dragon": o Dragão com o adjetivo concordando no masculino.
+    if let Some(adjective) = text
+        .strip_suffix(" Dragon")
+        .and_then(|rest| modifier(rest, false))
+    {
+        return format!("Dragão {adjective}");
+    }
     if let Some(rest) = text.strip_prefix("with ") {
         return format!("com {}", piece(rest));
     }
     // "Reversed Sicilian": a mesma ideia com as cores trocadas.
     if let Some(rest) = text.strip_prefix("Reversed ") {
         return format!("{} invertida", piece(rest));
+    }
+    // "Botvinnik System Reversed": o mesmo, com a palavra no fim; concorda com o substantivo.
+    if let Some(rest) = text.strip_suffix(" Reversed") {
+        let translated = piece(rest);
+        let masculine = ["Sistema", "Gambito", "Ataque", "Jogo", "Dragão"]
+            .iter()
+            .any(|noun| translated.starts_with(noun));
+        return format!(
+            "{translated} {}",
+            if masculine { "invertido" } else { "invertida" }
+        );
     }
     let mut words: Vec<&str> = text.split(' ').collect();
     let status = words

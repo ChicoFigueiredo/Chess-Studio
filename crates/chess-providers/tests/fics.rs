@@ -952,3 +952,64 @@ fn a_challenge_withdrawn_by_the_challenger_leaves_the_list() {
     poll_for(&mut session, &mut seen, Duration::from_millis(100));
     assert_eq!(session.challenges().len(), 1);
 }
+
+fn count_events(seen: &Seen, wanted: fn(&EventKind) -> bool) -> usize {
+    seen.kinds().into_iter().filter(|k| wanted(k)).count()
+}
+
+#[test]
+fn a_flood_of_same_boards_with_new_clocks_writes_at_most_one_report_per_second() {
+    // SEC-07: quem está no caminho do FICS (texto puro) repete o tabuleiro com outro relógio.
+    let env = env();
+    let (mut session, mut seen) = login(&env);
+    start_game(&env, &mut session, &mut seen);
+    let start = CanonicalPosition::start();
+    let reports =
+        |seen: &Seen| count_events(seen, |k| matches!(k, EventKind::ClockReported { .. }));
+    let before = reports(&seen);
+
+    for i in 0..200 {
+        env.server
+            .send(&format!("\n{}\n", my_board(&start, 299 - i, 300)));
+    }
+    poll_for(&mut session, &mut seen, Duration::from_millis(300));
+    let flooded = reports(&seen) - before;
+    assert!(flooded <= 1, "{flooded} ClockReported em 200 linhas");
+
+    // Passado o intervalo (relógio injetado), o relógio novo volta a valer.
+    env.clock.advance(Duration::from_secs(2));
+    env.server
+        .send(&format!("\n{}\n", my_board(&start, 50, 300)));
+    assert!(poll_until(&mut session, &mut seen, |s, _| reports(s)
+        > before + flooded));
+}
+
+#[test]
+fn a_flood_of_draw_offers_and_withdrawals_in_one_ply_is_capped() {
+    // SEC-07: o vaivém da proposta de empate, sem Lance, não enche o log.
+    let env = env();
+    let (mut session, mut seen) = login(&env);
+    start_game(&env, &mut session, &mut seen);
+
+    for _ in 0..100 {
+        env.server
+            .send(&format!("\n{OPPONENT} offers you a draw.\nfics% "));
+        env.server
+            .send(&format!("\n{OPPONENT} withdraws the draw offer.\nfics% "));
+    }
+    poll_for(&mut session, &mut seen, Duration::from_millis(400));
+
+    let offers = count_events(&seen, |k| matches!(k, EventKind::DrawOffered { .. }));
+    assert!((1..=4).contains(&offers), "{offers} propostas no log");
+
+    // Um Lance zera a conta.
+    let moved = positions(&["e2e4"]);
+    env.server
+        .send(&format!("\n{}\n", my_board(&moved[1], 299, 300)));
+    env.server
+        .send(&format!("\n{OPPONENT} offers you a draw.\nfics% "));
+    assert!(poll_until(&mut session, &mut seen, |s, _| count_events(
+        s,
+        |k| matches!(k, EventKind::DrawOffered { .. })
+    ) > offers));
+}

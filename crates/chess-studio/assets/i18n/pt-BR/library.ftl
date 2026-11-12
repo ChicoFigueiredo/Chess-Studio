@@ -19,7 +19,7 @@ library-result-draw = Empate (1/2-1/2)
 library-result-unfinished = Sem resultado (*)
 library-result-unconfirmed = Sem resultado confirmado (a conexão com o FICS caiu)
 
-library-search-hint = Pesquisar: jogador, evento, abertura (e4 c5)…
+library-search-hint = Jogador, evento ou abertura…
 library-filters = Filtros
 library-filter-player = Jogador ou Engine
 library-filter-date = Data
@@ -55,7 +55,7 @@ library-study-mainline-hover = Reproduz a linha principal numa Partida Assistida
 library-opened-study = Posição aberta numa Partida Assistida de estudo.
 library-opened-played = Partida reaberta em revisão (continua guardada; retome pela Notação).
 
-library-fav-hint = Nome (padrão: lance { $ply })
+library-fav-hint = Nome (opcional)
 library-fav-mark = Marcar posição
 library-fav-mark-hover = Marca como favorita a posição que está no tabuleiro.
 library-fav-mark-this = Favoritar
@@ -156,5 +156,5 @@ library-online-fail-unknown = Não existe um jogador chamado { $name } nesse ser
 library-online-fail-offline = Sem conexão com a internet. Tente de novo quando ela voltar; o que já foi importado fica na Biblioteca.
 library-online-fail-fairplay = Indisponível durante uma Partida competitiva em andamento.
 library-online-fail-nodb = A Biblioteca não está gravada em arquivo neste modo; a importação online precisa dela.
-library-online-fail-other = Não foi possível importar: { $detail }
+library-online-fail-other = Não foi possível importar. Tente de novo mais tarde.
 library-online-feature = A importação de Partidas

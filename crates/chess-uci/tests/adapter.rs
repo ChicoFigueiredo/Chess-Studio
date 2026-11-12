@@ -381,3 +381,33 @@ fn quit_kills_an_engine_that_ignores_it_after_the_timeout() {
     assert_eq!(engine.quit(), QuitOutcome::Killed);
     assert!(started.elapsed() < ms(1500));
 }
+
+/// Ramo de segurança (NFR-10, #269): nome ou valor de opção com quebra de linha ou controle
+/// nunca chega à Engine como outro comando UCI (defesa no adaptador, abaixo da validação).
+#[test]
+fn set_option_refuses_names_and_values_that_would_inject_another_command() {
+    let mut engine = spawn("normal");
+    for (name, value) in [
+        ("Skill Level\nquit", Some("5")),
+        ("Skill Level", Some("5\nquit")),
+        ("Skill Level", Some("5\rquit")),
+        ("Skill\u{0}Level", None),
+        ("", Some("5")),
+    ] {
+        let err = engine.set_option(name, value).unwrap_err();
+        assert!(matches!(err, EngineError::InvalidInput(_)), "{err:?}");
+    }
+    let sent: Vec<String> = engine
+        .log()
+        .into_iter()
+        .filter(|e| e.source == LogSource::ToEngine)
+        .map(|e| e.line)
+        .collect();
+    assert!(
+        sent.iter()
+            .all(|l| !l.contains("quit") && !l.contains("setoption")),
+        "nada hostil foi enviado: {sent:?}"
+    );
+    // Uma opção boa depois continua indo.
+    engine.set_option("Skill Level", Some("5")).unwrap();
+}

@@ -30,7 +30,9 @@ use std::hash::{BuildHasher, Hasher};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
+use std::sync::mpsc::{
+    self, Receiver, RecvTimeoutError, Sender, SyncSender, TryRecvError, TrySendError,
+};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock};
 use std::thread;
 use std::time::Duration;
@@ -412,7 +414,7 @@ impl Net {
     pub fn stream(&self, request: Request) -> Stream {
         let shared = &self.handle.shared;
         let profile = self.active_profile();
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = mpsc::sync_channel(MAX_STREAM_PENDING);
         let cancel = Arc::new(AtomicBool::new(false));
         let stream = Stream {
             rx,
@@ -421,7 +423,7 @@ impl Net {
         let started = shared.clock.now();
         if let Err(err) = shared.admit(&request, profile) {
             shared.record(&request, None, started, &Err(err.clone()));
-            let _ = tx.send(StreamEvent::Failed(err));
+            let _ = tx.try_send(StreamEvent::Failed(err));
             return stream;
         }
         shared.active_requests.fetch_add(1, Ordering::AcqRel);
@@ -1067,7 +1069,7 @@ impl Shared {
         request: &Request,
         profile: LocalProfileId,
         cancel: &AtomicBool,
-        events: &Sender<StreamEvent>,
+        events: &SyncSender<StreamEvent>,
     ) {
         let started = self.clock.now();
         let result = self.stream_inner(request, profile, cancel, events);
@@ -1079,12 +1081,12 @@ impl Shared {
         self.record(request, endpoint, started, &outcome);
         match result {
             Ok(StreamEnd::Ended) => {
-                let _ = events.send(StreamEvent::Ended);
+                deliver_stream(events, StreamEvent::Ended, cancel);
             }
             Ok(StreamEnd::Closed) => {}
             Err(NetError::Cancelled) => {}
             Err(err) => {
-                let _ = events.send(StreamEvent::Failed(err));
+                deliver_stream(events, StreamEvent::Failed(err), cancel);
             }
         }
     }
@@ -1227,7 +1229,7 @@ impl Shared {
         request: &Request,
         profile: LocalProfileId,
         cancel: &AtomicBool,
-        events: &Sender<StreamEvent>,
+        events: &SyncSender<StreamEvent>,
     ) -> Result<StreamEnd, NetError> {
         let provider = request.provider;
         let (_head, body) = self.open_body(request, profile, cancel)?;
@@ -1238,7 +1240,7 @@ impl Shared {
             }
             match reader.next_item() {
                 Ok(Some(NdjsonItem::Line(line))) => {
-                    if events.send(StreamEvent::Line(line)).is_err() {
+                    if !deliver_stream(events, StreamEvent::Line(line), cancel) {
                         return Ok(StreamEnd::Closed);
                     }
                 }
@@ -1386,6 +1388,37 @@ impl Pending {
 impl Drop for Pending {
     fn drop(&mut self) {
         self.cancel.store(true, Ordering::Release);
+    }
+}
+
+/// Eventos de um fluxo NDJSON à espera de quem lê, no máximo (SEC-07). Um Provedor hostil
+/// (ou quem está no caminho) pode despejar linhas sem parar; com a fila cheia a thread do
+/// fluxo espera, o TCP segura o resto do outro lado, e a memória fica em
+/// `MAX_STREAM_PENDING` linhas de até o limite de linha, qualquer que seja a entrada.
+pub const MAX_STREAM_PENDING: usize = 1024;
+
+/// Espera entre as tentativas de entregar a um fluxo com a fila cheia.
+const STREAM_BACKPRESSURE_POLL: Duration = Duration::from_millis(5);
+
+/// Entrega `event` esperando espaço na fila. `false`, sem entregar, se quem lê descartou o
+/// [`Stream`] ou o fluxo foi cancelado.
+fn deliver_stream(
+    events: &SyncSender<StreamEvent>,
+    mut event: StreamEvent,
+    cancel: &AtomicBool,
+) -> bool {
+    loop {
+        if cancel.load(Ordering::Acquire) {
+            return false;
+        }
+        match events.try_send(event) {
+            Ok(()) => return true,
+            Err(TrySendError::Disconnected(_)) => return false,
+            Err(TrySendError::Full(back)) => {
+                event = back;
+                thread::sleep(STREAM_BACKPRESSURE_POLL);
+            }
+        }
     }
 }
 

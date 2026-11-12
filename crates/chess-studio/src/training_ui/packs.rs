@@ -444,6 +444,13 @@ pub(super) fn pack_name<'a>(packs: &'a PacksUi, id: &'a str) -> &'a str {
 }
 
 /// Filtros da lista: pacote, tema e faixa de dificuldade.
+/// Reserva um espaço de largura e altura fixas para um campo, para os campos da mesma linha
+/// ficarem alinhados (sem "escada" quando a linha quebra).
+fn field_slot(ui: &mut egui::Ui, width: f32, add: impl FnOnce(&mut egui::Ui)) {
+    let size = egui::vec2(width, ui.spacing().interact_size.y);
+    ui.allocate_ui_with_layout(size, egui::Layout::left_to_right(egui::Align::Center), add);
+}
+
 pub(super) fn filter_bar(ui: &mut egui::Ui, i18n: &I18n, packs: &mut PacksUi) {
     let mut options = vec![
         (PackChoice::All, i18n.t("training-filter-pack-all")),
@@ -477,7 +484,7 @@ pub(super) fn filter_bar(ui: &mut egui::Ui, i18n: &I18n, packs: &mut PacksUi) {
                 &options,
             );
         }
-        ui.allocate_ui(egui::vec2(140.0, 0.0), |ui| {
+        field_slot(ui, 170.0, |ui| {
             cs_text_field(
                 ui,
                 &mut packs.filter_min,
@@ -485,7 +492,7 @@ pub(super) fn filter_bar(ui: &mut egui::Ui, i18n: &I18n, packs: &mut PacksUi) {
                 None,
             );
         });
-        ui.allocate_ui(egui::vec2(140.0, 0.0), |ui| {
+        field_slot(ui, 170.0, |ui| {
             cs_text_field(
                 ui,
                 &mut packs.filter_max,
@@ -630,7 +637,7 @@ pub(super) fn view(ui: &mut egui::Ui, i18n: &I18n, packs: &mut PacksUi) -> Optio
             (&mut packs.max_rating, "training-filter-max-hint"),
             (&mut packs.max_count, "training-packs-count-hint"),
         ] {
-            ui.allocate_ui(egui::vec2(110.0, 0.0), |ui| {
+            field_slot(ui, 160.0, |ui| {
                 cs_text_field(ui, text, &i18n.t(key), None);
             });
         }

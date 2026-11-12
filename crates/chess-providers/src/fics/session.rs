@@ -31,6 +31,13 @@ use std::time::Duration;
 
 /// Desafios guardados ao mesmo tempo (um servidor hostil não enche a memória).
 const MAX_CHALLENGES: usize = 16;
+/// Intervalo mínimo (relógio injetado) entre dois retratos do mesmo tabuleiro, só com o
+/// relógio diferente, que viram Evento: quem está no caminho do FICS (texto puro) não
+/// enche o banco da Partida com milhares de `ClockReported` por segundo (SEC-07).
+const MIN_SAME_BOARD_INTERVAL: Duration = Duration::from_secs(1);
+/// Quantas vezes, no mesmo Lance, a proposta de empate pode ser feita ou retirada antes de
+/// o resto ser ignorado (SEC-07).
+const MAX_DRAW_CHANGES_PER_PLY: u8 = 4;
 /// Eventos da conexão tratados por [`FicsSession::poll`], no máximo (#273). A consulta roda
 /// a cada quadro na thread da interface; o canal não é cifrado, e um despejo de linhas
 /// (servidor hostil ou alguém no caminho) prenderia o quadro para sempre. O resto fica na
@@ -191,6 +198,10 @@ struct Tracked {
     black: String,
     opened_at: Timestamp,
     draw_offer: Option<Color>,
+    /// Mudanças da proposta de empate no Lance atual (zera a cada Lance).
+    draw_changes: u8,
+    /// Quando o último retrato sem Lance novo virou Evento.
+    last_same_at: Option<Timestamp>,
     clock: Option<ProviderClock>,
     desynced: Option<u64>,
 }
@@ -537,8 +548,11 @@ impl FicsSession {
                     by == "You" || offered_by.is_some_and(|n| n.eq_ignore_ascii_case(&by));
                 if cancels
                     && let Some(tracked) = self.played.as_mut()
-                    && tracked.draw_offer.take().is_some()
+                    && tracked.draw_offer.is_some()
+                    && tracked.draw_changes < MAX_DRAW_CHANGES_PER_PLY
                 {
+                    tracked.draw_offer = None;
+                    tracked.draw_changes += 1;
                     let at = at(self.clock.as_ref(), tracked);
                     apply(tracked, None, at, out, true);
                 }
@@ -580,6 +594,10 @@ impl FicsSession {
         if !tracked.in_progress() || !tracked.name_of(opponent).eq_ignore_ascii_case(by) {
             return;
         }
+        if tracked.draw_changes >= MAX_DRAW_CHANGES_PER_PLY {
+            return;
+        }
+        tracked.draw_changes += 1;
         tracked.draw_offer = Some(opponent);
         let at = at(self.clock.as_ref(), tracked);
         apply(tracked, None, at, out, true);
@@ -714,6 +732,8 @@ impl FicsSession {
             black: board.black.clone(),
             opened_at: self.clock.now(),
             draw_offer: None,
+            draw_changes: 0,
+            last_same_at: None,
             clock: None,
             desynced: None,
         }
@@ -1052,6 +1072,16 @@ fn update(
             if step == Step::Advanced {
                 // Um Lance encerra a proposta de empate anterior.
                 tracked.draw_offer = None;
+                tracked.draw_changes = 0;
+            } else {
+                let now = clock.now();
+                if tracked
+                    .last_same_at
+                    .is_some_and(|last| now.since(last) < MIN_SAME_BOARD_INTERVAL)
+                {
+                    return;
+                }
+                tracked.last_same_at = Some(now);
             }
             if tracked.desynced.take().is_some() {
                 out.notices.push(FicsNotice::Resynced {

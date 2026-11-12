@@ -285,6 +285,8 @@ pub(crate) struct Auth {
     /// Como terminou a última tentativa de cada entrada.
     pub endings: HashMap<Slot, Ending>,
     pub key_forms: HashMap<Slot, KeyForm>,
+    /// Campos de segredo que o `egui` ainda precisa esquecer (a página consome no quadro).
+    pub forget_fields: Vec<bevy_egui::egui::Id>,
     /// O pedido que espera uma porta, e qual.
     pub waiting: Option<(Intent, Gate)>,
     /// O último pedido de cada entrada, para "Tentar de novo".
@@ -1119,11 +1121,21 @@ impl ConnectionsUi {
             .collect();
     }
 
-    fn reset_for_profile(&mut self) {
+    pub(crate) fn reset_for_profile(&mut self) {
         if let Some(attempt) = self.auth.attempt.take() {
             attempt.cancel();
         }
         self.auth.endings.clear();
+        // O `egui` guarda cópias do texto digitado: a página esquece os campos no próximo quadro.
+        let forgotten: Vec<bevy_egui::egui::Id> = self
+            .auth
+            .key_forms
+            .keys()
+            .map(|slot| {
+                bevy_egui::egui::Id::new(("auth-key-field", slot.provider.key(), slot.is_engine()))
+            })
+            .collect();
+        self.auth.forget_fields.extend(forgotten);
         self.auth.key_forms.clear();
         self.auth.waiting = None;
         self.auth.last.clear();

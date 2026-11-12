@@ -380,3 +380,25 @@ fn with_the_own_vault_locked_nothing_leaves_and_the_error_is_typed() {
     .expect("desbloqueado, sai com o token");
     assert!(files_containing(&dir, TOKEN).is_empty());
 }
+
+/// Ramo de segurança (NFR-10, #269): falha de disco ao abrir o Cofre vira erro tipado `Io`
+/// (nunca pânico nem cofre "vazio" em silêncio) e a mensagem não leva segredo.
+#[test]
+fn a_disk_failure_opening_the_vault_is_a_typed_io_error() {
+    let keyring = Arc::new(MemoryKeyring::new());
+    let clock = clock();
+
+    // O diretório do Cofre é, na verdade, um arquivo.
+    let as_file = temp_dir("io-diretorio");
+    fs::write(&as_file, b"nao sou um diretorio").expect("arquivo");
+    let err = SecretVault::open(config(&as_file, &keyring, &clock)).unwrap_err();
+    assert!(matches!(err, VaultError::Io { .. }), "{err:?}");
+    let _ = fs::remove_file(&as_file);
+
+    // O índice existe mas não é legível como arquivo (é um diretório).
+    let dir = temp_dir("io-indice");
+    fs::create_dir_all(dir.join("index.json")).expect("diretório no lugar do índice");
+    let err = SecretVault::open(config(&dir, &keyring, &clock)).unwrap_err();
+    assert!(matches!(err, VaultError::Io { .. }), "{err:?}");
+    assert!(!err.to_string().contains(TOKEN));
+}

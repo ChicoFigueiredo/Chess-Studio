@@ -47,6 +47,10 @@ const URL: &str = "https://chess-api.com/v1";
 pub const DEFAULT_DEPTH: u32 = 12;
 /// Profundidade máxima do acesso comum (documentação de 11/11/2026).
 pub const MAX_DEPTH: u32 = 18;
+/// Comprimento máximo da linha principal lida de uma resposta (Lance principal mais a
+/// continuação): o serviço manda poucas dezenas; mais que isso é resposta hostil e o excesso
+/// é cortado **antes** de validar e gerar a notação (SEC-07).
+const MAX_LINE_PLIES: usize = 64;
 /// Nome da Engine na lista.
 pub const ENGINE_NAME: &str = "Stockfish (Chess-API.com)";
 
@@ -200,7 +204,7 @@ fn line(
         .unwrap_or_default();
     // Alguns exemplos repetem o Lance principal no começo da continuação.
     let skip = usize::from(continuation.first().and_then(Value::as_str) == Some(text));
-    for next in continuation.iter().skip(skip) {
+    for next in continuation.iter().skip(skip).take(MAX_LINE_PLIES - 1) {
         let Some(mv) = next.as_str().and_then(|t| t.parse::<Move>().ok()) else {
             break;
         };
@@ -247,6 +251,10 @@ fn decode(
     };
     let mut lines = Vec::new();
     for item in items {
+        // Só as variantes que a interface pode mostrar: o resto nem é validado.
+        if lines.len() >= usize::from(MAX_MULTIPV) {
+            break;
+        }
         match item.get("type").and_then(Value::as_str) {
             // O serviço responde `200` com `type: "error"` (FEN recusado, por exemplo).
             Some("error") => {

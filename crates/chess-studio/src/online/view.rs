@@ -1961,7 +1961,7 @@ fn clocks(ui: &mut egui::Ui, session: &Session, online: &chess_game::OnlineGame)
             ui,
             p,
             side,
-            &player_line(&player.name, player.rating),
+            &crate::display_text::clean_display(&player_line(&player.name, player.rating)),
             reading.remaining(side),
             running,
         );
@@ -2353,7 +2353,10 @@ pub fn toasts(
         Toast::Fics(challenge) => {
             toast_card(&ctx, "online-toast-fics-challenge", top_right, |ui| {
                 let p = palette(ui);
-                let name = player_line(&challenge.challenger, challenge.rating);
+                let name = crate::display_text::clean_display(&player_line(
+                    &challenge.challenger,
+                    challenge.rating,
+                ));
                 icon_line(
                     ui,
                     icon::SWORD,

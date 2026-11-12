@@ -244,7 +244,10 @@ impl Pace {
             Some((b, i)) => (b, i.parse::<u64>().ok()?),
             None => (tc, 0),
         };
-        let estimate = base.parse::<u64>().ok()?.saturating_add(40 * inc);
+        let estimate = base
+            .parse::<u64>()
+            .ok()?
+            .saturating_add(inc.saturating_mul(40));
         Some(match estimate {
             0..180 => Self::Bullet,
             180..480 => Self::Blitz,
@@ -358,4 +361,24 @@ pub fn game_fingerprint(game: &PgnGame) -> String {
         fnv1a(0xcbf2_9ce4_8422_2325, bytes),
         fnv1a(0x9e37_79b9_7f4a_7c15, bytes)
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// SEC-05: o incremento vem de uma etiqueta PGN qualquer; `40 * inc` não pode estourar.
+    #[test]
+    fn a_huge_increment_is_classical_not_a_panic() {
+        assert_eq!(
+            Pace::from_time_control("0+461168601842738791"),
+            Some(Pace::Classical)
+        );
+        assert_eq!(
+            Pace::from_time_control("0+18446744073709551615"),
+            Some(Pace::Classical)
+        );
+        assert_eq!(Pace::from_time_control("180+2"), Some(Pace::Blitz));
+        assert_eq!(Pace::from_time_control("60+0"), Some(Pace::Bullet));
+    }
 }

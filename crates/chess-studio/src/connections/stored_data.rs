@@ -58,6 +58,8 @@ impl StoredData {
         let p = palette(ui);
         cs_card_frame(p, CardEmphasis::Quiet).show(ui, |ui| {
             ui.set_width(ui.available_width());
+            // O texto quebra antes do botão "Limpar dados guardados…" (à direita), sem passar por baixo dele.
+            let text_width = (ui.available_width() - 280.0).max(160.0);
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing.x = 12.0;
                 ui.label(
@@ -66,6 +68,7 @@ impl StoredData {
                         .color(p.ink_muted),
                 );
                 ui.vertical(|ui| {
+                    ui.set_max_width(text_width);
                     ui.spacing_mut().item_spacing.y = 2.0;
                     ui.label(
                         RichText::new(i18n.t("stored-title"))
