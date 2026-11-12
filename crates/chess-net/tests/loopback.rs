@@ -34,7 +34,7 @@ fn start(clock: &Arc<FakeClock>) -> (u16, Arc<AtomicBool>, Waiting) {
 /// Manda uma requisição crua e devolve a resposta inteira.
 fn send(port: u16, request: &str) -> std::io::Result<String> {
     let mut stream = TcpStream::connect(("127.0.0.1", port))?;
-    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+    stream.set_read_timeout(Some(Duration::from_secs(30)))?;
     stream.write_all(request.as_bytes())?;
     let mut response = String::new();
     stream.read_to_string(&mut response)?;

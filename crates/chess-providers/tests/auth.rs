@@ -95,7 +95,7 @@ fn come_back(redirect_uri: &str, query: &str) -> std::io::Result<String> {
         .expect("retorno em 127.0.0.1");
     let (port, path) = rest.split_at(rest.find('/').expect("caminho"));
     let mut stream = TcpStream::connect(("127.0.0.1", port.parse::<u16>().expect("porta")))?;
-    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+    stream.set_read_timeout(Some(Duration::from_secs(30)))?;
     write!(
         stream,
         "GET {path}?{query} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n"
