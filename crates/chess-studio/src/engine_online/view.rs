@@ -223,6 +223,10 @@ pub fn body(
             Unavailable::ProviderOff => i18n.t("engine-online-provider-off"),
             Unavailable::AlreadyRunning => i18n.t("engine-online-already"),
             Unavailable::Bot(error) => crate::online::board_error_text(i18n, error),
+            Unavailable::FairPlay(locked) => i18n.t_with(
+                "engine-online-fairplay",
+                &[("why", &i18n.t(locked.message_key()))],
+            ),
         };
         ui.colored_label(p.danger, text);
     }
@@ -299,6 +303,18 @@ fn settings(
                     cs_dropdown(ui, "engine-online-engine", &mut form.engine, &options);
                 }
             });
+
+            let mut limited = form.settings.elo.is_some();
+            if cs_checkbox(ui, &mut limited, &i18n.t("engine-online-limit-strength")).changed() {
+                form.settings.elo = limited.then_some(1500);
+            }
+            if let Some(elo) = form.settings.elo.as_mut() {
+                ui.add(
+                    egui::Slider::new(elo, crate::engine::MIN_ELO..=crate::engine::MAX_ELO)
+                        .text(i18n.t("engine-elo-label")),
+                );
+                ui.small(i18n.t("engine-online-strength-hint"));
+            }
 
             ui.label(i18n.t("engine-online-speeds"));
             ui.horizontal_wrapped(|ui| {
@@ -550,6 +566,10 @@ fn activity_text(i18n: &I18n, item: &Activity) -> (StatusTone, String) {
                 &[("name", name), ("why", &i18n.t(decline_key(*reason)))],
             ),
         ),
+        Activity::GameResumed { opponent } => (
+            StatusTone::Info,
+            i18n.t_with("engine-online-act-resumed", &[("name", opponent)]),
+        ),
         Activity::GameStarted { opponent } => (
             StatusTone::Info,
             i18n.t_with("engine-online-act-started", &[("name", opponent)]),
@@ -600,6 +620,14 @@ fn activity_text(i18n: &I18n, item: &Activity) -> (StatusTone, String) {
         Activity::StoreFailed(_) => (
             StatusTone::Warning,
             i18n.t("engine-online-act-store-failed"),
+        ),
+        Activity::FairPlayDeclined { name } => (
+            StatusTone::Warning,
+            i18n.t_with("engine-online-act-fairplay-declined", &[("name", name)]),
+        ),
+        Activity::FairPlayResigned { opponent } => (
+            StatusTone::Warning,
+            i18n.t_with("engine-online-act-fairplay-resigned", &[("name", opponent)]),
         ),
     }
 }

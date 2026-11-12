@@ -1,0 +1,2 @@
+off: 5.47 ms/quadro (183 quadros/s)
+carregamento da cena: 0.51 s

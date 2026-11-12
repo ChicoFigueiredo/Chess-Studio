@@ -1863,7 +1863,7 @@ mod tests {
             policy: chess_game::PolicyKind::FideSimulation,
             ..NewGameConfig::default()
         };
-        session.start(&config, None);
+        session.start(&config);
         assert!(session.is_competitive());
         assert!(!hint.accessible(&session), "dicas/análise travadas (UI-08)");
         assert!(def("Any").accessible(&session));
@@ -1936,9 +1936,7 @@ mod tests {
             ..NewGameConfig::default()
         };
         for config in [NewGameConfig::default(), competitive] {
-            app.world_mut()
-                .resource_mut::<Session>()
-                .start(&config, None);
+            app.world_mut().resource_mut::<Session>().start(&config);
             let (before, events) = {
                 let s = app.world().resource::<Session>();
                 (s.snapshot().clone(), s.game().events().len())

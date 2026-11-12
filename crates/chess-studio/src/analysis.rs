@@ -1518,7 +1518,7 @@ mod tests {
             policy: PolicyKind::FideSimulation,
             ..NewGameConfig::default()
         };
-        session.start(&config, None);
+        session.start(&config);
         session
     }
 
@@ -1709,13 +1709,16 @@ mod tests {
     #[test]
     fn analysis_is_paused_while_the_opponent_engine_thinks_and_resumes_after() {
         let mut session = Session::new();
-        session.start_engine_game(
-            chess_game::EngineSeat {
-                color: Side::White,
-                elo: 1500,
-            },
-            EngineConfig::new("/nao/existe/engine"),
-        );
+        session
+            .start_engine_game(
+                chess_game::EngineSeat {
+                    color: Side::White,
+                    elo: 1500,
+                },
+                EngineConfig::new("/nao/existe/engine"),
+                &unlocked(),
+            )
+            .unwrap();
         assert!(session.engine_turn(), "a Engine adversária joga de brancas");
         let mut analysis = armed();
         analysis.drive(&session, false, &unlocked());

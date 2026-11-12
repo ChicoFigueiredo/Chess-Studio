@@ -26,6 +26,7 @@ library-filter-date = Data
 library-filter-date-hint = AAAA.MM.DD
 library-filter-position = Posição (FEN) — acha Partidas que passam por ela
 library-position-current = Usar a posição do tabuleiro
+library-position-fairplay = A busca por Posição está indisponível.
 library-filters-clear = Limpar filtros
 library-count = { $count } Partidas
 library-empty = Nenhuma Partida encontrada.

@@ -25,8 +25,8 @@ use crate::secrets::{self, OpenedVault};
 use crate::session::Session;
 use bevy::prelude::*;
 use chess_net::{
-    Clock, ConnectionId, FairPlayHold, LocalProfileId, Net, NetConfig, NetError, NetworkStatus,
-    ProviderId, SystemClock, Timestamp,
+    Clock, ConnectionId, LocalProfileId, Net, NetConfig, NetError, NetworkStatus, ProviderId,
+    SystemClock, Timestamp,
 };
 use chess_providers::{ChessCom, Lichess, LichessAuth};
 use chess_store::ConnectionRole;
@@ -36,9 +36,6 @@ use std::sync::{Arc, Mutex};
 
 /// Nome do arquivo do banco da rede, ao lado do banco das Partidas.
 pub const NET_DB_FILE: &str = "rede.db";
-
-/// Motivo (diagnóstico) da Trava de fair play ligada pela Partida competitiva local.
-const COMPETITIVE_REASON: &str = "Partida competitiva em andamento";
 
 /// O que a barra de status precisa saber da rede, sem Bevy nem egui.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -138,9 +135,6 @@ pub struct NetService {
     fair_play: FairPlay,
     /// O relógio da rede (o do sistema; o falso nos testes).
     clock: Arc<dyn Clock>,
-    /// A Partida competitiva local segura a trava como as Partidas online: uma
-    /// [`FairPlayHold`] própria, que nunca solta a de outra Partida (e vice-versa).
-    competitive_hold: Mutex<Option<FairPlayHold>>,
 }
 
 impl std::fmt::Debug for NetService {
@@ -176,6 +170,20 @@ impl NetService {
             }
         }
         Self::in_memory()
+    }
+
+    /// Rede dos dados de demonstração (`--demo-data`): o `rede.db` temporário em `db` (com as
+    /// respostas em cache) e o Cofre **falso**, nunca o do sistema nem o do usuário.
+    pub fn open_demo(db: &Path) -> Self {
+        let opened = secrets::volatile_vault(secrets::VolatileKeyring::new(), "cofre-demo");
+        let config = NetConfig::at_path(db).vault(Arc::new(opened.vault.clone()));
+        match Net::open(config) {
+            Ok(net) => Self::with_vault(net, Arc::new(SystemClock), true, opened),
+            Err(err) => {
+                warn!("banco da rede de demonstração indisponível: {err}");
+                Self::in_memory()
+            }
+        }
     }
 
     /// Rede sem banco em disco (capturas, testes): nada persiste e o Cofre é **falso** (cofre do
@@ -224,7 +232,6 @@ impl NetService {
             playstrategy: Lichess::playstrategy(net.clone(), clock.clone()),
             auth: LichessAuth::new(net.clone(), vault.clone(), clock.clone()),
             clock,
-            competitive_hold: Mutex::new(None),
             net,
             persistent,
             vault,
@@ -417,19 +424,15 @@ impl NetService {
     }
 
     /// Segura a Trava de fair play enquanto `competitive_in_progress` e solta quando acaba.
-    /// É uma [`FairPlayHold`] própria, como a de cada Partida online: o fim da Partida
+    /// É uma trava própria (`FairPlayHold`), como a de cada Partida online: o fim da Partida
     /// competitiva local nunca solta a trava de uma Partida online em andamento, e o fim de uma
-    /// Partida online nunca solta a da competitiva.
+    /// Partida online nunca solta a da competitiva. Quem a segura é o ponto único
+    /// ([`FairPlay::follow_competitive`]): a Engine adversária dessa Partida joga com ela (FP-02).
     pub fn follow_competitive(&self, competitive_in_progress: bool, was_engaged: &mut bool) {
         if competitive_in_progress == *was_engaged {
             return;
         }
-        let mut hold = self
-            .competitive_hold
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *hold =
-            competitive_in_progress.then(|| self.net.fair_play_guard().hold(COMPETITIVE_REASON));
+        self.fair_play.follow_competitive(competitive_in_progress);
         *was_engaged = competitive_in_progress;
     }
 
@@ -471,12 +474,18 @@ impl Plugin for NetServicePlugin {
             .world()
             .get_resource::<crate::engine_manager::DbLocation>()
             .map(|location| location.0.clone());
-        let service = NetService::open(
-            games_db
-                .as_deref()
-                .map(NetService::db_path_beside)
-                .as_deref(),
-        );
+        let net_db = games_db.as_deref().map(NetService::db_path_beside);
+        // `--demo-data`: banco temporário e Cofre falso, nunca o Cofre real.
+        let service = match net_db.as_deref() {
+            Some(db)
+                if app
+                    .world()
+                    .contains_resource::<crate::demo_data::DemoMode>() =>
+            {
+                NetService::open_demo(db)
+            }
+            db => NetService::open(db),
+        };
         app.insert_resource(service.fair_play().clone())
             .insert_resource(service)
             .add_systems(Update, follow_app_state);

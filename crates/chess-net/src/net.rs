@@ -447,6 +447,41 @@ impl Net {
         Ok(entry.map(|e| from_entry(&e, shared.clock.now(), Freshness::Cache)))
     }
 
+    /// Grava no cache do Perfil local ativo uma resposta **pré-pronta** para `request`, como se
+    /// o Provedor a tivesse dado em `queried_at`. Não faz pedido nenhum nem consulta o
+    /// consentimento: serve aos dados de demonstração (`--demo-data`), que precisam de
+    /// respostas em cache sem rede. O pedido precisa declarar a validade (`cache_for`) e ter
+    /// endereço do catálogo, de onde vem a licença.
+    pub fn seed_cache(
+        &self,
+        request: &Request,
+        content_type: &str,
+        body: Vec<u8>,
+        queried_at: Timestamp,
+    ) -> Result<(), NetError> {
+        let shared = &self.handle.shared;
+        let target = request.target()?;
+        let ttl = request
+            .cache_ttl
+            .ok_or_else(|| NetError::invalid("a resposta pré-pronta precisa de validade"))?;
+        let endpoint = catalog_endpoint(request.provider(), &target)?;
+        let entry = CacheEntry {
+            provider: request.provider(),
+            source_url: request.canonical_url(&target),
+            status: 200,
+            content_type: Some(content_type.to_owned()),
+            body,
+            queried_at,
+            expires_at: queried_at.plus(ttl),
+            etag: None,
+            last_modified: None,
+            license: endpoint.license.to_owned(),
+            mode: mode_for(endpoint.capability),
+        };
+        let key = request.cache_key(&target);
+        lock(&shared.store).put(self.active_profile(), &key, &entry)
+    }
+
     /// Apaga o cache do Provedor no Perfil local ativo; devolve quantas entradas saíram.
     pub fn clear_cache(&self, provider: ProviderId) -> Result<usize, NetError> {
         lock(&self.handle.shared.store).clear_provider(self.active_profile(), provider)
@@ -529,6 +564,19 @@ fn worker(shared: &Shared, jobs: &Receiver<Job>) {
         }
         shared.active_requests.fetch_sub(1, Ordering::AcqRel);
     }
+}
+
+/// O endereço do catálogo que cobre `target` (prefixo mais longo).
+fn catalog_endpoint(provider: ProviderId, target: &Target) -> Result<&'static Endpoint, NetError> {
+    crate::catalog::provider(provider)
+        .endpoints
+        .iter()
+        .filter(|e| e.host == target.host && target.path.starts_with(e.path_prefix))
+        .max_by_key(|e| e.path_prefix.len())
+        .ok_or_else(|| NetError::EndpointNotAllowed {
+            provider,
+            url: format!("{}{}", target.host, target.path),
+        })
 }
 
 fn mode_for(capability: Capability) -> ImportMode {
