@@ -873,35 +873,35 @@ fn exercise_row(
         .get(&exercise.id)
         .copied()
         .unwrap_or_default();
-    ui.horizontal_wrapped(|ui| {
+    // Linha do botão com o título; os números e os temas vão numa linha pequena embaixo, para
+    // o texto não quebrar ao lado do botão.
+    ui.horizontal(|ui| {
         if cs_button(ui, &i18n.t("training-start"), ButtonVariant::Secondary).clicked() {
             action = Some(Action::Start(exercise.id.clone()));
         }
-        let mut text = format!(
-            "{} — {}",
-            exercise.title,
+        ui.add(egui::Label::new(egui::RichText::new(&exercise.title).strong()).truncate());
+    });
+    let mut details = i18n.t_with(
+        "training-exercise-count",
+        &[
+            ("correct", &tally.correct.to_string()),
+            ("runs", &tally.runs.to_string()),
+        ],
+    );
+    if let Some(rating) = exercise.rating {
+        details += &format!(
+            " — {}",
             i18n.t_with(
-                "training-exercise-count",
-                &[
-                    ("correct", &tally.correct.to_string()),
-                    ("runs", &tally.runs.to_string()),
-                ],
+                "training-exercise-rating",
+                &[("rating", &rating.to_string())]
             )
         );
-        if let Some(rating) = exercise.rating {
-            text += &format!(
-                " — {}",
-                i18n.t_with(
-                    "training-exercise-rating",
-                    &[("rating", &rating.to_string())]
-                )
-            );
-        }
-        if !exercise.themes.is_empty() {
-            text += &format!(" — {}", themes::theme_names(i18n, &exercise.themes, 3));
-        }
-        ui.label(text);
-    });
+    }
+    if !exercise.themes.is_empty() {
+        details += &format!(" — {}", themes::theme_names(i18n, &exercise.themes, 3));
+    }
+    ui.small(details);
+    ui.add_space(4.0);
     action
 }
 
@@ -951,8 +951,10 @@ fn list_view(ui: &mut egui::Ui, i18n: &I18n, state: &mut TrainingUi) -> Option<A
     if matching.is_empty() {
         ui.label(i18n.t("training-list-none"));
     }
+    // A lista ocupa a altura disponível do Painel (antes: 260 px fixos).
     egui::ScrollArea::vertical()
-        .max_height(260.0)
+        .auto_shrink([false, false])
+        .max_height(ui.available_height())
         .show(ui, |ui| {
             // De fábrica, por tipo.
             let factory: Vec<&Exercise> = matching

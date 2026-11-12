@@ -169,7 +169,7 @@ pub fn age_of(age: Duration) -> Age {
     }
 }
 
-/// `dd/mm` de um instante, para "do cache, de 09/11": na hora local do computador; sem fuso
+/// `dd/mm` de um instante, para "avaliação guardada em 09/11": na hora local do computador; sem fuso
 /// do sistema, em UTC (a data muda no máximo em um dia, e a linha nunca some).
 pub fn day_month(at: Timestamp) -> String {
     crate::local_time::LocalClock::current()

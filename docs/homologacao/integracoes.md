@@ -330,7 +330,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
   1. Volte à mesma Posição.
   2. Desligue a internet e recarregue a Posição.
   3. Vá a uma Posição nunca consultada, ainda sem internet.
-- **Esperado:** o rodapé diz **consultado há N min** ou **do cache, de** DD/MM. Sem internet, com cache: aviso **Sem conexão com a internet. Mostrando o que estava salvo, de** data. Sem internet e sem cache: **Sem conexão com a internet** e "Não há nada salvo para esta Posição."
+- **Esperado:** o rodapé diz **consultado há N min** ou **avaliação guardada em** DD/MM. Sem internet, com cache: aviso **Sem conexão com a internet. Mostrando o que estava salvo, de** data. Sem internet e sem cache: **Sem conexão com a internet** e "Não há nada salvo para esta Posição."
 - **Com o serviço real:** observe a idade do cache e se ele é renovado quando a internet volta.
 - **Evidência:** [`cache.rs`](../../crates/chess-net/tests/cache.rs), [`limits.rs`](../../crates/chess-net/tests/limits.rs).
 

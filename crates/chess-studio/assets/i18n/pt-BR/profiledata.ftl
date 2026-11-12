@@ -86,6 +86,7 @@ bulk-intro = As Partidas que você trouxe de fora, por origem. As que você jogo
 bulk-empty = Você ainda não importou Partidas. Importe um arquivo PGN ou use "Importar online" para trazer Partidas de um Provedor.
 bulk-by-provider = Tudo de um Provedor
 bulk-provider-hint = Marca todas as importações deste Provedor.
+bulk-provider-hint-none = Marca todas as importações sem Provedor identificado.
 bulk-by-import = Por importação
 bulk-unnamed = Sem nome
 bulk-import-line = { $mode } em { $date }
