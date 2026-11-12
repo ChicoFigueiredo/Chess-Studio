@@ -348,14 +348,33 @@ impl TrainingUi {
         }
     }
 
+    /// Outra Ação trocou a Partida do tabuleiro enquanto o Exercício estava nele?
+    fn board_replaced(&self, session: &Session) -> bool {
+        self.stashed.is_some() && self.exercise_epoch != Some(session.epoch())
+    }
+
     /// Nova Partida, Retomar, Biblioteca, FEN ou Partida online que começou durante o Treino
     /// trocam a `Session` do Exercício por outra (#307). A regra é a do modo espectador: trocar
     /// a Partida do tabuleiro **sai** do Treino. A Sessão nova é a do usuário; a guardada não
     /// volta por cima dela (nem é gravada de novo): ela já está no banco, parada onde estava,
     /// e continua retomável. Devolve `true` se saiu do Treino.
-    fn leave_if_board_replaced(&mut self, session: &Session) -> bool {
-        if self.stashed.is_none() || self.exercise_epoch == Some(session.epoch()) {
+    pub(crate) fn leave_if_board_replaced(&mut self, session: &mut Session) -> bool {
+        if !self.board_replaced(session) {
             return false;
+        }
+        // Modo espectador iniciado com o Exercício no tabuleiro (#309): o espectador guardou por
+        // baixo a Sessão do Exercício, não a do usuário. Devolve a do usuário para o lugar dela,
+        // para a persistência, a Trava de fair play e a saída do espectador a verem.
+        if session.is_spectator()
+            && self.exercise_epoch == Some(session.own().epoch())
+            && let Some(mut original) = self.stashed.take()
+        {
+            // O Treino abriu sobre o modo espectador: um só nível, a do usuário por baixo.
+            original.leave_spectator();
+            let own = session.own_mut();
+            original.set_move_method(own.move_method());
+            original.supersede(own);
+            *own = original;
         }
         self.stashed = None;
         self.exercise_epoch = None;
@@ -449,9 +468,10 @@ impl TrainingUi {
 }
 
 /// Antes da persistência e do juiz: se outra Ação trocou a Partida do tabuleiro, o Treino sai.
-fn training_guard(mut state: ResMut<TrainingUi>, session: Res<Session>) {
-    if state.stashed.is_some() {
-        state.leave_if_board_replaced(&session);
+fn training_guard(mut state: ResMut<TrainingUi>, mut session: ResMut<Session>) {
+    // Só toca nos recursos (e marca mudança) quando de fato há o que fazer.
+    if state.board_replaced(&session) {
+        state.leave_if_board_replaced(&mut session);
     }
 }
 

@@ -425,6 +425,37 @@ fn the_training_over_the_spectator_mode_keeps_the_users_game_locked() {
     assert_locked_on_board(&service, &session, "de volta à Partida");
 }
 
+/// Ver a Partida da Engine online com um Exercício no tabuleiro (#309): o Treino sai e a Partida
+/// competitiva do usuário volta para baixo do espectador. A trava vale antes, durante e depois,
+/// quadro a quadro, e os serviços (não só o botão) seguem recusados.
+#[test]
+fn watching_with_an_exercise_on_the_board_keeps_the_users_game_locked_all_along() {
+    for id in EXERCISES {
+        let service = NetService::in_memory();
+        let mut training = TrainingUi::default();
+        let mut session = competitive();
+        let user = session.game().clone();
+        let mut last = Last::default();
+        follow(&service, &session, &training, &mut last);
+        training.start_for_tests(id, &mut session);
+        follow(&service, &session, &training, &mut last);
+        assert_locked(&service, &session, &user, id);
+
+        assert!(session.watch(&online_engine_game()));
+        // O quadro entre o espectador e o guarda do Treino: a Partida do usuário ainda está
+        // guardada pelo Treino, a trava não cai.
+        follow(&service, &session, &training, &mut last);
+        assert_locked(&service, &session, &user, "antes do guarda");
+        assert!(training.leave_if_board_replaced(&mut session));
+        follow(&service, &session, &training, &mut last);
+        assert!(session.is_spectator() && !training.session_swapped());
+        assert_locked(&service, &session, &user, "depois do guarda");
+        assert!(session.leave_spectator());
+        follow(&service, &session, &training, &mut last);
+        assert_locked_on_board(&service, &session, "de volta à Partida");
+    }
+}
+
 // ---- 2. Partida online em andamento + Treino --------------------------------------------------
 
 /// Partida online em tempo real contra pessoa no tabuleiro (servidor falso); o jogador abre o
