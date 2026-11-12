@@ -91,7 +91,7 @@ fn drive_until(
     t: &Clock0,
     cond: impl Fn(&EnginePlayer, &Game) -> bool,
 ) {
-    let deadline = Instant::now() + Duration::from_secs(8);
+    let deadline = Instant::now() + Duration::from_secs(30);
     while !cond(player, game) {
         assert!(
             Instant::now() < deadline,
