@@ -37,6 +37,7 @@ mod engines;
 mod error;
 mod favorites;
 mod fide;
+mod import_preview;
 mod imported;
 mod imported_bulk;
 mod library;
@@ -57,6 +58,9 @@ pub use engines::{EngineId, EngineOrigin, EngineRecord};
 pub use error::{Result, StoreError};
 pub use favorites::{Favorite, FavoriteId, FavoriteOrigin, FavoriteQuery, NewFavorite};
 pub use fide::FideSnapshot;
+pub use import_preview::{
+    DEFAULT_PREVIEW_BYTES, Estimate, ImportPreview, PREVIEW_LIST, PreviewGame, preview_pgn_file,
+};
 pub use imported::{
     DEFAULT_BATCH, DEFAULT_MAX_DECOMPRESSED, ImportOptions, ImportProgress, ImportReport,
     ImportSummary, ImportedId, ImportedQuery, ImportedSummary, MAX_ERROR_SAMPLES,

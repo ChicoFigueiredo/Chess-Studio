@@ -79,6 +79,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 | CX-HOM-58 | FICS: desafios recebidos e variantes | sim | UNVERIFIED |
 | CX-HOM-59 | FICS: queda de conexão durante a Partida | sim | UNVERIFIED |
 | CX-HOM-60 | FICS: observar uma Partida | sim | UNVERIFIED |
+| CX-HOM-77 | Importar arquivo PGN: prévia, fonte detectada e confirmação de direitos | não | UNVERIFIED |
 
 ## Itens
 
@@ -736,6 +737,16 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Esperado:** um tabuleiro pequeno mostra a Partida, com nomes, relógios e o último Lance. Nada vai ao tabuleiro principal nem à Biblioteca, e a Trava de fair play não liga. Uma Partida de variante é recusada com aviso.
 - **Com o serviço real (UNVERIFIED):** os textos de observação (`You are now observing game N.`, `Game N: …`, `Removing game N from observation list.`) do FICS real são reconhecidos.
 - **Evidência:** [`online/fics_tests.rs`](../../crates/chess-studio/src/online/fics_tests.rs), [decisões FC-13 a FC-21](../decisoes/2026-11-11-fics.md).
+
+### CX-HOM-77. Importar arquivo PGN: prévia, fonte detectada e confirmação de direitos
+
+- **Passos:**
+  1. Biblioteca > Importar > **Arquivo PGN**. Escolha um PGN exportado do Lichess (fonte "Outro ou não sei").
+  2. Veja a prévia sem clicar em Importar; troque a fonte para **TWIC** e tente **Importar** sem marcar a caixa.
+  3. Marque **Confirmo que posso usar estas Partidas** e importe.
+- **Esperado:** assim que o arquivo é escolhido aparece a **Prévia do arquivo** (quantas Partidas, "Cerca de N" quando o arquivo é grande, os cabeçalhos das primeiras e "As tags indicam Lichess"), e a fonte já vem como Lichess; nada foi gravado na Biblioteca. Com fonte restrita (TWIC, PGN Mentor, ChessBase), **Importar** fica desligado até marcar a confirmação. Depois de importar, o resumo traz "N Partidas com licença restrita". Um arquivo do Lichess entra com o id do Lichess (importar de novo conta como repetidas).
+- **Serviço real?** não.
+- **Evidência:** [`chess-store/tests/import_preview.rs`](../../crates/chess-store/tests/import_preview.rs), `import_preview_ui.rs`, [capturas](../evidencias/previa-importacao-pgn/README.md).
 
 ## Fora deste roteiro
 

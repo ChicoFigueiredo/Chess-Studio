@@ -248,6 +248,10 @@ pub struct ImportOutcome {
     /// Partidas convertidas de Windows-1252/Latin-1 (aviso: conferir os acentos).
     pub converted: usize,
     pub cancelled: bool,
+    /// A fonte gravada na Origem e quantas Partidas novas entraram com licença restrita
+    /// (TWIC, PGN Mentor, ChessBase), para o resumo (#270).
+    pub source: ImportSource,
+    pub restricted: usize,
 }
 
 /// Importa o arquivo (`.pgn` ou `.pgn.gz`) em fluxo, gravando a Origem escolhida
@@ -284,6 +288,12 @@ pub fn import_file(
             .collect(),
         converted: summary.converted_games,
         cancelled: summary.cancelled,
+        source,
+        restricted: if source.is_restricted() {
+            summary.new
+        } else {
+            0
+        },
     })
 }
 
@@ -485,6 +495,7 @@ pub struct LibraryUi {
     import_path: String,
     import_pick: crate::file_picker::FilePickButton,
     import_source: ImportSource,
+    pub(crate) import_preview: crate::import_preview_ui::PreviewState,
     import_job: Option<ImportJob>,
     import_result: Option<Result<ImportOutcome, String>>,
     import_method: ImportMethod,
@@ -529,6 +540,7 @@ impl Default for LibraryUi {
             import_path: String::new(),
             import_pick: crate::file_picker::FilePickButton::default(),
             import_source: ImportSource::Other,
+            import_preview: crate::import_preview_ui::PreviewState::default(),
             import_job: None,
             import_result: None,
             import_method: ImportMethod::default(),
@@ -623,6 +635,24 @@ impl LibraryUi {
                 },
             );
         }
+    }
+
+    /// Cena de evidência (`--explorer-demo import-file*`): a prévia da importação de arquivo,
+    /// com dados fictícios e sem ler arquivo nenhum (#270).
+    pub(crate) fn demo_file_import(&mut self, scene: crate::import_preview_ui::DemoScene) {
+        self.tab = Tab::Games;
+        self.detail = None;
+        self.import_open = true;
+        self.import_method = ImportMethod::File;
+        let (path, source, preview, confirmed, outcome) = scene.parts();
+        self.import_path = path.to_owned();
+        self.import_source = source;
+        self.import_preview = crate::import_preview_ui::PreviewState::with_preview(path, preview);
+        if confirmed {
+            self.import_preview.confirm_rights(source);
+        }
+        self.online.demo_scroll_end = true;
+        self.import_result = outcome.map(Ok);
     }
 
     /// Mostra a importação online (Ação "Importar do Lichess ou Chess.com").
@@ -1154,8 +1184,17 @@ fn draw_file_import(
     }) {
         lib.import_path = file.display().to_string();
     }
+    if lib
+        .import_preview
+        .refresh(&lib.import_path, &mut lib.import_source)
+    {
+        ui.ctx().request_repaint();
+    }
+    crate::import_preview_ui::draw(ui, i18n, &mut lib.import_preview, lib.import_source);
     let busy = lib.import_job.is_some();
-    let ready = !lib.import_path.trim().is_empty() && !busy;
+    let ready = !lib.import_path.trim().is_empty()
+        && !busy
+        && lib.import_preview.can_import(lib.import_source);
     ui.add_enabled_ui(ready, |ui| {
         if cs_button(ui, &i18n.t("library-import-button"), ButtonVariant::Primary).clicked() {
             actions.push(Action::Import(PathBuf::from(lib.import_path.trim())));
@@ -1228,6 +1267,18 @@ fn draw_file_import(
                     ],
                 ),
             );
+            if outcome.restricted > 0 {
+                ui.colored_label(
+                    p.warning,
+                    i18n.t_with(
+                        "import-summary-restricted",
+                        &[
+                            ("count", &outcome.restricted.to_string()),
+                            ("source", &i18n.t(source_key(outcome.source))),
+                        ],
+                    ),
+                );
+            }
             if outcome.converted > 0 {
                 ui.colored_label(
                     p.warning,
@@ -2323,6 +2374,31 @@ mod tests {
         assert_eq!(origin.provider.as_deref(), Some("twic"));
         assert_eq!(origin.mode, ImportMode::Manual);
         assert_eq!(origin.source.as_deref(), Some("twic.pgn"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn games_from_a_restricted_source_are_counted_in_the_summary() {
+        let dir = temp_dir("restricted");
+        let path = dir.join("twic.pgn");
+        std::fs::write(&path, DEMO_PGN).unwrap();
+        let mut store = Store::open_in_memory().unwrap();
+        let twic = quick_import(&mut store, &path).unwrap();
+        assert!(twic.imported > 0);
+        assert_eq!(
+            (twic.restricted, twic.source),
+            (twic.imported, ImportSource::Twic)
+        );
+        let lichess = import_file(
+            &mut Store::open_in_memory().unwrap(),
+            ProfileId(1),
+            &path,
+            ImportSource::Lichess,
+            &AtomicBool::new(false),
+            &mut |_| {},
+        )
+        .unwrap();
+        assert_eq!(lichess.restricted, 0);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

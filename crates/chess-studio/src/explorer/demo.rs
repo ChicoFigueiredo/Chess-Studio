@@ -273,6 +273,7 @@ pub fn apply_demo(
             "import" | "import-done" | "import-playstrategy" | "import-playstrategy-done" => {
                 ids::LIBRARY
             }
+            other if crate::import_preview_ui::DemoScene::parse(other).is_some() => ids::LIBRARY,
             _ => ids::EXPLORER,
         };
         for def in registry.iter() {
@@ -280,6 +281,12 @@ pub fn apply_demo(
         }
     }
     if *frame != 3 {
+        return;
+    }
+    if let Some(file_scene) = crate::import_preview_ui::DemoScene::parse(&name) {
+        if let Some(library) = library.as_mut() {
+            library.demo_file_import(file_scene);
+        }
         return;
     }
     if matches!(
