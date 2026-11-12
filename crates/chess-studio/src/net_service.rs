@@ -37,6 +37,10 @@ use std::sync::{Arc, Mutex};
 /// Nome do arquivo do banco da rede, ao lado do banco das Partidas.
 pub const NET_DB_FILE: &str = "rede.db";
 
+/// As Conexões autorizadas (com a conta no Provedor) por Provedor e papel (#267).
+type AccountsByRole =
+    std::collections::HashMap<(ProviderId, ConnectionRole), Vec<(ConnectionId, String)>>;
+
 /// O que a barra de status precisa saber da rede, sem Bevy nem egui.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct NetSummary {
@@ -128,9 +132,7 @@ pub struct NetService {
     /// **Todas** as Conexões autorizadas e em uso do Provedor no papel, com o nome da conta no
     /// Provedor (a padrão é uma delas). A Partida online é retomada pela Conexão que a joga, não
     /// pela padrão (#267). Ver [`NetService::authorized_accounts`].
-    accounts: std::sync::Mutex<
-        std::collections::HashMap<(ProviderId, ConnectionRole), Vec<(ConnectionId, String)>>,
-    >,
+    accounts: std::sync::Mutex<AccountsByRole>,
     /// A Trava de fair play do app, sobre a `FairPlayGuard` desta rede.
     fair_play: FairPlay,
     /// O relógio da rede (o do sistema; o falso nos testes).
