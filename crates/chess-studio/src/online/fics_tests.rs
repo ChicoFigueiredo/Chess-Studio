@@ -1072,7 +1072,7 @@ fn the_panel_shows_the_turn_clocks_and_actions_without_scrolling_in_the_default_
     const WIDTH: f32 = 300.0;
     const HEIGHT: f32 = 170.0;
     let i18n = I18n::pt_br();
-    let cases: [(&str, &[&str]); 7] = [
+    let cases: [(&str, &[&str]); 9] = [
         (
             "playing",
             &[
@@ -1115,6 +1115,14 @@ fn the_panel_shows_the_turn_clocks_and_actions_without_scrolling_in_the_default_
         (
             "fics-unconfirmed",
             &["Sem resultado confirmado", "Encerrar sem resultado"],
+        ),
+        (
+            "ended",
+            &["Brancas vencem", "Analisar", "Ver na Biblioteca"],
+        ),
+        (
+            "fics-closed",
+            &["sem resultado", "Analisar", "Ver na Biblioteca"],
         ),
     ];
     for theme in ["dark", "light"] {

@@ -262,7 +262,7 @@ pub fn info_text(i18n: &I18n, info: &FicsInfo) -> (StatusTone, String) {
 }
 
 /// O aviso honesto do FICS, linha a linha (diálogo e cartão da Central): sem criptografia, só
-/// visitante e sem senha, sem reconexão, sem timeseal.
+/// visitante e sem senha, sem reconexão, sem compensação de atraso.
 pub const WARNINGS: [(&str, &str); 4] = [
     (icon::LOCK_SIMPLE_OPEN, "fics-warning-plain"),
     (icon::USER_CIRCLE, "fics-warning-guest"),

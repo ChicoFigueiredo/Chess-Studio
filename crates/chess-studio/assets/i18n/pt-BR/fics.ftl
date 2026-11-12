@@ -12,7 +12,7 @@ fics-consent-feature = A Partida online no FICS
 fics-warning-plain = Conexão sem criptografia: os Lances, os comandos e o nome de visitante trafegam em texto puro até o FICS.
 fics-warning-guest = Só como visitante: o FICS dá um nome GuestXXXX e só Partidas sem rating. O app nunca pede nem envia senha.
 fics-warning-drop = Sem reconexão automática: se a conexão cair durante a Partida, o FICS a dá como perdida.
-fics-warning-lag = Sem timeseal: o atraso da rede entra no tempo do seu relógio.
+fics-warning-lag = Sem compensação de atraso: o atraso da rede entra no tempo do seu relógio.
 
 # Central de Conexões
 fics-auth-guest = Visitante, sem senha (o FICS dá o nome)
@@ -46,7 +46,7 @@ fics-tab-observe = Observar
 fics-pace-lightning = Relâmpago
 fics-pace-blitz = Blitz
 fics-pace-standard = Padrão
-fics-seek-note = Visitante só joga sem rating. A Partida começa assim que alguém aceitar a busca.
+fics-seek-note = A Partida começa assim que alguém aceitar a busca.
 fics-fairplay-note = Durante a Partida contra uma pessoa, a Trava de fair play desliga Engines, Explorador, finais e análise até o FICS confirmar o fim.
 fics-seek-start = Buscar adversário
 fics-seek-waiting = Procurando adversário no FICS
@@ -64,7 +64,7 @@ fics-challenge-by-name = Desafiar pelo nome
 fics-challenge-name-hint = Nome no FICS (ex.: GuestABCD)
 fics-challenge-name-invalid = No FICS o nome tem de 3 a 17 letras, sem espaço nem número.
 fics-challenge-send = Desafiar
-fics-challenge-note = Xadrez padrão, sem rating (visitante). A Partida começa quando o desafiado aceitar.
+fics-challenge-note = Xadrez padrão. A Partida começa quando o desafiado aceitar.
 fics-challenge-sending = Enviando o desafio a { $name }…
 fics-challenge-waiting = Desafio enviado a { $name } · { $pace } · sem rating
 fics-challenge-withdraw = Retirar desafio

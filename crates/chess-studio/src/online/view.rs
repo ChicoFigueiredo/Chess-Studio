@@ -461,6 +461,7 @@ pub fn online_dialog(
     net: Option<Res<NetService>>,
     mut consent: Option<ResMut<crate::provider_consent::ConsentDialog>>,
     mut actions: MessageWriter<ActionRequested>,
+    dock: Option<Res<crate::dock::Dock>>,
 ) -> Result {
     if !ui_state.open {
         return Ok(());
@@ -506,7 +507,17 @@ pub fn online_dialog(
             view.fics.outgoing.as_ref().map(|o| o.issued),
         ),
     );
-    let max_height = (ctx.viewport_rect().height() - 160.0).max(240.0);
+    // A tela fica entre o Ribbon e a barra de status (a área do tabuleiro, de ponta a ponta):
+    // título, Provedor e abas nunca somem atrás do Ribbon. O corpo rola; os botões ficam
+    // fixos embaixo, fora da rolagem.
+    let screen = ctx.viewport_rect();
+    let area = dock
+        .as_deref()
+        .and_then(crate::dock::Dock::board_area)
+        .map_or(screen, |board| {
+            egui::Rect::from_x_y_ranges(screen.x_range(), board.y_range())
+        });
+    let max_height = (area.height() - DIALOG_CHROME).max(160.0);
     let title = match ui_state.provider {
         Provider::Lichess => i18n.t("online-title"),
         Provider::Fics => i18n.t("fics-title"),
@@ -516,14 +527,24 @@ pub fn online_dialog(
         .order(egui::Order::Foreground)
         .collapsible(false)
         .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .anchor(egui::Align2::CENTER_CENTER, area.center() - screen.center())
+        .constrain_to(area)
         .show(&ctx, |ui| {
             ui.set_width(DIALOG_W);
-            // Alta até caber na janela; o que passa disso rola (a aba Desafiar com desafios
-            // recebidos é a mais longa).
+            // O rodapé do quadro anterior recebe os botões deste (fora da rolagem).
+            let last = ui
+                .ctx()
+                .data(|d| d.get_temp::<egui::Rect>(footer_last_id()));
+            ui.ctx().data_mut(|d| match last {
+                Some(rect) => {
+                    d.insert_temp(footer_slot_id(), rect);
+                }
+                None => d.remove::<egui::Rect>(footer_slot_id()),
+            });
+            // Alta até caber entre o Ribbon e a barra de status; o que passa disso rola (a aba
+            // Desafiar com desafios recebidos é a mais longa).
             egui::ScrollArea::vertical()
                 .max_height(max_height)
-                .min_scrolled_height(max_height)
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
                     provider_choice(ui, &i18n, &mut ui_state);
@@ -547,6 +568,15 @@ pub fn online_dialog(
                         }
                     }
                 });
+            ui.ctx()
+                .data_mut(|d| d.remove::<egui::Rect>(footer_slot_id()));
+            // A fileira dos botões, embaixo da rolagem: o lugar do rodapé no próximo quadro.
+            ui.add_space(8.0);
+            let (row, _) = ui.allocate_exact_size(
+                egui::vec2(ui.available_width(), ui.spacing().interact_size.y),
+                egui::Sense::hover(),
+            );
+            ui.ctx().data_mut(|d| d.insert_temp(footer_last_id(), row));
         });
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         intents.push(Intent::Close);
@@ -707,7 +737,36 @@ fn dialog_body(
 }
 
 /// Rodapé com os botões à direita (o primário por último, à direita).
+/// Na tela da Partida online, onde o rodapé (os botões) vai neste quadro: fixo embaixo da
+/// janela, fora da rolagem. Sem ele (outras telas, testes), o rodapé fica no fim do corpo.
+fn footer_slot_id() -> egui::Id {
+    egui::Id::new("online-dialog-footer-slot")
+}
+
+/// O lugar do rodapé medido no quadro anterior.
+fn footer_last_id() -> egui::Id {
+    egui::Id::new("online-dialog-footer-last")
+}
+
+/// Altura do que não rola na tela da Partida online: título, margens e a fileira dos botões.
+const DIALOG_CHROME: f32 = 120.0;
+
 pub(super) fn footer(ui: &mut egui::Ui, buttons: impl FnOnce(&mut egui::Ui)) {
+    if let Some(rect) = ui
+        .ctx()
+        .data(|d| d.get_temp::<egui::Rect>(footer_slot_id()))
+    {
+        // Fora da rolagem, sempre visível: uma fileira no lugar reservado embaixo da janela.
+        let mut row = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(rect)
+                .layout(egui::Layout::right_to_left(egui::Align::Center)),
+        );
+        row.set_clip_rect(rect);
+        row.spacing_mut().item_spacing.x = 8.0;
+        buttons(&mut row);
+        return;
+    }
     ui.add_space(16.0);
     // Uma linha da altura de um controle: sem isso o layout da direita ocuparia o resto da
     // janela e o rodapé flutuaria no meio dela.
