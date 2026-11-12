@@ -105,7 +105,7 @@ pub fn draw(ui: &mut egui::Ui, i18n: &I18n, state: &mut PreviewState, source: Im
     let Some(Ok(preview)) = &state.result else {
         return;
     };
-    cs_card_frame(&p, CardEmphasis::Quiet).show(ui, |ui| {
+    cs_card_frame(p, CardEmphasis::Quiet).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.label(egui::RichText::new(i18n.t("import-preview-title")).strong());
         ui.label(count_text(i18n, preview.estimate));
