@@ -510,6 +510,10 @@ pub struct LibraryUi {
     bulk: crate::library_bulk::BulkUi,
     /// Banco em memória quando o app roda sem persistência (capturas).
     local: Option<Mutex<Store>>,
+    /// Partidas do FICS sem fim confirmado (a conexão caiu; FC-22), por `GameId`.
+    unconfirmed: Vec<i64>,
+    /// A Partida do FICS da conexão viva (essa ainda pode ter o fim confirmado).
+    live_online: Option<i64>,
 }
 
 impl Default for LibraryUi {
@@ -554,6 +558,8 @@ impl Default for LibraryUi {
             favorite_name: String::new(),
             bulk: crate::library_bulk::BulkUi::default(),
             local: None,
+            unconfirmed: Vec::new(),
+            live_online: None,
         }
     }
 }
@@ -744,8 +750,10 @@ impl LibraryUi {
         let (kind, exercise_text) = (self.exercise_kind, self.exercise_text.clone());
         let filters = self.query();
         let mut refused = None;
+        let mut unconfirmed = None;
         let data = with_store(&mut self.local, handle, |store, profile| match tab {
             Tab::Games => {
+                unconfirmed = Some(crate::online::fics::unconfirmed_games(store, profile));
                 let query = LibraryQuery {
                     profile: Some(profile),
                     ..filters
@@ -770,6 +778,9 @@ impl LibraryUi {
             }
             Tab::Imports => Ok((None, None, None)),
         });
+        if let Some(ids) = unconfirmed {
+            self.unconfirmed = ids.into_iter().map(|id| id.0).collect();
+        }
         if let Some(locked) = refused {
             self.locked = Some(locked);
             self.results = None;
@@ -1373,7 +1384,11 @@ fn side_name(entry: &LibraryEntry, white: bool) -> String {
     name.clone().unwrap_or_else(|| "?".to_owned())
 }
 
-fn result_text(i18n: &I18n, entry: &LibraryEntry) -> String {
+fn result_text(i18n: &I18n, entry: &LibraryEntry, unconfirmed: bool) -> String {
+    // A Partida do FICS que caiu: o FICS nunca confirmou o fim (FC-22).
+    if unconfirmed {
+        return i18n.t("library-result-unconfirmed");
+    }
     let result = match entry.result.as_str() {
         "1-0" => Some(GameResult::WhiteWins),
         "0-1" => Some(GameResult::BlackWins),
@@ -1411,6 +1426,10 @@ fn library_panel(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
                     &session,
                     handle,
                 );
+                lib.live_online = world
+                    .get_resource::<crate::online::OnlineService>()
+                    .and_then(|s| s.with(|play| play.fics.live_store_id()))
+                    .map(|id| id.0);
                 let fair = world.get_resource::<FairPlay>();
                 let shown = (!lib.position.trim().is_empty())
                     .then(|| shown_if_searched(&session, &lib.position))
@@ -1738,7 +1757,11 @@ fn draw_games(
         .auto_shrink([false, false])
         .show(ui, |ui| {
             for entry in &page.entries {
-                draw_entry(ui, i18n, entry, swapped, actions);
+                let unconfirmed = entry.source == LibrarySource::Played
+                    && !entry.finished
+                    && lib.unconfirmed.contains(&entry.ref_id)
+                    && lib.live_online != Some(entry.ref_id);
+                draw_entry(ui, i18n, entry, unconfirmed, swapped, actions);
             }
         });
 }
@@ -1747,6 +1770,7 @@ fn draw_entry(
     ui: &mut egui::Ui,
     i18n: &I18n,
     entry: &LibraryEntry,
+    unconfirmed: bool,
     swapped: bool,
     actions: &mut Vec<Action>,
 ) {
@@ -1764,7 +1788,7 @@ fn draw_entry(
                 i18n.t("library-source-imported")
             });
         });
-        ui.small(result_text(i18n, entry));
+        ui.small(result_text(i18n, entry, unconfirmed));
         let mut meta =
             vec![i18n.t_with("library-plies", &[("count", &entry.ply_count.to_string())])];
         if let Some(date) = &entry.date {

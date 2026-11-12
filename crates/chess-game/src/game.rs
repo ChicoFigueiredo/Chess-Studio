@@ -49,8 +49,13 @@ impl Game {
             });
         }
         let online = self.state.online;
-        if !online && command.kind() == CommandKind::Provider {
-            return Err(Rejection::NotSupportedByPolicy(CommandKind::Provider));
+        if !online
+            && matches!(
+                command.kind(),
+                CommandKind::Provider | CommandKind::CloseWithoutResult
+            )
+        {
+            return Err(Rejection::NotSupportedByPolicy(command.kind()));
         }
         // Bandeira (art. 6.9): um Comando que chega com o tempo esgotado só registra
         // a bandeira; o Comando em si não vale. Online, quem decide o tempo é o Provedor.

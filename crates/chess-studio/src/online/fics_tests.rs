@@ -795,7 +795,436 @@ fn the_fics_screen_draws_every_state_in_plain_language_with_no_password_field() 
             }
             if name == "fics-challenges" {
                 assert!(all.contains("só joga xadrez padrão"), "variante recusada");
+                assert!(all.contains("Desafiar pelo nome"), "o desafio por nome");
             }
         }
     }
+}
+
+// ---- Desafio por nome, aviso discreto e Partida sem resultado confirmado (#272) -------------
+
+impl Env {
+    /// Os pedidos `match` que saíram.
+    fn matches_sent(&self) -> usize {
+        self.server
+            .received_lines()
+            .iter()
+            .filter(|l| l.starts_with("match"))
+            .count()
+    }
+
+    /// Outra Partida competitiva em andamento (local ou online), como o aviso discreto vê.
+    fn busy(&self) -> bool {
+        super::view::toast_busy(&self.session, &self.fair)
+    }
+}
+
+#[test]
+fn a_challenge_by_name_goes_out_once_in_standard_chess_and_its_answer_shows() {
+    use super::view::Toast;
+    let mut env = env();
+    env.login();
+    let i18n = I18n::pt_br();
+    // Variante ou linha a mais no nome: recusado antes da rede, nada sai.
+    let form = FicsForm {
+        name: format!("{OPPONENT} wild 1"),
+        ..FicsForm::default()
+    };
+    assert_eq!(form.challenge_name(), None);
+    assert!(
+        env.play
+            .fics
+            .challenge(&format!("{OPPONENT} wild 1"), 5, 3, None)
+            .is_err()
+    );
+    env.frames_for(Duration::from_millis(50));
+    assert_eq!(env.matches_sent(), 0);
+    let form = FicsForm {
+        name: format!("  {OPPONENT} "),
+        ..FicsForm::default()
+    };
+    assert_eq!(form.challenge_name(), Some(OPPONENT));
+
+    // Enviado: uma vez, xadrez padrão, sem rating; a resposta do FICS chega à tela.
+    env.play.fics.challenge(OPPONENT, 5, 3, None).unwrap();
+    assert!(
+        env.server
+            .wait_line(&format!("match {OPPONENT} 5 3 unrated"), WAIT)
+    );
+    let view = fics_view::FicsView::of(&env.play, &env.service);
+    assert!(view.outgoing.as_ref().is_some_and(|o| !o.issued));
+    env.server.send(&format!(
+        "\nIssuing: {ME} (++++) {OPPONENT} (++++) unrated blitz 5 3.\nfics% "
+    ));
+    let issued = FicsInfo::ChallengeIssued {
+        to: OPPONENT.to_owned(),
+    };
+    assert!(env.until(|e| e.saw(&issued)));
+    assert!(
+        fics_view::FicsView::of(&env.play, &env.service)
+            .outgoing
+            .is_some_and(|o| o.issued)
+    );
+    assert!(fics_view::info_text(&i18n, &issued).1.contains(OPPONENT));
+    env.server
+        .send(&format!("\n{OPPONENT} declines the match offer.\nfics% "));
+    let declined = FicsInfo::ChallengeDeclined {
+        by: OPPONENT.to_owned(),
+    };
+    assert!(env.until(|e| e.saw(&declined)));
+    assert!(env.play.fics.outgoing().is_none());
+    assert!(fics_view::info_text(&i18n, &declined).1.contains("recusou"));
+
+    // Retirar sai uma vez; aceito, a Partida começa como pela busca.
+    env.play.fics.challenge(OPPONENT, 5, 3, None).unwrap();
+    env.play.fics.withdraw_challenge().unwrap();
+    assert!(env.server.wait_line(&format!("withdraw {OPPONENT}"), WAIT));
+    env.play.fics.challenge(OPPONENT, 3, 0, None).unwrap();
+    assert!(
+        env.server
+            .wait_line(&format!("match {OPPONENT} 3 0 unrated"), WAIT)
+    );
+    assert_eq!(
+        env.matches_sent(),
+        3,
+        "um pedido por desafio, nunca repetido"
+    );
+    env.server.send(&format!(
+        "\n{{Game {GAME} ({ME} vs. {OPPONENT}) Creating unrated lightning match.}}\n\n{}\nfics% ",
+        board(&CanonicalPosition::start(), 180, 180)
+    ));
+    assert!(env.until(|e| e.session.is_online()));
+    assert!(env.play.fics.outgoing().is_none());
+    assert!(env.fair.everything_locked());
+    // Durante a Partida não há aviso de desafio (nem o do Lichess, nem o do FICS).
+    let ui = super::OnlineUi::default();
+    assert_eq!(
+        super::view::pending_toast(&env.play, &ui, env.busy()),
+        None::<Toast>
+    );
+}
+
+#[test]
+fn a_fics_challenge_shows_a_discreet_notice_never_during_a_competitive_game() {
+    use super::view::{Toast, fics_challenge_key, pending_toast};
+    let mut env = env();
+    env.login();
+    let mut ui = super::OnlineUi::default();
+    assert_eq!(pending_toast(&env.play, &ui, env.busy()), None);
+    env.server.send(&format!(
+        "\nChallenge: {OPPONENT} (1500) {ME} (----) unrated blitz 3 0.\nfics% "
+    ));
+    assert!(env.until(|e| !e.play.fics.challenges().is_empty()));
+    let Some(Toast::Fics(challenge)) = pending_toast(&env.play, &ui, env.busy()) else {
+        panic!("o desafio do FICS tem aviso discreto");
+    };
+    assert_eq!(challenge.challenger, OPPONENT);
+    let i18n = I18n::pt_br();
+    assert!(
+        i18n.t_with("fics-toast-challenge", &[("name", OPPONENT)])
+            .contains("FICS")
+    );
+    // Com a tela aberta, não; visto (Ver ou Fechar), não volta.
+    ui.open = true;
+    assert_eq!(pending_toast(&env.play, &ui, env.busy()), None);
+    ui.open = false;
+    ui.seen_fics_challenges.push(fics_challenge_key(&challenge));
+    assert_eq!(pending_toast(&env.play, &ui, env.busy()), None);
+    // Outra Partida competitiva em andamento (aqui, a do próprio FICS): nunca.
+    env.play.fics.decline(OPPONENT).unwrap();
+    env.start_game();
+    env.server.send(&format!(
+        "\nChallenge: GuestZZZZ (----) {ME} (----) unrated blitz 5 0.\nfics% "
+    ));
+    assert!(env.until(|e| !e.play.fics.challenges().is_empty()));
+    assert!(env.busy());
+    assert_eq!(pending_toast(&env.play, &ui, env.busy()), None);
+    // Sem Partida competitiva, o mesmo desafio teria aviso.
+    assert!(matches!(
+        pending_toast(&env.play, &ui, false),
+        Some(Toast::Fics(_))
+    ));
+}
+
+/// FC-22: a Partida do FICS que caiu fica sem resultado confirmado e a Trava dela só cai pelo
+/// "Encerrar sem resultado" explícito: nem o tempo, nem descartar a sessão, nem reabrir.
+#[test]
+fn the_lock_of_a_dropped_game_only_falls_by_closing_it_without_result() {
+    let mut env = env();
+    env.login();
+    env.start_game();
+    let p = positions(&["e2e4", "e7e5"]);
+    env.tap("e2", "e4");
+    assert!(env.until(|e| e.sent("e2e4") == 1));
+    env.board(&p[1], 300, 300);
+    env.board(&p[2], 298, 297);
+    assert!(env.until(|e| e.plies() == 2));
+    let id = env.session.online_store_id().unwrap();
+    // Com a conexão viva o FICS ainda decide: não há o que encerrar.
+    assert!(matches!(
+        super::close_unconfirmed(&mut env.play, &mut env.session, &mut env.store, id, T0),
+        Err(Unavailable::Fics(FicsError::NotAllowed(_)))
+    ));
+    assert!(!env.stored().iter().any(|g| g.id == id && g.finished));
+
+    env.server.disconnect();
+    assert!(
+        env.until(|e| e.saw(&FicsInfo::Closed(FicsError::ConnectionClosed {
+            game_in_progress: true
+        })))
+    );
+    assert!(env.panel().dropped);
+    assert_eq!(env.play.fics.dropped_store_id(), Some(id));
+    let mut analysis = analysis_with_fake_engine();
+    // O tempo passa: nada cai sozinho.
+    env.frames_for(Duration::from_millis(150));
+    analysis.drive(&env.session, false, &env.fair);
+    assert!(!analysis.has_engine());
+    assert!(env.fair.everything_locked());
+
+    // Descartar a sessão só fecha a conexão: a Partida continua sem resultado confirmado e
+    // a análise dela, travada (no tabuleiro e reaberta do banco).
+    env.play.fics.leave();
+    assert!(env.until(|e| !e.fair.everything_locked()));
+    let subject = Subject::shown(&env.session).unwrap();
+    assert_eq!(
+        env.fair
+            .check(Computation::EngineAnalysis, &subject)
+            .unwrap_err()
+            .scope,
+        LockScope::ThisGame
+    );
+    let reopened = env.store.load_game(id).unwrap();
+    let subject = Subject::at(&reopened, 2).unwrap();
+    for computation in Computation::ALL {
+        assert!(
+            env.fair.check(computation, &subject).is_err(),
+            "{computation:?}"
+        );
+    }
+    analysis.drive(&env.session, false, &env.fair);
+    assert!(!analysis.has_engine());
+    assert_eq!(
+        super::fics::unconfirmed_games(&env.store, env.profile),
+        vec![id],
+        "a Biblioteca a mostra sem resultado confirmado"
+    );
+    let panel = env.panel();
+    assert_eq!(panel.link, None);
+    assert!(!panel.dropped);
+
+    // A ação explícita: encerra no app, sem resultado; nada é inventado.
+    let events_before = env.store.load_game(id).unwrap().events().len();
+    super::close_unconfirmed(&mut env.play, &mut env.session, &mut env.store, id, T0).unwrap();
+    let stored = env.store.load_game(id).unwrap();
+    assert_eq!(stored.events().len(), events_before + 1);
+    assert!(matches!(
+        stored.events().last().map(|e| &e.kind),
+        Some(chess_game::EventKind::ClosedWithoutResult)
+    ));
+    let summary = env.stored().into_iter().find(|g| g.id == id).unwrap();
+    assert!(summary.finished);
+    assert_eq!(summary.outcome, None, "sem vencedor nem motivo");
+    assert_eq!(env.plies(), 2, "só os Lances que o FICS confirmou");
+    assert!(env.session.snapshot().is_over());
+    env.frame();
+    let subject = Subject::shown(&env.session).unwrap();
+    assert_eq!(
+        env.fair.check(Computation::EngineAnalysis, &subject),
+        Ok(())
+    );
+    let mut analysis = analysis_with_fake_engine();
+    analysis.drive(&env.session, false, &env.fair);
+    assert!(analysis.has_engine(), "a análise volta");
+    assert!(super::fics::unconfirmed_games(&env.store, env.profile).is_empty());
+    let i18n = I18n::pt_br();
+    assert!(
+        i18n.t("fics-ended-closed").contains("sem resultado"),
+        "o Painel diz que foi encerrada sem resultado"
+    );
+    // Uma vez só.
+    assert!(
+        super::close_unconfirmed(&mut env.play, &mut env.session, &mut env.store, id, T0).is_err()
+    );
+    assert_eq!(env.server.connections(), 1, "nenhuma reconexão");
+}
+
+// ---- O Painel no dock padrão (#272) ----------------------------------------------------------
+
+/// Todo texto desenhado, com o retângulo visível.
+fn text_rects(shape: &bevy_egui::egui::Shape, out: &mut Vec<(String, bevy_egui::egui::Rect)>) {
+    use bevy_egui::egui::Shape;
+    match shape {
+        Shape::Text(text) => out.push((text.galley.text().to_owned(), text.visual_bounding_rect())),
+        Shape::Vec(list) => list.iter().for_each(|s| text_rects(s, out)),
+        _ => {}
+    }
+}
+
+#[test]
+fn the_panel_shows_the_turn_clocks_and_actions_without_scrolling_in_the_default_dock() {
+    use crate::ui_theme::{Density, ThemeId, test_context};
+    use bevy_egui::egui;
+    // O conteúdo do grupo do Relógio (o mais alto do dock padrão, 340 px de largura) na janela
+    // de 1280x720, a menor: cerca de 170 px de altura útil e 300 de largura. Os relógios ficam
+    // na linha do nome de cada lado (os dígitos tabulares são desenhados um a um): o nome
+    // visível é o relógio visível.
+    const WIDTH: f32 = 300.0;
+    const HEIGHT: f32 = 170.0;
+    let i18n = I18n::pt_br();
+    let cases: [(&str, &[&str]); 9] = [
+        (
+            "playing",
+            &[
+                "Coruja_Azul",
+                "Voce_Demo",
+                "Enviando",
+                "Propor empate",
+                "Abandonar",
+            ],
+        ),
+        (
+            "reconnecting",
+            &["Coruja_Azul", "Voce_Demo", "Reconectando", "Abandonar"],
+        ),
+        (
+            "draw",
+            &[
+                "Voce_Demo",
+                "propõe empate",
+                "Aceitar",
+                "Recusar",
+                "Abandonar",
+            ],
+        ),
+        (
+            "fics-playing",
+            &[
+                "Peao_Passado",
+                "GuestDEMO",
+                "Enviando",
+                "Propor empate",
+                "Abandonar",
+            ],
+        ),
+        (
+            "fics-desync",
+            &["Peao_Passado", "GuestDEMO", "não confere", "Abandonar"],
+        ),
+        ("fics-dropped", &["caiu", "Encerrar sem resultado"]),
+        (
+            "fics-unconfirmed",
+            &["Sem resultado confirmado", "Encerrar sem resultado"],
+        ),
+        (
+            "ended",
+            &["Brancas vencem", "Analisar", "Ver na Biblioteca"],
+        ),
+        (
+            "fics-closed",
+            &["sem resultado", "Analisar", "Ver na Biblioteca"],
+        ),
+    ];
+    for theme in ["dark", "light"] {
+        let ctx = test_context(ThemeId::from_key(theme).unwrap(), Density::default());
+        for (name, essentials) in cases {
+            let scene = super::demo::Scene::named(name).unwrap();
+            let mut session = Session::new();
+            session.show_online(scene.game().unwrap(), None, true);
+            let view = scene.panel_view(T0);
+            let raw = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(WIDTH, 2000.0),
+                )),
+                ..Default::default()
+            };
+            let mut found = Vec::new();
+            for _ in 0..2 {
+                found.clear();
+                let mut intents = Vec::new();
+                let mut out = ctx.run_ui(raw.clone(), |ui| {
+                    super::view::panel_body(ui, &i18n, &session, &view, &[], &mut intents);
+                });
+                out.textures_delta.clear();
+                for clipped in &out.shapes {
+                    text_rects(&clipped.shape, &mut found);
+                }
+            }
+            for needed in essentials {
+                let hit = found
+                    .iter()
+                    .find(|(t, _)| t.contains(needed))
+                    .unwrap_or_else(|| panic!("{name} ({theme}): falta {needed:?}"));
+                assert!(
+                    hit.1.bottom() <= HEIGHT,
+                    "{name} ({theme}): {needed:?} em {} px, além dos {HEIGHT} sem rolar",
+                    hit.1.bottom()
+                );
+            }
+            let all: String = found.iter().map(|(t, _)| t.as_str()).collect();
+            if name == "fics-dropped" {
+                // A saída secundária fica com a explicação, abaixo (pode rolar).
+                assert!(all.contains("Descartar a sessão") && all.contains("perdida"));
+            }
+            if name == "fics-unconfirmed" {
+                assert!(all.contains("libera a análise"), "o que o encerramento faz");
+            }
+            for (text, rect) in found.iter().filter(|(t, _)| !t.trim().is_empty()) {
+                assert!(
+                    rect.right() <= WIDTH + 1.0,
+                    "{text:?} passa da borda ({name}, {theme})"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn the_panel_goes_to_the_tallest_group_of_the_default_dock() {
+    use crate::dock::{DockLayout, PanelAccess, PanelDef, PanelRegistry, ids};
+    fn nothing(_: &mut bevy_egui::egui::Ui, _: &I18n, _: &mut bevy::prelude::World) {}
+    let mut registry = PanelRegistry::default();
+    for id in [
+        ids::CLOCK,
+        ids::CAPTURED,
+        ids::BOARD2D,
+        ids::NOTATION,
+        ids::STUDY,
+        ids::AIDS,
+        ids::REVIEW,
+        ids::ANALYSIS,
+        ids::ARBITRATION,
+        ids::TRAINING,
+        "Engines",
+        ids::ONLINE,
+    ] {
+        registry.register(PanelDef {
+            id,
+            label_key: "dock-panel-online",
+            access: PanelAccess::Always,
+            ui: nothing,
+        });
+    }
+    let mut layout = DockLayout::default();
+    layout.reconcile(&registry);
+    assert!(
+        layout.same_group(ids::ONLINE, "Engines"),
+        "o Painel novo nasce no último grupo"
+    );
+    super::reveal_panel(&mut layout);
+    assert!(
+        layout.same_group(ids::ONLINE, ids::CLOCK),
+        "vai para o grupo do Relógio, o mais alto"
+    );
+    assert!(layout.is_visible(ids::ONLINE), "à frente no grupo");
+    // Num lugar escolhido pelo usuário, fica onde está (só vem à frente).
+    assert!(layout.move_into_group_of(ids::ONLINE, ids::NOTATION));
+    super::reveal_panel(&mut layout);
+    assert!(layout.same_group(ids::ONLINE, ids::NOTATION));
+    assert!(layout.is_visible(ids::ONLINE));
+    // Fechado, volta ao grupo do Relógio.
+    layout.set_visible(ids::ONLINE, false);
+    super::reveal_panel(&mut layout);
+    assert!(layout.same_group(ids::ONLINE, ids::CLOCK));
 }

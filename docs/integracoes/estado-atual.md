@@ -35,7 +35,7 @@ Só documentação. Cada afirmação aponta o arquivo onde o código ou o teste 
 | Treino: pacotes de Exercícios e leitor do Lichess | EXISTE | [6.2](#62-importar-exercícios-novos-existe) |
 | Download de pacotes pela rede e seletor de arquivo do sistema | EXISTE (UNVERIFIED com serviço real) | [6.2](#62-importar-exercícios-novos-existe) |
 | Partida online: domínio e Board API | EXISTE | [7.1](#71-controlador-e-fontes-de-comando-existe) |
-| Partida online no Lichess: interface | EXISTE (UNVERIFIED com serviço real); ajustes em andamento (#272, #267) | [7.1](#71-controlador-e-fontes-de-comando-existe) |
+| Partida online no Lichess: interface | EXISTE (UNVERIFIED com serviço real) | [7.1](#71-controlador-e-fontes-de-comando-existe) |
 | Partida online no FICS (só visitante) | EXISTE (UNVERIFIED com serviço real) | [7.5](#75-fics-como-visitante-existe) |
 | PlayStrategy: perfis e importação (sem Partida online) | EXISTE (UNVERIFIED com serviço real); Partida online ADIADA | [7.6](#76-playstrategy-existe-sem-partida-online) |
 | Trava de fair play em todos os caminhos que calculam | EXISTE | [7.4](#74-trava-de-fair-play-existe) |
@@ -47,7 +47,7 @@ Só documentação. Cada afirmação aponta o arquivo onde o código ou o teste 
 | Central de Conexões, Painel Explorador, barra de status | EXISTE | [10](#10-interface) |
 | Revisão de segurança e matriz de ramos | EXISTE (SEC-09 aberta) | [8.5](#85-revisão-de-segurança-e-matriz-de-ramos-existe) |
 | Dados de demonstração (`--demo-data`) e roteiro de usabilidade | EXISTE | [10.4](#104-dados-de-demonstração-e-roteiro-de-usabilidade-existe) |
-| Itens em andamento (#272, #267, #293, #296) | EM ANDAMENTO | [13](#13-em-andamento) |
+| Itens em andamento (#293, #296) | EM ANDAMENTO | [13](#13-em-andamento) |
 
 ## 1. Regras e núcleo
 
@@ -201,7 +201,7 @@ Só documentação. Cada afirmação aponta o arquivo onde o código ou o teste 
 - **Domínio da Partida online (#230):** `PolicyKind::Online`, `OnlineGame` no setup, `Command::Provider(ProviderSnapshot)`, intenção enviada fora do log, reconciliação "tudo ou nada", relógio e fim do Provedor, `GameAborted`: [`online.rs`](../../crates/chess-game/src/online.rs), [`setup.rs`](../../crates/chess-game/src/setup.rs), [`command.rs`](../../crates/chess-game/src/command.rs), [`event.rs`](../../crates/chess-game/src/event.rs). Testes: [`online_game.rs`](../../crates/chess-game/tests/online_game.rs), [`online_property.rs`](../../crates/chess-game/tests/online_property.rs). Decisões: [`partida-online.md`](../decisoes/2026-11-11-partida-online.md).
 - **Board API do Lichess:** [`board/mod.rs`](../../crates/chess-providers/src/board/mod.rs) (só Conexão de jogador), [`session.rs`](../../crates/chess-providers/src/board/session.rs) (`poll()` por quadro, envio único, reconexão), [`link.rs`](../../crates/chess-providers/src/board/link.rs), [`json.rs`](../../crates/chess-providers/src/board/json.rs). Testes: [`board_session.rs`](../../crates/chess-providers/tests/board_session.rs), [`board_actions.rs`](../../crates/chess-providers/tests/board_actions.rs).
 - **Interface (#233):** o serviço do app ([`online/service.rs`](../../crates/chess-studio/src/online/service.rs)) abre o fluxo de eventos por ação do jogador, busca adversário, desafia, aceita e recusa desafios, joga contra a Engine do Lichess, lista as Partidas em andamento e grava no banco só os Eventos que a sessão do Provedor devolve; a `Session` espelha a Partida ([`session.rs`](../../crates/chess-studio/src/session.rs), `mirror_online`) e os gestos viram intenções. Tela, Painel e avisos: [`online/view.rs`](../../crates/chess-studio/src/online/view.rs). Testes com o servidor falso: [`online/tests.rs`](../../crates/chess-studio/src/online/tests.rs). Decisões PO-13 a PO-19: [`partida-online.md`](../decisoes/2026-11-11-partida-online.md).
-- **Em andamento:** o Painel no dock padrão, o desafio recebido no FICS e a Conexão que joga a Partida (#272 e #267, seção 13). Hoje a Partida online **não guarda a Conexão** que a joga (#267).
+- **A Conexão da Partida (#267, PO-20):** a Partida online do Lichess guarda a Conexão que a joga e é sempre retomada por ela; trocar a Conexão padrão não a afeta, e sem ela a Partida é recusada com o motivo. O Painel fica no grupo do Relógio do dock padrão, com relógios, vez e Ações sem rolar (PO-22), e a correspondência com Lance novo do adversário fica em destaque depois de Atualizar (PO-21).
 
 ### 7.2 Relógio: EXISTE
 
@@ -226,7 +226,8 @@ Só documentação. Cada afirmação aponta o arquivo onde o código ou o teste 
 - Adaptador: entrada **só como visitante** (o login com senha é recusado antes da rede, porque o FICS não tem canal cifrado comprovado), busca, desafios, Lance, abandono, empate, aborto e observação, com o tabuleiro `style 12` traduzido em retrato e sem reconexão automática: [`fics/session.rs`](../../crates/chess-providers/src/fics/session.rs), [`fics/parse.rs`](../../crates/chess-providers/src/fics/parse.rs). Testes: [`fics.rs`](../../crates/chess-providers/tests/fics.rs). Decisões: [`fics.md`](../decisoes/2026-11-11-fics.md) (FC-01 a FC-21).
 - Interface (#254, #260): aviso antes de ligar (sem criptografia, só visitante, sem reconexão, sem compensação de atraso) no cartão da Central e na tela, **Entrar como visitante**, **Buscar adversário**, aba **Desafios**, aba **Observar** e Painel **Partida online** com o selo **FICS · visitante**: [`online/fics.rs`](../../crates/chess-studio/src/online/fics.rs), [`online/fics_view.rs`](../../crates/chess-studio/src/online/fics_view.rs), [`connections/view_fics.rs`](../../crates/chess-studio/src/connections/view_fics.rs), [`fics.ftl`](../../crates/chess-studio/assets/i18n/pt-BR/fics.ftl). Testes: [`online/fics_tests.rs`](../../crates/chess-studio/src/online/fics_tests.rs). Capturas: [`evidencias/fics-visitante`](../evidencias/fics-visitante/README.md).
 - A Partida de visitante fica na Biblioteca com a Origem "Partida online · FICS (visitante)"; a Trava de fair play liga durante a Partida contra pessoa e só cai com o fim confirmado pelo FICS.
-- **Fora:** conta registrada com senha (FC-01, CX-18); o desafio por nome no FICS e o aviso de desafio recebido discreto (como no Lichess) estão em andamento no #272 (seção 13).
+- **Desafio por nome e aviso de desafio (FC-23, FC-24):** `match` pelo nome (conferido antes da rede: só xadrez padrão, sem rating) e o aviso discreto de desafio recebido, nunca durante outra Partida competitiva. A Partida que caiu fica **sem resultado confirmado** até o jogador **Encerrar sem resultado** (FC-22).
+- **Fora:** conta registrada com senha (FC-01, CX-18).
 - **UNVERIFIED com serviço real:** [CX-HOM-55 a CX-HOM-60](../homologacao/integracoes.md). Nenhuma conexão real foi aberta e todas as mensagens do servidor nos testes são sintéticas.
 
 ### 7.6 PlayStrategy: EXISTE (sem Partida online)
@@ -328,13 +329,13 @@ Etapas (das [decisões](../decisoes/2026-11-11-conexoes.md)): **E1** Fundação,
 | US-005 | OAuth seguro no Lichess | E3 | EXISTE (UNVERIFIED) | [`auth.rs`](../../crates/chess-providers/src/auth.rs), [`loopback.rs`](../../crates/chess-net/src/loopback.rs) (8.4). |
 | US-006 | Identidades Chess.com, Queen Alice, ChessBase, FIDE | E2 | PARCIAL | Nome público (Chess.com, Lichess) e ID da FIDE existem ([`connections.rs`](../../crates/chess-store/src/connections.rs)); Queen Alice e ChessBase são só cartões de importação manual ([`catalog.rs`](../../crates/chess-net/src/catalog.rs)). |
 | US-007 | FICS com transporte protegido | E5 | EXISTE (UNVERIFIED) | Só visitante: o FICS não tem canal cifrado comprovado e o login com senha é recusado antes da rede ([`fics/mod.rs`](../../crates/chess-providers/src/fics/mod.rs), [`fics.md`](../decisoes/2026-11-11-fics.md)); transporte ICS pelo gate ([`net/ics.rs`](../../crates/chess-net/src/net/ics.rs)); aviso de texto puro no cartão e na tela (7.5). Conta registrada: ADIADA. |
-| US-008 | Multicontas, permissões, estados, revogação | E3 | PARCIAL | Várias Conexões, papel, permissões, estados e revogação existem só para o Lichess ([`connections.rs`](../../crates/chess-store/src/connections.rs), [`connections/auth.rs`](../../crates/chess-studio/src/connections/auth.rs)). Falta ligar a Partida online à Conexão que a joga e recusar a troca da padrão durante a Partida (#267, em andamento). |
+| US-008 | Multicontas, permissões, estados, revogação | E3 | PARCIAL | Várias Conexões, papel, permissões, estados e revogação existem só para o Lichess ([`connections.rs`](../../crates/chess-store/src/connections.rs), [`connections/auth.rs`](../../crates/chess-studio/src/connections/auth.rs)). A Partida online guarda a Conexão que a joga e é retomada só por ela; trocar a padrão não a afeta (PO-20, teste com duas Conexões). |
 | US-009 | Stream de eventos e desafios Lichess | E4 | EXISTE (UNVERIFIED) | Fluxo de eventos e desafios no adaptador ([`board/mod.rs`](../../crates/chess-providers/src/board/mod.rs)); no app, desafios recebidos (aceitar, recusar com motivo), desafio por nome e aviso discreto ([`online/`](../../crates/chess-studio/src/online/mod.rs)). |
-| US-010 | Jogar humano de ponta a ponta | E4 | EXISTE (UNVERIFIED) | Interface e serviço do app ([`online/`](../../crates/chess-studio/src/online/mod.rs)) sobre o domínio e a Board API; validação com o serviço real no [roteiro](../homologacao/integracoes.md), CX-HOM-35 a 42. Ajustes do Painel em andamento (#272). |
+| US-010 | Jogar humano de ponta a ponta | E4 | EXISTE (UNVERIFIED) | Interface e serviço do app ([`online/`](../../crates/chess-studio/src/online/mod.rs)) sobre o domínio e a Board API; validação com o serviço real no [roteiro](../homologacao/integracoes.md), CX-HOM-35 a 42 e 66 a 71. |
 | US-011 | Reconectar e recuperar estado | E4 | EXISTE (UNVERIFIED) | Reconexão com backoff, reconciliação por retrato e selo "Reconectando" no Painel Partida online. |
 | US-012 | Ações de partida (empate, desistência, abort, chat) | E4 | PARCIAL | Abandono (com confirmação), empate, abortar e reclamar vitória no Painel; chat e reclamar empate por ausência ficam fora ([`partida-online.md`](../decisoes/2026-11-11-partida-online.md)). |
 | US-013 | PlayStrategy humano | E5 | PARCIAL | Perfis, teste da Conexão e importação de Partidas públicas existem (7.6); a Partida online no PlayStrategy está ADIADA (#253). |
-| US-014 | Cliente FICS | E5 | EXISTE (UNVERIFIED) | Sessão de visitante e interface: busca, desafios, Lance, abandono, empate, aborto e observação (7.5); desafio por nome e aviso de desafio recebido no FICS em andamento (#272). |
+| US-014 | Cliente FICS | E5 | EXISTE (UNVERIFIED) | Sessão de visitante e interface: busca, desafios (recebidos, por nome e com aviso discreto), Lance, abandono, empate, aborto, observação e Partida sem resultado confirmado (7.5). |
 | US-015 | Conta BOT / Engine online | E5 | EXISTE (UNVERIFIED) | Bot API, tela da Engine online e conversão em usuário BOT com aviso e confirmação (3.4); só o Lichess (a Engine online no PlayStrategy está ADIADA). Ajustes visuais em andamento (#293). |
 | US-016 | Interface uniforme para várias Engines UCI | E1 | EXISTE | 3.1 e 3.2. |
 | US-017 | Engine remota gratuita para análise | E3 | EXISTE (UNVERIFIED) | Chess-API.com como entrada da lista de Engines, com aviso, consentimento, Origem e Trava (3.3). |
@@ -363,7 +364,7 @@ Etapas (das [decisões](../decisoes/2026-11-11-conexoes.md)): **E1** Fundação,
 5. **Perfil de interface não é Perfil local.** As preferências de Conexão e do Explorador são do Perfil local.
 6. **Licenças.** Todo crate novo passa por `cargo deny check licenses` (ADR-0004). Dados CC0 recebem linha em [`LICENSES.md`](../../crates/chess-studio/assets/LICENSES.md).
 7. **Cobrir o serviço real.** A suíte nunca chama Lichess, Chess.com, PlayStrategy, Chess-API.com nem FICS. Antes de dar um Gate por fechado, o usuário percorre o [roteiro](../homologacao/integracoes.md).
-8. **Item de homologação.** Toda funcionalidade entregue ganha um item `CX-HOM` no [roteiro](../homologacao/integracoes.md), em ordem numérica. O número 54 não é usado e a faixa 65 a 71 está reservada aos PRs em andamento (seção 13).
+8. **Item de homologação.** Toda funcionalidade entregue ganha um item `CX-HOM` no [roteiro](../homologacao/integracoes.md), em ordem numérica. O número 54 não é usado e o 65 está reservado ao PR em andamento (seção 13).
 
 ## 13. Em andamento
 
@@ -371,8 +372,6 @@ Fora do `main` no commit `02cd92a`; não conte com eles ainda.
 
 | O quê | Onde | Estado |
 |---|---|---|
-| Partida online: Painel no dock padrão a 900 px, aviso de desafio recebido e desafio por nome no FICS, aviso de Lance do adversário na correspondência, Partida do FICS perdida por queda | [#272](https://github.com/ChicoFigueiredo/Chess-Studio/issues/272) | em andamento; acrescenta itens `CX-HOM` a partir do 66 |
-| Partida online sem vínculo com a Conexão que a joga; trocar a Conexão padrão durante a Partida | [#267](https://github.com/ChicoFigueiredo/Chess-Studio/issues/267) | em andamento, fechado pelo PR do #272 |
 | Engine online: diálogo cortado, jargão (FEN, Threads, Hash), "Bullet" em vez de "Relâmpago", motivo real quando a Trava interrompe a Partida | [#293](https://github.com/ChicoFigueiredo/Chess-Studio/issues/293) | em andamento |
 | Análise da Engine: o `stop` pode se perder (`AnalysisController::stop`) | [#296](https://github.com/ChicoFigueiredo/Chess-Studio/issues/296) | em investigação |
 | `cargo deny check advisories` (SEC-09, pilha do cofre do sistema no Linux) | [#285](https://github.com/ChicoFigueiredo/Chess-Studio/issues/285) | aberta; não é vulnerabilidade |

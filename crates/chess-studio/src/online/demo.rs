@@ -5,7 +5,9 @@
 //! Cenas: `dialog`, `offline`, `waiting`, `challenges`, `engine`, `list`, `playing`,
 //! `reconnecting`, `draw`, `gone`, `toast`, `offer`, `ended` e, no FICS como visitante (#254),
 //! `fics-off`, `fics-guest`, `fics-lobby`, `fics-waiting`, `fics-challenges`, `fics-observe`,
-//! `fics-playing`, `fics-desync`, `fics-dropped` e `fics-ended`.
+//! `fics-playing`, `fics-desync`, `fics-dropped` e `fics-ended`; no #272, `fics-toast` (aviso
+//! de desafio do FICS), `fics-challenge-sent` (desafio por nome enviado), `fics-unconfirmed`
+//! (Partida que caiu, sem sessão) e `fics-closed` (encerrada no app, sem resultado).
 //!
 //! `--online-tour dialog,playing,...` (com `--screenshot <dir>`) percorre as cenas nos Temas
 //! Escuro e Claro numa só execução e grava `online-<cena>-<tema>.png`.
@@ -24,8 +26,8 @@ use chess_game::{
 };
 use chess_net::Timestamp;
 use chess_providers::{
-    Challenge, ChallengePlayer, FicsChallenge, FicsStatus, LinkStatus, ObservedGame, OnlineTime,
-    Seek,
+    Challenge, ChallengePlayer, FicsChallenge, FicsOutgoing, FicsStatus, LinkStatus, ObservedGame,
+    OnlineTime, Seek,
 };
 use std::time::Duration;
 
@@ -38,6 +40,7 @@ struct FicsDemo {
     challenges: Vec<FicsChallenge>,
     observed: bool,
     tab: FicsTab,
+    outgoing: Option<FicsOutgoing>,
 }
 
 const GUEST: &str = "GuestDEMO";
@@ -180,6 +183,7 @@ impl Scene {
                         seconds_left: Some(2 * 86_400 + 3600),
                         days: Some(3),
                         stored: true,
+                        opponent_moved: true,
                     },
                     PlayingRow {
                         remote_id: "mL4kZ9tY".into(),
@@ -190,6 +194,7 @@ impl Scene {
                         seconds_left: Some(5 * 3600),
                         days: Some(1),
                         stored: true,
+                        opponent_moved: false,
                     },
                     PlayingRow {
                         remote_id: "aD2fG6hJ".into(),
@@ -200,6 +205,7 @@ impl Scene {
                         seconds_left: Some(6 * 86_400),
                         days: Some(7),
                         stored: false,
+                        opponent_moved: false,
                     },
                 ],
                 ..base
@@ -235,8 +241,33 @@ impl Scene {
                 }),
                 ..base
             },
-            "fics-lobby" | "fics-playing" | "fics-ended" => Self {
+            "fics-lobby" | "fics-playing" | "fics-ended" | "fics-toast" => Self {
                 fics: Some(ready),
+                ..base
+            },
+            "fics-challenge-sent" => Self {
+                fics: Some(FicsDemo {
+                    outgoing: Some(FicsOutgoing {
+                        opponent: "TorreBranca".into(),
+                        minutes: 3,
+                        increment_s: 2,
+                        color: None,
+                        issued: true,
+                    }),
+                    challenges: vec![fics_challenge("Peao_Passado", Some(1520), "blitz", 3, 0)],
+                    tab: FicsTab::Challenges,
+                    ..ready
+                }),
+                ..base
+            },
+            // A Partida que caiu, já sem sessão (descartada, ou reaberta da Biblioteca), e a
+            // mesma depois de "Encerrar sem resultado" (FC-22).
+            "fics-unconfirmed" | "fics-closed" => Self {
+                fics: Some(FicsDemo {
+                    status: None,
+                    ..ready
+                }),
+                link: None,
                 ..base
             },
             "fics-waiting" => Self {
@@ -311,6 +342,7 @@ impl Scene {
                 posted: true,
             }),
             challenges: demo.challenges,
+            outgoing: demo.outgoing,
             observe_requested: None,
             observing: demo.observed,
             observed: demo.observed.then(observed_game).flatten(),
@@ -325,7 +357,12 @@ impl Scene {
             "challenges" => Some(Tab::Challenge),
             "engine" => Some(Tab::Engine),
             "list" => Some(Tab::Playing),
-            "fics-off" | "fics-guest" | "fics-lobby" | "fics-waiting" | "fics-challenges"
+            "fics-off"
+            | "fics-guest"
+            | "fics-lobby"
+            | "fics-waiting"
+            | "fics-challenges"
+            | "fics-challenge-sent"
             | "fics-observe" => Some(Tab::Seek),
             _ => None,
         }
@@ -345,6 +382,10 @@ impl Scene {
         }
         if self.name == "challenges" {
             ui.form.name = "Peao_Passado".to_owned();
+        }
+        if self.name == "fics-challenges" {
+            ui.fics_form.name = "TorreBranca".to_owned();
+            ui.fics_form.pace = (3, 2);
         }
         if self.name == "dialog" {
             ui.form.seek_pace = Pace::Rapid10_5;
@@ -387,38 +428,50 @@ impl Scene {
             desynced: self.desynced,
             dropped: self.dropped,
             fics_incoming: 0,
+            moved: 0,
         }
     }
 
-    pub fn toast_challenge(&self) -> Option<Challenge> {
-        self.toast.then(|| self.incoming.first().cloned()).flatten()
-    }
-
-    pub fn offer(&self) -> Option<usize> {
-        self.offer
+    /// O aviso discreto da cena (desafio do Lichess ou do FICS, ou a oferta de atualizar).
+    pub fn toast(&self) -> Option<super::view::Toast> {
+        use super::view::Toast;
+        if self.name == "fics-toast" {
+            return Some(Toast::Fics(fics_challenge(
+                "TorreBranca",
+                Some(1480),
+                "blitz",
+                3,
+                2,
+            )));
+        }
+        if self.toast
+            && let Some(challenge) = self.incoming.first()
+        {
+            return Some(Toast::Lichess(challenge.clone()));
+        }
+        self.offer.map(Toast::Offer)
     }
 
     /// A Partida no tabuleiro desta cena, se houver.
-    fn game(&self) -> Option<Game> {
-        let script: (&[&str], Option<&str>, Option<ProviderEnd>, Option<Color>) = match self
-            .name
-            .as_str()
-        {
-            // Espanhola, e a intenção enviada 4.Ba4 à espera do Provedor.
-            "playing" | "fics-playing" => (&RUY, Some("b5a4"), None, None),
-            "reconnecting" | "gone" | "fics-desync" | "fics-dropped" => (&RUY, None, None, None),
-            "draw" => (&RUY_LONG, None, None, Some(Color::Black)),
-            "ended" | "fics-ended" => (
-                &RUY_LONG,
-                None,
-                Some(ProviderEnd::Decided(Outcome {
-                    result: GameResult::WhiteWins,
-                    reason: EndReason::Resignation,
-                })),
-                None,
-            ),
-            _ => return None,
-        };
+    pub(super) fn game(&self) -> Option<Game> {
+        let script: (&[&str], Option<&str>, Option<ProviderEnd>, Option<Color>) =
+            match self.name.as_str() {
+                // Espanhola, e a intenção enviada 4.Ba4 à espera do Provedor.
+                "playing" | "fics-playing" => (&RUY, Some("b5a4"), None, None),
+                "reconnecting" | "gone" | "fics-desync" | "fics-dropped" | "fics-unconfirmed"
+                | "fics-closed" => (&RUY, None, None, None),
+                "draw" => (&RUY_LONG, None, None, Some(Color::Black)),
+                "ended" | "fics-ended" => (
+                    &RUY_LONG,
+                    None,
+                    Some(ProviderEnd::Decided(Outcome {
+                        result: GameResult::WhiteWins,
+                        reason: EndReason::Resignation,
+                    })),
+                    None,
+                ),
+                _ => return None,
+            };
         let (moves, sent, end, offer) = script;
         let fics = self.provider() == Provider::Fics;
         // No FICS: visitante, sem rating, Partida 142.
@@ -486,6 +539,10 @@ impl Scene {
             .ok()?;
         if let Some(sent) = sent {
             game.send_move(sent.parse::<Move>().ok()?).ok()?;
+        }
+        if self.name == "fics-closed" {
+            game.handle(Command::CloseWithoutResult, GameTime::mono(2))
+                .ok()?;
         }
         Some(game)
     }
@@ -577,14 +634,8 @@ fn enter(
         Some(game) => {
             session.show_online(game, None, true);
             if let Some(dock) = dock {
+                // O lugar padrão do Painel (o grupo do Relógio, #272), como no app.
                 super::reveal_panel(&mut dock.layout);
-                // Nas cenas do FICS, o Painel vai para o grupo do Relógio (o mais alto), para
-                // caber inteiro na captura: os avisos do FICS são mais longos que os do Lichess.
-                if scene.fics.is_some() {
-                    dock.layout
-                        .move_into_group_of(super::PANEL_ID, crate::dock::ids::CLOCK);
-                    dock.layout.activate(super::PANEL_ID);
-                }
             }
         }
         None if session.is_online() => {
