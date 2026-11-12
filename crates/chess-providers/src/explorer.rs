@@ -20,6 +20,7 @@ use chess_core::Color;
 use chess_net::{Freshness, Provenance, Stream, StreamEvent};
 use chess_store::Pace;
 use serde::Deserialize;
+use std::collections::HashSet;
 use std::fmt;
 use std::time::Duration;
 
@@ -33,7 +34,9 @@ pub struct Outcomes {
 
 impl Outcomes {
     pub fn total(&self) -> u64 {
-        self.white + self.draws + self.black
+        self.white
+            .saturating_add(self.draws)
+            .saturating_add(self.black)
     }
 
     /// Pontos de `side` (vitória 1, empate 0,5) sobre o total, de 0 a 1; `None` sem Partidas.
@@ -146,6 +149,11 @@ pub struct PlayerFilter {
 }
 
 /// Pisos de rating que o Explorador aceita.
+/// Teto de Partidas de referência de cada lista (`topGames` e `recentGames`) lidas de uma
+/// resposta: o Explorador manda poucas dezenas; mais que isso é resposta hostil (SEC-07) e o
+/// excesso é descartado antes de custar tempo na interface.
+const MAX_REFERENCE_GAMES: usize = 200;
+
 const RATING_BANDS: [u16; 9] = [0, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2500];
 
 fn pace_list(paces: &[Pace]) -> Option<String> {
@@ -251,10 +259,12 @@ impl From<WirePosition> for ExplorerPosition {
         let mut games: Vec<ReferenceGame> = wire
             .top_games
             .into_iter()
+            .take(MAX_REFERENCE_GAMES)
             .map(|g| g.into_game(false))
             .collect();
-        for game in wire.recent_games {
-            if !games.iter().any(|g| g.id == game.id) {
+        let mut seen: HashSet<String> = games.iter().map(|g| g.id.clone()).collect();
+        for game in wire.recent_games.into_iter().take(MAX_REFERENCE_GAMES) {
+            if seen.insert(game.id.clone()) {
                 games.push(game.into_game(true));
             }
         }

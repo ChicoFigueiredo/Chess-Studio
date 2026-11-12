@@ -280,6 +280,72 @@ fn desafios_engine_e_partidas_em_andamento_vao_aos_enderecos_documentados() {
 }
 
 #[test]
+fn um_game_id_hostil_do_provedor_nao_abre_fluxo_nenhum() {
+    // SEC-06: o `game_id` entra no caminho da URL; `/`, `..`, `?`, `#` e `%` são recusados.
+    for hostile in [
+        "x/../../api/account",
+        "..",
+        "a?b=1",
+        "a#b",
+        "a%2e%2e",
+        "",
+        "abcdefghijklmnopqrstu",
+    ] {
+        let env = env_enabled();
+        let board = board(&env);
+        env.server.route(
+            "/api/account/playing",
+            FakeResponse::json(&json!({ "nowPlaying": [game_info(hostile)] }).to_string()),
+        );
+
+        let error = board.playing().wait().expect_err(hostile);
+
+        assert!(
+            matches!(error, ProviderError::Malformed { .. }),
+            "{hostile}: {error:?}"
+        );
+        let paths: Vec<String> = env
+            .server
+            .requests()
+            .iter()
+            .map(|r| r.path.clone())
+            .collect();
+        assert_eq!(paths, ["/api/account/playing"], "{hostile}");
+    }
+}
+
+#[test]
+fn um_despejo_de_linhas_nao_prende_a_consulta_e_nada_se_perde() {
+    // SEC-07: cada consulta (a cada quadro, na interface) trata um número limitado de linhas.
+    let env = env_enabled();
+    let feed = LiveFeed::new();
+    env.server
+        .route("/api/stream/event", FakeResponse::live(&feed));
+    let mut events = board(&env).events();
+    assert!(feed.wait_connected(WAIT));
+    let line =
+        json!({ "type": "challengeCanceled", "challenge": challenge_json("cancel01", "standard") })
+            .to_string();
+    for _ in 0..3000 {
+        feed.push(&line);
+    }
+    std::thread::sleep(Duration::from_millis(300));
+
+    let first = events.poll();
+    assert!(
+        !first.is_empty() && first.len() <= 256,
+        "a primeira consulta tratou {} linhas",
+        first.len()
+    );
+    let mut total = first.len();
+    assert!(eventually(WAIT, || {
+        total += events.poll().len();
+        total >= 3000
+    }));
+    assert_eq!(total, 3000);
+}
+
+#[test]
 fn busca_de_adversario_respeita_os_limites_da_board_api() {
     let env = env_enabled();
     let board = board(&env);

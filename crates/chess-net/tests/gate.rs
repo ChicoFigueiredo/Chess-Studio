@@ -178,6 +178,36 @@ fn an_explicit_port_or_a_malformed_host_is_refused_before_the_network() {
 }
 
 #[test]
+fn dot_segments_and_hidden_separators_in_the_path_are_never_sent() {
+    // SEC-06: `/api/board/` é prefixo permitido; `..` ou `%2e%2e` levariam a outro endereço.
+    let clock = clock();
+    let server = server(&clock);
+    let net = net_enabled(&server, &clock, &[ProviderId::Lichess]);
+    for path in [
+        "/api/board/../token",
+        "/api/board/./game/stream/x",
+        "/api/board/%2e%2e/token",
+        "/api/board/%2E%2E/token",
+        "/api/board/..%2ftoken",
+        "/api/board/x%2Fy",
+        "/api/board/x%5Cy",
+        "/api/board/x%5cy",
+    ] {
+        let url = format!("https://lichess.org{path}");
+        assert_eq!(Request::get(ProviderId::Lichess, &url).capability(), None);
+        let err = net
+            .fetch(Request::get(ProviderId::Lichess, &url))
+            .wait()
+            .unwrap_err();
+        assert!(
+            matches!(err, NetError::EndpointNotAllowed { .. }),
+            "{path}: {err:?}"
+        );
+    }
+    assert_eq!(server.connections(), 0);
+}
+
+#[test]
 fn with_the_fair_play_guard_engaged_nothing_that_computes_leaves() {
     let clock = clock();
     let server = server(&clock);

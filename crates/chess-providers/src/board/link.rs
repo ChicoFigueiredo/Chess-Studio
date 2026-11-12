@@ -6,6 +6,11 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
+/// Linhas do fluxo tratadas por consulta, no máximo (SEC-07). A consulta roda a cada quadro
+/// na thread da interface; um despejo de linhas de um Provedor hostil não pode prendê-la. O
+/// resto espera na fila (limitada) do fluxo para as consultas seguintes: nada se perde.
+pub(crate) const MAX_LINK_ITEMS_PER_POLL: usize = 256;
+
 /// Espera entre reconexões: exponencial a partir de `base`, limitada a `max`, com "equal
 /// jitter" (entre metade e o total), como a camada de rede faz nas repetições.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -150,7 +155,11 @@ impl Link {
         let Some(stream) = &self.stream else {
             return items;
         };
-        while let Some(event) = stream.try_next() {
+        // No máximo MAX_LINK_ITEMS_PER_POLL eventos por consulta; o resto espera na fila.
+        for _ in 0..MAX_LINK_ITEMS_PER_POLL {
+            let Some(event) = stream.try_next() else {
+                break;
+            };
             match event {
                 StreamEvent::Line(line) => {
                     if self.status != LinkStatus::Live {
