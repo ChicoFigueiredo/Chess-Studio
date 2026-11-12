@@ -9,7 +9,7 @@
 
 use super::auth::{Auth, Slot, VaultMode};
 use super::model::{
-    self, ActionSpec, Age, CardAction, CardState, CostFilter, Face, FieldKind, Tier,
+    self, ActionSpec, Age, CardAction, CardState, CostFilter, Face, FieldKind, StateFilter, Tier,
 };
 use super::{CentralParams, ConnectionsUi, LinkForm, Op, RenameForm};
 use crate::i18n::I18n;
@@ -91,11 +91,28 @@ pub(super) fn page(
     let now = NetService::now();
     let mut ops = Vec::new();
     let p = palette(ui);
-    let groups = model::groups(state.filter, &state.query);
     let standings: HashMap<ProviderId, Standing> = ProviderId::ALL
         .into_iter()
         .filter_map(|id| state.provider_standing(id).map(|standing| (id, standing)))
         .collect();
+    let groups = model::groups_by(
+        state.filter,
+        state.state_filter,
+        &state.query,
+        &|provider| {
+            let id = provider.id;
+            let linked = state.list.iter().any(|c| {
+                c.provider == id.key()
+                    && c.role == chess_store::ConnectionRole::Player
+                    && !c.is_pending()
+            });
+            let standing = standings
+                .get(&id)
+                .copied()
+                .or_else(|| state.authorized.contains(&id).then_some(Standing::Active));
+            model::card_state_with(provider, status.state(id), linked, standing)
+        },
+    );
     // A rolagem inicial vale por alguns quadros: no primeiro, o egui ainda não sabe a altura.
     let scroll = match state.scroll {
         Some((pixels, frames)) if frames > 0 => {
@@ -106,6 +123,7 @@ pub(super) fn page(
     };
     let ConnectionsUi {
         filter,
+        state_filter,
         query,
         forms,
         notes,
@@ -166,7 +184,7 @@ pub(super) fn page(
         ui.add_space(16.0);
         stored.show(ui, ctx, i18n, service);
         ui.add_space(16.0);
-        toolbar(ui, i18n, filter, query);
+        toolbar(ui, i18n, filter, state_filter, query);
         if groups.is_empty() {
             ui.add_space(16.0);
             ui.label(RichText::new(i18n.t("connections-empty")).color(p.ink_muted));
@@ -204,7 +222,13 @@ pub(super) fn page(
 }
 
 /// Filtros por custo (botões de alternância, um por vez) e a busca, numa linha que quebra.
-fn toolbar(ui: &mut Ui, i18n: &I18n, filter: &mut CostFilter, query: &mut String) {
+fn toolbar(
+    ui: &mut Ui,
+    i18n: &I18n,
+    filter: &mut CostFilter,
+    state_filter: &mut StateFilter,
+    query: &mut String,
+) {
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
         for option in CostFilter::ALL {
@@ -218,6 +242,20 @@ fn toolbar(ui: &mut Ui, i18n: &I18n, filter: &mut CostFilter, query: &mut String
             let mut on = *filter == option;
             if cs_toggle_button(ui, &mut on, &label).clicked() {
                 *filter = option;
+            }
+        }
+    });
+    ui.add_space(8.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
+        ui.label(small(
+            i18n.t("connections-state-filter-label"),
+            palette(ui).ink_muted,
+        ));
+        for option in StateFilter::ALL {
+            let mut on = *state_filter == option;
+            if cs_toggle_button(ui, &mut on, &i18n.t(option.key())).clicked() {
+                *state_filter = option;
             }
         }
         ui.add_space(8.0);
@@ -539,6 +577,10 @@ impl View<'_> {
                     p,
                 ));
             }
+        });
+        cs_detail_row(ui, &i18n.t("connections-detail-license"), |ui| {
+            ui.label(RichText::new(i18n.t(&model::license_key(provider))).color(p.ink));
+            ui.label(RichText::new(i18n.t(&model::restrictions_key(provider))).color(p.ink_muted));
         });
         if !model::requirements(provider).is_empty() && state != CardState::Authorized {
             cs_detail_row(ui, &i18n.t("connections-detail-requires"), |ui| {

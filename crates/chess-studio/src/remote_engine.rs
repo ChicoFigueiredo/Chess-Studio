@@ -31,6 +31,8 @@ pub const PROVIDER: ProviderId = ProviderId::ChessApi;
 #[derive(Debug, Default)]
 pub struct RemoteState {
     selected: bool,
+    /// O instante da última resposta do serviço (a Origem exibida no Painel).
+    answered_at: Option<Timestamp>,
     api: Option<ChessApi>,
     problem: Option<ProviderError>,
 }
@@ -44,11 +46,22 @@ impl RemoteState {
     pub fn select(&mut self) {
         self.selected = true;
         self.problem = None;
+        self.answered_at = None;
     }
 
     pub fn deselect(&mut self) {
         self.selected = false;
         self.problem = None;
+        self.answered_at = None;
+    }
+
+    /// O instante da última resposta do serviço, se já houve.
+    pub fn answered_at(&self) -> Option<Timestamp> {
+        self.answered_at
+    }
+
+    pub fn set_answered_at(&mut self, at: Timestamp) {
+        self.answered_at = Some(at);
     }
 
     /// O cliente do serviço, sobre a rede do app.
@@ -294,8 +307,28 @@ pub fn warning_body(ui: &mut egui::Ui, ctx: &egui::Context, i18n: &I18n) -> Opti
     choice
 }
 
-/// O selo e o lembrete permanente enquanto a Engine remota está escolhida.
-pub fn active_note(ui: &mut egui::Ui, i18n: &I18n) {
+/// A Origem da análise remota (ADR-0006): Provedor, instante da consulta e termos do resultado.
+pub fn origin_text(i18n: &I18n, answered_at: Option<Timestamp>, now: Timestamp) -> String {
+    let provider = PROVIDER.info();
+    let first = match answered_at {
+        Some(at) => i18n.t_with(
+            "remote-origin",
+            &[
+                ("provider", provider.name),
+                (
+                    "when",
+                    &crate::fide_profile::when_text(i18n, at.as_millis(), now),
+                ),
+            ],
+        ),
+        None => i18n.t_with("remote-origin-pending", &[("provider", provider.name)]),
+    };
+    let terms = i18n.t(&crate::connections::model::license_key(provider));
+    format!("{first} {terms}")
+}
+
+/// O selo e o lembrete permanente enquanto a Engine remota está escolhida, com a Origem.
+pub fn active_note(ui: &mut egui::Ui, i18n: &I18n, answered_at: Option<Timestamp>, now: Timestamp) {
     let p = palette(ui);
     cs_status_badge(
         ui,
@@ -309,6 +342,11 @@ pub fn active_note(ui: &mut egui::Ui, i18n: &I18n) {
         )
         .text_style(egui::TextStyle::Small)
         .color(p.ink_muted),
+    );
+    ui.label(
+        egui::RichText::new(origin_text(i18n, answered_at, now))
+            .text_style(egui::TextStyle::Small)
+            .color(p.ink_muted),
     );
 }
 

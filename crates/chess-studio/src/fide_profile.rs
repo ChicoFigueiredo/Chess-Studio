@@ -77,6 +77,7 @@ pub(crate) fn snapshot_of(answer: &Answer<FideRating>) -> FideSnapshot {
         inactive: fide.inactive,
         queried_at_ms: answer.provenance.queried_at.as_millis(),
         source: answer.provenance.provider.key().to_owned(),
+        license: chess_store::FIDE_LICENSE_VIA_LICHESS.to_owned(),
     }
 }
 
@@ -220,6 +221,7 @@ impl FideProfile {
             inactive: false,
             queried_at_ms: now.as_millis() - 2 * 86_400_000,
             source: ProviderId::Lichess.key().to_owned(),
+            license: chess_store::FIDE_LICENSE_VIA_LICHESS.to_owned(),
         };
         let _ = with_store(&mut fide.local, None, |store, profile| {
             store.save_fide_rating(profile, &snapshot)
@@ -658,6 +660,14 @@ fn tiles(ui: &mut Ui, look: &Look, saved: &FideSnapshot, p: &Palette) {
     });
 }
 
+/// A licença dos dados guardada com o rating, em linguagem de usuário.
+pub(crate) fn license_text(i18n: &I18n, saved: &FideSnapshot) -> String {
+    i18n.t(match saved.license.as_str() {
+        chess_store::FIDE_LICENSE_VIA_LICHESS => "fide-license-fide-via-lichess",
+        _ => "fide-license-other",
+    })
+}
+
 /// "FIDE, via Lichess, consultado ..." e o aviso de que a data é a da consulta.
 fn origin_lines(ui: &mut Ui, look: &Look, saved: &FideSnapshot, p: &Palette) {
     let i18n = look.i18n;
@@ -666,6 +676,11 @@ fn origin_lines(ui: &mut Ui, look: &Look, saved: &FideSnapshot, p: &Palette) {
         RichText::new(i18n.t_with("fide-origin", &[("when", &when)]))
             .text_style(egui::TextStyle::Small)
             .color(p.ink),
+    );
+    ui.label(
+        RichText::new(license_text(i18n, saved))
+            .text_style(egui::TextStyle::Small)
+            .color(p.ink_muted),
     );
     ui.label(
         RichText::new(i18n.t("fide-explain"))
@@ -1054,6 +1069,36 @@ mod tests {
     }
 
     #[test]
+    fn the_license_text_names_the_fide_rights_and_the_lichess_copy() {
+        let i18n = I18n::pt_br();
+        let mut saved = snapshot_demo();
+        let text = license_text(&i18n, &saved);
+        assert!(text.contains("FIDE") && text.contains("Lichess"), "{text}");
+        assert!(text.contains("direitos"), "{text}");
+        // Uma licença desconhecida nunca fica em branco nem mostra o identificador.
+        saved.license = "algo-novo".into();
+        let other = license_text(&i18n, &saved);
+        assert!(!other.is_empty() && !other.contains("algo-novo"), "{other}");
+    }
+
+    fn snapshot_demo() -> FideSnapshot {
+        FideSnapshot {
+            fide_id: 1,
+            name: "Exemplo, Ana".into(),
+            federation: None,
+            title: None,
+            birth_year: None,
+            standard: Some(2301),
+            rapid: None,
+            blitz: None,
+            inactive: false,
+            queried_at_ms: T0.as_millis(),
+            source: "lichess".into(),
+            license: chess_store::FIDE_LICENSE_VIA_LICHESS.into(),
+        }
+    }
+
+    #[test]
     fn the_rating_is_saved_with_the_query_date_and_shown_again_without_any_network() {
         let mut env = env();
         env.service.set_enabled(ProviderId::Lichess, true).unwrap();
@@ -1064,6 +1109,7 @@ mod tests {
         let saved = env.fide.saved.clone().unwrap();
         assert_eq!(saved.queried_at_ms, T0.as_millis());
         assert_eq!(saved.source, "lichess");
+        assert_eq!(saved.license, chess_store::FIDE_LICENSE_VIA_LICHESS);
         assert_eq!(env.fide.notice.as_ref().unwrap().key, "fide-note-updated");
 
         // Uma tela nova sobre o mesmo banco, com o Lichess desligado: o valor aparece e nenhum
