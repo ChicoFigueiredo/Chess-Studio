@@ -31,6 +31,11 @@ use std::time::Duration;
 
 /// Desafios guardados ao mesmo tempo (um servidor hostil não enche a memória).
 const MAX_CHALLENGES: usize = 16;
+/// Eventos da conexão tratados por [`FicsSession::poll`], no máximo (#273). A consulta roda
+/// a cada quadro na thread da interface; o canal não é cifrado, e um despejo de linhas
+/// (servidor hostil ou alguém no caminho) prenderia o quadro para sempre. O resto fica na
+/// fila do transporte para as consultas seguintes: nada se perde.
+pub const MAX_FICS_EVENTS_PER_POLL: usize = 256;
 /// Comandos enviados logo depois do login: tabuleiro em `style 12`, sem quebra de linha, sem
 /// campainha e sem anúncios de busca.
 const SETUP_COMMANDS: [&str; 5] = [
@@ -324,10 +329,14 @@ impl FicsSession {
 
     // ---------------- Consulta por quadro ----------------
 
-    /// Nunca bloqueia: aplica o que chegou do FICS e devolve os Eventos novos.
+    /// Nunca bloqueia: aplica o que chegou do FICS e devolve os Eventos novos. Trata no
+    /// máximo [`MAX_FICS_EVENTS_PER_POLL`] eventos; o resto fica para a consulta seguinte.
     pub fn poll(&mut self) -> FicsPoll {
         let mut out = FicsPoll::default();
-        while self.status != FicsStatus::Closed {
+        for _ in 0..MAX_FICS_EVENTS_PER_POLL {
+            if self.status == FicsStatus::Closed {
+                break;
+            }
             let Some(event) = self.link.try_next() else {
                 break;
             };

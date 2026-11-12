@@ -8,6 +8,11 @@ use crate::error::Result;
 use crate::store::{ProfileId, Store, ensure_profile};
 use rusqlite::{OptionalExtension, params};
 
+/// Licença dos dados da FIDE reproduzidos pelo Lichess (a única fonte do rating hoje): a
+/// reprodução é da FIDE e fica restrita ao uso pessoal. Guarda-se um identificador estável; o
+/// texto para o usuário vem do Fluent.
+pub const FIDE_LICENSE_VIA_LICHESS: &str = "fide-via-lichess";
+
 /// O que se guarda de uma consulta ao rating FIDE.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FideSnapshot {
@@ -25,6 +30,9 @@ pub struct FideSnapshot {
     pub queried_at_ms: i64,
     /// Chave do Provedor que respondeu (`lichess`).
     pub source: String,
+    /// Identificador da licença dos dados (ver [`FIDE_LICENSE_VIA_LICHESS`]): a Origem completa
+    /// do rating (ADR-0006).
+    pub license: String,
 }
 
 fn id_column(fide_id: u64) -> i64 {
@@ -38,13 +46,14 @@ impl Store {
         ensure_profile(&self.conn, profile)?;
         self.conn.execute(
             "INSERT INTO fide_ratings (profile_id, fide_id, name, federation, title, birth_year,
-                                       standard, rapid, blitz, inactive, queried_at_ms, source)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                                       standard, rapid, blitz, inactive, queried_at_ms, source, license)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
              ON CONFLICT (profile_id, fide_id) DO UPDATE SET
                  name = excluded.name, federation = excluded.federation, title = excluded.title,
                  birth_year = excluded.birth_year, standard = excluded.standard,
                  rapid = excluded.rapid, blitz = excluded.blitz, inactive = excluded.inactive,
-                 queried_at_ms = excluded.queried_at_ms, source = excluded.source",
+                 queried_at_ms = excluded.queried_at_ms, source = excluded.source,
+                 license = excluded.license",
             params![
                 profile.0,
                 id_column(snapshot.fide_id),
@@ -58,6 +67,7 @@ impl Store {
                 snapshot.inactive,
                 snapshot.queried_at_ms,
                 snapshot.source,
+                snapshot.license,
             ],
         )?;
         Ok(())
@@ -69,7 +79,7 @@ impl Store {
             .conn
             .query_row(
                 "SELECT name, federation, title, birth_year, standard, rapid, blitz, inactive,
-                        queried_at_ms, source
+                        queried_at_ms, source, license
                  FROM fide_ratings WHERE profile_id = ?1 AND fide_id = ?2",
                 params![profile.0, id_column(fide_id)],
                 |r| {
@@ -85,6 +95,7 @@ impl Store {
                         inactive: r.get(7)?,
                         queried_at_ms: r.get(8)?,
                         source: r.get(9)?,
+                        license: r.get(10)?,
                     })
                 },
             )
