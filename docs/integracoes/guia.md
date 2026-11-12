@@ -1,6 +1,8 @@
 # Guia: usar o Chess Studio com outros serviços de xadrez
 
-Este guia ensina a usar o que já existe no app. Ele vale para o commit `1626ebb` da `main` (11/11/2026). O que ainda não existe está na seção [Em breve](#em-breve).
+Este guia ensina a usar o que já existe no app. Ele vale para o commit `02cd92a` da `main` (11/11/2026). O que ainda não existe está na seção [O que ainda não existe](#o-que-ainda-não-existe).
+
+Se quiser ensaiar sem conta e sem internet, abra o app com os dados de demonstração: `cargo run -p chess-studio -- --demo-data`. Ele abre um Perfil local **Demonstração** com Partidas e Exercícios fictícios, num banco temporário que some ao fechar; nenhum Provedor vem ligado.
 
 Os nomes entre aspas ou em negrito são os textos que você vê na tela. Os termos seguem o [glossário](../../GLOSSARY.md).
 
@@ -23,7 +25,13 @@ Tudo isto fica em um só lugar: a **Central de Conexões**.
 
 Outros caminhos: o botão **Central de Conexões** na aba Arquivo (grupo Conexões), a Paleta de Ações (Ctrl+K) ou um clique no indicador de rede na barra de status.
 
-A página mostra um cartão por Provedor. Os gratuitos vêm primeiro. Use os filtros **Todos**, **Gratuitos** e **Pagos ou sob aprovação**, ou digite na busca (por exemplo, Lichess).
+A página mostra um cartão por Provedor. Os gratuitos vêm primeiro. Para achar um, use:
+
+- os filtros de custo **Todos**, **Gratuitos**, **Com cadastro**, **Manual** (quem não tem consulta direta: você baixa o arquivo e importa) e **Pagos ou sob aprovação**, cada um com o número de Provedores;
+- a linha **Estado**: **Qualquer estado**, **Desligados**, **Ligados**, **Com autorização**, **Importação manual** e **Em breve**;
+- a busca (por exemplo, Lichess).
+
+Os filtros se combinam. Sem resultado, a página diz **Nenhum Provedor combina com a busca e o filtro.**
 
 Cada cartão mostra:
 
@@ -31,7 +39,7 @@ Cada cartão mostra:
 - **O que você pode fazer agora**;
 - o interruptor **Ligado**;
 - uma ação principal;
-- o botão **Detalhes**, com o que é enviado, como você se identifica, o custo e as instruções;
+- o botão **Detalhes**, com o que é enviado, como você se identifica, o custo, a **Licença dos dados** (e o que ela restringe, em palavras simples) e as instruções;
 - o menu **Mais ações**.
 
 Os cartões de serviços que ainda não funcionam ficam menores, sob **Em breve** ou **Requer aprovação**. Eles não têm interruptor.
@@ -94,7 +102,7 @@ O teste existe para o Lichess, o Chess.com e a FIDE. O ID da FIDE é conferido p
 
 ## Autorizar o Lichess
 
-Autorizar prova ao Lichess que você é você. Hoje isso é necessário para o **Explorador de aberturas** do Lichess (Mestres, Todos os jogadores e Um jogador). Sem autorização, essas fontes não respondem.
+Autorizar prova ao Lichess que você é você. É necessário para o **Explorador de aberturas** do Lichess (Mestres, Todos os jogadores e Um jogador) e para [jogar no Lichess](#jogar-no-lichess). Sem autorização, essas fontes não respondem. Para a [Engine online](#engine-online) existe uma autorização separada.
 
 O Chess Studio nunca vê a sua senha do Lichess. Você confirma na página do próprio Lichess.
 
@@ -113,7 +121,7 @@ Enquanto você não confirma, o app mostra **Esperando você autorizar no navega
 - **Copiar endereço**, se o navegador não abrir sozinho;
 - **Cancelar**.
 
-Veja também **O que esta autorização permite**. É a lista do que o Lichess liberou. O app pede só a permissão de jogar Partidas pelo tabuleiro. Se a lista mostrar mais, o app avisa e sugere criar outra autorização só com essa permissão.
+Veja também **O que esta autorização permite**. É a lista do que o Lichess liberou. Para jogar, o app pede só a permissão de jogar Partidas pelo tabuleiro. Se a lista mostrar mais, o app avisa e sugere criar outra autorização só com essa permissão.
 
 Se algo falhar, o app diz o motivo e nada é guardado: **Você recusou a autorização**, **O tempo para autorizar acabou** ou **Não foi possível autorizar**. Use **Tentar de novo** ou **Fechar**.
 
@@ -185,7 +193,8 @@ O Painel funciona como qualquer outro: encaixado, flutuante ou destacado.
    - **Um jogador (Lichess)**: digite o nome do jogador no Lichess e escolha **Como Brancas** ou **Como Pretas**.
 2. Leia a tabela: Lance, Partidas, uma barra com Brancas, Empates e Pretas, e o rating médio.
 3. Clique num Lance para ver a variante. Isso é só para olhar: **a Partida não muda**. Use **Voltar à Partida** para sair.
-4. Clique numa das **Partidas de referência** para procurá-la na Biblioteca.
+4. Clique numa das **Partidas de referência**. O app mostra **Abrindo a Partida…** e abre aquela Partida mesmo: se ela não estava na Biblioteca, ele a baixa do Lichess, guarda com a Origem e a abre; no clique seguinte ela abre direto, sem internet. Se não der, a linha diz o motivo (a Partida não está mais no Lichess, o Lichess pediu uma pausa, está desligado ou falta autorizar) e você pode clicar de novo.
+5. O nome da abertura (por exemplo, **Defesa Siciliana: Variante Najdorf**) aparece em português, com o código ECO. Passe o mouse sobre ele para ver o **Nome original** em inglês.
 
 Filtros:
 
@@ -197,7 +206,7 @@ O app lembra a aba, a fonte, o jogador, a cor e os filtros por Perfil local.
 As três fontes do Lichess precisam do Lichess **ligado e autorizado**. Sem isso, o Painel mostra:
 
 - **O Lichess está desligado**, com o botão **Ligar Lichess**; ou
-- **Requer autorizar sua conexão do Lichess**, com os botões **Abrir a Central de Conexões** e **Usar Minha Biblioteca**.
+- **Autorize sua conexão do Lichess**, com os botões **Abrir a Central de Conexões** e **Usar Minha Biblioteca**.
 
 Sem nenhuma Partida sua na Biblioteca, a fonte **Minha Biblioteca** mostra **Nenhuma Partida sua passou por aqui** e o botão **Abrir a Biblioteca**.
 
@@ -211,7 +220,9 @@ Os finais não pedem autorização. Pedem só o Lichess ligado. O veredito leva 
 
 ### A Origem e os avisos
 
-O rodapé do Painel diz de onde veio o dado, por exemplo: Lichess, **consultado há 3 min**, licença. Se o dado veio de uma avaliação guardada, diz **avaliação guardada em** uma data.
+O rodapé do Painel diz de onde veio o dado, por exemplo: Lichess, **consultado às 14:32** (na hora do seu computador; sem o fuso do sistema, **consultado há 3 min**), licença. Se o dado veio de uma avaliação guardada, diz **avaliação guardada em** uma data.
+
+O rodapé diz também o **Período** dos dados: na **Minha Biblioteca**, todas as Partidas dela; nas fontes do Lichess, que o Lichess não informa as datas daquela base e o app não filtra por data. E lembra que a estatística é histórica, de uma amostra, não é avaliação, e que vitórias por cor não mostram vantagem objetiva nem o melhor Lance.
 
 Avisos que você pode ver:
 
@@ -223,27 +234,28 @@ Avisos que você pode ver:
 
 ## Ver avaliações prontas
 
-Para algumas Posições o Lichess já tem uma avaliação calculada por outras pessoas. O app mostra essa avaliação no **Painel Análise**, numa linha separada: **Em cache (Lichess)**.
+Para algumas Posições o Lichess já tem uma avaliação calculada por outras pessoas. O app mostra essa avaliação no **Painel Análise**, numa linha separada: **Avaliação pronta (Lichess)**.
 
 1. Abra o Painel Análise.
-2. Procure a linha **Em cache (Lichess)**.
+2. Procure a linha **Avaliação pronta (Lichess)**.
 3. Leia o valor, a **Profundidade** e a linha principal.
 
 Detalhes:
 
 - O valor é sempre do ponto de vista das Brancas. Passe o mouse para ver **Do ponto de vista das Brancas**.
 - A linha **nunca** se mistura com a sua Engine local, nem a substitui.
-- **Sem avaliação em cache para esta Posição** é normal: o Lichess não calcula sob demanda.
+- **Sem avaliação pronta para esta Posição** é normal: o Lichess não calcula sob demanda.
 - Com o Lichess desligado, a linha diz **O Lichess está desligado**. Ligue-o na Central.
+- Em Partida competitiva ou online contra uma pessoa, a linha diz **Indisponível: Trava de fair play.**
 - O app confere os Lances da linha pelas regras do xadrez e corta a linha no primeiro Lance que as regras recusam.
 
-## Importar Partidas do Lichess e do Chess.com
+## Importar Partidas do Lichess, do Chess.com e do PlayStrategy
 
 O app traz as Partidas **públicas** de um jogador para a sua Biblioteca. Cada Partida guarda a Origem. Nada é baixado sozinho: só quando você pede.
 
 1. Aba **Biblioteca**, botão **Importar do Lichess ou Chess.com**.
-   (Também serve: abra o Painel Biblioteca, aba **Partidas**, seção **Importar PGN…**, e escolha em **De onde importar?** o item **Lichess (online)** ou **Chess.com (online)**.)
-2. Se o Provedor estiver desligado, clique em **Ligar Lichess** (ou **Ligar Chess.com**).
+   (Também serve: abra o Painel Biblioteca, aba **Partidas**, seção **Importar PGN…**, e escolha em **De onde importar?** o item **Lichess (online)**, **Chess.com (online)** ou **PlayStrategy (online)**.)
+2. Se o Provedor estiver desligado, clique em **Ligar Lichess** (ou **Ligar Chess.com**, **Ligar PlayStrategy**).
 3. Em **Nome do jogador**, digite o nome público. Se você já vinculou o seu, clique em **Usar … (sua Conexão)**.
 4. Escolha o **Período**: **Todo o histórico**, **Últimos 7 dias**, **Últimos 30 dias** ou **Último ano**.
 5. Escolha o **Ritmo**, a **Cor** e o **Máximo** de Partidas.
@@ -260,6 +272,8 @@ Se der erro, o app explica:
 - **Sem conexão com a internet**: o que já foi importado fica.
 - **Nenhuma Partida encontrada com esses filtros**: use um período maior ou outro ritmo.
 
+O PlayStrategy também tem damas, shogi, xiangqi, Crazyhouse e outras variantes: o app só importa as de xadrez padrão e diz quantas de variantes pulou. Ainda não há Partida online no PlayStrategy.
+
 Durante uma Partida competitiva em andamento, a importação fica indisponível.
 
 ## Importar Partidas de arquivos
@@ -271,11 +285,13 @@ Serve para arquivos PGN que você baixou ou recebeu: de Queen Alice, ChessBase, 
 3. Em **De onde importar?**, deixe **Arquivo PGN**.
 4. Em **De onde veio o arquivo?**, escolha a origem: **Queen Alice**, **ChessBase**, **TWIC (The Week in Chess)**, **PGN Mentor**, **Lichess**, **Chess.com** ou **Outro ou não sei**.
 5. Leia a nota de licença que aparece. Ela diz o que você pode fazer com aquelas Partidas.
-6. Digite o caminho do arquivo `.pgn` ou `.pgn.gz`, ou clique num dos arquivos listados em **Arquivos .pgn nos documentos:**.
-7. Clique em **Importar**.
-8. Acompanhe o andamento. Para parar, clique em **Cancelar**.
+6. Clique em **Escolher arquivo…** e escolha o arquivo `.pgn` ou `.pgn.gz` na janela do sistema. Se o seu sistema não tem essa janela, o botão não aparece: digite o caminho ou clique num dos arquivos listados em **Arquivos .pgn nos documentos:**.
+7. Assim que o arquivo é escolhido, aparece a **Prévia do arquivo**: quantas Partidas ele tem (**Cerca de N** se for grande), os cabeçalhos das primeiras e, se as tags indicarem, **As tags indicam Lichess** (ou outra fonte). A fonte do passo 4 já vem escolhida por ela; se as tags indicarem outra, o app avisa para você conferir. Nada foi gravado ainda.
+8. Se a fonte for de uso restrito (TWIC, PGN Mentor, ChessBase), marque **Confirmo que posso usar estas Partidas**. Sem isso, **Importar** fica desligado.
+9. Clique em **Importar**.
+10. Acompanhe o andamento. Para parar, clique em **Cancelar**.
 
-O resumo mostra quantas Partidas são **novas**, **repetidas** e **com erro**. As com erro são puladas, e as primeiras são listadas.
+O resumo mostra quantas Partidas são **novas**, **repetidas** e **com erro** e, quando for o caso, quantas têm licença restrita. As com erro são puladas, e as primeiras são listadas.
 
 O que acontece por baixo:
 
@@ -286,18 +302,34 @@ O que acontece por baixo:
 
 Depois, você filtra a Biblioteca por origem, por ECO e por ritmo. A Origem aparece no detalhe da Partida. Para tirar uma Partida importada da Biblioteca, abra-a e clique em **Excluir da biblioteca**.
 
-## Instalar problemas do Lichess como Exercícios
+## Baixar ou instalar problemas do Lichess como Exercícios
 
-O Lichess publica um arquivo grande de problemas, com licença livre (CC0). Você escolhe uma parte dele e o app a transforma em Exercícios. **O app não baixa o arquivo**: você já precisa tê-lo no computador.
+O Lichess publica um arquivo grande de problemas, com licença livre (CC0). Você escolhe uma parte dele e o app a transforma em Exercícios. Há dois caminhos: baixar pela internet ou instalar de um arquivo que você já tem.
+
+### Baixar pela internet
+
+1. Abra o Painel Treino e clique em **Pacotes**.
+2. Clique em **Baixar do Lichess…**.
+3. Escolha os **Temas** (abra um grupo e marque; sem nenhum marcado vale qualquer tema), a **Dificuldade** (**Iniciante**, **Intermediário**, **Avançado**, **Mestre** ou **Faixa própria…**) e a **Quantidade de problemas**.
+4. Clique em **Baixar problemas**. Se o Lichess estiver desligado, a janela **Ligar Lichess?** aparece; responda **Ligar** (ou **Agora não**, e nada é baixado).
+5. Acompanhe o andamento. O app baixa só o necessário e para sozinho quando encontra a quantidade pedida. **Cancelar** não instala nada.
+6. Ao final aparece **Pacote … instalado com N Exercícios**, com a Origem (Lichess, licença CC0, data).
+
+Se a internet cair, o app diz que nada foi instalado. Por segurança, o app só aceita que o Lichess redirecione o arquivo para outro endereço de download do próprio Lichess.
+
+### Instalar de um arquivo
 
 1. Obtenha o arquivo de problemas do Lichess (`.csv` ou `.csv.zst`).
 2. Abra o Painel Treino e clique em **Pacotes**.
-3. Em **Instalar problemas do Lichess**, digite o caminho do arquivo ou clique num dos listados em **Arquivos .csv nos documentos:**.
-4. Se quiser, digite os **Temas** separados por espaço (vazio: todos). Exemplo: `fork`.
-5. Se quiser, digite a **Dificuldade mín.**, a **Dificuldade máx.** e a **Quantidade máxima**.
-6. Clique em **Instalar pacote**.
-7. Acompanhe **Lendo: N problemas, N selecionados**. Para parar, clique em **Cancelar leitura**: nada é instalado.
-8. Ao final aparece **Pacote … instalado**, com quantos Exercícios entraram e quantos foram descartados.
+3. Em **Instalar de um arquivo**, clique em **Escolher arquivo…** (ou digite o caminho, ou clique num dos listados em **Arquivos .csv e .csv.zst nos documentos:**). Esta opção não usa a internet.
+4. Se quiser, digite os **Temas do Lichess, separados por espaço** (vazio: todos), por exemplo `fork`, e a **Quantidade máxima**.
+5. Clique em **Instalar pacote**.
+6. Acompanhe **Lendo: N problemas, N selecionados**. Para parar, clique em **Cancelar leitura**: nada é instalado.
+7. Ao final aparece **Pacote … instalado**, com quantos Exercícios entraram e quantos foram descartados.
+
+Um arquivo que não é a base de problemas do Lichess (com uma linha gigante) é recusado e nada é instalado.
+
+### Depois de instalar
 
 Os Exercícios do pacote ficam numa seção própria, **Pacote: …**, separados dos de fábrica, e mostram a Origem (Provedor e licença). Na lista de Exercícios, os filtros de pacote, tema e dificuldade ajudam a achar o que treinar.
 
@@ -312,12 +344,14 @@ Enquanto uma Partida competitiva está em andamento (Simulação FIDE ou Elimina
 - o **Explorador**, nas Aberturas e nos Finais;
 - as **avaliações prontas** do Painel Análise;
 - a **importação online** e a abertura da Biblioteca;
-- a análise por Engine, a barra de avaliação, a dica e as marcas do HUD que calculam;
-- a estatística da sua Biblioteca para a Posição (Explorador e Painel Aberturas).
+- a análise por Engine (local ou **remota**), a barra de avaliação, a dica e as marcas do HUD que calculam;
+- a estatística da sua Biblioteca para a Posição (Explorador e Painel Aberturas) e a busca por Posição na Biblioteca;
+- a **Engine online** (ela não liga com uma Partida online contra pessoa em andamento);
+- a **Engine adversária** de uma nova Partida enquanto outra Partida online contra pessoa está em andamento: **Contra a Engine** fica desabilitado, com o motivo.
 
 O Painel Explorador não some. Ele diz **Indisponível durante a Partida** e não consulta nada. O indicador da barra de status mostra **Trava de fair play**.
 
-A trava vale nos próprios serviços, não só na tela: a análise, a dica, a estatística da Biblioteca, o Explorador, os finais e as avaliações prontas perguntam a ela antes de calcular. Por isso um Painel escondido ou um atalho não a contorna. Ela cai quando a Partida termina.
+A trava vale nos próprios serviços, não só na tela: a análise, a dica, a estatística e a busca por Posição da Biblioteca, a Engine adversária, a Engine online, o Explorador, os finais e as avaliações prontas perguntam a ela antes de calcular. Por isso um Painel escondido ou um atalho não a contorna. Ela cai quando a Partida termina. Numa Partida competitiva local, a Engine que é a sua adversária continua jogando: ela é a adversária, não uma ajuda.
 
 Numa **Partida online contra uma pessoa** a trava também vale, e só cai quando o Lichess confirma o fim (abandonar ou fechar o Painel não a soltam). Continuam os Auxílios que só mostram regras: destinos legais, último Lance e coordenadas. Contra a Engine do Lichess a trava não liga.
 
@@ -327,7 +361,7 @@ Na **correspondência**, com a Partida fora do tabuleiro, a trava vale para ela 
 
 Precisa do Lichess ligado e da **Conexão do jogador** autorizada (a de Engine nunca joga como pessoa). Sem ela, a tela explica e leva à Central.
 
-1. Início > Nova Partida > **Online (Lichess)**, ou o grupo **Online (Lichess)** do Início: **Buscar adversário**, **Desafiar**, **Contra a Engine do Lichess** e **Partidas em andamento**.
+1. Início > Nova Partida > **Online (Lichess ou FICS)**, ou o grupo **Online (Lichess)** do Início: **Buscar adversário**, **Desafiar**, **Contra a Engine do Lichess** e **Partidas em andamento**.
 2. **Buscar adversário:** escolha o ritmo (rápida, clássica ou correspondência em dias por Lance) e se vale rating. O app mostra **Procurando adversário** com o tempo de espera e **Cancelar busca**. Blitz só por desafio direto.
 3. **Desafiar:** digite o nome no Lichess, o ritmo (blitz inclusive), a cor e o rating. O desafio fica **Aguardando resposta** até ser aceito ou recusado; dá para cancelar.
 4. **Desafios recebidos:** aparecem num aviso discreto no canto (nunca durante outra Partida competitiva) e na aba **Desafiar**, com **Aceitar** e **Recusar** (com o motivo). Variante que não é xadrez padrão é recusada.
@@ -360,7 +394,7 @@ A pasta de dados do app é:
 
 Com um ID da FIDE vinculado, o cartão da FIDE na Central e a página **Arquivo > Perfil local** mostram o jogador: nome, federação, título e os ratings **Standard**, **Rápido** e **Blitz**, cada um na sua caixa. Um ritmo sem rating aparece como **—**. Os três são listas separadas da FIDE: o app nunca os soma nem os compara com ratings do Lichess ou do Chess.com.
 
-A linha de origem diz **FIDE, via Lichess, consultado há N min**. O dado vem do Lichess, que reproduz a FIDE, e o Lichess **não informa de qual mês é a lista**: a data é a da consulta, não a do rating.
+A linha de origem diz **FIDE, via Lichess, consultado há N min** e, abaixo, a licença: os dados são da FIDE, reproduzidos pelo Lichess, e os direitos são dela (reprodução restrita, só para uso pessoal). O dado vem do Lichess, que reproduz a FIDE, e o Lichess **não informa de qual mês é a lista**: a data é a da consulta, não a do rating.
 
 ### Consultar e atualizar
 
@@ -400,20 +434,20 @@ Não há um botão único para desligar tudo. Cada Provedor tem o seu interrupto
 
 Desligar não apaga nada: as Partidas importadas, as Conexões e o cache continuam aqui.
 
-### Apagar o cache de todos os Provedores de uma vez
+### Apagar os dados guardados de todos os Provedores de uma vez
 
-O cache guarda respostas dos Provedores para o app não repetir pedidos e funcionar sem rede.
+Os dados guardados (o cache) são respostas dos Provedores que o app guarda para não repetir pedidos e para funcionar sem rede.
 
 1. No alto da Central, na faixa **Dados guardados**, clique em **Limpar dados guardados…**.
 2. A janela diz o que some e o que fica. **Some:** as respostas guardadas de todos os Provedores neste Perfil local (perfis, ratings, avaliações, Explorador e listas de Partidas). **Fica:** suas Partidas jogadas, as Partidas e os Exercícios importados, suas Conexões e autorizações, o último rating FIDE guardado e o que está ligado ou desligado.
 3. Clique em **Limpar dados guardados** para confirmar, ou em **Cancelar**.
 4. O app diz quantas respostas guardadas apagou. Depois disso, cada consulta pergunta de novo ao Provedor, se ele estiver ligado.
 
-### Apagar o cache de um Provedor só
+### Apagar os dados guardados de um Provedor só
 
 1. No cartão do Provedor, abra **Mais ações**.
-2. Clique em **Limpar cache**.
-3. O app diz quantos itens removeu (**1 item do cache removido.**, **N itens do cache removidos.** ou **O cache já estava vazio.**).
+2. Clique em **Limpar dados guardados**.
+3. O app diz quantos itens removeu (**1 item guardado removido.**, **N itens guardados removidos.** ou **Não havia dados guardados.**).
 
 O cache é separado por Perfil local. Cada Provedor tem o seu.
 
@@ -430,6 +464,82 @@ O cache é separado por Perfil local. Cada Provedor tem o seu.
 
 Apagar uma Conexão ou um Perfil local apaga primeiro a autorização guardada. Se o cofre recusar, nada é removido.
 
+## Jogar no FICS como visitante
+
+O FICS é um servidor de xadrez antigo e gratuito. O Chess Studio só entra como **visitante**: o FICS dá um nome do tipo `GuestXXXX`, as Partidas são **sem rating**, e o app **nunca pede nem envia senha**.
+
+Antes de ligar, leia o aviso (no cartão **FICS** da Central, em **Jogar online** > **Detalhes**, e na tela):
+
+- **Conexão sem criptografia**: os Lances, os comandos e o nome de visitante trafegam em texto puro até o FICS.
+- **Só como visitante**.
+- **Sem reconexão automática**: se a conexão cair durante a Partida, o FICS a dá como perdida.
+- **Sem compensação de atraso**: o atraso da rede entra no tempo do seu relógio.
+
+Passo a passo:
+
+1. Abra Início > Nova Partida > **Online (Lichess ou FICS)** e escolha **FICS · visitante**.
+2. Se o FICS estiver desligado, clique em **Ligar o FICS…** e responda **Ligar** em **Ligar FICS?**.
+3. Clique em **Entrar como visitante**. A tela mostra **Entrando como visitante** e, depois, **No FICS como** o seu nome de visitante. Se o FICS não confirmar em 1 minuto, o app avisa e você tenta de novo.
+4. Na aba **Buscar adversário**, escolha o ritmo (**Relâmpago**, **Blitz** ou **Padrão**) e clique em **Buscar adversário**. Para desistir da busca, **Cancelar busca**.
+5. Na aba **Desafios** aparecem os desafios que outros jogadores fazem a você pelo seu nome de visitante, com **Aceitar** e **Recusar**. Desafios de variante não têm **Aceitar**: o app só joga xadrez padrão.
+6. Na aba **Observar**, digite o número de uma Partida em andamento no FICS e clique em **Observar**. A Partida aparece num tabuleiro pequeno, só para ver: não vai para a Biblioteca e não liga a Trava de fair play. **Parar de observar** encerra.
+7. Quando uma Partida começa, ela vai ao tabuleiro, com o Painel **Partida online** (selos **FICS · visitante** e **Ao vivo**). Jogue pelos gestos de sempre; o Lance fica no destino com **Enviando …** até o FICS confirmar. No Painel: **Propor empate**, **Abortar** (no FICS, depois do primeiro Lance, pede a concordância do adversário) e **Abandonar** (com confirmação; o FICS registra a derrota).
+8. **Sair do FICS** fecha a conexão. Sair com uma Partida em andamento é perder a Partida, e o app avisa antes.
+
+A Trava de fair play vale como no Lichess: durante a Partida contra uma pessoa, Engines, Explorador, finais e análise ficam desligados até o FICS confirmar o fim.
+
+Se a conexão cair no meio da Partida, o Painel e a tela dizem **A conexão com o FICS caiu**, o Lance sem confirmação volta e não é reenviado, e o tabuleiro não aceita mais Lances. A Trava continua ligada até você clicar em **Descartar a sessão**; então a Análise volta a funcionar. A Partida fica na Biblioteca sem resultado. **Entrar de novo como visitante** é outra sessão, com outro nome.
+
+A Partida fica na Biblioteca com a Origem **Partida online · FICS (visitante) · Partida N**.
+
+## Analisar com uma Engine remota
+
+A **Engine remota** analisa no servidor de um Provedor (hoje, o Chess-API.com), não no seu computador. Para isso a Posição sai da sua máquina. Por isso ela nunca é a padrão e nunca liga sozinha.
+
+1. Abra o Painel **Análise** e a lista **Engine**.
+2. Escolha **Stockfish (Chess-API.com) · Remota** (numa linha separada das Engines do seu computador).
+3. Leia o aviso **Usar a Engine remota?**: só a Posição (onde estão as peças, de quem é a vez e os direitos de roque) e a profundidade pedida são enviadas, nunca nomes, histórico da Partida, Perfil local ou Conexão. Clique em **Continuar** (ou **Cancelar**: nada muda e nada sai).
+4. Se o Chess-API.com estiver desligado, o diálogo **Ligar Chess-API.com?** aparece. **Ligar** escolhe a Engine remota; **Agora não** deixa a Engine local.
+5. Ligue a análise. A avaliação chega como a de uma Engine local, com o selo **Remota · Chess-API.com**, a Origem (**Origem: Chess-API.com, consultado …**) e os termos do resultado.
+
+Para voltar à Engine do seu computador, escolha-a na lista. Ao fechar e reabrir o app, a Engine local volta a ser a escolhida.
+
+Avisos que você pode ver no Painel:
+
+- **O Chess-API.com está desligado, então nada foi enviado**, com o botão **Ligar o Chess-API.com**.
+- **O Chess-API.com pediu uma pausa. Tente de novo em N s**: a análise local continua disponível.
+- **Trava de fair play**: a Engine remota fica bloqueada durante uma Partida online contra pessoa; nada é enviado.
+- **A Engine remota não respondeu agora** ou **não pôde analisar esta Posição**: tente de novo ou use uma Engine local.
+
+## Engine online
+
+A **Engine online** deixa uma Engine instalada no seu computador responder a desafios no Lichess, como um usuário BOT. Ela só liga quando você clica em **Ligar a Engine online**, e só funciona com uma autorização **separada** da de jogador: a Conexão de Engine.
+
+Antes de começar, tenha uma Engine instalada (gerenciador de Engines) e um usuário do Lichess **criado só para isso**: a conversão em usuário BOT **não tem volta** e só funciona num usuário novo, que nunca jogou.
+
+1. Na Central, no cartão do Lichess, clique em **Engine online…**. Na seção **Engine online**, clique em **Autorizar Engine online…** (pelo navegador) ou em **Usar chave pessoal…**, com o usuário BOT.
+2. Clique em **Abrir a tela da Engine online**. (Atalhos: a Ação **Engine online** na aba Início, grupo **Online (Lichess)**, ou a Paleta, Ctrl+K, digitando "Engine online".)
+3. Escolha a **Engine**. Se quiser, marque **Limitar a força da Engine** e escolha o Elo (a mesma força da Engine adversária das Partidas locais).
+4. Em **Limites**, escolha os **Ritmos aceitos**, **Valendo rating** (**Os dois**, **Só sem rating** ou **Só valendo**), **Quem pode desafiar** (**Só pessoas** ou **Pessoas e Engines**), **Partidas ao mesmo tempo** e **Máximo de Partidas nesta execução**.
+5. Clique em **Ligar a Engine online**. O estado passa a **Esperando desafios**. Quando um desafio dentro dos limites chega, o app o aceita e o estado vira **Jogando N**, com a Partida na lista (adversário, cor, Lances e quem pensa). Desafios fora dos limites são recusados, com o motivo em **Atividade recente**.
+6. **Parar** muda para **Parando**: a Engine não aceita mais desafios e fecha sozinha quando as Partidas terminam. **Parar já…** pede confirmação e **abandona** as Partidas em andamento (o adversário recebe a vitória).
+
+A tela abre sempre **Parada**: nada sai para o Lichess até você ligar. Fechar a janela da tela não para a Engine. Se você fechar o Chess Studio com Partida em andamento, o app pergunta (**Sair com Partida em andamento?**): **Cancelar**, **Parar e esperar terminarem** ou **Sair mesmo assim** (as Partidas ficam no Lichess e o relógio da Engine continua correndo, então elas perdem por tempo). Se você ligar a Engine online de novo antes de o relógio acabar, o Lichess reenvia a Partida e ela é retomada de onde parou, no mesmo registro da Biblioteca.
+
+Se o usuário ainda não for um usuário BOT, abra **O usuário ainda não é um usuário BOT?**, leia o aviso, marque **Entendi que isto não tem volta e que vou usar um usuário criado só para a Engine.** e clique em **Converter em usuário BOT**. Num usuário com Partidas jogadas, o Lichess recusa.
+
+Se a Engine falhar (não iniciar, propor dois Lances ilegais seguidos ou fechar), a Partida é abandonada e a **Atividade recente** diz o que houve. Um Lance ilegal nunca é enviado. As Partidas terminadas ficam na Biblioteca como Partidas da Engine.
+
+A **Trava de fair play** vale: a Engine online não liga durante uma Partida online em tempo real contra pessoa, e uma Partida que começa sob a Trava é abandonada pela Engine.
+
+## Salvar e exportar uma Partida
+
+- No fim de uma Partida, o diálogo oferece **Salvar como…**: escolha a pasta e o nome na janela do sistema (a extensão `.pgn` é acrescentada se você não a digitar).
+- No Painel Revisão, em **Exportar PGN**, **Salvar como…** faz o mesmo.
+- A Ação **Exportar PGN** do Ribbon abre a janela já com o nome `partida-AAAA-MM-DD-HHMMSS.pgn`.
+- Se o seu sistema não tem a janela de escolha de arquivo, os botões **Salvar como…** não aparecem e **Exportar PGN** grava na pasta Documentos.
+- Se a Súmula estiver ocultando a notação, o PGN revelaria os Lances: o **Salvar como…** do fim da Partida fica desativado e o do Painel Revisão não aparece.
+
 ## Se algo não funcionar
 
 | Você vê | O que fazer |
@@ -444,15 +554,14 @@ Apagar uma Conexão ou um Perfil local apaga primeiro a autorização guardada. 
 | **Sem conexão com a internet** | O app mostra o que estava salvo, quando houver. Tente de novo quando a internet voltar. |
 | **Importação manual** | Esse Provedor não tem consulta direta. Baixe o arquivo e importe. |
 
-## Engine online
+## O que ainda não existe
 
-Já funciona: com a Conexão de Engine do Lichess, uma Engine instalada responde a desafios (Central > Lichess > Abrir a tela da Engine online, ou a Ação **Engine online** do Ribbon e da Paleta). Só sai o que a frase de consentimento diz: Lances calculados, respostas a desafios e, se você pedir, a conversão em conta BOT.
+Estas coisas **não existem** no app. Os cartões e os textos da Central podem citá-las como "Em breve", mas nenhuma funciona hoje.
 
-## Em breve
+- **Partida online e Engine online no PlayStrategy.** O PlayStrategy só tem perfil, teste da Conexão e importação de Partidas.
+- **Entrar no FICS com nome registrado e senha.** O FICS não tem conexão cifrada, então o app só entra como visitante.
+- **Chat, premove e reclamar empate por ausência** nas Partidas online.
+- **Jogar no Chess.com**, e os Provedores pagos, sob aprovação ou sem API oficial (por exemplo, ChessBase e ICC): aparecem na Central como informativos, sem interruptor.
+- **Ler o relógio e a avaliação dos comentários do PGN** (`[%clk]` e `[%eval]`): eles passam como texto.
 
-Estas coisas **ainda não existem** no app. Os cartões e os textos da Central podem citá-las, mas nenhuma funciona hoje.
-
-- **PlayStrategy** e **FICS**.
-- **Engine remota** para análise.
-- **Baixar problemas e bases pela rede**. Hoje você instala um arquivo que já tem.
-- **Escolher o arquivo numa janela do sistema**. Hoje você digita o caminho ou clica num arquivo listado.
+Está em andamento (ainda não no app): melhorias do Painel da Partida online, do desafio recebido no FICS e da correspondência; a ligação da Partida online à Conexão que a joga; ajustes visuais da Engine online.
