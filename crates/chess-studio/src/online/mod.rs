@@ -107,6 +107,11 @@ pub struct OnlineUi {
     pub fics_confirm_leave: bool,
     /// Último erro de um pedido ao FICS iniciado pela tela.
     pub fics_error: Option<service::Unavailable>,
+    /// "Encerrar sem resultado" pedido para esta Partida do banco (FC-22); o quadro da Partida
+    /// online o faz (precisa do banco e do tabuleiro).
+    pub close_request: Option<chess_store::GameId>,
+    /// Desafios do FICS já vistos (o aviso discreto não volta para eles).
+    pub seen_fics_challenges: Vec<String>,
 }
 
 impl OnlineUi {
@@ -179,8 +184,9 @@ impl Plugin for OnlinePlugin {
 }
 
 /// Mostra o Painel Partida online. Fechado, ou ainda no lugar em que o dock põe um Painel
-/// novo (o último grupo, junto das Engines), ele vai para o grupo da Notação, logo abaixo do
-/// Relógio; num lugar escolhido pelo usuário, só vai à frente.
+/// novo (o último grupo, junto das Engines), ele vai para o grupo do Relógio, o mais alto do
+/// dock: é onde a vez, os relógios (o Painel os mostra) e as Ações cabem sem rolar a 900 e a
+/// 720 px (#272). Num lugar escolhido pelo usuário, só vai à frente.
 pub fn reveal_panel(layout: &mut crate::dock::DockLayout) {
     use crate::dock::ids;
     let closed = !layout.is_visible(PANEL_ID);
@@ -189,12 +195,26 @@ pub fn reveal_panel(layout: &mut crate::dock::DockLayout) {
     }
     let default_spot = layout.same_group(PANEL_ID, "Engines");
     if (closed || default_spot)
-        && layout.is_visible(ids::NOTATION)
-        && !layout.same_group(PANEL_ID, ids::NOTATION)
+        && layout.is_visible(ids::CLOCK)
+        && !layout.same_group(PANEL_ID, ids::CLOCK)
     {
-        layout.move_into_group_of(PANEL_ID, ids::NOTATION);
+        layout.move_into_group_of(PANEL_ID, ids::CLOCK);
     }
     layout.activate(PANEL_ID);
+}
+
+/// "Encerrar sem resultado" (FC-22): encerra no app a Partida `id` do FICS cujo fim o FICS não
+/// confirmou, grava o encerramento e põe a Partida encerrada no tabuleiro, se é a dele.
+pub fn close_unconfirmed(
+    play: &mut OnlinePlay,
+    session: &mut Session,
+    store: &mut chess_store::Store,
+    id: chess_store::GameId,
+    now: chess_net::Timestamp,
+) -> Result<(), service::Unavailable> {
+    let game = play.fics.close_without_result(store, id, now)?;
+    session.mirror_online(&game, false);
+    Ok(())
 }
 
 /// O quadro da Partida online. Nunca bloqueia.
@@ -229,6 +249,27 @@ pub fn drive_online(
             play.mark_db_dirty();
         }
         play.follow_connection(&net);
+        if let Some(id) = ui.close_request.take() {
+            let now = net.clock().now();
+            let closed = match persistence.as_deref().and_then(|h| h.0.lock().ok()) {
+                Some(mut guard) => {
+                    let (store, _) = guard.store_and_profile();
+                    close_unconfirmed(play, &mut session, store, id, now)
+                }
+                None => Err(service::Unavailable::Store(String::new())),
+            };
+            if let Err(error) = closed {
+                // O Painel mostra o aviso; a tela do FICS, o erro.
+                match &error {
+                    service::Unavailable::Fics(e) => {
+                        ui.push(OnlineNotice::Fics(fics::FicsInfo::Refused(e.clone())));
+                    }
+                    service::Unavailable::Store(e) => ui.push(OnlineNotice::StoreFailed(e.clone())),
+                    _ => {}
+                }
+                ui.fics_error = Some(error);
+            }
+        }
         let shown = step(
             play,
             &mut session,

@@ -74,6 +74,18 @@ pub enum FicsNotice {
     SeekPosted,
     /// Um desafio chegou (aceite com [`FicsSession::accept`]).
     Challenge(FicsChallenge),
+    /// O FICS enviou o desafio por nome do jogador local (`Issuing: …`).
+    ChallengeIssued {
+        to: String,
+    },
+    /// O desafiado recusou o desafio por nome.
+    ChallengeDeclined {
+        by: String,
+    },
+    /// O desafiado não está no FICS: o desafio não foi feito.
+    ChallengeFailed {
+        name: String,
+    },
     /// A Partida jogada começou: grave o setup ([`FicsPoll::created`]).
     GameStarted {
         game: u32,
@@ -140,6 +152,19 @@ pub struct FicsPoll {
     pub notices: Vec<FicsNotice>,
 }
 
+/// O desafio por nome que o jogador local fez (`match`), até a resposta. Só xadrez padrão,
+/// sem rating (visitante).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FicsOutgoing {
+    pub opponent: String,
+    pub minutes: u32,
+    pub increment_s: u32,
+    /// A cor pedida (`None`: o FICS sorteia).
+    pub color: Option<Color>,
+    /// O FICS confirmou o envio (`Issuing: …`).
+    pub issued: bool,
+}
+
 /// Uma Partida observada, para mostrar. Não é Partida do jogador: não vai ao banco.
 #[derive(Debug, Clone)]
 pub struct ObservedGame {
@@ -197,6 +222,8 @@ pub struct FicsSession {
     login_deadline: Timestamp,
     handle: Option<String>,
     challenges: Vec<FicsChallenge>,
+    /// O desafio por nome feito pelo jogador local, até a resposta (um por vez).
+    outgoing: Option<FicsOutgoing>,
     /// A última Partida que o FICS anunciou criar (`{Game N … Creating …}`).
     creation: Option<GameHeader>,
     /// Partidas recusadas (variante): os tabuleiros delas são ignorados.
@@ -236,6 +263,7 @@ impl FicsSession {
             login_deadline: deadline,
             handle: None,
             challenges: Vec::new(),
+            outgoing: None,
             creation: None,
             refused: Vec::new(),
             played: None,
@@ -257,6 +285,11 @@ impl FicsSession {
     /// Desafios recebidos e ainda sem resposta.
     pub fn challenges(&self) -> &[FicsChallenge] {
         &self.challenges
+    }
+
+    /// O desafio por nome feito pelo jogador local, até a resposta.
+    pub fn outgoing(&self) -> Option<&FicsOutgoing> {
+        self.outgoing.as_ref()
     }
 
     /// A Partida jogada, depois do primeiro tabuleiro dela.
@@ -329,6 +362,7 @@ impl FicsSession {
     fn close(&mut self, error: FicsError, out: &mut FicsPoll) {
         self.link.close();
         self.status = FicsStatus::Closed;
+        self.outgoing = None;
         if let Some(tracked) = &mut self.played
             && let Some(sent) = tracked.game.drop_sent_move()
         {
@@ -443,6 +477,44 @@ impl FicsSession {
                     }
                     self.challenges.push(challenge.clone());
                     out.notices.push(FicsNotice::Challenge(challenge));
+                }
+            }
+            Message::MatchIssued(issued) => {
+                if self.is_me(&issued.challenger)
+                    && let Some(sent) = self.outgoing.as_mut()
+                    && sent.opponent.eq_ignore_ascii_case(&issued.receiver)
+                {
+                    sent.issued = true;
+                    out.notices.push(FicsNotice::ChallengeIssued {
+                        to: sent.opponent.clone(),
+                    });
+                }
+            }
+            Message::MatchDeclined { by } => {
+                if self
+                    .outgoing
+                    .as_ref()
+                    .is_some_and(|o| o.opponent.eq_ignore_ascii_case(&by))
+                    && let Some(sent) = self.outgoing.take()
+                {
+                    out.notices
+                        .push(FicsNotice::ChallengeDeclined { by: sent.opponent });
+                }
+            }
+            Message::MatchWithdrawn { by } => {
+                self.challenges
+                    .retain(|c| !c.challenger.eq_ignore_ascii_case(&by));
+            }
+            Message::NotLoggedIn { name } => {
+                if self
+                    .outgoing
+                    .as_ref()
+                    .is_some_and(|o| o.opponent.eq_ignore_ascii_case(&name))
+                    && let Some(sent) = self.outgoing.take()
+                {
+                    out.notices.push(FicsNotice::ChallengeFailed {
+                        name: sent.opponent,
+                    });
                 }
             }
             Message::DrawOffered { by } => self.on_draw_offer(&by, out),
@@ -562,6 +634,8 @@ impl FicsSession {
                 };
                 self.played =
                     Some(self.track(board, setup, Some(local), CanonicalPosition::start()));
+                // Quem esperava resposta já tem a Partida (a busca o FICS retira sozinho).
+                self.outgoing = None;
                 out.created = true;
                 out.notices.push(FicsNotice::GameStarted {
                     game: board.game,
@@ -710,10 +784,61 @@ impl FicsSession {
     /// automático quando alguém aceitar. `base_minutes` e `increment_s` como no FICS.
     pub fn seek(&mut self, base_minutes: u32, increment_s: u32) -> Result<(), FicsError> {
         self.idle()?;
-        if base_minutes > 600 || increment_s > 300 {
-            return Err(FicsError::NotAllowed("ritmo fora do que o FICS aceita"));
-        }
+        pace(base_minutes, increment_s)?;
         self.send(&format!("seek {base_minutes} {increment_s} unrated"))
+    }
+
+    /// Desafia `opponent` pelo nome (`match`): xadrez padrão, sem rating, no ritmo dado e,
+    /// se pedida, com a cor. Um por vez. Tudo é conferido **antes da rede**: o nome só pode ter
+    /// letras (nada de espaço, número ou palavra a mais, como `wild`), então nenhuma variante
+    /// chega ao FICS. A Partida começa pelo tabuleiro, como na busca.
+    pub fn challenge(
+        &mut self,
+        opponent: &str,
+        minutes: u32,
+        increment_s: u32,
+        color: Option<Color>,
+    ) -> Result<(), FicsError> {
+        self.idle()?;
+        if !super::Fics::valid_handle(opponent) {
+            return Err(FicsError::NotAllowed(
+                "o nome no FICS tem de 3 a 17 letras, sem espaço, número nem símbolo",
+            ));
+        }
+        if self.is_me(opponent) {
+            return Err(FicsError::NotAllowed("não dá para desafiar a si mesmo"));
+        }
+        if self.outgoing.is_some() {
+            return Err(FicsError::NotAllowed(
+                "já há um desafio enviado; retire-o ou espere a resposta",
+            ));
+        }
+        pace(minutes, increment_s)?;
+        let side = match color {
+            Some(Color::White) => " white",
+            Some(Color::Black) => " black",
+            None => "",
+        };
+        self.send(&format!(
+            "match {opponent} {minutes} {increment_s} unrated{side}"
+        ))?;
+        self.outgoing = Some(FicsOutgoing {
+            opponent: opponent.to_owned(),
+            minutes,
+            increment_s,
+            color,
+            issued: false,
+        });
+        Ok(())
+    }
+
+    /// Retira o desafio por nome enviado.
+    pub fn withdraw_challenge(&mut self) -> Result<(), FicsError> {
+        self.ready()?;
+        let Some(sent) = self.outgoing.take() else {
+            return Ok(());
+        };
+        self.send(&format!("withdraw {}", sent.opponent))
     }
 
     /// Retira a busca de adversário.
@@ -722,7 +847,7 @@ impl FicsSession {
         self.send("unseek")
     }
 
-    fn challenge(&self, challenger: &str) -> Result<FicsChallenge, FicsError> {
+    fn received(&self, challenger: &str) -> Result<FicsChallenge, FicsError> {
         self.challenges
             .iter()
             .find(|c| c.challenger.eq_ignore_ascii_case(challenger))
@@ -734,7 +859,7 @@ impl FicsSession {
     /// rede.
     pub fn accept(&mut self, challenger: &str) -> Result<(), FicsError> {
         self.idle()?;
-        let challenge = self.challenge(challenger)?;
+        let challenge = self.received(challenger)?;
         if !accepts(&challenge.kind) {
             return Err(FicsError::UnsupportedVariant(challenge.kind));
         }
@@ -747,7 +872,7 @@ impl FicsSession {
     /// Recusa o desafio de `challenger`.
     pub fn decline(&mut self, challenger: &str) -> Result<(), FicsError> {
         self.ready()?;
-        let challenge = self.challenge(challenger)?;
+        let challenge = self.received(challenger)?;
         self.send(&format!("decline {}", challenge.challenger))?;
         self.challenges
             .retain(|c| c.challenger != challenge.challenger);
@@ -837,6 +962,14 @@ impl FicsSession {
             self.status = FicsStatus::Closed;
         }
     }
+}
+
+/// O ritmo que o FICS aceita (minutos de base e segundos de incremento).
+fn pace(minutes: u32, increment_s: u32) -> Result<(), FicsError> {
+    if minutes > 600 || increment_s > 300 {
+        return Err(FicsError::NotAllowed("ritmo fora do que o FICS aceita"));
+    }
+    Ok(())
 }
 
 /// O FICS aceita só os tipos de xadrez padrão do catálogo (`blitz`, `lightning`,

@@ -44,7 +44,7 @@ mod session;
 mod tracker;
 
 pub use parse::FicsChallenge;
-pub use session::{FicsNotice, FicsPoll, FicsSession, FicsStatus, ObservedGame};
+pub use session::{FicsNotice, FicsOutgoing, FicsPoll, FicsSession, FicsStatus, ObservedGame};
 
 use crate::ProviderError;
 use chess_game::Rejection;
@@ -171,6 +171,12 @@ impl Fics {
     /// nova decisão (CX-18).
     pub fn password_login_available() -> bool {
         false
+    }
+
+    /// Um nome de jogador do FICS: de 3 a 17 letras (`help register`), sem espaço, número nem
+    /// símbolo. É o que o desafio por nome aceita: nada mais vai na linha do `match`.
+    pub fn valid_handle(name: &str) -> bool {
+        (3..=17).contains(&name.len()) && name.bytes().all(|b| b.is_ascii_alphabetic())
     }
 
     /// Abre a sessão. Só visitante: com senha, recusa **antes** de abrir qualquer conexão

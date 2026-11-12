@@ -40,13 +40,19 @@ impl chess_net::AuthorizationSource for FakeVault {
         &self,
         _profile: chess_net::LocalProfileId,
         provider: ProviderId,
-        _connection: ConnectionId,
+        connection: ConnectionId,
     ) -> Option<chess_net::Authorization> {
+        // Um token por Conexão: os testes conferem por qual Conexão o pedido saiu (#267).
         Some(chess_net::Authorization::bearer(
             provider,
-            &chess_net::Secret::new("lip_TOKEN_DE_TESTE_DA_PARTIDA_ONLINE"),
+            &chess_net::Secret::new(token_of(connection)),
         ))
     }
+}
+
+/// O token falso da Conexão (nunca um token real).
+fn token_of(connection: ConnectionId) -> String {
+    format!("lip_TOKEN_DE_TESTE_DA_CONEXAO_{}", connection.0)
 }
 
 struct Env {
@@ -1134,4 +1140,217 @@ fn the_board_requests_go_to_the_session_and_nothing_changes_until_confirmed() {
         env.session.snapshot().pending_draw_offer.is_none(),
         "só com o retrato"
     );
+}
+
+// ---- A Conexão da Partida (#267, PO-20) ------------------------------------------------------
+
+/// A outra Conexão de jogador autorizada do mesmo Provedor (outra conta do Lichess).
+const OTHER: ConnectionId = ConnectionId(2);
+
+impl Env {
+    /// O cabeçalho de autorização do último pedido a `path`.
+    fn token_used(&self, method: &str, path: &str) -> Option<String> {
+        self.server
+            .requests()
+            .iter()
+            .rev()
+            .find(|r| r.method == method && r.path == path)
+            .and_then(|r| {
+                r.headers
+                    .iter()
+                    .find(|(name, _)| name == "authorization")
+                    .map(|(_, value)| value.clone())
+            })
+    }
+
+    fn stream_requests(&self) -> usize {
+        self.server
+            .requests()
+            .iter()
+            .filter(|r| r.path == stream_path())
+            .count()
+    }
+}
+
+/// T-029 (US-008, US-CRED-05): duas Conexões autorizadas de jogador do mesmo Provedor. A
+/// Partida guarda a dela; trocar a padrão no meio da Partida não a afeta; reaberta, continua
+/// pela dela; sem ela, é recusada com o motivo, sem rede.
+#[test]
+fn a_game_stays_with_its_connection_when_the_default_changes_mid_game() {
+    let mut env = env();
+    env.service.set_authorized_accounts(
+        ProviderId::Lichess,
+        ConnectionRole::Player,
+        vec![
+            (PLAYER, "Voce_Demo".to_owned()),
+            (OTHER, "Outra_Conta".to_owned()),
+        ],
+    );
+    let first = LiveFeed::new();
+    let second = LiveFeed::new();
+    env.server.route_seq(
+        &stream_path(),
+        vec![FakeResponse::live(&first), FakeResponse::live(&second)],
+    );
+    env.server
+        .route("/api/board/seek", FakeResponse::json(r#"{"id":"sk9Tq2"}"#));
+    env.frame();
+    env.play
+        .seek(&env.service, Seek::correspondence(3))
+        .unwrap();
+    assert!(env.events.wait_connected(WAIT));
+    env.events.push(&game_start("correspondence"));
+    assert!(first.wait_connected_after(|| env.frame(), WAIT));
+    first.push(&correspondence(state("e2e4 e7e5", 0, 0, "started")).to_string());
+    assert!(env.until(|e| e.plies() == 2));
+    let mine = format!("Bearer {}", token_of(PLAYER));
+    assert_eq!(
+        env.token_used("GET", &stream_path()).as_deref(),
+        Some(mine.as_str())
+    );
+    // A Partida guarda a Conexão e a conta que a jogam.
+    let id = env.session.online_store_id().unwrap();
+    let stored = env
+        .store
+        .list_games(&GameQuery::default())
+        .unwrap()
+        .into_iter()
+        .find(|g| g.id == id)
+        .unwrap();
+    assert_eq!(stored.metadata["online"]["connection_id"], json!(PLAYER.0));
+    assert_eq!(stored.metadata["online"]["account"], json!("Voce_Demo"));
+
+    // "Tornar padrão" a outra Conexão no meio da Partida: a sessão segue na dela.
+    env.service
+        .set_authorized_connection(ProviderId::Lichess, ConnectionRole::Player, Some(OTHER));
+    for _ in 0..3 {
+        env.frame();
+    }
+    let key = super::service::GameKey::new(super::service::Provider::Lichess, GAME);
+    assert_ne!(
+        env.play.session_for(&key).map(|s| s.link()),
+        Some(LinkStatus::Closed)
+    );
+    env.server.route(&move_path("g1f3"), ok());
+    env.tap("g1", "f3");
+    assert!(env.until(|e| e.posts_to(&move_path("g1f3")) == 1));
+    assert_eq!(
+        env.token_used("POST", &move_path("g1f3")).as_deref(),
+        Some(mine.as_str()),
+        "o Lance sai pela Conexão da Partida, não pela padrão"
+    );
+    first.push(&state("e2e4 e7e5 g1f3", 0, 0, "started").to_string());
+    assert!(env.until(|e| e.plies() == 3));
+
+    // Fora do tabuleiro e reaberta: continua pela Conexão dela.
+    env.session.new_game();
+    assert!(env.until(|e| e.play.games().is_empty()));
+    env.play.open(&env.service, GAME).unwrap();
+    assert!(second.wait_connected_after(|| env.frame(), WAIT));
+    assert_eq!(env.stream_requests(), 2);
+    assert_eq!(
+        env.token_used("GET", &stream_path()).as_deref(),
+        Some(mine.as_str()),
+        "retomada pela Conexão que a joga"
+    );
+    second.push(&correspondence(state("e2e4 e7e5 g1f3 b8c6", 0, 0, "started")).to_string());
+    assert!(env.until(|e| e.plies() == 4));
+
+    // A Conexão dela deixou de estar autorizada: recusada com o motivo, nada sai.
+    env.session.new_game();
+    assert!(env.until(|e| e.play.games().is_empty()));
+    env.service.set_authorized_accounts(
+        ProviderId::Lichess,
+        ConnectionRole::Player,
+        vec![(OTHER, "Outra_Conta".to_owned())],
+    );
+    env.frame();
+    let id = env.session.online_store_id().unwrap_or(id);
+    assert!(
+        env.store.load_game(id).is_ok(),
+        "{:?}",
+        env.store.load_game(id).err()
+    );
+    assert_eq!(env.play.stored_in_progress(), 1, "a Partida segue no banco");
+    assert_eq!(
+        env.play.open(&env.service, GAME).unwrap_err(),
+        Unavailable::GameAccount {
+            account: "Voce_Demo".to_owned()
+        }
+    );
+    env.frame();
+    assert_eq!(env.stream_requests(), 2, "nenhuma sessão pela outra conta");
+    // A trava continua pela Partida do banco.
+    assert!(env.fair.any());
+}
+
+// ---- Lance novo na correspondência (#272, PO-21) ---------------------------------------------
+
+#[test]
+fn the_correspondence_where_the_opponent_moved_is_highlighted_only_after_refreshing() {
+    let mut env = env();
+    env.server
+        .route("/api/board/seek", FakeResponse::json(r#"{"id":"sk9Tq2"}"#));
+    let feed = LiveFeed::new();
+    env.server.route(&stream_path(), FakeResponse::live(&feed));
+    env.frame();
+    env.play
+        .seek(&env.service, Seek::correspondence(3))
+        .unwrap();
+    assert!(env.events.wait_connected(WAIT));
+    env.events.push(&game_start("correspondence"));
+    assert!(feed.wait_connected_after(|| env.frame(), WAIT));
+    // O jogador (brancas) já jogou 2.Cf3: a vez é do adversário.
+    feed.push(&correspondence(state("e2e4 e7e5 g1f3", 0, 0, "started")).to_string());
+    assert!(env.until(|e| e.plies() == 3));
+    env.session.new_game();
+    assert!(env.until(|e| e.play.games().is_empty()));
+    // Sem Atualizar: nada sai e nada é destacado.
+    let before = env.server.requests().len();
+    for _ in 0..5 {
+        env.frame();
+    }
+    assert_eq!(env.server.requests().len(), before, "nenhuma rede sozinha");
+    assert_eq!(env.play.opponent_moved(), 0);
+    assert!(!env.play.playing_rows()[0].opponent_moved);
+
+    // Atualizar: o Lichess diz que é a vez do jogador, com o tabuleiro depois de 2...Cc6.
+    let after_nc6 = "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3";
+    let listed = |my_turn: bool, fen: &str| {
+        let game = with(
+            with(
+                info("white", human(), "correspondence"),
+                "isMyTurn",
+                json!(my_turn),
+            ),
+            "fen",
+            json!(fen),
+        );
+        FakeResponse::json(&json!({ "nowPlaying": [game] }).to_string())
+    };
+    env.server
+        .route("/api/account/playing", listed(true, after_nc6));
+    env.play.refresh_playing(&env.service).unwrap();
+    assert!(env.until(|e| e.play.refreshed_at().is_some()));
+    let rows = env.play.playing_rows();
+    assert!(rows[0].opponent_moved && rows[0].my_turn);
+    assert_eq!(env.play.opponent_moved(), 1);
+    assert!(
+        env.notices
+            .contains(&OnlineNotice::OpponentMoved { count: 1 })
+    );
+    let i18n = crate::i18n::I18n::pt_br();
+    let (_, text) =
+        super::view::notice_text(&i18n, &OnlineNotice::OpponentMoved { count: 1 }).unwrap();
+    assert!(text.contains("correspondência"), "{text}");
+    // Ainda a vez do adversário no Lichess: nada a destacar.
+    let at_nf3 = "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2";
+    env.server
+        .route("/api/account/playing", listed(false, at_nf3));
+    let at = env.play.refreshed_at();
+    env.clock.advance(Duration::from_secs(60));
+    env.play.refresh_playing(&env.service).unwrap();
+    assert!(env.until(|e| e.play.refreshed_at() != at));
+    assert_eq!(env.play.opponent_moved(), 0);
+    let _ = feed;
 }

@@ -296,21 +296,24 @@ impl Store {
              WHERE id = ?1",
             params![game.0, now_ms()],
         )?;
-        // Partida online abortada (#230): terminada, sem resultado. Não há desfazer online,
-        // então o aborto é final.
+        // Partida online abortada (#230) ou encerrada sem resultado pelo jogador (FC-22):
+        // terminada, sem resultado. Não há desfazer online, então o fim é final.
         tx.execute(
             "UPDATE games SET finished = (outcome_json IS NOT NULL OR EXISTS (
-                 SELECT 1 FROM game_events e WHERE e.game_id = games.id AND e.kind = 'game_aborted'))
+                 SELECT 1 FROM game_events e WHERE e.game_id = games.id
+                   AND e.kind IN ('game_aborted', 'closed_without_result')))
              WHERE id = ?1",
             [game.0],
         )?;
         tx.commit()?;
         // Fim da Partida: alimenta o índice da Biblioteca e das aberturas (C19). Melhor esforço:
         // o índice é derivado e a próxima consulta o completa se esta etapa falhar.
-        if rows
-            .iter()
-            .any(|(_, kind, _)| kind == "game_ended" || kind == "game_aborted")
-        {
+        if rows.iter().any(|(_, kind, _)| {
+            matches!(
+                kind.as_str(),
+                "game_ended" | "game_aborted" | "closed_without_result"
+            )
+        }) {
             let _ = self.sync_library();
         }
         Ok(())

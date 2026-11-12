@@ -79,6 +79,12 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 | CX-HOM-58 | FICS: desafios recebidos e variantes | sim | UNVERIFIED |
 | CX-HOM-59 | FICS: queda de conexão durante a Partida | sim | UNVERIFIED |
 | CX-HOM-60 | FICS: observar uma Partida | sim | UNVERIFIED |
+| CX-HOM-66 | Painel da Partida online no dock padrão (1600x900 e 1280x720) | não | UNVERIFIED |
+| CX-HOM-67 | FICS: aviso discreto de desafio recebido | sim | UNVERIFIED |
+| CX-HOM-68 | FICS: desafiar pelo nome | sim | UNVERIFIED |
+| CX-HOM-69 | Correspondência: Lance novo do adversário ao Atualizar | sim | UNVERIFIED |
+| CX-HOM-70 | FICS: Partida sem resultado confirmado e Encerrar sem resultado | sim | UNVERIFIED |
+| CX-HOM-71 | Duas Conexões do Lichess: trocar a padrão no meio da Partida | sim | UNVERIFIED |
 
 ## Itens
 
@@ -736,6 +742,70 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Esperado:** um tabuleiro pequeno mostra a Partida, com nomes, relógios e o último Lance. Nada vai ao tabuleiro principal nem à Biblioteca, e a Trava de fair play não liga. Uma Partida de variante é recusada com aviso.
 - **Com o serviço real (UNVERIFIED):** os textos de observação (`You are now observing game N.`, `Game N: …`, `Removing game N from observation list.`) do FICS real são reconhecidos.
 - **Evidência:** [`online/fics_tests.rs`](../../crates/chess-studio/src/online/fics_tests.rs), [decisões FC-13 a FC-21](../decisoes/2026-11-11-fics.md).
+
+### CX-HOM-66. Painel da Partida online no dock padrão (1600x900 e 1280x720)
+
+- **Pré-condição:** layout padrão do dock (Exibir > Painéis > restaurar o padrão, se mudou).
+- **Passos:**
+  1. Com a janela em 1600x900, comece uma Partida online (Lichess ou FICS) e olhe o dock.
+  2. Repita com a janela em 1280x720.
+  3. Arraste o Painel **Partida online** para outro grupo; comece outra Partida online.
+- **Esperado:** o Painel aparece à frente no grupo de cima do dock (o do Relógio) e mostra, sem rolar: os dois relógios (o do adversário em cima, o seu embaixo, quem joga com contorno), a vez (ou "Enviando …") e as Ações (**Propor empate**, **Abandonar**; **Abortar** no lugar de **Propor empate** no começo; **Aceitar** e **Recusar** quando o adversário propõe). O que vem depois (os selos do Provedor e da conexão, contra quem, a Trava de fair play, avisos) pode rolar. Num lugar escolhido por você, o Painel fica lá e só vem à frente.
+- **Evidência:** `the_panel_shows_the_turn_clocks_and_actions_without_scrolling_in_the_default_dock` e `the_panel_goes_to_the_tallest_group_of_the_default_dock` em [`online/fics_tests.rs`](../../crates/chess-studio/src/online/fics_tests.rs); capturas em [`docs/evidencias/painel-online-avisos/`](../evidencias/painel-online-avisos/).
+
+### CX-HOM-67. FICS: aviso discreto de desafio recebido
+
+- **Pré-condição:** conectado ao FICS como visitante (CX-HOM-56), sem Partida em andamento; a tela da Partida online fechada.
+- **Passos:**
+  1. De outro cliente do FICS, desafie o nome mostrado (`match GuestXXXX 3 0`).
+  2. **Fechar** no aviso; desafie de novo com outro ritmo e use **Ver**.
+  3. Comece uma Partida (no FICS ou uma Partida competitiva local) e receba outro desafio.
+- **Esperado:** um cartão discreto no canto do tabuleiro diz **X desafia você no FICS**, com o tipo e o ritmo, e oferece **Ver** (abre a aba Desafios) e **Fechar**; o mesmo desafio não volta a aparecer. Durante outra Partida competitiva nenhum aviso aparece (o desafio fica na aba Desafios).
+- **Com o serviço real (UNVERIFIED):** o texto do desafio (`Challenge: …`) do FICS real é reconhecido.
+- **Evidência:** `a_fics_challenge_shows_a_discreet_notice_never_during_a_competitive_game` em [`online/fics_tests.rs`](../../crates/chess-studio/src/online/fics_tests.rs); captura `fics-toast`.
+
+### CX-HOM-68. FICS: desafiar pelo nome
+
+- **Pré-condição:** conectado ao FICS como visitante; outro visitante conectado em outro cliente.
+- **Passos:**
+  1. Aba **Desafios** > **Desafiar pelo nome**: digite `Guest XYZ` (com espaço) e veja o aviso; digite o nome certo, escolha 3+0 e **Desafiar**.
+  2. No outro cliente, recuse. Desafie de novo e use **Retirar desafio**.
+  3. Desafie de novo e aceite no outro cliente.
+  4. Desafie um nome que não está conectado.
+- **Esperado:** nome com espaço, número ou palavra a mais não deixa desafiar (nada sai). Enviado, a tela mostra **Desafio enviado a X · 3+0 · sem rating** e **Retirar desafio**; a recusa avisa **X recusou o desafio**; quem não está no FICS avisa que o desafio não foi feito. Aceito, a Partida vai ao tabuleiro como pela busca (xadrez padrão, sem rating).
+- **Com o serviço real (UNVERIFIED):** os textos `Issuing: …`, `declines the match offer`, `is not logged in` e o comando `withdraw <nome>` funcionam no FICS real (FC-23).
+- **Evidência:** `a_challenge_by_name_*` em [`chess-providers/tests/fics.rs`](../../crates/chess-providers/tests/fics.rs) e `a_challenge_by_name_goes_out_once_in_standard_chess_and_its_answer_shows` em [`online/fics_tests.rs`](../../crates/chess-studio/src/online/fics_tests.rs); capturas `fics-challenges` e `fics-challenge-sent`.
+
+### CX-HOM-69. Correspondência: Lance novo do adversário ao Atualizar
+
+- **Pré-condição:** uma Partida por correspondência no Lichess em que você jogou e fechou o tabuleiro (CX-HOM-41).
+- **Passos:**
+  1. Pelo site do Lichess (outra conta), responda o Lance.
+  2. No app, sem abrir a Partida, abra **Partidas em andamento** e **Atualizar** (ou responda **Atualizar** na oferta ao abrir o app).
+- **Esperado:** antes de Atualizar nada muda e nada sai para a rede. Depois, a Partida aparece primeiro, com contorno em destaque e o selo **Lance novo**; um aviso curto diz que o adversário jogou, e o Painel sem Partida conta as correspondências com Lance novo.
+- **Evidência:** `the_correspondence_where_the_opponent_moved_is_highlighted_only_after_refreshing` em [`online/tests.rs`](../../crates/chess-studio/src/online/tests.rs); captura `list`.
+
+### CX-HOM-70. FICS: Partida sem resultado confirmado e Encerrar sem resultado
+
+- **Pré-condição:** uma Partida de visitante no FICS em andamento.
+- **Passos:**
+  1. Derrube a conexão no meio da Partida (CX-HOM-59). Olhe o Painel e tente a Análise.
+  2. **Descartar a sessão**. Tente a Análise de novo; abra a Biblioteca.
+  3. No Painel (ou na tela do FICS), **Encerrar sem resultado**. Tente a Análise; volte à Biblioteca.
+- **Esperado:** depois da queda o Painel diz **A conexão com o FICS caiu** e oferece **Encerrar sem resultado** e **Descartar a sessão**. Descartar fecha a conexão, mas a Partida continua **sem resultado confirmado** (assim na Biblioteca) e a análise dela continua travada. **Encerrar sem resultado** registra o fim no app sem vencedor nem motivo (o Painel diz "Encerrada no app, sem resultado"); só então a Análise liga. Nenhum resultado é inventado; nada reconecta.
+- **Evidência:** `the_lock_of_a_dropped_game_only_falls_by_closing_it_without_result` em [`online/fics_tests.rs`](../../crates/chess-studio/src/online/fics_tests.rs), `encerrar_sem_resultado_registra_o_fim_local_sem_inventar_resultado` em [`chess-game/tests/online_game.rs`](../../crates/chess-game/tests/online_game.rs), [FC-22](../decisoes/2026-11-11-fics.md); capturas `fics-dropped`, `fics-unconfirmed` e `fics-closed`.
+
+### CX-HOM-71. Duas Conexões do Lichess: trocar a padrão no meio da Partida
+
+- **Pré-condição:** duas contas do Lichess autorizadas como jogador no mesmo Perfil local (A, padrão, e B).
+- **Passos:**
+  1. Com A, comece uma correspondência; jogue um Lance.
+  2. Na Central, **Tornar padrão** a Conexão de B; volte e jogue outro Lance na correspondência.
+  3. Feche o tabuleiro; **Partidas em andamento** > **Abrir** a correspondência de A.
+  4. Desconecte A na Central e tente **Abrir** de novo.
+- **Esperado:** trocar a padrão não muda nada na Partida: os Lances seguem pela conta A, e reaberta ela continua por A. Sem A autorizada, **Abrir** é recusado com **Esta Partida é da conta A no Lichess…**, e nada sai pela conta B.
+- **Com o serviço real (UNVERIFIED):** a conta A no site do Lichess mostra os Lances; a conta B não participa.
+- **Evidência:** `a_game_stays_with_its_connection_when_the_default_changes_mid_game` em [`online/tests.rs`](../../crates/chess-studio/src/online/tests.rs), [PO-20](../decisoes/2026-11-11-partida-online.md).
 
 ## Fora deste roteiro
 

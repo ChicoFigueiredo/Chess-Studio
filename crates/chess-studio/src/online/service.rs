@@ -132,6 +132,11 @@ pub enum Unavailable {
     Board(BoardError),
     /// O FICS (ou o app, por ele) recusou antes da rede.
     Fics(chess_providers::FicsError),
+    /// A Partida é de outra conta do Lichess (a Conexão que a joga), que não está autorizada
+    /// neste Perfil local: ela nunca continua por outra Conexão (#267, PO-20).
+    GameAccount { account: String },
+    /// O banco recusou (ler ou gravar a Partida).
+    Store(String),
 }
 
 /// O que a interface conta ao jogador (avisos de vida curta).
@@ -165,6 +170,9 @@ pub enum OnlineNotice {
     EventsClosed(ProviderError),
     /// Falha ao gravar no banco.
     StoreFailed(String),
+    /// Atualizar mostrou Partidas por correspondência em que o adversário jogou desde a última
+    /// vez que o app as viu (PO-21).
+    OpponentMoved { count: usize },
     /// Um aviso da conexão de visitante no FICS (entrada, busca, desafios, observação, queda).
     Fics(FicsInfo),
 }
@@ -223,6 +231,8 @@ struct AiRun {
 /// Uma Partida online com sessão aberta.
 pub struct Live {
     session: OnlineGameSession,
+    /// A Conexão que joga esta Partida (a sessão fala só por ela, PO-20).
+    connection: ConnectionId,
     pub store_id: Option<GameId>,
     pub realtime: bool,
     pub info: Option<GameInfo>,
@@ -339,6 +349,34 @@ pub struct PlayingRow {
     pub days: Option<u32>,
     /// Já está no banco local.
     pub stored: bool,
+    /// O adversário jogou desde a última vez que o app viu a Partida (correspondência, só
+    /// depois de Atualizar; PO-21).
+    pub opponent_moved: bool,
+}
+
+/// A colocação das peças (o primeiro campo do FEN).
+fn placement(fen: &str) -> &str {
+    fen.split_whitespace().next().unwrap_or_default()
+}
+
+/// A lista do Lichess diz que o adversário jogou depois da Posição que o app guardou: agora é
+/// a vez do jogador e a Partida do banco não sabe (ainda era a vez do adversário, ou o
+/// tabuleiro é outro). Sem a lista (sem Atualizar), nunca.
+fn opponent_moved_since(stored: &Game, info: &GameInfo) -> bool {
+    let Some(online) = stored.setup().online_game() else {
+        return false;
+    };
+    if online.days_per_move.is_none() || !info.is_my_turn {
+        return false;
+    }
+    let snapshot = stored.snapshot();
+    let local_turn = snapshot.side_to_move == online.local_color;
+    let local_fen = snapshot.position.to_fen();
+    let moved_board = info
+        .fen
+        .as_deref()
+        .is_some_and(|fen| placement(fen) != placement(&local_fen));
+    !local_turn || moved_board
 }
 
 /// O banco visto pelo serviço: as Partidas online em andamento e o id de cada uma.
@@ -346,6 +384,9 @@ pub struct PlayingRow {
 struct DbIndex {
     by_remote: BTreeMap<String, GameId>,
     in_progress: Vec<(GameId, Game)>,
+    /// A Conexão gravada de cada Partida do Lichess em andamento (as anteriores ao #267 não
+    /// têm).
+    connections: BTreeMap<GameId, ConnectionId>,
     dirty: bool,
 }
 
@@ -367,6 +408,10 @@ pub struct Frame {
 pub struct OnlinePlay {
     board: Option<LichessBoard>,
     connection: Option<ConnectionId>,
+    /// Todas as Conexões de jogador autorizadas, com a conta (a padrão é uma delas).
+    accounts: Vec<(ConnectionId, String)>,
+    /// A rede, para abrir a sessão de uma Partida pela Conexão dela.
+    net: Option<chess_net::Net>,
     clock: Option<Arc<dyn Clock>>,
     events: Option<ConnectionEvents>,
     seek: Option<SeekRun>,
@@ -398,8 +443,18 @@ impl std::fmt::Debug for OnlinePlay {
     }
 }
 
-/// A Origem da Partida online no banco (PO-16): Provedor, id, endereço e licença dos dados.
-fn metadata(game: &Game, at: Timestamp) -> GameMetadata {
+/// O nome do jogador local numa Partida online (a conta no Provedor).
+fn local_account(game: &Game) -> Option<&str> {
+    let online = game.setup().online_game()?;
+    Some(match online.local_color {
+        Color::White => online.white.name.as_str(),
+        Color::Black => online.black.name.as_str(),
+    })
+}
+
+/// A Origem da Partida online no banco (PO-16): Provedor, id, endereço e licença dos dados; no
+/// Lichess, também a Conexão que a joga e a conta (PO-20).
+fn metadata(game: &Game, at: Timestamp, connection: Option<ConnectionId>) -> GameMetadata {
     let online = game.setup().online_game();
     let remote = online.map(|o| o.remote_id.clone()).unwrap_or_default();
     let provider = online.and_then(|o| Provider::of_key(&o.provider));
@@ -430,6 +485,8 @@ fn metadata(game: &Game, at: Timestamp) -> GameMetadata {
                 "license": "CC0-1.0",
                 "mode": "api",
                 "queried_at_ms": at.as_millis(),
+                "connection_id": connection.map(|c| c.0),
+                "account": local_account(game),
             }
         }),
     }
@@ -442,6 +499,8 @@ pub(super) struct Confirmed<'a> {
     /// A Partida acabou de nascer: o setup vai ao banco antes dos Eventos.
     pub created: bool,
     pub events: &'a [Event],
+    /// A Conexão que joga a Partida (Lichess; o FICS não tem).
+    pub connection: Option<ConnectionId>,
 }
 
 /// Grava no banco exatamente o que o Provedor confirmou (PO-16): o setup quando a Partida
@@ -457,10 +516,11 @@ pub(super) fn record(
     if confirmed.created
         && let (Some(game), Some(access)) = (confirmed.game, store.as_mut())
     {
-        match access
-            .store
-            .create_game_for(access.profile, game.setup(), &metadata(game, at))
-        {
+        match access.store.create_game_for(
+            access.profile,
+            game.setup(),
+            &metadata(game, at, confirmed.connection),
+        ) {
             Ok(id) => *store_id = Some(id),
             Err(error) => notices.push(OnlineNotice::StoreFailed(error.to_string())),
         }
@@ -477,6 +537,15 @@ pub(super) fn record(
             chess_game::EventKind::GameEnded { .. } | chess_game::EventKind::GameAborted
         )
     })
+}
+
+/// A Conexão gravada de uma Partida online do Lichess (PO-20).
+fn stored_connection(metadata: &serde_json::Value) -> Option<ConnectionId> {
+    metadata
+        .get("online")?
+        .get("connection_id")?
+        .as_i64()
+        .map(ConnectionId)
 }
 
 /// A Partida do banco é online (gravada por este serviço)?
@@ -505,6 +574,13 @@ impl OnlinePlay {
     /// seguem até o fim (a Partida não some por trocar a Central).
     pub fn follow_connection(&mut self, net: &NetService) {
         let now = net.authorized_connection(ProviderId::Lichess, StoreRole::Player);
+        let accounts = net.authorized_accounts(ProviderId::Lichess, StoreRole::Player);
+        if accounts != self.accounts {
+            self.accounts = accounts;
+        }
+        if self.net.is_none() {
+            self.net = Some(net.net().clone());
+        }
         if now == self.connection && (now.is_none() || self.board.is_some()) {
             return;
         }
@@ -730,6 +806,7 @@ impl OnlinePlay {
                     seconds_left: None,
                     days: online.days_per_move,
                     stored: true,
+                    opponent_moved: false,
                 },
             );
         }
@@ -745,15 +822,41 @@ impl OnlinePlay {
                     seconds_left: None,
                     days: None,
                     stored: false,
+                    opponent_moved: false,
                 });
             // O Lichess sabe melhor de quem é a vez e quanto falta.
             row.my_turn = info.is_my_turn;
             row.seconds_left = info.seconds_left;
+            row.opponent_moved = self
+                .db
+                .in_progress
+                .iter()
+                .find(|(_, g)| {
+                    g.setup()
+                        .online_game()
+                        .is_some_and(|o| o.remote_id == info.game_id)
+                })
+                .is_some_and(|(_, g)| opponent_moved_since(g, info));
         }
-        // Na vez do jogador primeiro; depois quem tem menos tempo.
+        // Lance novo do adversário primeiro; depois a vez do jogador; depois quem tem menos
+        // tempo.
         let mut rows: Vec<PlayingRow> = rows.into_values().collect();
-        rows.sort_by_key(|r| (!r.my_turn, r.seconds_left.unwrap_or(u64::MAX)));
+        rows.sort_by_key(|r| {
+            (
+                !r.opponent_moved,
+                !r.my_turn,
+                r.seconds_left.unwrap_or(u64::MAX),
+            )
+        });
         rows
+    }
+
+    /// Partidas por correspondência com Lance novo do adversário, pela última Atualização.
+    pub fn opponent_moved(&self) -> usize {
+        self.playing_rows()
+            .iter()
+            .filter(|r| r.opponent_moved)
+            .count()
     }
 
     /// Partidas online em andamento no banco (correspondência e as que o app não fechou).
@@ -769,7 +872,7 @@ impl OnlinePlay {
             return Ok(());
         }
         let board = self.ready(net)?;
-        let live = match self.resume_stored(&board, remote_id) {
+        let live = match self.resume_stored(remote_id) {
             Some(live) => live?,
             None => {
                 let info = self
@@ -778,7 +881,8 @@ impl OnlinePlay {
                     .find(|i| i.game_id == remote_id)
                     .cloned()
                     .ok_or(Unavailable::Board(BoardError::WrongGame))?;
-                self.start_session(&board, info)
+                let connection = self.connection.ok_or(Unavailable::NoConnection)?;
+                self.start_session(&board, connection, info)
             }
         };
         self.games.push(live);
@@ -786,13 +890,57 @@ impl OnlinePlay {
         Ok(())
     }
 
+    /// A Conexão que joga a Partida do banco `id` (PO-20): a gravada, se ainda está
+    /// autorizada; nas anteriores ao #267, a autorizada cuja conta é a do jogador local na
+    /// Partida. Nunca outra conta: sem a dela, a recusa diz qual é.
+    fn connection_of(&self, id: GameId, game: &Game) -> Result<ConnectionId, Unavailable> {
+        let account = local_account(game).unwrap_or_default();
+        let refused = || Unavailable::GameAccount {
+            account: account.to_owned(),
+        };
+        let authorized = |c: ConnectionId| {
+            self.connection == Some(c) || self.accounts.iter().any(|(a, _)| *a == c)
+        };
+        if let Some(stored) = self.db.connections.get(&id).copied() {
+            return authorized(stored).then_some(stored).ok_or_else(refused);
+        }
+        if let Some((c, _)) = self
+            .accounts
+            .iter()
+            .find(|(_, name)| name.eq_ignore_ascii_case(account))
+        {
+            return Ok(*c);
+        }
+        // A conta da padrão é desconhecida (sem a Central, como nos testes antigos): não há com o
+        // que conferir. Conhecida e diferente: recusa.
+        match self.connection {
+            Some(default) if !self.accounts.iter().any(|(c, _)| *c == default) => Ok(default),
+            _ => Err(refused()),
+        }
+    }
+
+    /// O cliente da Board API pela Conexão `connection` (o da padrão já está pronto).
+    fn board_for(&self, connection: ConnectionId) -> Result<LichessBoard, Unavailable> {
+        if self.connection == Some(connection)
+            && let Some(board) = &self.board
+        {
+            return Ok(board.clone());
+        }
+        let (Some(net), Some(clock)) = (&self.net, &self.clock) else {
+            return Err(Unavailable::NoConnection);
+        };
+        LichessBoard::new(
+            net.clone(),
+            clock.clone(),
+            connection,
+            ConnectionRole::Player,
+        )
+        .map_err(Unavailable::Board)
+    }
+
     /// A sessão de uma Partida que já está no banco: continua pelo retrato do Provedor, no
-    /// mesmo log (nunca uma segunda linha).
-    fn resume_stored(
-        &self,
-        board: &LichessBoard,
-        remote_id: &str,
-    ) -> Option<Result<Live, Unavailable>> {
+    /// mesmo log (nunca uma segunda linha), sempre pela Conexão que a joga (PO-20).
+    fn resume_stored(&self, remote_id: &str) -> Option<Result<Live, Unavailable>> {
         let (id, game) = self.db.in_progress.iter().find(|(_, g)| {
             g.setup()
                 .online_game()
@@ -802,28 +950,37 @@ impl OnlinePlay {
             .setup()
             .online_game()
             .is_some_and(|o| o.days_per_move.is_none());
-        Some(
-            board
+        let resumed = self.connection_of(*id, game).and_then(|connection| {
+            self.board_for(connection)?
                 .resume_game(game.clone())
                 .map(|session| Live {
                     session,
+                    connection,
                     store_id: Some(*id),
                     realtime,
                     info: None,
                     fetching_end: false,
                 })
-                .map_err(Unavailable::Board),
-        )
+                .map_err(Unavailable::Board)
+        });
+        Some(resumed)
     }
 
-    /// A sessão de uma Partida que começou agora (ou que já estava no banco).
-    fn start_session(&self, board: &LichessBoard, info: GameInfo) -> Live {
-        if let Some(Ok(mut live)) = self.resume_stored(board, &info.game_id) {
+    /// A sessão de uma Partida que começou agora (ou que já estava no banco), pela Conexão do
+    /// fluxo de eventos que a anunciou (a padrão).
+    fn start_session(
+        &self,
+        board: &LichessBoard,
+        connection: ConnectionId,
+        info: GameInfo,
+    ) -> Live {
+        if let Some(Ok(mut live)) = self.resume_stored(&info.game_id) {
             live.info = Some(info);
             return live;
         }
         Live {
             session: board.open_game(&info),
+            connection,
             store_id: None,
             realtime: info.speed != "correspondence",
             info: Some(info),
@@ -837,10 +994,7 @@ impl OnlinePlay {
         if self.live(remote_id).is_some() {
             return;
         }
-        let Some(board) = self.board.clone() else {
-            return;
-        };
-        if let Some(Ok(mut live)) = self.resume_stored(&board, remote_id) {
+        if let Some(Ok(mut live)) = self.resume_stored(remote_id) {
             live.fetching_end = true;
             self.games.push(live);
         }
@@ -904,13 +1058,26 @@ impl OnlinePlay {
     /// trava continua por ela, pelo banco); as de tempo real seguem até o fim. `shown` é o id
     /// da Partida do Lichess no tabuleiro (nenhum, se o tabuleiro mostra outra coisa).
     pub fn follow_board(&mut self, shown: Option<&str>) {
-        let before = self.games.len();
-        self.games.retain(|g| {
-            g.realtime || g.fetching_end || Some(g.remote_id()) == shown || g.game().is_none()
-        });
-        if self.games.len() != before {
-            self.db.dirty = true;
+        let (keep, closed): (Vec<Live>, Vec<Live>) =
+            std::mem::take(&mut self.games).into_iter().partition(|g| {
+                g.realtime || g.fetching_end || Some(g.remote_id()) == shown || g.game().is_none()
+            });
+        self.games = keep;
+        if closed.is_empty() {
+            return;
         }
+        // A cópia do banco fica com o que a sessão já gravou: reaberta antes da releitura, a
+        // Partida não recebe de novo Eventos que já estão no log.
+        for live in &closed {
+            if let (Some(id), Some(game)) = (live.store_id, live.game())
+                && let Some(entry) = self.db.in_progress.iter_mut().find(|(i, _)| *i == id)
+            {
+                // Só o log: a intenção enviada e a marca de dessincronização são voláteis (PO-04,
+                // PO-05) e morrem com a sessão.
+                entry.1 = Game::replay(game.setup().clone(), game.events());
+            }
+        }
+        self.db.dirty = true;
     }
 
     // --- O quadro ------------------------------------------------------------------------
@@ -961,10 +1128,14 @@ impl OnlinePlay {
             return;
         };
         self.db.in_progress.clear();
+        self.db.connections.clear();
         for summary in summaries {
             let Some(remote) = stored_remote_id(&summary.metadata) else {
                 continue;
             };
+            if let Some(connection) = stored_connection(&summary.metadata) {
+                self.db.connections.insert(summary.id, connection);
+            }
             self.db.by_remote.insert(remote, summary.id);
             if let Ok(game) = store.load_game(summary.id)
                 && !game.snapshot().is_over()
@@ -1041,7 +1212,7 @@ impl OnlinePlay {
             });
             return;
         }
-        let Some(board) = self.board.clone() else {
+        let (Some(board), Some(connection)) = (self.board.clone(), self.connection) else {
             return;
         };
         let correspondence = info.speed == "correspondence";
@@ -1064,7 +1235,7 @@ impl OnlinePlay {
             return;
         }
         let remote_id = info.game_id.clone();
-        let live = self.start_session(&board, info);
+        let live = self.start_session(&board, connection, info);
         self.games.push(live);
         self.to_show = Some(GameKey::new(Provider::Lichess, remote_id.clone()));
         self.notices.push(OnlineNotice::GameStarted { remote_id });
@@ -1175,15 +1346,25 @@ impl OnlinePlay {
                 self.playing = None;
                 // Do banco, em andamento aqui e fora da lista do Lichess: terminou enquanto o
                 // app estava fechado. O retrato do fim vem pela sessão.
+                // Só as da conta desta lista: a de outra Conexão não aparece nela (PO-20).
                 let gone: Vec<String> = self
                     .db
                     .in_progress
                     .iter()
+                    .filter(|(id, g)| {
+                        self.connection.is_some()
+                            && self.connection_of(*id, g).ok() == self.connection
+                    })
                     .filter_map(|(_, g)| g.setup().online_game().map(|o| o.remote_id.clone()))
                     .filter(|id| !self.remote.iter().any(|r| &r.game_id == id))
                     .collect();
                 for remote_id in gone {
                     self.fetch_end(&remote_id);
+                }
+                // O aviso só nasce aqui: nenhuma rede sozinha, só o Atualizar do jogador.
+                let count = self.opponent_moved();
+                if count > 0 {
+                    self.notices.push(OnlineNotice::OpponentMoved { count });
                 }
             }
             Some(Err(error)) => {
@@ -1207,6 +1388,7 @@ impl OnlinePlay {
                     game: live.session.game(),
                     created: polled.created,
                     events: &polled.events,
+                    connection: Some(live.connection),
                 },
                 now,
                 &mut self.notices,

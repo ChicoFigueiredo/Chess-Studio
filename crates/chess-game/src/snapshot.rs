@@ -208,13 +208,19 @@ impl Snapshot {
                 sent_move: None,
                 desync: None,
                 aborted: state.aborted,
+                closed_without_result: state.closed_without_result,
             }),
         }
     }
 
-    /// A Partida terminou: com resultado ou abortada pelo Provedor.
+    /// A Partida terminou: com resultado, abortada pelo Provedor ou encerrada sem resultado
+    /// pelo jogador (FC-22).
     pub fn is_over(&self) -> bool {
-        self.outcome.is_some() || self.online.as_ref().is_some_and(|o| o.aborted)
+        self.outcome.is_some()
+            || self
+                .online
+                .as_ref()
+                .is_some_and(|o| o.aborted || o.closed_without_result)
     }
 
     /// Relógio em `ts` (atalho para `clock.at(ts)`); `None` sem controle de tempo.

@@ -763,3 +763,157 @@ fn boards_repeated_late_or_cut_never_regress_or_diverge() {
         assert_eq!(moves, truth.len(), "semente {seed}");
     }
 }
+
+// ---- Desafio por nome (`match`, #272) --------------------------------------------------------
+
+#[test]
+fn a_challenge_by_name_is_issued_declined_withdrawn_and_starts_a_game() {
+    let env = env();
+    let (mut session, mut seen) = login(&env);
+
+    session.challenge(OPPONENT, 3, 0, None).unwrap();
+    assert!(
+        env.server
+            .wait_line(&format!("match {OPPONENT} 3 0 unrated"), WAIT)
+    );
+    let sent = session.outgoing().unwrap();
+    assert_eq!(
+        (sent.opponent.as_str(), sent.minutes, sent.increment_s),
+        (OPPONENT, 3, 0)
+    );
+    assert!(!sent.issued, "só com a confirmação do FICS");
+    // Um desafio por vez: o segundo é recusado antes da rede.
+    assert!(matches!(
+        session.challenge("GuestZZZZ", 5, 0, None),
+        Err(FicsError::NotAllowed(_))
+    ));
+    env.server.send(&format!(
+        "\nIssuing: {ME} (++++) {OPPONENT} (++++) unrated lightning 3 0.\nfics% "
+    ));
+    assert!(poll_until(&mut session, &mut seen, |s, _| s
+        .notices
+        .contains(&FicsNotice::ChallengeIssued {
+            to: OPPONENT.to_owned()
+        })));
+    assert!(session.outgoing().unwrap().issued);
+    env.server
+        .send(&format!("\n{OPPONENT} declines the match offer.\nfics% "));
+    assert!(poll_until(&mut session, &mut seen, |s, _| s
+        .notices
+        .contains(&FicsNotice::ChallengeDeclined {
+            by: OPPONENT.to_owned()
+        })));
+    assert!(session.outgoing().is_none(), "o recusado sai");
+
+    // De novo, com cor; retirar o desafio sai uma vez.
+    session
+        .challenge(OPPONENT, 5, 3, Some(Color::Black))
+        .unwrap();
+    assert!(
+        env.server
+            .wait_line(&format!("match {OPPONENT} 5 3 unrated black"), WAIT)
+    );
+    session.withdraw_challenge().unwrap();
+    assert!(env.server.wait_line(&format!("withdraw {OPPONENT}"), WAIT));
+    assert!(session.outgoing().is_none());
+
+    // Quem não está no FICS: o motivo volta, nada fica pendurado.
+    session.challenge("GuestNOPE", 5, 0, None).unwrap();
+    assert!(env.server.wait_line("match GuestNOPE 5 0 unrated", WAIT));
+    env.server.send("\nGuestNOPE is not logged in.\nfics% ");
+    assert!(poll_until(&mut session, &mut seen, |s, _| s
+        .notices
+        .contains(&FicsNotice::ChallengeFailed {
+            name: "GuestNOPE".to_owned()
+        })));
+    assert!(session.outgoing().is_none());
+
+    // Aceito: a Partida começa como qualquer outra e o desafio enviado acaba.
+    session.challenge(OPPONENT, 5, 0, None).unwrap();
+    assert!(
+        env.server
+            .wait_line(&format!("match {OPPONENT} 5 0 unrated"), WAIT)
+    );
+    env.server.send(&format!(
+        "\nIssuing: {ME} (++++) {OPPONENT} (++++) unrated blitz 5 0.\nfics% \n\
+         {{Game {GAME} ({ME} vs. {OPPONENT}) Creating unrated blitz match.}}\n\n{}\nfics% ",
+        my_board(&CanonicalPosition::start(), 300, 300)
+    ));
+    assert!(poll_until(&mut session, &mut seen, |s, _| s.created));
+    assert!(session.outgoing().is_none());
+    assert!(session.holds_fair_play());
+    // Durante a Partida, nenhum desafio sai.
+    assert!(matches!(
+        session.challenge("GuestZZZZ", 5, 0, None),
+        Err(FicsError::NotAllowed(_))
+    ));
+}
+
+#[test]
+fn a_challenge_by_name_never_carries_a_variant_nor_a_bad_name_to_the_network() {
+    let env = env();
+    let (mut session, _seen) = login(&env);
+    let before = env.server.received_lines().len();
+    for name in [
+        "",
+        "ab",
+        "Guest EFGH",
+        "GuestEFGH wild 22",
+        "GuestEFGH\nresign",
+        "Guest_EFGH",
+        "Guest1234",
+        "UmNomeComMaisDeDezessete",
+        ME,
+        "guestqwer",
+    ] {
+        assert!(
+            session.challenge(name, 5, 0, None).is_err(),
+            "{name:?} seria aceito"
+        );
+    }
+    // Ritmo fora do que o FICS aceita.
+    assert!(session.challenge(OPPONENT, 601, 0, None).is_err());
+    assert!(session.challenge(OPPONENT, 5, 301, None).is_err());
+    std::thread::sleep(Duration::from_millis(100));
+    assert_eq!(
+        env.server.received_lines().len(),
+        before,
+        "nada saiu: nenhuma variante (`wild`) nem linha extra"
+    );
+    assert!(session.outgoing().is_none());
+    // O nome válido só leva xadrez padrão, sem rating.
+    assert!(Fics::valid_handle(OPPONENT));
+    assert!(!Fics::valid_handle("GuestEFGH wild 22"));
+    session.challenge(OPPONENT, 0, 0, None).unwrap();
+    assert!(
+        env.server
+            .wait_line(&format!("match {OPPONENT} 0 0 unrated"), WAIT)
+    );
+}
+
+#[test]
+fn a_challenge_withdrawn_by_the_challenger_leaves_the_list() {
+    let env = env();
+    let (mut session, mut seen) = login(&env);
+    env.server.send(&format!(
+        "\nChallenge: {OPPONENT} (----) {ME} (----) unrated blitz 3 0.\nfics% "
+    ));
+    assert!(poll_until(&mut session, &mut seen, |_, s| !s
+        .challenges()
+        .is_empty()));
+    env.server
+        .send(&format!("\n{OPPONENT} withdraws the match offer.\nfics% "));
+    assert!(poll_until(&mut session, &mut seen, |_, s| s
+        .challenges()
+        .is_empty()));
+    // Recado de outro jogador não mexe na lista.
+    env.server.send(&format!(
+        "\nChallenge: {OPPONENT} (----) {ME} (----) unrated blitz 3 0.\nfics% \n\
+         GuestZZZZ tells you: {OPPONENT} withdraws the match offer.\nfics% "
+    ));
+    assert!(poll_until(&mut session, &mut seen, |_, s| !s
+        .challenges()
+        .is_empty()));
+    poll_for(&mut session, &mut seen, Duration::from_millis(100));
+    assert_eq!(session.challenges().len(), 1);
+}

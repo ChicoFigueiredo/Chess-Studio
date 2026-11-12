@@ -17,6 +17,7 @@ library-result-white = Brancas vencem (1-0)
 library-result-black = Pretas vencem (0-1)
 library-result-draw = Empate (1/2-1/2)
 library-result-unfinished = Sem resultado (*)
+library-result-unconfirmed = Sem resultado confirmado (a conexão com o FICS caiu)
 
 library-search-hint = Pesquisar: jogador, evento, abertura (e4 c5)…
 library-filters = Filtros

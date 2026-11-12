@@ -20,7 +20,9 @@ use bevy::prelude::MessageWriter;
 use bevy_egui::egui;
 use chess_input::controls::Action;
 use chess_net::{ProviderId, Timestamp};
-use chess_providers::{FicsChallenge, FicsError, FicsStatus, ObservedGame, ProviderError};
+use chess_providers::{
+    Fics, FicsChallenge, FicsError, FicsOutgoing, FicsStatus, ObservedGame, ProviderError,
+};
 use egui_phosphor::regular as icon;
 use std::time::Duration;
 
@@ -52,6 +54,8 @@ pub struct FicsForm {
     pub pace: (u32, u32),
     /// Número da Partida a observar.
     pub observe: String,
+    /// Nome de quem desafiar (`match`).
+    pub name: String,
 }
 
 impl Default for FicsForm {
@@ -59,6 +63,7 @@ impl Default for FicsForm {
         Self {
             pace: (5, 3),
             observe: String::new(),
+            name: String::new(),
         }
     }
 }
@@ -67,6 +72,12 @@ impl FicsForm {
     /// O número digitado, se for um número de Partida válido.
     pub fn observe_number(&self) -> Option<u32> {
         self.observe.trim().parse().ok().filter(|n| *n > 0)
+    }
+
+    /// O nome digitado, se for um nome do FICS (só letras: nada de variante na linha).
+    pub fn challenge_name(&self) -> Option<&str> {
+        let name = self.name.trim();
+        Fics::valid_handle(name).then_some(name)
     }
 }
 
@@ -87,6 +98,8 @@ pub struct FicsView {
     pub dropped: bool,
     pub seek: Option<FicsSeek>,
     pub challenges: Vec<FicsChallenge>,
+    /// O desafio por nome enviado, até a resposta.
+    pub outgoing: Option<FicsOutgoing>,
     pub observe_requested: Option<u32>,
     pub observing: bool,
     pub observed: Option<ObservedGame>,
@@ -106,6 +119,7 @@ impl FicsView {
             dropped: fics.dropped_mid_game(),
             seek: fics.seek_state(),
             challenges: fics.challenges().to_vec(),
+            outgoing: fics.outgoing().cloned(),
             observe_requested: fics.observe_requested(),
             observing: fics.observing(),
             observed: fics.observed(),
@@ -132,8 +146,14 @@ pub enum FicsIntent {
     Unseek,
     Accept(String),
     Decline(String),
+    /// Desafia pelo nome digitado, no ritmo escolhido.
+    Challenge,
+    /// Retira o desafio por nome enviado.
+    Withdraw,
     Observe,
     Unobserve,
+    /// Encerra no app, sem resultado, a Partida que caiu (FC-22).
+    CloseUnconfirmed,
 }
 
 // --- Textos -----------------------------------------------------------------------------------
@@ -170,7 +190,10 @@ pub fn unavailable_text(i18n: &I18n, error: &Unavailable) -> String {
     match error {
         Unavailable::ProviderOff => i18n.t("fics-error-disabled"),
         Unavailable::Fics(error) => error_text(i18n, error),
-        Unavailable::NoConnection | Unavailable::Board(_) => i18n.t("fics-error-generic"),
+        Unavailable::Store(error) => i18n.t_with("online-notice-store", &[("error", error)]),
+        Unavailable::NoConnection | Unavailable::Board(_) | Unavailable::GameAccount { .. } => {
+            i18n.t("fics-error-generic")
+        }
     }
 }
 
@@ -186,6 +209,18 @@ pub fn info_text(i18n: &I18n, info: &FicsInfo) -> (StatusTone, String) {
         FicsInfo::Challenge { name } => (
             StatusTone::Info,
             i18n.t_with("fics-notice-challenge", &[("name", name)]),
+        ),
+        FicsInfo::ChallengeIssued { to } => (
+            StatusTone::Info,
+            i18n.t_with("fics-notice-challenge-issued", &[("name", to)]),
+        ),
+        FicsInfo::ChallengeDeclined { by } => (
+            StatusTone::Warning,
+            i18n.t_with("fics-notice-challenge-declined", &[("name", by)]),
+        ),
+        FicsInfo::ChallengeFailed { name } => (
+            StatusTone::Warning,
+            i18n.t_with("fics-notice-challenge-failed", &[("name", name)]),
         ),
         FicsInfo::MoveRefused { mv: m } => (
             StatusTone::Warning,
@@ -337,9 +372,20 @@ fn closed(ui: &mut egui::Ui, i18n: &I18n, view: &FicsView, intents: &mut Vec<Fic
         notice_line(ui, StatusTone::Danger, &i18n.t("fics-dropped-text"));
         ui.add_space(4.0);
         muted(ui, i18n.t("fics-dropped-lock"));
+        ui.add_space(4.0);
+        muted(ui, i18n.t("fics-close-unconfirmed-text"));
         footer(ui, |ui| {
             if ui
-                .add(CsButton::new(&i18n.t("fics-discard")).variant(ButtonVariant::Danger))
+                .add(
+                    CsButton::new(&i18n.t("fics-close-unconfirmed"))
+                        .variant(ButtonVariant::Primary),
+                )
+                .clicked()
+            {
+                intents.push(FicsIntent::CloseUnconfirmed);
+            }
+            if ui
+                .add(CsButton::new(&i18n.t("fics-discard")).variant(ButtonVariant::Subtle))
                 .clicked()
             {
                 intents.push(FicsIntent::ConfirmLeave);
@@ -458,7 +504,7 @@ fn ready(
     ui.add_space(16.0);
     match state.fics_tab {
         FicsTab::Seek => seek_tab(ui, i18n, state, view, intents),
-        FicsTab::Challenges => challenges_tab(ui, i18n, view, intents),
+        FicsTab::Challenges => challenges_tab(ui, i18n, state, view, intents),
         FicsTab::Observe => observe_tab(ui, i18n, state, view, intents),
     }
 }
@@ -495,30 +541,7 @@ fn seek_tab(
     }
     section(ui, &i18n.t("online-pace-label"));
     ui.add_space(8.0);
-    egui::Grid::new("grid_fics_seek_paces")
-        .num_columns(2)
-        .spacing([12.0, 8.0])
-        .show(ui, |ui| {
-            for (label, paces) in PACES {
-                let p = palette(ui);
-                ui.label(egui::RichText::new(i18n.t(label)).color(p.ink_muted));
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 4.0;
-                    for pace in paces {
-                        if ui
-                            .add(
-                                CsButton::new(&pace_text(pace.0, pace.1))
-                                    .toggled(state.fics_form.pace == *pace),
-                            )
-                            .clicked()
-                        {
-                            state.fics_form.pace = *pace;
-                        }
-                    }
-                });
-                ui.end_row();
-            }
-        });
+    pace_grid(ui, i18n, "grid_fics_seek_paces", &mut state.fics_form.pace);
     ui.add_space(12.0);
     muted(ui, i18n.t("fics-seek-note"));
     ui.add_space(8.0);
@@ -543,7 +566,7 @@ fn seek_tab(
 }
 
 /// O ritmo e o tipo do desafio: "blitz 3+0 · sem rating".
-fn challenge_detail(i18n: &I18n, challenge: &FicsChallenge) -> String {
+pub fn challenge_detail(i18n: &I18n, challenge: &FicsChallenge) -> String {
     let rated = i18n.t(if challenge.rated {
         "online-rated-short"
     } else {
@@ -556,7 +579,122 @@ fn challenge_detail(i18n: &I18n, challenge: &FicsChallenge) -> String {
     )
 }
 
-fn challenges_tab(ui: &mut egui::Ui, i18n: &I18n, view: &FicsView, intents: &mut Vec<FicsIntent>) {
+/// Os ritmos de busca, em botões (a mesma escolha da busca e do desafio por nome).
+fn pace_grid(ui: &mut egui::Ui, i18n: &I18n, salt: &str, pace: &mut (u32, u32)) {
+    egui::Grid::new(salt)
+        .num_columns(2)
+        .spacing([12.0, 8.0])
+        .show(ui, |ui| {
+            for (label, paces) in PACES {
+                let p = palette(ui);
+                ui.label(egui::RichText::new(i18n.t(label)).color(p.ink_muted));
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    for option in paces {
+                        if ui
+                            .add(
+                                CsButton::new(&pace_text(option.0, option.1))
+                                    .toggled(*pace == *option),
+                            )
+                            .clicked()
+                        {
+                            *pace = *option;
+                        }
+                    }
+                });
+                ui.end_row();
+            }
+        });
+}
+
+/// Desafiar pelo nome (`match`): o nome, o ritmo e o botão; enviado, o estado e "Retirar".
+fn challenge_by_name(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    state: &mut OnlineUi,
+    view: &FicsView,
+    intents: &mut Vec<FicsIntent>,
+) {
+    let p = palette(ui);
+    section(ui, &i18n.t("fics-challenge-by-name"));
+    ui.add_space(8.0);
+    if let Some(sent) = &view.outgoing {
+        cs_card_frame(p, CardEmphasis::Full).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                if !sent.issued {
+                    ui.add(egui::Spinner::new().size(14.0).color(p.info));
+                }
+                let text = if sent.issued {
+                    i18n.t_with(
+                        "fics-challenge-waiting",
+                        &[
+                            ("name", &sent.opponent),
+                            ("pace", &pace_text(sent.minutes, sent.increment_s)),
+                        ],
+                    )
+                } else {
+                    i18n.t_with("fics-challenge-sending", &[("name", &sent.opponent)])
+                };
+                ui.add(egui::Label::new(egui::RichText::new(text).color(p.ink)).wrap());
+            });
+            ui.add_space(8.0);
+            if ui
+                .add(CsButton::new(&i18n.t("fics-challenge-withdraw")).icon(icon::X_CIRCLE))
+                .clicked()
+            {
+                intents.push(FicsIntent::Withdraw);
+            }
+        });
+        return;
+    }
+    let typed = !state.fics_form.name.trim().is_empty();
+    let valid = state.fics_form.challenge_name().is_some();
+    let error = (typed && !valid).then(|| i18n.t("fics-challenge-name-invalid"));
+    ui.scope(|ui| {
+        ui.spacing_mut().text_edit_width = 260.0;
+        cs_text_field(
+            ui,
+            &mut state.fics_form.name,
+            &i18n.t("fics-challenge-name-hint"),
+            error.as_deref(),
+        );
+    });
+    ui.add_space(8.0);
+    pace_grid(
+        ui,
+        i18n,
+        "grid_fics_challenge_paces",
+        &mut state.fics_form.pace,
+    );
+    ui.add_space(8.0);
+    muted(ui, i18n.t("fics-challenge-note"));
+    ui.add_space(8.0);
+    if ui
+        .add(
+            CsButton::new(&i18n.t("fics-challenge-send"))
+                .icon(icon::SWORD)
+                .variant(ButtonVariant::Primary)
+                .enabled(valid),
+        )
+        .clicked()
+    {
+        intents.push(FicsIntent::Challenge);
+    }
+}
+
+fn challenges_tab(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    state: &mut OnlineUi,
+    view: &FicsView,
+    intents: &mut Vec<FicsIntent>,
+) {
+    challenge_by_name(ui, i18n, state, view, intents);
+    ui.add_space(16.0);
+    section(ui, &i18n.t("fics-challenges-received"));
+    ui.add_space(8.0);
     if view.challenges.is_empty() {
         let handle = view.handle.as_deref().unwrap_or("?");
         state_block(
@@ -834,6 +972,16 @@ pub fn apply(
             FicsIntent::Unseek => fics.unseek(),
             FicsIntent::Accept(name) => fics.accept(&name),
             FicsIntent::Decline(name) => fics.decline(&name),
+            FicsIntent::Challenge => match form.challenge_name() {
+                Some(name) => fics.challenge(name, form.pace.0, form.pace.1, None),
+                None => Ok(()),
+            },
+            FicsIntent::Withdraw => fics.withdraw_challenge(),
+            // Precisa do banco e do tabuleiro: o quadro da Partida online faz (`drive_online`).
+            FicsIntent::CloseUnconfirmed => {
+                ui_state.close_request = fics.dropped_store_id();
+                Ok(())
+            }
             FicsIntent::Observe => match form.observe_number() {
                 Some(game) => fics.observe(game),
                 None => Ok(()),

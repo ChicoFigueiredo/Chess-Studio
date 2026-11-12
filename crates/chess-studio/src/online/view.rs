@@ -25,7 +25,8 @@ use chess_game::Opponent;
 use chess_input::controls::Action;
 use chess_net::Timestamp;
 use chess_providers::{
-    CORRESPONDENCE_DAYS, Challenge, ChallengeSpec, DeclineReason, LinkStatus, OnlineTime, Seek,
+    CORRESPONDENCE_DAYS, Challenge, ChallengeSpec, DeclineReason, FicsChallenge, LinkStatus,
+    OnlineTime, Seek,
 };
 use egui_phosphor::regular as icon;
 use std::collections::BTreeMap;
@@ -314,6 +315,10 @@ fn unavailable_text(i18n: &I18n, error: &Unavailable) -> String {
         Unavailable::ProviderOff => i18n.t("online-error-disabled"),
         Unavailable::Board(error) => board_error_text(i18n, error),
         Unavailable::Fics(error) => fics_view::error_text(i18n, error),
+        Unavailable::GameAccount { account } => {
+            i18n.t_with("online-error-game-account", &[("account", account)])
+        }
+        Unavailable::Store(error) => i18n.t_with("online-notice-store", &[("error", error)]),
     }
 }
 
@@ -357,6 +362,17 @@ pub fn notice_text(i18n: &I18n, notice: &OnlineNotice) -> Option<(StatusTone, St
             i18n.t_with("online-notice-store", &[("error", error)]),
         ),
         OnlineNotice::Fics(info) => fics_view::info_text(i18n, info),
+        OnlineNotice::OpponentMoved { count } => (
+            StatusTone::Accent,
+            if *count == 1 {
+                i18n.t("online-notice-moved-one")
+            } else {
+                i18n.t_with(
+                    "online-notice-moved-other",
+                    &[("count", &count.to_string())],
+                )
+            },
+        ),
     })
 }
 
@@ -487,6 +503,7 @@ pub fn online_dialog(
             view.fics.in_game,
             ui_state.fics_confirm_leave,
             ui_state.fics_error.is_some(),
+            view.fics.outgoing.as_ref().map(|o| o.issued),
         ),
     );
     let max_height = (ctx.viewport_rect().height() - 160.0).max(240.0);
@@ -1164,7 +1181,17 @@ fn playing_tab(ui: &mut egui::Ui, i18n: &I18n, view: &DialogView, intents: &mut 
 
 fn playing_row(ui: &mut egui::Ui, i18n: &I18n, row: &PlayingRow, intents: &mut Vec<Intent>) {
     let p = palette(ui);
-    cs_card_frame(p, CardEmphasis::Quiet).show(ui, |ui| {
+    // Lance novo do adversário (PO-21): o cartão em destaque, com o selo.
+    let emphasis = if row.opponent_moved {
+        CardEmphasis::Full
+    } else {
+        CardEmphasis::Quiet
+    };
+    let mut frame = cs_card_frame(p, emphasis);
+    if row.opponent_moved {
+        frame = frame.stroke(egui::Stroke::new(2.0, p.accent));
+    }
+    frame.show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
@@ -1199,7 +1226,14 @@ fn playing_row(ui: &mut egui::Ui, i18n: &I18n, row: &PlayingRow, intents: &mut V
                 {
                     intents.push(Intent::Open(row.remote_id.clone()));
                 }
-                if row.my_turn {
+                if row.opponent_moved {
+                    cs_status_badge(
+                        ui,
+                        StatusTone::Accent,
+                        icon::BELL_RINGING,
+                        &i18n.t("online-playing-moved"),
+                    );
+                } else if row.my_turn {
                     cs_status_badge(
                         ui,
                         StatusTone::Accent,
@@ -1237,6 +1271,8 @@ pub struct PanelView {
     pub dropped: bool,
     /// Desafios recebidos no FICS.
     pub fics_incoming: usize,
+    /// Partidas por correspondência com Lance novo do adversário (pela última Atualização).
+    pub moved: usize,
 }
 
 impl PanelView {
@@ -1254,6 +1290,7 @@ impl PanelView {
             desynced: live.is_some_and(|l| l.desynced()),
             dropped: fics && play.fics.dropped_mid_game(),
             fics_incoming: play.fics.challenges().len(),
+            moved: play.opponent_moved(),
         }
     }
 }
@@ -1266,10 +1303,12 @@ fn by_provider(provider: Provider, key: &'static str) -> &'static str {
     match key {
         "online-badge-lichess" => "fics-badge",
         "online-status-desync" => "fics-status-desync",
+        "online-status-desync-short" => "fics-status-desync-short",
         "online-status-not-open" => "fics-status-gone",
         "online-abort-tip" => "fics-abort-tip",
         "online-fairplay-on" => "fics-fairplay-on",
         "online-ended-aborted" => "fics-ended-aborted",
+        "online-ended-closed" => "fics-ended-closed",
         "online-ended-saved" => "fics-ended-saved",
         "online-resign-text" => "fics-resign-text",
         other => other,
@@ -1283,7 +1322,7 @@ fn board_provider(session: &Session) -> Provider {
 
 /// O que o Painel pediu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PanelIntent {
+pub(super) enum PanelIntent {
     Board(OnlineIntent),
     ConfirmResign,
     Continue,
@@ -1291,8 +1330,10 @@ enum PanelIntent {
     List,
     Analyze,
     Library,
-    /// FICS: descartar a sessão que caiu (solta a Trava de fair play).
+    /// FICS: descartar a sessão que caiu (solta a trava global; a da Partida fica).
     DiscardFics,
+    /// FICS: encerrar no app, sem resultado, a Partida cujo fim o FICS não confirmou (FC-22).
+    CloseUnconfirmed,
     /// FICS: ver os desafios recebidos.
     FicsChallenges,
 }
@@ -1370,6 +1411,11 @@ fn apply_panel_intent(world: &mut World, intent: PanelIntent) {
                 .resource::<OnlineService>()
                 .with(|play| play.fics.leave());
         }
+        PanelIntent::CloseUnconfirmed => {
+            // Precisa do banco: o quadro da Partida online faz (`drive_online`).
+            let id = world.resource::<Session>().online_store_id();
+            world.resource_mut::<OnlineUi>().close_request = id;
+        }
         PanelIntent::FicsChallenges => world
             .resource_mut::<OnlineUi>()
             .open_fics(super::fics_view::FicsTab::Challenges),
@@ -1436,14 +1482,23 @@ fn player_line(name: &str, rating: Option<u32>) -> String {
 fn ended_text(i18n: &I18n, session: &Session) -> String {
     let snapshot = session.snapshot();
     let Some(outcome) = snapshot.outcome else {
-        return i18n.t(by_provider(board_provider(session), "online-ended-aborted"));
+        let closed = snapshot
+            .online
+            .as_ref()
+            .is_some_and(|o| o.closed_without_result);
+        let key = if closed {
+            "online-ended-closed"
+        } else {
+            "online-ended-aborted"
+        };
+        return i18n.t(by_provider(board_provider(session), key));
     };
     let result = i18n.t(crate::ui::result_key(outcome.result));
     let reason = i18n.t(crate::ui::reason_key(outcome.reason));
     format!("{result} · {reason}")
 }
 
-fn panel_body(
+pub(super) fn panel_body(
     ui: &mut egui::Ui,
     i18n: &I18n,
     session: &Session,
@@ -1485,6 +1540,17 @@ fn panel_body(
                     )
                 };
                 icon_line(ui, icon::LIST_BULLETS, p.ink_muted, &text);
+            }
+            if view.moved > 0 {
+                let text = if view.moved == 1 {
+                    i18n.t("online-panel-moved-one")
+                } else {
+                    i18n.t_with(
+                        "online-panel-moved-other",
+                        &[("count", &view.moved.to_string())],
+                    )
+                };
+                icon_line(ui, icon::BELL_RINGING, p.accent, &text);
             }
             ui.add_space(4.0);
             if ui
@@ -1532,7 +1598,62 @@ fn panel_body(
         recent_notices(ui, i18n, notices);
         return;
     }
-    // Selos: Provedor e Conexão.
+    let opponent = match online.local_color {
+        Color::White => &online.black,
+        Color::Black => &online.white,
+    };
+    // O essencial primeiro, para caber sem rolar no dock padrão (#272): relógios, a vez e as
+    // Ações. Os selos (Provedor e conexão), os avisos, contra quem e a Trava vêm depois e podem
+    // rolar: a linha da vez já diz quando a conexão não está ao vivo. Respiro curto
+    // (`space-1`) entre as linhas; o resto do Painel também.
+    ui.spacing_mut().item_spacing.y = crate::panel_chrome::token("space-1", 4.0);
+    clocks(ui, session, online);
+    // Sem sessão no FICS: a Partida de visitante não continua (FC-08); o fim não foi
+    // confirmado e só o jogador a encerra no app (FC-22).
+    let unconfirmed = provider == Provider::Fics && (view.dropped || view.link.is_none());
+    let state = turn_state(snapshot, online, view, provider, unconfirmed);
+    match &state {
+        TurnState::Sending(san) => {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                ui.add(egui::Spinner::new().size(16.0).color(p.info));
+                ui.label(
+                    egui::RichText::new(i18n.t_with("online-status-sending", &[("san", san)]))
+                        .color(p.ink),
+                );
+            });
+        }
+        // Nada é inventado: o tabuleiro fica no último Lance que o Provedor confirmou.
+        TurnState::Desynced => {
+            notice_line(ui, StatusTone::Warning, &text("online-status-desync-short"))
+        }
+        TurnState::Dropped => notice_line(ui, StatusTone::Danger, &i18n.t("fics-dropped-title")),
+        TurnState::Unconfirmed => {
+            notice_line(ui, StatusTone::Warning, &i18n.t("fics-status-unconfirmed"));
+        }
+        TurnState::NotOpen => notice_line(ui, StatusTone::Info, &i18n.t("online-status-not-open")),
+        TurnState::Reconnecting => notice_line(
+            ui,
+            StatusTone::Warning,
+            &i18n.t("online-status-reconnecting"),
+        ),
+        TurnState::DrawOffered => {
+            let text = i18n.t_with("online-draw-offered-by-them", &[("name", &opponent.name)]);
+            notice_line(ui, StatusTone::Info, &text);
+        }
+        TurnState::Turn(mine) => {
+            let (glyph, tint, key) = if *mine {
+                (icon::HAND_POINTING, p.accent, "online-status-your-turn")
+            } else {
+                (icon::HOURGLASS, p.ink_muted, "online-status-their-turn")
+            };
+            icon_line(ui, glyph, tint, &i18n.t(key));
+        }
+    }
+    ui.add_space(crate::panel_chrome::token("space-1", 4.0));
+    actions_row(ui, i18n, snapshot, view, &state, &text, intents);
+    // Os detalhes (podem rolar): primeiro os selos.
+    ui.add_space(crate::panel_chrome::token("space-2", 8.0));
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
         cs_status_badge(
@@ -1543,48 +1664,12 @@ fn panel_body(
         );
         link_badge(ui, i18n, view.link, over, view.now);
     });
-    ui.add_space(8.0);
-    // FICS: a conexão caiu durante a Partida. O FICS a dá como perdida; nada reconecta.
-    if view.dropped {
-        notice_line(ui, StatusTone::Danger, &i18n.t("fics-dropped-text"));
-        ui.add_space(4.0);
-        muted(ui, i18n.t("fics-dropped-lock"));
-        ui.add_space(4.0);
-        if ui
-            .add(CsButton::new(&i18n.t("fics-discard")).variant(ButtonVariant::Danger))
-            .clicked()
-        {
-            intents.push(PanelIntent::DiscardFics);
-        }
+    if snapshot.pending_draw_offer == Some(online.local_color) {
         ui.add_space(8.0);
+        muted(ui, i18n.t("online-draw-offered-by-you"));
     }
-    let opponent = match online.local_color {
-        Color::White => &online.black,
-        Color::Black => &online.white,
-    };
-    // O que pede resposta vem primeiro: proposta de empate e adversário ausente.
-    if let Some(by) = snapshot.pending_draw_offer {
-        if by == online.local_color {
-            muted(ui, i18n.t("online-draw-offered-by-you"));
-        } else {
-            let text = i18n.t_with("online-draw-offered-by-them", &[("name", &opponent.name)]);
-            notice_line(ui, StatusTone::Info, &text);
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 8.0;
-                if ui
-                    .add(CsButton::new(&i18n.t("online-accept")).variant(ButtonVariant::Primary))
-                    .clicked()
-                {
-                    intents.push(PanelIntent::Board(OnlineIntent::AcceptDraw));
-                }
-                if ui.add(CsButton::new(&i18n.t("online-decline"))).clicked() {
-                    intents.push(PanelIntent::Board(OnlineIntent::DeclineDraw));
-                }
-            });
-        }
-    }
-    // Adversário ausente.
     if view.opponent_gone {
+        ui.add_space(8.0);
         notice_line(ui, StatusTone::Warning, &i18n.t("online-opponent-gone"));
         if ui
             .add(CsButton::new(&i18n.t("online-claim-victory")).enabled(view.can_claim))
@@ -1593,97 +1678,31 @@ fn panel_body(
             intents.push(PanelIntent::Board(OnlineIntent::ClaimVictory));
         }
     }
-    if snapshot.pending_draw_offer.is_some() || view.opponent_gone {
+    if state == TurnState::Desynced {
+        // A explicação inteira (a linha da vez só diz que não confere).
         ui.add_space(8.0);
+        muted(ui, text("online-status-desync"));
     }
-    // Estado da vez.
-    let online_view = snapshot.online.as_ref();
-    if let Some(sent) = online_view.and_then(|o| o.sent_move.as_ref()) {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 8.0;
-            ui.add(egui::Spinner::new().size(16.0).color(p.info));
-            ui.label(
-                egui::RichText::new(i18n.t_with("online-status-sending", &[("san", &sent.san)]))
-                    .color(p.ink),
-            );
-        });
-    } else if online_view.is_some_and(|o| o.desync.is_some()) || view.desynced {
-        // Nada é inventado: o tabuleiro fica no último Lance que o Provedor confirmou.
-        notice_line(ui, StatusTone::Warning, &text("online-status-desync"));
-    } else if view.dropped {
-        // O aviso da queda já está acima.
-    } else if view.link.is_none() && provider == Provider::Fics {
-        // A Partida de visitante não continua em outra sessão (FC-08).
-        notice_line(ui, StatusTone::Warning, &text("online-status-not-open"));
-    } else if view.link.is_none() {
-        notice_line(ui, StatusTone::Info, &i18n.t("online-status-not-open"));
+    if view.dropped {
+        // A conexão caiu durante a Partida: o FICS a dá como perdida; nada reconecta.
+        ui.add_space(8.0);
+        notice_line(ui, StatusTone::Danger, &i18n.t("fics-dropped-text"));
         ui.add_space(4.0);
+        muted(ui, i18n.t("fics-dropped-lock"));
         if ui
-            .add(
-                CsButton::new(&i18n.t("online-continue"))
-                    .icon(icon::ARROWS_CLOCKWISE)
-                    .variant(ButtonVariant::Primary),
-            )
+            .add(CsButton::new(&i18n.t("fics-discard")).variant(ButtonVariant::Subtle))
             .clicked()
         {
-            intents.push(PanelIntent::Continue);
+            intents.push(PanelIntent::DiscardFics);
         }
-    } else if matches!(view.link, Some(LinkStatus::Retrying { .. })) {
-        notice_line(
-            ui,
-            StatusTone::Warning,
-            &i18n.t("online-status-reconnecting"),
-        );
-    } else {
-        let mine = snapshot.side_to_move == online.local_color;
-        let (glyph, tint, key) = if mine {
-            (icon::HAND_POINTING, p.accent, "online-status-your-turn")
-        } else {
-            (icon::HOURGLASS, p.ink_muted, "online-status-their-turn")
-        };
-        icon_line(ui, glyph, tint, &i18n.t(key));
+    } else if unconfirmed {
+        ui.add_space(8.0);
+        muted(ui, i18n.t("fics-status-gone"));
     }
-    // Ações da Partida.
-    let live = view.link.is_some_and(|l| l != LinkStatus::Closed);
-    ui.add_space(12.0);
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
-        let early = snapshot.history.len() < 2;
-        if early {
-            let abort = ui
-                .add(
-                    CsButton::new(&i18n.t("online-abort"))
-                        .icon(icon::X_CIRCLE)
-                        .enabled(live),
-                )
-                .on_hover_text(text("online-abort-tip"));
-            if abort.clicked() {
-                intents.push(PanelIntent::Board(OnlineIntent::Abort));
-            }
-        }
-        let can_offer = live && snapshot.pending_draw_offer.is_none();
-        if ui
-            .add(
-                CsButton::new(&i18n.t("online-offer-draw"))
-                    .icon(icon::HANDSHAKE)
-                    .enabled(can_offer),
-            )
-            .clicked()
-        {
-            intents.push(PanelIntent::Board(OnlineIntent::OfferDraw));
-        }
-        if ui
-            .add(
-                CsButton::new(&i18n.t("online-resign"))
-                    .icon(icon::FLAG)
-                    .variant(ButtonVariant::Danger)
-                    .enabled(live),
-            )
-            .clicked()
-        {
-            intents.push(PanelIntent::ConfirmResign);
-        }
-    });
+    if unconfirmed {
+        ui.add_space(4.0);
+        muted(ui, i18n.t("fics-close-unconfirmed-text"));
+    }
     recent_notices(ui, i18n, notices);
     ui.add_space(12.0);
     players_block(ui, i18n, session, online);
@@ -1703,6 +1722,242 @@ fn panel_body(
             &i18n.t("online-fairplay-off-engine"),
         );
     }
+}
+
+/// A linha da vez no Painel: o que a Partida espera agora.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum TurnState {
+    /// A intenção enviada, à espera do Provedor.
+    Sending(String),
+    Desynced,
+    /// FICS: a conexão caiu durante a Partida.
+    Dropped,
+    /// FICS: sem sessão, o fim não foi confirmado (FC-22).
+    Unconfirmed,
+    /// Lichess: a sessão da Partida não está aberta (Continuar).
+    NotOpen,
+    Reconnecting,
+    /// O adversário propôs empate: a resposta é a Ação principal.
+    DrawOffered,
+    /// De quem é a vez (`true`: do jogador).
+    Turn(bool),
+}
+
+fn turn_state(
+    snapshot: &chess_game::Snapshot,
+    online: &chess_game::OnlineGame,
+    view: &PanelView,
+    provider: Provider,
+    unconfirmed: bool,
+) -> TurnState {
+    let online_view = snapshot.online.as_ref();
+    if let Some(sent) = online_view.and_then(|o| o.sent_move.as_ref()) {
+        return TurnState::Sending(sent.san.clone());
+    }
+    if online_view.is_some_and(|o| o.desync.is_some()) || view.desynced {
+        return TurnState::Desynced;
+    }
+    if view.dropped {
+        return TurnState::Dropped;
+    }
+    if unconfirmed {
+        return TurnState::Unconfirmed;
+    }
+    if view.link.is_none() && provider == Provider::Lichess {
+        return TurnState::NotOpen;
+    }
+    if matches!(view.link, Some(LinkStatus::Retrying { .. })) {
+        return TurnState::Reconnecting;
+    }
+    if snapshot
+        .pending_draw_offer
+        .is_some_and(|by| by != online.local_color)
+    {
+        return TurnState::DrawOffered;
+    }
+    TurnState::Turn(snapshot.side_to_move == online.local_color)
+}
+
+/// As Ações principais da Partida, numa linha (quebra se o dock for estreito).
+fn actions_row(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    snapshot: &chess_game::Snapshot,
+    view: &PanelView,
+    state: &TurnState,
+    text: &dyn Fn(&'static str) -> String,
+    intents: &mut Vec<PanelIntent>,
+) {
+    let live = view.link.is_some_and(|l| l != LinkStatus::Closed);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
+        match state {
+            TurnState::Dropped | TurnState::Unconfirmed => {
+                if ui
+                    .add(
+                        CsButton::new(&i18n.t("fics-close-unconfirmed"))
+                            .icon(icon::FLAG_CHECKERED)
+                            .variant(ButtonVariant::Primary),
+                    )
+                    .clicked()
+                {
+                    intents.push(PanelIntent::CloseUnconfirmed);
+                }
+                // "Descartar a sessão" é a saída secundária: fica com a explicação, abaixo.
+                return;
+            }
+            TurnState::NotOpen => {
+                if ui
+                    .add(
+                        CsButton::new(&i18n.t("online-continue"))
+                            .icon(icon::ARROWS_CLOCKWISE)
+                            .variant(ButtonVariant::Primary),
+                    )
+                    .clicked()
+                {
+                    intents.push(PanelIntent::Continue);
+                }
+                return;
+            }
+            TurnState::DrawOffered => {
+                if ui
+                    .add(
+                        // "Aceitar" curto: a linha da vez, logo acima, diz que é o empate, e as
+                        // três Ações cabem numa linha do dock padrão.
+                        CsButton::new(&i18n.t("online-accept"))
+                            .variant(ButtonVariant::Primary)
+                            .enabled(live),
+                    )
+                    .clicked()
+                {
+                    intents.push(PanelIntent::Board(OnlineIntent::AcceptDraw));
+                }
+                if ui
+                    .add(CsButton::new(&i18n.t("online-decline")).enabled(live))
+                    .clicked()
+                {
+                    intents.push(PanelIntent::Board(OnlineIntent::DeclineDraw));
+                }
+            }
+            _ => {
+                // No começo (antes do Lance de cada lado) a Ação é abortar; depois, propor
+                // empate. Duas Ações e Abandonar cabem numa linha do dock padrão.
+                if snapshot.history.len() < 2 {
+                    let abort = ui
+                        .add(
+                            CsButton::new(&i18n.t("online-abort"))
+                                .icon(icon::X_CIRCLE)
+                                .enabled(live),
+                        )
+                        .on_hover_text(text("online-abort-tip"));
+                    if abort.clicked() {
+                        intents.push(PanelIntent::Board(OnlineIntent::Abort));
+                    }
+                } else {
+                    let can_offer = live && snapshot.pending_draw_offer.is_none();
+                    if ui
+                        .add(
+                            CsButton::new(&i18n.t("online-offer-draw"))
+                                .icon(icon::HANDSHAKE)
+                                .enabled(can_offer),
+                        )
+                        .clicked()
+                    {
+                        intents.push(PanelIntent::Board(OnlineIntent::OfferDraw));
+                    }
+                }
+            }
+        }
+        if ui
+            .add(
+                CsButton::new(&i18n.t("online-resign"))
+                    .icon(icon::FLAG)
+                    .variant(ButtonVariant::Danger)
+                    .enabled(live),
+            )
+            .clicked()
+        {
+            intents.push(PanelIntent::ConfirmResign);
+        }
+    });
+}
+
+/// Os dois relógios, compactos: o do adversário em cima e o do jogador embaixo, como no
+/// tabuleiro. O tempo é o do Provedor (PO-07). Sem relógio (correspondência), nada.
+fn clocks(ui: &mut egui::Ui, session: &Session, online: &chess_game::OnlineGame) {
+    let Some(reading) = session.clock_reading() else {
+        return;
+    };
+    let p = palette(ui);
+    let mine = online.local_color;
+    for side in [mine.opposite(), mine] {
+        let player = match side {
+            Color::White => &online.white,
+            Color::Black => &online.black,
+        };
+        let running = reading.running == Some(side) && !reading.paused;
+        clock_row(
+            ui,
+            p,
+            side,
+            &player_line(&player.name, player.rating),
+            reading.remaining(side),
+            running,
+        );
+    }
+    if reading.running.is_some() {
+        ui.ctx().request_repaint_after(Duration::from_millis(250));
+    }
+}
+
+/// Um lado do relógio, compacto: a marca do lado, o nome e o tempo em números tabulares. Quem
+/// joga ganha o contorno `accent`, como no Painel Relógio (os mesmos tons de tempo baixo).
+fn clock_row(
+    ui: &mut egui::Ui,
+    p: &crate::ui_theme::Palette,
+    side: Color,
+    name: &str,
+    ms: u64,
+    running: bool,
+) {
+    use crate::clock::{ClockTone, clock_text, clock_tone, side_mark};
+    let stroke = if running {
+        egui::Stroke::new(2.0, p.accent)
+    } else {
+        egui::Stroke::new(1.0, p.border)
+    };
+    let digits = match clock_tone(ms) {
+        ClockTone::Normal if running => p.ink,
+        ClockTone::Normal => p.ink_muted,
+        ClockTone::Low => p.warning,
+        ClockTone::Flag => p.danger,
+    };
+    let ink = if running { p.ink } else { p.ink_muted };
+    egui::Frame::NONE
+        .fill(p.surface_2)
+        .stroke(stroke)
+        .corner_radius(crate::panel_chrome::radius("radius-m"))
+        .inner_margin(egui::Margin::symmetric(10, 2))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            // Uma linha (a altura dela, não a do Painel): o tempo à direita primeiro (nunca
+            // cortado), o nome no que sobra.
+            ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    tabular_text(ui, &clock_text(ms), strong_font(ui.ctx(), 18.0), digits);
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        let job = crate::ui_theme::icon_job(
+                            ui.ctx(),
+                            Some(side_mark(side)),
+                            name,
+                            egui::FontId::proportional(13.0),
+                            ink,
+                        );
+                        ui.add(egui::Label::new(job).truncate());
+                    });
+                });
+            });
+        });
 }
 
 /// Contra quem, de que cor e em que ritmo (os nomes e os relógios estão no Painel Relógio).
@@ -1879,6 +2134,105 @@ pub fn resign_dialog(
 
 // --- Aviso discreto: desafio recebido, oferta de atualizar ---------------------------------
 
+/// O aviso discreto da vez (um por vez).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Toast {
+    /// Desafio recebido no Lichess.
+    Lichess(Challenge),
+    /// Desafio recebido no FICS (#272).
+    Fics(FicsChallenge),
+    /// Atualizar as Partidas online em andamento (ao abrir o app, PO-18).
+    Offer(usize),
+}
+
+/// A chave de um desafio do FICS (o FICS não dá id: quem desafia e o que propõe).
+pub fn fics_challenge_key(challenge: &FicsChallenge) -> String {
+    format!(
+        "{}:{}:{}+{}",
+        challenge.challenger.to_ascii_lowercase(),
+        challenge.kind,
+        challenge.minutes,
+        challenge.increment_s
+    )
+}
+
+/// Há outra Partida competitiva em andamento (a local ou uma online contra pessoa)? Então
+/// nenhum aviso discreto aparece.
+pub fn toast_busy(session: &Session, fair: &crate::fair_play::FairPlay) -> bool {
+    session.competitive_in_progress() || fair.everything_locked()
+}
+
+/// O aviso discreto a mostrar agora: o desafio do Lichess, o do FICS ou a oferta de atualizar,
+/// nessa ordem, cada um uma vez. **Nunca** durante outra Partida competitiva (`busy`: a local
+/// ou uma online em andamento) nem com a tela da Partida online aberta.
+pub fn pending_toast(play: &OnlinePlay, state: &OnlineUi, busy: bool) -> Option<Toast> {
+    if busy || state.open {
+        return None;
+    }
+    if let Some(challenge) = play
+        .incoming
+        .iter()
+        .find(|c| !state.seen_challenges.contains(&c.id))
+    {
+        return Some(Toast::Lichess(challenge.clone()));
+    }
+    if let Some(challenge) = play
+        .fics
+        .challenges()
+        .iter()
+        .find(|c| !state.seen_fics_challenges.contains(&fics_challenge_key(c)))
+    {
+        return Some(Toast::Fics(challenge.clone()));
+    }
+    let stored = play.stored_in_progress();
+    (!state.offer_answered && play.connected() && !play.listening() && stored > 0)
+        .then_some(Toast::Offer(stored))
+}
+
+/// O cartão do aviso, no canto do tabuleiro, com sombra.
+fn toast_card(
+    ctx: &egui::Context,
+    id: &'static str,
+    at: egui::Pos2,
+    body: impl FnOnce(&mut egui::Ui),
+) {
+    egui::Area::new(egui::Id::new(id))
+        .order(egui::Order::Foreground)
+        .pivot(egui::Align2::RIGHT_TOP)
+        .fixed_pos(at)
+        .show(ctx, |ui| {
+            let p = palette(ui);
+            cs_card_frame(p, CardEmphasis::Full)
+                .shadow(egui::epaint::Shadow {
+                    offset: [0, 4],
+                    blur: 16,
+                    spread: 0,
+                    color: p.scrim,
+                })
+                .show(ui, |ui| {
+                    ui.set_width(300.0);
+                    body(ui);
+                });
+        });
+}
+
+/// "Ver" e "Fechar" do aviso de desafio.
+fn see_or_close(ui: &mut egui::Ui, i18n: &I18n, see: &mut bool, dismiss: &mut bool) {
+    ui.add_space(8.0);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        if ui
+            .add(CsButton::new(&i18n.t("online-toast-see")).variant(ButtonVariant::Primary))
+            .clicked()
+        {
+            *see = true;
+        }
+        if ui.add(CsButton::new(&i18n.t("online-close"))).clicked() {
+            *dismiss = true;
+        }
+    });
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn toasts(
     mut contexts: EguiContexts,
@@ -1893,26 +2247,15 @@ pub fn toasts(
         return Ok(());
     };
     // Nunca durante outra Partida competitiva (local ou online em andamento).
-    let busy = session.competitive_in_progress() || net.fair_play().everything_locked();
-    let (challenge, offer) = match ui_state.demo.as_ref() {
-        Some(scene) => (scene.toast_challenge(), scene.offer()),
-        None => service.with(|play| {
-            let challenge = play
-                .incoming
-                .iter()
-                .find(|c| !ui_state.seen_challenges.contains(&c.id))
-                .cloned();
-            let offer = (!ui_state.offer_answered
-                && play.connected()
-                && !play.listening()
-                && play.stored_in_progress() > 0)
-                .then(|| play.stored_in_progress());
-            (challenge, offer)
-        }),
+    let busy = toast_busy(&session, net.fair_play());
+    let toast = match ui_state.demo.as_ref() {
+        Some(_) if busy || ui_state.open => None,
+        Some(scene) => scene.toast(),
+        None => service.with(|play| pending_toast(play, &ui_state, busy)),
     };
-    if busy || ui_state.open {
+    let Some(toast) = toast else {
         return Ok(());
-    }
+    };
     let ctx = contexts.ctx_mut()?.clone();
     let top_right = dock
         .as_deref()
@@ -1924,117 +2267,97 @@ pub fn toasts(
     let mut dismiss = false;
     let mut refresh = false;
     let mut later = false;
-    if let Some(challenge) = &challenge {
-        egui::Area::new(egui::Id::new("online-toast-challenge"))
-            .order(egui::Order::Foreground)
-            .pivot(egui::Align2::RIGHT_TOP)
-            .fixed_pos(top_right)
-            .show(&ctx, |ui| {
+    match &toast {
+        Toast::Lichess(challenge) => {
+            toast_card(&ctx, "online-toast-challenge", top_right, |ui| {
                 let p = palette(ui);
-                cs_card_frame(p, CardEmphasis::Full)
-                    .shadow(egui::epaint::Shadow {
-                        offset: [0, 4],
-                        blur: 16,
-                        spread: 0,
-                        color: p.scrim,
-                    })
-                    .show(ui, |ui| {
-                        ui.set_width(300.0);
-                        let name =
-                            player_line(&challenge.challenger.name, challenge.challenger.rating);
-                        icon_line(
-                            ui,
-                            icon::SWORD,
-                            p.accent,
-                            &i18n.t_with("online-toast-challenge", &[("name", &name)]),
-                        );
-                        muted(
-                            ui,
-                            format!(
-                                "{} · {}",
-                                time_label(&i18n, challenge.time),
-                                rated_label(&i18n, challenge.rated)
-                            ),
-                        );
-                        ui.add_space(8.0);
-                        ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = 8.0;
-                            if ui
-                                .add(
-                                    CsButton::new(&i18n.t("online-toast-see"))
-                                        .variant(ButtonVariant::Primary),
-                                )
-                                .clicked()
-                            {
-                                see = true;
-                            }
-                            if ui.add(CsButton::new(&i18n.t("online-close"))).clicked() {
-                                dismiss = true;
-                            }
-                        });
-                    });
+                let name = player_line(&challenge.challenger.name, challenge.challenger.rating);
+                icon_line(
+                    ui,
+                    icon::SWORD,
+                    p.accent,
+                    &i18n.t_with("online-toast-challenge", &[("name", &name)]),
+                );
+                muted(
+                    ui,
+                    format!(
+                        "{} · {}",
+                        time_label(&i18n, challenge.time),
+                        rated_label(&i18n, challenge.rated)
+                    ),
+                );
+                see_or_close(ui, &i18n, &mut see, &mut dismiss);
             });
-    } else if let Some(count) = offer {
-        egui::Area::new(egui::Id::new("online-toast-offer"))
-            .order(egui::Order::Foreground)
-            .pivot(egui::Align2::RIGHT_TOP)
-            .fixed_pos(top_right)
-            .show(&ctx, |ui| {
+        }
+        Toast::Fics(challenge) => {
+            toast_card(&ctx, "online-toast-fics-challenge", top_right, |ui| {
                 let p = palette(ui);
-                cs_card_frame(p, CardEmphasis::Full)
-                    .shadow(egui::epaint::Shadow {
-                        offset: [0, 4],
-                        blur: 16,
-                        spread: 0,
-                        color: p.scrim,
-                    })
-                    .show(ui, |ui| {
-                        ui.set_width(300.0);
-                        ui.label(
-                            egui::RichText::new(i18n.t("online-offer-title"))
-                                .font(strong_font(ui.ctx(), 14.0))
-                                .color(p.ink),
-                        );
-                        let text = if count == 1 {
-                            i18n.t("online-offer-text-one")
-                        } else {
-                            i18n.t_with("online-offer-text-other", &[("count", &count.to_string())])
-                        };
-                        ui.add(
-                            egui::Label::new(egui::RichText::new(text).color(p.ink_muted)).wrap(),
-                        );
-                        ui.add_space(8.0);
-                        ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = 8.0;
-                            if ui
-                                .add(
-                                    CsButton::new(&i18n.t("online-offer-refresh"))
-                                        .variant(ButtonVariant::Primary),
-                                )
-                                .clicked()
-                            {
-                                refresh = true;
-                            }
-                            if ui
-                                .add(CsButton::new(&i18n.t("online-offer-later")))
-                                .clicked()
-                            {
-                                later = true;
-                            }
-                        });
-                    });
+                let name = player_line(&challenge.challenger, challenge.rating);
+                icon_line(
+                    ui,
+                    icon::SWORD,
+                    p.accent,
+                    &i18n.t_with("fics-toast-challenge", &[("name", &name)]),
+                );
+                muted(ui, fics_view::challenge_detail(&i18n, challenge));
+                see_or_close(ui, &i18n, &mut see, &mut dismiss);
             });
+        }
+        Toast::Offer(count) => {
+            toast_card(&ctx, "online-toast-offer", top_right, |ui| {
+                let p = palette(ui);
+                ui.label(
+                    egui::RichText::new(i18n.t("online-offer-title"))
+                        .font(strong_font(ui.ctx(), 14.0))
+                        .color(p.ink),
+                );
+                let text = if *count == 1 {
+                    i18n.t("online-offer-text-one")
+                } else {
+                    i18n.t_with("online-offer-text-other", &[("count", &count.to_string())])
+                };
+                ui.add(egui::Label::new(egui::RichText::new(text).color(p.ink_muted)).wrap());
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    if ui
+                        .add(
+                            CsButton::new(&i18n.t("online-offer-refresh"))
+                                .variant(ButtonVariant::Primary),
+                        )
+                        .clicked()
+                    {
+                        refresh = true;
+                    }
+                    if ui
+                        .add(CsButton::new(&i18n.t("online-offer-later")))
+                        .clicked()
+                    {
+                        later = true;
+                    }
+                });
+            });
+        }
     }
     if ui_state.demo.is_some() {
         return Ok(());
     }
-    if let Some(challenge) = challenge
-        && (see || dismiss)
-    {
-        ui_state.seen_challenges.push(challenge.id);
-        if see {
-            ui_state.open_at(Tab::Challenge);
+    match toast {
+        Toast::Lichess(challenge) if see || dismiss => {
+            ui_state.seen_challenges.push(challenge.id);
+            if see {
+                ui_state.open_at(Tab::Challenge);
+            }
         }
+        Toast::Fics(challenge) if see || dismiss => {
+            ui_state
+                .seen_fics_challenges
+                .push(fics_challenge_key(&challenge));
+            if see {
+                ui_state.open_fics(fics_view::FicsTab::Challenges);
+            }
+        }
+        _ => {}
     }
     if refresh || later {
         ui_state.offer_answered = true;

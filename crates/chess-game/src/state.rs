@@ -69,6 +69,8 @@ pub(crate) struct GameState {
     pub online: bool,
     /// Partida online abortada (fim sem resultado).
     pub aborted: bool,
+    /// Partida online encerrada pelo jogador no app, sem resultado (FC-22).
+    pub closed_without_result: bool,
     /// Último relógio informado pelo Provedor (brancas, pretas, quem corre).
     pub last_clock_report: Option<(u64, u64, Option<Color>)>,
 }
@@ -103,13 +105,15 @@ impl GameState {
             stage: setup.infraction_stage(),
             online,
             aborted: false,
+            closed_without_result: false,
             last_clock_report: None,
         }
     }
 
-    /// Terminada: com resultado ou abortada pelo Provedor.
+    /// Terminada: com resultado, abortada pelo Provedor ou encerrada sem resultado pelo
+    /// jogador.
     pub fn is_over(&self) -> bool {
-        self.outcome.is_some() || self.aborted
+        self.outcome.is_some() || self.aborted || self.closed_without_result
     }
 
     /// Posição canônica: a do último Lance **concluído**.
@@ -338,11 +342,15 @@ pub(crate) fn apply(state: &mut GameState, event: &Event) -> Result<(), String> 
             state.last_clock_report = Some((*white_ms, *black_ms, *running));
         }
         EventKind::DrawOfferWithdrawn { .. } => state.draw_offer = None,
-        EventKind::GameAborted => {
+        EventKind::GameAborted | EventKind::ClosedWithoutResult => {
             if state.is_over() {
                 return Err(bad("a Partida já terminou"));
             }
-            state.aborted = true;
+            if matches!(event.kind, EventKind::GameAborted) {
+                state.aborted = true;
+            } else {
+                state.closed_without_result = true;
+            }
             state.pending_promotion = None;
             state.draw_offer = None;
             if let Some(clock) = &mut state.clock {

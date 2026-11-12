@@ -126,3 +126,40 @@ fn partida_online_terminada_pelo_provedor_tem_resultado_no_banco() {
     assert!(summary.finished);
     assert_eq!(summary.outcome, Some(outcome));
 }
+
+/// FC-22 (#272): a Partida do FICS que caiu, encerrada pelo jogador no app: terminada, sem
+/// resultado, e a Biblioteca a conta como terminada.
+#[test]
+fn partida_online_encerrada_sem_resultado_conta_como_terminada_sem_resultado() {
+    let db = TempDb::new("online-closed");
+    let mut store = Store::open(db.path()).unwrap();
+    let mut game = Game::new(setup());
+    let id = store
+        .create_game(game.setup(), &GameMetadata::default())
+        .unwrap();
+    let events = game
+        .handle(
+            Command::Provider(snapshot("e2e4 e7e5", None)),
+            Timestamp::mono(10),
+        )
+        .unwrap();
+    store.append_events(id, &events).unwrap();
+    assert!(!store.list_games(&GameQuery::default()).unwrap()[0].finished);
+    let closed = game
+        .handle(Command::CloseWithoutResult, Timestamp::mono(20))
+        .unwrap();
+    store.append_events(id, &closed).unwrap();
+    let summary = &store.list_games(&GameQuery::default()).unwrap()[0];
+    assert!(summary.finished, "encerrada não é Partida a retomar");
+    assert_eq!(summary.outcome, None, "nenhum resultado inventado");
+    assert_eq!(store.latest_unfinished_game().unwrap(), None);
+    let loaded = store.load_game(id).unwrap();
+    assert_eq!(loaded.snapshot(), game.snapshot());
+    assert!(!loaded.online_human_in_progress());
+    let library = store
+        .search_library(&chess_store::LibraryQuery::default())
+        .unwrap();
+    let entry = &library.entries[0];
+    assert!(entry.finished);
+    assert_eq!(entry.result, "*");
+}
