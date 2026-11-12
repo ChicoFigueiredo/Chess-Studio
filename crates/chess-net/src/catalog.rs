@@ -188,7 +188,7 @@ impl Capability {
             Self::OnlineEngine => "Engine online",
             Self::Explore => "Explorador",
             Self::Endgames => "Finais",
-            Self::CachedEval => "Avaliação em cache",
+            Self::CachedEval => "Avaliação pronta",
             Self::Analyze => "Analisar",
             Self::Query => "Consultar",
             Self::Download => "Baixar",

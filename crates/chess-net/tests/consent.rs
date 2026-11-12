@@ -127,3 +127,29 @@ fn the_consent_notice_says_what_is_sent_and_where() {
         }
     }
 }
+
+/// Ramo de segurança (NFR-10, #269): o banco do consentimento que o app não entende (versão
+/// mais nova) ou que não abre é erro tipado `Storage`; a rede nunca sobe "sem consentimentos"
+/// em silêncio, e nada é regravado.
+#[test]
+fn a_consent_database_the_app_cannot_read_is_a_typed_storage_error() {
+    let dir = std::env::temp_dir().join(format!("chess-net-storage-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("dir");
+    let clock = clock();
+
+    // Versão do esquema mais nova que a do app.
+    let newer = dir.join("nova.db");
+    {
+        let conn = rusqlite::Connection::open(&newer).expect("cria");
+        conn.pragma_update(None, "user_version", 9999)
+            .expect("versão");
+    }
+    let err = Net::open(NetConfig::at_path(&newer).clock(clock.clone())).unwrap_err();
+    assert!(matches!(err, NetError::Storage { .. }), "{err:?}");
+
+    // Um diretório no lugar do arquivo do banco.
+    let err = Net::open(NetConfig::at_path(&dir).clock(clock.clone())).unwrap_err();
+    assert!(matches!(err, NetError::Storage { .. }), "{err:?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

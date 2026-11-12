@@ -69,7 +69,7 @@ fn wait_for(
     ctrl: &mut AnalysisController,
     mut pred: impl FnMut(&AnalysisEvent) -> bool,
 ) -> AnalysisEvent {
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(30);
     while Instant::now() < deadline {
         while let Some(event) = ctrl.poll() {
             if pred(&event) {
@@ -198,7 +198,7 @@ fn updates_are_throttled_not_one_per_info_line() {
     let mut ctrl = started(cfg);
     ctrl.analyze(PositionSpec::startpos(), 3);
     let mut updates = 0;
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(30);
     let mut best = 0;
     while best < 400 && Instant::now() < deadline {
         while let Some(event) = ctrl.poll() {

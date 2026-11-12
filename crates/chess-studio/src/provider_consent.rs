@@ -153,9 +153,33 @@ fn consent_dialog(
 }
 
 fn body(ui: &mut egui::Ui, ctx: &egui::Context, i18n: &I18n, ask: &Ask) -> Option<Choice> {
+    ui.set_max_width(460.0);
+    // Em janela baixa o texto rola e os botões ficam sempre visíveis embaixo (desconta o Ribbon, a
+    // barra de status, o título e a fileira de botões).
+    let text_height = (ctx.viewport_rect().height() - 480.0).max(120.0);
+    egui::ScrollArea::vertical()
+        .max_height(text_height)
+        .auto_shrink([false, true])
+        .show(ui, |ui| body_text(ui, ctx, i18n, ask));
+    ui.add_space(16.0);
+    let mut choice = None;
+    ui.horizontal(|ui| {
+        if cs_button(ui, &i18n.t("consent-turn-on"), ButtonVariant::Primary).clicked() {
+            choice = Some(Choice::TurnOn);
+        }
+        if cs_button(ui, &i18n.t("consent-not-now"), ButtonVariant::Secondary).clicked() {
+            choice = Some(Choice::NotNow);
+        }
+        if cs_button(ui, &i18n.t("consent-open-center"), ButtonVariant::Subtle).clicked() {
+            choice = Some(Choice::OpenCenter);
+        }
+    });
+    choice
+}
+
+fn body_text(ui: &mut egui::Ui, ctx: &egui::Context, i18n: &I18n, ask: &Ask) {
     let p = palette(ui);
     let provider = ask.provider.info();
-    ui.set_max_width(460.0);
     let intro = match &ask.feature {
         Some(feature) => i18n.t_with(
             "consent-intro-feature",
@@ -201,20 +225,6 @@ fn body(ui: &mut egui::Ui, ctx: &egui::Context, i18n: &I18n, ask: &Ask) -> Optio
             .color(p.ink_muted)
             .text_style(egui::TextStyle::Small),
     );
-    ui.add_space(16.0);
-    let mut choice = None;
-    ui.horizontal(|ui| {
-        if cs_button(ui, &i18n.t("consent-turn-on"), ButtonVariant::Primary).clicked() {
-            choice = Some(Choice::TurnOn);
-        }
-        if cs_button(ui, &i18n.t("consent-not-now"), ButtonVariant::Secondary).clicked() {
-            choice = Some(Choice::NotNow);
-        }
-        if cs_button(ui, &i18n.t("consent-open-center"), ButtonVariant::Subtle).clicked() {
-            choice = Some(Choice::OpenCenter);
-        }
-    });
-    choice
 }
 
 #[cfg(test)]
