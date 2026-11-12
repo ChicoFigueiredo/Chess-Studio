@@ -128,6 +128,55 @@ fn an_address_outside_the_catalog_is_refused_before_the_network() {
     assert_eq!(server.connections(), 0);
 }
 
+/// Ramo de segurança (NFR-10, #269): porta explícita e hosts fora de `[a-z0-9.-]` nunca chegam
+/// à rede, mesmo no host certo do catálogo.
+#[test]
+fn an_explicit_port_or_a_malformed_host_is_refused_before_the_network() {
+    let clock = clock();
+    let server = server(&clock);
+    let net = net_enabled(&server, &clock, &[ProviderId::Lichess]);
+
+    for (url, why) in [
+        ("https://lichess.org:8443/api/user/x", "porta explícita"),
+        (
+            "https://lichess.org:443/api/user/x",
+            "porta, ainda que a padrão",
+        ),
+        (
+            "https://lichess.org:abc/api/user/x",
+            "porta que não é número",
+        ),
+        ("https://lichess_org/api/user/x", "sublinhado no host"),
+        (
+            "https://.lichess.org/api/user/x",
+            "host que começa com ponto",
+        ),
+        (
+            "https://lichess.org./api/user/x",
+            "host que termina com ponto",
+        ),
+        ("https:///api/user/x", "host vazio"),
+        ("https://lichess.org/api/user/x y", "espaço no caminho"),
+        (
+            "https://lichess.org/api/user/x\r\nHost: evil",
+            "quebra de linha",
+        ),
+    ] {
+        let err = net
+            .fetch(Request::get(ProviderId::Lichess, url))
+            .wait()
+            .unwrap_err();
+        assert!(
+            matches!(
+                err,
+                NetError::EndpointNotAllowed { .. } | NetError::InvalidRequest { .. }
+            ),
+            "{why}: {err:?}"
+        );
+    }
+    assert_eq!(server.connections(), 0);
+}
+
 #[test]
 fn with_the_fair_play_guard_engaged_nothing_that_computes_leaves() {
     let clock = clock();

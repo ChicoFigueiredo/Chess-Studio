@@ -112,6 +112,46 @@ fn other_paths_methods_and_hosts_do_not_count_as_the_callback() {
     assert_eq!(params.get("code"), Some("BOM"));
 }
 
+/// Ramo de segurança (NFR-10, #269): cabeçalho acima do limite ou que não é texto não conta
+/// como retorno e não gasta a única chance; o retorno certo depois dele ainda chega.
+#[test]
+fn an_oversized_or_non_text_head_is_dropped_and_does_not_spend_the_callback() {
+    let clock = clock();
+    let (port, _cancel, handle) = start(&clock);
+
+    // 64 KiB de cabeçalho sem o fim (`\r\n\r\n`): passa de 8 KiB e a conexão cai sem resposta.
+    let huge = format!(
+        "GET /retorno?code=X&state=Y HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nX-Lixo: {}",
+        "a".repeat(64 * 1024)
+    );
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("conecta");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(30)))
+        .expect("prazo");
+    let _ = stream.write_all(huge.as_bytes());
+    let mut answer = Vec::new();
+    let _ = stream.read_to_end(&mut answer);
+    assert!(
+        !String::from_utf8_lossy(&answer).starts_with("HTTP/1.1 200"),
+        "cabeçalho gigante não é o retorno"
+    );
+
+    // Bytes que não são UTF-8 no cabeçalho.
+    let mut binary = TcpStream::connect(("127.0.0.1", port)).expect("conecta");
+    binary
+        .set_read_timeout(Some(Duration::from_secs(30)))
+        .expect("prazo");
+    let _ = binary.write_all(b"GET /retorno?code=X&state=Y HTTP/1.1\r\nHost: \xff\xfe\r\n\r\n");
+    let mut answer = Vec::new();
+    let _ = binary.read_to_end(&mut answer);
+    assert!(!String::from_utf8_lossy(&answer).starts_with("HTTP/1.1 200"));
+    assert!(!handle.is_finished(), "nada disso é o retorno");
+
+    get(port, "/retorno?code=BOM&state=S");
+    let params = handle.join().expect("thread").expect("retorno");
+    assert_eq!(params.get("code"), Some("BOM"));
+}
+
 #[test]
 fn the_deadline_comes_from_the_injected_clock() {
     let clock = clock();
