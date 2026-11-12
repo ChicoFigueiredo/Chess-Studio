@@ -256,8 +256,12 @@ Estado completo de uma Partida online como o Provedor o informa: Lances desde o 
 _Evitar_: sync, espelho
 
 **Trava de fair play** (_en_: `FairPlayGuard`):
-Bloqueio, durante uma Partida online contra uma pessoa, de tudo o que calcula para aquela Partida: Engines, avaliação em cache, finais exatos, Explorador e análise. Vale na camada de serviço e só cai quando o Provedor confirma o fim.
+Bloqueio, durante uma Partida online contra uma pessoa, de tudo o que calcula para aquela Partida: Engines, avaliação em cache, finais exatos, Explorador e análise. Vale na camada de serviço e só cai quando o Provedor confirma o fim, ou quando o jogador encerra sem resultado uma Partida cujo fim o Provedor nunca vai confirmar.
 _Evitar_: modo anti-trapaça, bloqueio de engine
+
+**Encerrar sem resultado** (_en_: `CloseWithoutResult`):
+Pedido explícito do jogador para encerrar, só no app, uma Partida online cujo fim o Provedor nunca vai confirmar (no FICS, a Partida de visitante que caiu). Fica no log como encerramento sem vencedor nem motivo; nada é inventado. Até lá, a Partida aparece na Biblioteca como "sem resultado confirmado".
+_Evitar_: abortar (o aborto vem do Provedor), dar como perdida
 
 **Explorador** (_en_: `Explorer`):
 Painel que segue a posição do tabuleiro e mostra dados de Provedores: estatística de aberturas (mestres, Lichess, um jogador) e finais exatos de até sete peças, sempre com a Origem.

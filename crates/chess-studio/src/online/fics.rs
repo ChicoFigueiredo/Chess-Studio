@@ -22,14 +22,14 @@ use super::service::{
 };
 use crate::net_service::NetService;
 use crate::session::OnlineIntent;
-use chess_core::Move;
-use chess_game::Game;
+use chess_core::{Color, Move};
+use chess_game::{Command, Game, Timestamp as GameTime};
 use chess_net::{ProviderId, Timestamp};
 use chess_providers::{
-    Fics, FicsChallenge, FicsError, FicsLogin, FicsNotice, FicsSession, FicsStatus, LinkStatus,
-    ObservedGame,
+    Fics, FicsChallenge, FicsError, FicsLogin, FicsNotice, FicsOutgoing, FicsSession, FicsStatus,
+    LinkStatus, ObservedGame,
 };
-use chess_store::GameId;
+use chess_store::{GameId, GameQuery, ProfileId, Store};
 
 /// Chave do Provedor no `GameSetup` e no `metadata` das Partidas do FICS.
 pub const FICS_KEY: &str = "fics";
@@ -45,6 +45,18 @@ pub enum FicsInfo {
     SeekPosted,
     /// Chegou um desafio.
     Challenge {
+        name: String,
+    },
+    /// O FICS enviou o desafio por nome do jogador.
+    ChallengeIssued {
+        to: String,
+    },
+    /// O desafiado recusou.
+    ChallengeDeclined {
+        by: String,
+    },
+    /// O desafiado não está no FICS.
+    ChallengeFailed {
         name: String,
     },
     /// O FICS recusou o Lance enviado: a peça volta.
@@ -304,9 +316,36 @@ impl FicsPlay {
         conn.session.accept(challenger).map_err(refused)
     }
 
+    /// Recusa o desafio de `challenger`.
     pub fn decline(&mut self, challenger: &str) -> Result<(), Unavailable> {
         let conn = self.ready()?;
         conn.session.decline(challenger).map_err(refused)
+    }
+
+    /// Desafia `name` pelo nome (`match`): xadrez padrão, sem rating, no ritmo dado. Nome
+    /// inválido (e com ele qualquer variante) é recusado antes da rede.
+    pub fn challenge(
+        &mut self,
+        name: &str,
+        minutes: u32,
+        increment_s: u32,
+        color: Option<Color>,
+    ) -> Result<(), Unavailable> {
+        let conn = self.ready()?;
+        conn.session
+            .challenge(name.trim(), minutes, increment_s, color)
+            .map_err(refused)
+    }
+
+    /// Retira o desafio por nome enviado.
+    pub fn withdraw_challenge(&mut self) -> Result<(), Unavailable> {
+        let conn = self.ready()?;
+        conn.session.withdraw_challenge().map_err(refused)
+    }
+
+    /// O desafio por nome enviado, até a resposta.
+    pub fn outgoing(&self) -> Option<&FicsOutgoing> {
+        self.conn.as_ref().and_then(|c| c.session.outgoing())
     }
 
     /// Observa a Partida `game` do FICS: só na memória, sem trava.
@@ -350,6 +389,68 @@ impl FicsPlay {
         self.conn.as_ref().is_some_and(FicsConn::in_game)
     }
 
+    /// A linha no banco da Partida da sessão que caiu durante a Partida (FC-16).
+    pub fn dropped_store_id(&self) -> Option<GameId> {
+        if !self.dropped_mid_game() {
+            return None;
+        }
+        self.conn.as_ref().and_then(|c| c.store_id)
+    }
+
+    /// A linha no banco da Partida da conexão **viva** (a que o FICS ainda pode confirmar).
+    pub fn live_store_id(&self) -> Option<GameId> {
+        self.conn
+            .as_ref()
+            .filter(|c| c.session.status() != FicsStatus::Closed)
+            .and_then(|c| c.store_id)
+    }
+
+    /// Encerra no app, **sem resultado**, a Partida `id` do FICS cujo fim o FICS nunca vai
+    /// confirmar (a conexão de visitante caiu, ou o jogador saiu no meio, FC-22). Só por pedido
+    /// explícito do jogador; nada é inventado: o log ganha o encerramento, sem vencedor nem
+    /// motivo, e só então a Trava de fair play desta Partida cai. A sessão que caiu, se é a
+    /// desta Partida, é descartada junto. Com a conexão viva, recusa: o FICS ainda decide.
+    pub fn close_without_result(
+        &mut self,
+        store: &mut Store,
+        id: GameId,
+        now: Timestamp,
+    ) -> Result<Game, Unavailable> {
+        if self.live_store_id() == Some(id) {
+            return Err(refused(FicsError::NotAllowed(
+                "a Partida ainda está em andamento no FICS",
+            )));
+        }
+        let mut game = store
+            .load_game(id)
+            .map_err(|e| Unavailable::Store(e.to_string()))?;
+        let fics = game
+            .setup()
+            .online_game()
+            .is_some_and(|o| o.provider == FICS_KEY);
+        if !fics {
+            return Err(refused(FicsError::NotAllowed(
+                "só a Partida do FICS sem fim confirmado se encerra assim",
+            )));
+        }
+        // O instante do domínio nunca volta: o do último Evento, com a hora de agora.
+        let last = game.events().last().map_or(0, |e| e.at.mono_ms);
+        let events = game
+            .handle(
+                Command::CloseWithoutResult,
+                GameTime::with_wall(last, now.as_millis()),
+            )
+            .map_err(|r| refused(FicsError::Rejected(r)))?;
+        store
+            .append_events(id, &events)
+            .map_err(|e| Unavailable::Store(e.to_string()))?;
+        if self.conn.as_ref().is_some_and(|c| c.store_id == Some(id)) {
+            // A sessão que caiu era desta Partida: ela some (e a trava que segurava, junto).
+            self.conn = None;
+        }
+        Ok(game)
+    }
+
     pub fn session_for(&self, remote_id: &str) -> Option<&dyn GameSession> {
         self.conn
             .as_ref()
@@ -387,6 +488,7 @@ impl FicsPlay {
                 game: conn.session.game(),
                 created: polled.created,
                 events: &polled.events,
+                connection: None,
             },
             now,
             notices,
@@ -404,6 +506,9 @@ impl FicsPlay {
                 FicsNotice::Challenge(challenge) => FicsInfo::Challenge {
                     name: challenge.challenger,
                 },
+                FicsNotice::ChallengeIssued { to } => FicsInfo::ChallengeIssued { to },
+                FicsNotice::ChallengeDeclined { by } => FicsInfo::ChallengeDeclined { by },
+                FicsNotice::ChallengeFailed { name } => FicsInfo::ChallengeFailed { name },
                 FicsNotice::GameStarted { game, .. } => {
                     // O FICS retira as buscas de quem começou a jogar.
                     conn.seek = None;
@@ -444,4 +549,31 @@ impl FicsPlay {
         }
         show
     }
+}
+
+/// As Partidas do FICS no banco sem fim confirmado (FC-22): a conexão de visitante caiu (ou o
+/// jogador saiu no meio) e o FICS nunca vai confirmar o resultado. A Biblioteca as mostra como
+/// "sem resultado confirmado". Quem chama tira a da conexão viva ([`FicsPlay::live_store_id`]).
+pub fn unconfirmed_games(store: &Store, profile: ProfileId) -> Vec<GameId> {
+    let query = GameQuery {
+        only_unfinished: true,
+        profile: Some(profile),
+        limit: None,
+    };
+    store
+        .list_games(&query)
+        .map(|games| {
+            games
+                .into_iter()
+                .filter(|g| {
+                    g.metadata
+                        .get("online")
+                        .and_then(|o| o.get("provider"))
+                        .and_then(serde_json::Value::as_str)
+                        == Some(FICS_KEY)
+                })
+                .map(|g| g.id)
+                .collect()
+        })
+        .unwrap_or_default()
 }

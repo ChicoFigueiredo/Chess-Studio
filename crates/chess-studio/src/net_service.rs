@@ -37,6 +37,10 @@ use std::sync::{Arc, Mutex};
 /// Nome do arquivo do banco da rede, ao lado do banco das Partidas.
 pub const NET_DB_FILE: &str = "rede.db";
 
+/// As Conexões autorizadas (com a conta no Provedor) por Provedor e papel (#267).
+type AccountsByRole =
+    std::collections::HashMap<(ProviderId, ConnectionRole), Vec<(ConnectionId, String)>>;
+
 /// O que a barra de status precisa saber da rede, sem Bevy nem egui.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct NetSummary {
@@ -125,6 +129,10 @@ pub struct NetService {
     /// ativo. Ver [`NetService::authorized_connection`].
     authorized:
         std::sync::Mutex<std::collections::HashMap<(ProviderId, ConnectionRole), ConnectionId>>,
+    /// **Todas** as Conexões autorizadas e em uso do Provedor no papel, com o nome da conta no
+    /// Provedor (a padrão é uma delas). A Partida online é retomada pela Conexão que a joga, não
+    /// pela padrão (#267). Ver [`NetService::authorized_accounts`].
+    accounts: std::sync::Mutex<AccountsByRole>,
     /// A Trava de fair play do app, sobre a `FairPlayGuard` desta rede.
     fair_play: FairPlay,
     /// O relógio da rede (o do sistema; o falso nos testes).
@@ -238,6 +246,7 @@ impl NetService {
             })),
             _scratch: scratch,
             authorized: std::sync::Mutex::default(),
+            accounts: std::sync::Mutex::default(),
             fair_play,
         }
     }
@@ -349,6 +358,34 @@ impl NetService {
             Some(id) => map.insert((provider, role), id),
             None => map.remove(&(provider, role)),
         };
+    }
+
+    /// Todas as Conexões autorizadas e em uso do Provedor no papel dado, com o nome da conta,
+    /// para o Perfil local ativo (#267). A Central as mantém junto com a padrão.
+    pub fn authorized_accounts(
+        &self,
+        provider: ProviderId,
+        role: ConnectionRole,
+    ) -> Vec<(ConnectionId, String)> {
+        self.accounts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&(provider, role))
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Registra todas as Conexões autorizadas e em uso do Provedor no papel dado.
+    pub fn set_authorized_accounts(
+        &self,
+        provider: ProviderId,
+        role: ConnectionRole,
+        accounts: Vec<(ConnectionId, String)>,
+    ) {
+        self.accounts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert((provider, role), accounts);
     }
 
     /// O `rede.db` que fica ao lado do banco das Partidas.

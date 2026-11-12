@@ -5,7 +5,8 @@
 //! Evolução: novas variantes entram em `EventKind` (`non_exhaustive`) sem mudar
 //! as existentes; uma mudança incompatível de campo sobe [`PAYLOAD_VERSION`].
 //! As variantes do B6 (relógio, Simulação FIDE, Reclamações) e as da Partida online
-//! (#230: relógio do Provedor, proposta retirada, Partida abortada) são aditivas e
+//! (#230: relógio do Provedor, proposta retirada, Partida abortada; #272: encerrada sem
+//! resultado pelo jogador) são aditivas e
 //! continuam na versão 1 do envelope: logs anteriores seguem legíveis
 //! (docs/decisoes/2026-11-11-partida-online.md).
 
@@ -266,4 +267,7 @@ pub enum EventKind {
     /// Partida online abortada (ou encerrada pelo Provedor sem resultado). Termina a
     /// Partida sem resultado.
     GameAborted,
+    /// Partida online encerrada pelo jogador, só no app, sem resultado: o Provedor nunca
+    /// confirmou o fim (FC-22). Não é aborto nem decisão do Provedor; nada é inventado.
+    ClosedWithoutResult,
 }

@@ -506,6 +506,58 @@ fn abortada_termina_sem_resultado() {
     );
 }
 
+/// FC-22 (#272): o Provedor nunca vai confirmar o fim (FICS: a conexão de visitante caiu). Só
+/// o pedido explícito do jogador encerra a Partida no app, sem resultado: nada é inventado.
+#[test]
+fn encerrar_sem_resultado_registra_o_fim_local_sem_inventar_resultado() {
+    let mut game = white_vs_human();
+    provider(&mut game, snap("e2e4 e7e5", 0, 0), 10).unwrap();
+    assert!(game.online_human_in_progress());
+    let events = game.handle(Command::CloseWithoutResult, at(20)).unwrap();
+    assert_eq!(kinds(&events), vec![&EventKind::ClosedWithoutResult]);
+    let snapshot = game.snapshot();
+    assert_eq!(snapshot.outcome, None, "nenhum resultado inventado");
+    let online = snapshot.online.as_ref().unwrap();
+    assert!(online.closed_without_result);
+    assert!(!online.aborted, "não é o Provedor que abortou");
+    assert!(snapshot.is_over());
+    assert!(
+        !game.online_human_in_progress(),
+        "a trava desta Partida cai"
+    );
+    assert_eq!(
+        history(&game),
+        ["e2e4", "e7e5"],
+        "só o que o Provedor confirmou"
+    );
+    // Depois disso nada muda: nem retrato atrasado do Provedor, nem outro encerramento.
+    assert!(
+        provider(&mut game, snap("e2e4 e7e5 g1f3", 0, 0), 30)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        game.handle(Command::CloseWithoutResult, at(40)),
+        Err(Rejection::GameOver)
+    );
+    // Reabre do log exatamente igual (ADR-0002).
+    let replayed = Game::try_replay(game.setup().clone(), game.events()).unwrap();
+    assert_eq!(replayed.snapshot(), game.snapshot());
+    // Partida já terminada pelo Provedor: não há o que encerrar.
+    let mut aborted = white_vs_human();
+    let mut end = snap("e2e4", 0, 0);
+    end.end = Some(ProviderEnd::Aborted);
+    provider(&mut aborted, end, 10).unwrap();
+    assert_eq!(
+        aborted.handle(Command::CloseWithoutResult, at(20)),
+        Err(Rejection::GameOver)
+    );
+    // Partida local: o Comando não existe para ela.
+    let mut local = common::assisted();
+    assert!(local.handle(Command::CloseWithoutResult, at(1)).is_err());
+    assert!(!local.snapshot().is_over());
+}
+
 #[test]
 fn trava_fica_ligada_do_inicio_ate_a_confirmacao_do_fim() {
     let mut game = white_vs_human();

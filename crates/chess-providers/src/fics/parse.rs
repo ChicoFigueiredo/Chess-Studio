@@ -167,6 +167,20 @@ pub(crate) enum Message {
     ObservationRemoved(u32),
     /// `Challenge: A (r) B (r) unrated blitz 5 0.`
     Challenge(FicsChallenge),
+    /// `Issuing: A (r) B (r) unrated blitz 5 0.`: o FICS enviou o desafio do jogador local.
+    MatchIssued(FicsChallenge),
+    /// `X declines the match offer.`
+    MatchDeclined {
+        by: String,
+    },
+    /// `X withdraws the match offer.`: quem desafiava desistiu.
+    MatchWithdrawn {
+        by: String,
+    },
+    /// `X is not logged in.` ou `There is no player matching the name X.`
+    NotLoggedIn {
+        name: String,
+    },
     /// `X offers you a draw.`
     DrawOffered {
         by: String,
@@ -253,6 +267,25 @@ pub(crate) fn parse_line(line: &str) -> Message {
     }
     if let Some(rest) = line.strip_prefix("Challenge: ") {
         return parse_challenge(rest).map_or(Message::Other, Message::Challenge);
+    }
+    if let Some(rest) = line.strip_prefix("Issuing: ") {
+        return parse_challenge(rest).map_or(Message::Other, Message::MatchIssued);
+    }
+    if let Some(name) = line.strip_prefix("There is no player matching the name ") {
+        return valid_name(name.trim_end_matches('.'))
+            .map_or(Message::Other, |name| Message::NotLoggedIn { name });
+    }
+    // Respostas ao desafio: sem `:` (recados de outros jogadores têm `X tells you: …`).
+    if !line.contains(':') {
+        if let Some(by) = line.strip_suffix(" declines the match offer.") {
+            return valid_name(by).map_or(Message::Other, |by| Message::MatchDeclined { by });
+        }
+        if let Some(by) = line.strip_suffix(" withdraws the match offer.") {
+            return valid_name(by).map_or(Message::Other, |by| Message::MatchWithdrawn { by });
+        }
+        if let Some(name) = line.strip_suffix(" is not logged in.") {
+            return valid_name(name).map_or(Message::Other, |name| Message::NotLoggedIn { name });
+        }
     }
     if let Some(by) = line.strip_suffix(" offers you a draw.") {
         return valid_name(by).map_or(Message::Other, |by| Message::DrawOffered { by });
@@ -597,6 +630,50 @@ mod tests {
             parse_line("GuestZ tells you: GuestB offers you a draw."),
             Message::Other
         );
+    }
+
+    #[test]
+    fn respostas_ao_desafio_por_nome() {
+        match parse_line("Issuing: GuestA (++++) GuestB (1500) unrated blitz 5 0.") {
+            Message::MatchIssued(c) => {
+                assert_eq!(
+                    (c.challenger.as_str(), c.receiver.as_str()),
+                    ("GuestA", "GuestB")
+                );
+                assert_eq!((c.kind.as_str(), c.minutes, c.increment_s), ("blitz", 5, 0));
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(
+            parse_line("GuestB declines the match offer."),
+            Message::MatchDeclined {
+                by: "GuestB".into()
+            }
+        );
+        assert_eq!(
+            parse_line("fics% GuestB withdraws the match offer."),
+            Message::MatchWithdrawn {
+                by: "GuestB".into()
+            }
+        );
+        assert_eq!(
+            parse_line("GuestB is not logged in."),
+            Message::NotLoggedIn {
+                name: "GuestB".into()
+            }
+        );
+        assert_eq!(
+            parse_line("There is no player matching the name zzz."),
+            Message::NotLoggedIn { name: "zzz".into() }
+        );
+        // Recados de outros jogadores nunca viram resposta do servidor.
+        for line in [
+            "GuestZ tells you: GuestB declines the match offer.",
+            "GuestZ(1): GuestB is not logged in.",
+            "GuestB and GuestC declines the match offer.",
+        ] {
+            assert_eq!(parse_line(line), Message::Other, "{line}");
+        }
     }
 
     /// Propriedade: linhas parecidas com as do FICS, embaralhadas e cortadas, nunca fazem o

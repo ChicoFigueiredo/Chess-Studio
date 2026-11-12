@@ -129,8 +129,8 @@ pub use explorer::{
 };
 pub use family::ProviderProfile;
 pub use fics::{
-    DEFAULT_LOGIN_DEADLINE, Fics, FicsChallenge, FicsError, FicsLogin, FicsNotice, FicsPoll,
-    FicsSession, FicsStatus, MAX_FICS_EVENTS_PER_POLL, ObservedGame,
+    DEFAULT_LOGIN_DEADLINE, Fics, FicsChallenge, FicsError, FicsLogin, FicsNotice, FicsOutgoing,
+    FicsPoll, FicsSession, FicsStatus, MAX_FICS_EVENTS_PER_POLL, ObservedGame,
 };
 pub use game_export::ExportedGame;
 pub use games::{

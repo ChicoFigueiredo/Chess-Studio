@@ -46,7 +46,7 @@ fics-tab-observe = Observar
 fics-pace-lightning = Relâmpago
 fics-pace-blitz = Blitz
 fics-pace-standard = Padrão
-fics-seek-note = Visitante só joga sem rating. A Partida começa assim que alguém aceitar a busca.
+fics-seek-note = A Partida começa assim que alguém aceitar a busca.
 fics-fairplay-note = Durante a Partida contra uma pessoa, a Trava de fair play desliga Engines, Explorador, finais e análise até o FICS confirmar o fim.
 fics-seek-start = Buscar adversário
 fics-seek-waiting = Procurando adversário no FICS
@@ -57,6 +57,17 @@ fics-seek-cancel = Cancelar busca
 # Desafios
 fics-challenges-empty-title = Nenhum desafio recebido
 fics-challenges-empty = Outros jogadores do FICS podem desafiar você pelo nome { $handle }.
+fics-challenges-received = Desafios recebidos
+
+# Desafiar pelo nome (match)
+fics-challenge-by-name = Desafiar pelo nome
+fics-challenge-name-hint = Nome no FICS (ex.: GuestABCD)
+fics-challenge-name-invalid = No FICS o nome tem de 3 a 17 letras, sem espaço nem número.
+fics-challenge-send = Desafiar
+fics-challenge-note = Xadrez padrão. A Partida começa quando o desafiado aceitar.
+fics-challenge-sending = Enviando o desafio a { $name }…
+fics-challenge-waiting = Desafio enviado a { $name } · { $pace } · sem rating
+fics-challenge-withdraw = Retirar desafio
 
 # Observar
 fics-observe-label = Número da Partida no FICS
@@ -76,11 +87,16 @@ fics-observe-last = Último Lance: { $san }
 
 # Painel Partida online
 fics-status-desync = A Partida no app não confere com o tabuleiro do FICS. Nada foi mudado e nenhum Lance foi inventado; aguardando um tabuleiro coerente do FICS.
+fics-status-desync-short = A Partida não confere com a do FICS: nada foi inventado.
 fics-status-gone = Sem conexão com o FICS. No FICS, a Partida de visitante que cai é perdida; o resultado não pôde ser confirmado e o app não reconecta sozinho.
+fics-status-unconfirmed = Sem resultado confirmado: a conexão com o FICS caiu.
 fics-dropped-title = A conexão com o FICS caiu
 fics-dropped-text = A conexão com o FICS caiu durante a Partida. No FICS, a Partida de visitante que cai é dada como perdida; o resultado não pôde ser confirmado e o app não reconecta sozinho.
-fics-dropped-lock = A Trava de fair play continua ligada até você descartar a sessão.
+fics-dropped-lock = A Trava de fair play continua ligada. Descartar a sessão só fecha a conexão; a análise desta Partida só volta quando você a encerrar sem resultado.
 fics-discard = Descartar a sessão
+fics-close-unconfirmed = Encerrar sem resultado
+fics-close-unconfirmed-text = O FICS nunca vai confirmar o resultado desta Partida. Encerrar registra no app que ela terminou sem resultado (nada é inventado) e libera a análise dela.
+fics-ended-closed = Encerrada no app, sem resultado: a conexão com o FICS caiu e o FICS não confirmou o fim.
 fics-abort-tip = No FICS, abortar pede a concordância do adversário, salvo antes do primeiro Lance.
 fics-fairplay-on = Trava de fair play ligada: Engines, Explorador, finais e análise ficam desligados até o fim confirmado pelo FICS.
 fics-ended-aborted = A Partida foi abortada no FICS.
@@ -94,6 +110,10 @@ fics-panel-see-challenges = Ver desafios
 fics-notice-logged-in = No FICS como { $handle }.
 fics-notice-seek-posted = Busca publicada no FICS.
 fics-notice-challenge = { $name } desafia você no FICS.
+fics-notice-challenge-issued = Desafio enviado a { $name } no FICS.
+fics-notice-challenge-declined = { $name } recusou o desafio.
+fics-notice-challenge-failed = { $name } não está no FICS agora: o desafio não foi feito.
+fics-toast-challenge = { $name } desafia você no FICS
 fics-notice-move-refused = O FICS recusou o Lance { $mv }: a peça voltou. Jogue de novo.
 fics-notice-move-lost = O Lance { $mv } não foi confirmado pelo FICS e não é reenviado.
 fics-notice-move-replaced = O FICS registrou outro Lance no lugar de { $mv }.

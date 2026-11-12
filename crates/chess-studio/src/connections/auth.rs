@@ -1104,6 +1104,16 @@ impl ConnectionsUi {
         for role in [Role::Player, Role::Engine] {
             let best = self.active_authorization(ProviderId::Lichess, role);
             service.set_authorized_connection(ProviderId::Lichess, role, best.map(net_id));
+            // Todas as em uso, com a conta: a Partida online segue a Conexão dela (#267).
+            let accounts = self
+                .list
+                .iter()
+                .filter(|c| c.provider == ProviderId::Lichess.key() && c.role == role)
+                .filter(|c| c.is_authorized())
+                .filter(|c| self.auth.standings.get(&c.id) == Some(&Standing::Active))
+                .map(|c| (net_id(c.id), c.identifier.clone()))
+                .collect();
+            service.set_authorized_accounts(ProviderId::Lichess, role, accounts);
         }
         self.authorized = ProviderId::ALL
             .into_iter()

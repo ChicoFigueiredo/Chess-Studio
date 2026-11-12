@@ -184,6 +184,9 @@ pub struct OnlineView {
     pub desync: Option<Desync>,
     /// O Provedor abortou a Partida (sem resultado).
     pub aborted: bool,
+    /// O jogador encerrou a Partida no app, sem resultado: o Provedor nunca confirmou o fim
+    /// (FC-22).
+    pub closed_without_result: bool,
 }
 
 /// Estado volátil da Partida online: fora do log (ADR-0007), reconstruído pela sessão.
@@ -202,6 +205,9 @@ impl ArbitrationPolicy for ProviderRules {
     fn decide(&self, state: &GameState, command: &Command) -> Result<Vec<EventKind>, Rejection> {
         match command {
             Command::Provider(snapshot) => reconcile(state, snapshot),
+            // Só o jogador, por pedido explícito, e só antes de qualquer fim (FC-22).
+            Command::CloseWithoutResult if state.is_over() => Err(Rejection::GameOver),
+            Command::CloseWithoutResult => Ok(vec![EventKind::ClosedWithoutResult]),
             other => Err(Rejection::NotSupportedByPolicy(other.kind())),
         }
     }

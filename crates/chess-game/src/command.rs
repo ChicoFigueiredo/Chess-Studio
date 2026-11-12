@@ -57,6 +57,10 @@ pub enum Command {
     /// retirada e resultado decidido pelo Provedor. Entra só o que falta; o instante do
     /// Comando é o da chegada do retrato, e o tempo restante é o do Provedor.
     Provider(ProviderSnapshot),
+    /// Partida online cujo fim o Provedor nunca vai confirmar (FICS: a conexão de visitante
+    /// caiu e o servidor não guarda a Partida, FC-22): o jogador a encerra **só no app**, sem
+    /// resultado. Nada é inventado: nem vencedor, nem motivo. Só por pedido explícito.
+    CloseWithoutResult,
 }
 
 /// Nome do Comando, sem payload (usado em [`crate::Rejection`]).
@@ -81,6 +85,7 @@ pub enum CommandKind {
     Redo,
     EngineMove,
     Provider,
+    CloseWithoutResult,
 }
 
 impl Command {
@@ -104,6 +109,7 @@ impl Command {
             Self::Redo => CommandKind::Redo,
             Self::EngineMove { .. } => CommandKind::EngineMove,
             Self::Provider(_) => CommandKind::Provider,
+            Self::CloseWithoutResult => CommandKind::CloseWithoutResult,
         }
     }
 }

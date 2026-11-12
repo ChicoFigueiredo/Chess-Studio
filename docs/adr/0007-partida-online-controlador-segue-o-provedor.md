@@ -11,3 +11,4 @@ Alternativas rejeitadas: um espelho do estado remoto fora do domínio, convertid
 - O controlador ganha uma fonte de comandos remota; o tempo da Partida online vem do Provedor, nunca do relógio local.
 - Reconexão: reabrir o fluxo, buscar o estado atual, descartar eventos repetidos e reconciliar o relógio.
 - Todo serviço que calcula (Engines, Explorador, finais, avaliação em cache) consulta a trava antes de responder; há testes negativos de que ela não é contornável.
+- Quando o Provedor nunca vai confirmar o fim (no FICS, a Partida de visitante que caiu), a única saída é o jogador **encerrar sem resultado**, por pedido explícito: o log registra o encerramento sem vencedor nem motivo e só então a trava daquela Partida cai ([FC-22](../decisoes/2026-11-11-fics.md), #272).
