@@ -242,12 +242,14 @@ fn engine_online_window(
         .id(egui::Id::new("engine-online-window"))
         .collapsible(false)
         .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        // Centrada na área livre (abaixo do Ribbon, acima da barra de status), não na janela.
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 68.0])
         .show(&ctx, |ui| {
-            let height = (ctx.viewport_rect().height() - 400.0).max(240.0);
+            // O corpo rola; Ligar/Parar/Fechar ficam sempre visíveis embaixo (desconta o
+            // Ribbon, a barra de status, o título e a fileira de botões).
+            let height = (ctx.viewport_rect().height() - 460.0).max(140.0);
             egui::ScrollArea::vertical()
                 .max_height(height)
-                .min_scrolled_height(height)
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
                     view::body(
@@ -260,6 +262,8 @@ fn engine_online_window(
                         &mut intents,
                     );
                 });
+            ui.separator();
+            view::actions(ui, &i18n, &mut form, &model, &mut intents);
         });
     state.form = form;
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {

@@ -3,7 +3,7 @@
 //! nenhum banco. Cada cena é fotografada nos Temas Escuro e Claro numa só execução e grava
 //! `engine-online-<cena>-<tema>.png`.
 //!
-//! Cenas da Engine online: `off`, `ready`, `strength`, `resumed`, `exit`, `waiting`, `playing`, `stopping`, `lost`,
+//! Cenas da Engine online: `off`, `ready`, `strength`, `resumed`, `exit`, `waiting`, `playing`, `fairplay-stopped`, `stopping`, `lost`,
 //! `convert`. Cenas da Engine remota (Painel Análise): `remote-warning`, `remote-active`,
 //! `remote-disabled`, `remote-limit`, `remote-fairplay`.
 
@@ -188,6 +188,23 @@ impl Scene {
                     ..base()
                 },
                 |form| form.settings.policy.max_concurrent = 2,
+            ),
+            "fairplay-stopped" => scene(
+                ViewModel {
+                    state: RunState::Playing,
+                    running_engine: Some("Stockfish 17".to_owned()),
+                    counts: (2, 2, 0),
+                    rows: vec![row("Hq3vT8aZ", "TorreDeMadeira", 1720, true, 23, true)],
+                    activity: {
+                        let mut items = history();
+                        items.push(Activity::FairPlayStopped {
+                            scope: crate::fair_play::LockScope::Everything,
+                        });
+                        items
+                    },
+                    ..base()
+                },
+                |_| {},
             ),
             "stopping" => scene(
                 ViewModel {

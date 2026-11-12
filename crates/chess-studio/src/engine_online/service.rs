@@ -174,6 +174,11 @@ pub enum Activity {
     EngineFailed {
         detail: String,
     },
+    /// A Trava de fair play interrompeu a Engine numa Partida em andamento: a Engine não joga
+    /// mais e a Partida é abandonada. `scope` diz o que a Trava decidiu.
+    FairPlayStopped {
+        scope: crate::fair_play::LockScope,
+    },
     /// A Engine nem subiu para uma Partida que o Lichess abriu; ela é abandonada.
     EngineStartFailed {
         detail: String,
@@ -787,7 +792,10 @@ impl EngineOnline {
                         notes.push(Activity::EngineMoveRejected);
                     }
                     SessionNotice::EngineFailed { detail } => {
-                        notes.push(Activity::EngineFailed { detail });
+                        notes.push(match FairPlayLocked::scope_of_detail(&detail) {
+                            Some(scope) => Activity::FairPlayStopped { scope },
+                            None => Activity::EngineFailed { detail },
+                        });
                     }
                     SessionNotice::Closed(error) => notes.push(Activity::SessionClosed(error)),
                     SessionNotice::RequestFailed { error, .. }

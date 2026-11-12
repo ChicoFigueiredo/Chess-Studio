@@ -232,7 +232,6 @@ pub fn body(
     }
 
     settings(ui, ctx, i18n, form, model);
-    controls(ui, i18n, form, model, intents);
     games(ui, ctx, i18n, model);
     activity(ui, ctx, i18n, model);
     conversion(ui, ctx, i18n, form, model, intents);
@@ -243,14 +242,26 @@ pub fn body(
             .text_style(egui::TextStyle::Small)
             .color(p.ink_muted),
     );
-    ui.horizontal(|ui| {
-        if ui
-            .add(CsButton::new(&i18n.t("engine-online-close")).variant(ButtonVariant::Secondary))
-            .clicked()
-        {
-            intents.push(Intent::Close);
-        }
-    });
+}
+
+/// Os botões que ficam sempre visíveis embaixo da janela, fora da área rolável: Ligar/Parar/
+/// Parar já (com a confirmação) e Fechar.
+pub fn actions(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    form: &mut Form,
+    model: &ViewModel,
+    intents: &mut Vec<Intent>,
+) {
+    ui.set_width(WINDOW_W);
+    ui.spacing_mut().item_spacing.y = 8.0;
+    controls(ui, i18n, form, model, intents);
+    if ui
+        .add(CsButton::new(&i18n.t("engine-online-close")).variant(ButtonVariant::Secondary))
+        .clicked()
+    {
+        intents.push(Intent::Close);
+    }
 }
 
 fn notice(ui: &mut egui::Ui, p: &crate::ui_theme::Palette, text: String) {
@@ -598,6 +609,13 @@ fn activity_text(i18n: &I18n, item: &Activity) -> (StatusTone, String) {
         Activity::EngineFailed { .. } => (
             StatusTone::Danger,
             i18n.t("engine-online-act-engine-failed"),
+        ),
+        Activity::FairPlayStopped { scope } => (
+            StatusTone::Warning,
+            i18n.t_with(
+                "engine-online-act-fairplay-stopped",
+                &[("why", &i18n.t(scope.message_key()))],
+            ),
         ),
         Activity::EngineStartFailed { .. } => (
             StatusTone::Danger,

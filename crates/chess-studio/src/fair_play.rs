@@ -104,16 +104,46 @@ pub struct FairPlayLocked {
     pub scope: LockScope,
 }
 
-impl fmt::Display for FairPlayLocked {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let scope = match self.scope {
+impl LockScope {
+    const ALL: [LockScope; 3] = [
+        LockScope::Everything,
+        LockScope::ThisGame,
+        LockScope::ThisPosition,
+    ];
+
+    fn reason(self) -> &'static str {
+        match self {
             LockScope::Everything => "há uma Partida online contra pessoa em andamento",
             LockScope::ThisGame => "esta Partida online ainda está em andamento",
             LockScope::ThisPosition => {
                 "esta Posição é de uma Partida por correspondência em andamento"
             }
-        };
-        write!(f, "Trava de fair play: {scope}")
+        }
+    }
+
+    /// Id Fluent do texto de usuário desse alcance.
+    pub fn message_key(self) -> &'static str {
+        match self {
+            LockScope::Everything => "fairplay-locked-everything",
+            LockScope::ThisGame => "fairplay-locked-game",
+            LockScope::ThisPosition => "fairplay-locked-position",
+        }
+    }
+}
+
+impl fmt::Display for FairPlayLocked {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Trava de fair play: {}", self.scope.reason())
+    }
+}
+
+impl FairPlayLocked {
+    /// O alcance da Trava que gerou `detail` (o texto de [`fmt::Display`], que a Engine
+    /// recusada devolve como motivo da falha); `None` se o motivo não é da Trava.
+    pub fn scope_of_detail(detail: &str) -> Option<LockScope> {
+        LockScope::ALL
+            .into_iter()
+            .find(|scope| detail == format!("Trava de fair play: {}", scope.reason()))
     }
 }
 
@@ -122,11 +152,7 @@ impl std::error::Error for FairPlayLocked {}
 impl FairPlayLocked {
     /// Id Fluent do texto de usuário da recusa (a interface explica o que a trava decidiu).
     pub fn message_key(&self) -> &'static str {
-        match self.scope {
-            LockScope::Everything => "fairplay-locked-everything",
-            LockScope::ThisGame => "fairplay-locked-game",
-            LockScope::ThisPosition => "fairplay-locked-position",
-        }
+        self.scope.message_key()
     }
 }
 
