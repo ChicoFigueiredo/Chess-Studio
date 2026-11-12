@@ -187,7 +187,7 @@ online-error-seek-in-progress = Já há uma busca de adversário em andamento.
 online-error-not-allowed = Agora não: { $why }.
 online-error-engine-connection = Esta é uma Conexão de Engine: ela não joga como pessoa.
 online-error-invalid = { $why }
-online-error-game-account = Esta Partida é da conta { $account } no Lichess, que não está autorizada neste Perfil. Ela só continua por essa conta: autorize-a de novo na Central de Conexões.
+online-error-game-account = Esta Partida é do usuário { $account } no Lichess, por uma Conexão que não está autorizada neste Perfil. Ela só continua por essa Conexão: autorize-a de novo na Central de Conexões.
 
 # Abandonar
 online-resign-title = Abandonar a Partida?

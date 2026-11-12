@@ -866,14 +866,14 @@ Reservado ao PR em andamento da Engine online visual (#293). Até ele entrar no 
 
 ### CX-HOM-71. Duas Conexões do Lichess: trocar a padrão no meio da Partida
 
-- **Pré-condição:** duas contas do Lichess autorizadas como jogador no mesmo Perfil local (A, padrão, e B).
+- **Pré-condição:** duas Conexões do Lichess autorizadas como jogador, de usuários diferentes, no mesmo Perfil local (A, padrão, e B).
 - **Passos:**
   1. Com A, comece uma correspondência; jogue um Lance.
   2. Na Central, **Tornar padrão** a Conexão de B; volte e jogue outro Lance na correspondência.
   3. Feche o tabuleiro; **Partidas em andamento** > **Abrir** a correspondência de A.
   4. Desconecte A na Central e tente **Abrir** de novo.
-- **Esperado:** trocar a padrão não muda nada na Partida: os Lances seguem pela conta A, e reaberta ela continua por A. Sem A autorizada, **Abrir** é recusado com **Esta Partida é da conta A no Lichess…**, e nada sai pela conta B.
-- **Com o serviço real (UNVERIFIED):** a conta A no site do Lichess mostra os Lances; a conta B não participa.
+- **Esperado:** trocar a padrão não muda nada na Partida: os Lances seguem pela Conexão A, e reaberta ela continua por A. Sem A autorizada, **Abrir** é recusado com **Esta Partida é do usuário A no Lichess…**, e nada sai pela Conexão B.
+- **Com o serviço real (UNVERIFIED):** o usuário A no site do Lichess mostra os Lances; o usuário B não participa.
 - **Evidência:** `a_game_stays_with_its_connection_when_the_default_changes_mid_game` em [`online/tests.rs`](../../crates/chess-studio/src/online/tests.rs), [PO-20](../decisoes/2026-11-11-partida-online.md).
 
 ### CX-HOM-72. Central: filtros Com cadastro, Manual e por estado
