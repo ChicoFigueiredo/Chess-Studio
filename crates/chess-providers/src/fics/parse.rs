@@ -370,7 +370,11 @@ pub(crate) fn parse_style12(line: &str) -> Option<Style12> {
         "0" => Relation::Observing,
         _ => return None,
     };
-    let seconds = |f: &str| f.parse::<i64>().ok().filter(|s| s.abs() <= MAX_SECONDS);
+    let seconds = |f: &str| {
+        f.parse::<i64>()
+            .ok()
+            .filter(|s| (-MAX_SECONDS..=MAX_SECONDS).contains(s))
+    };
     let move_number = number(fields[26]).filter(|n| (1..=MAX_MOVE_NUMBER).contains(n))?;
     // Os campos 27 a 29 (Lance anterior, tempo gasto, notação) não decidem nada: o Lance é
     // deduzido do tabuleiro pelo núcleo de regras. O 30 é o giro do tabuleiro.
@@ -516,6 +520,17 @@ mod tests {
 
     /// O exemplo da ajuda oficial (`help style12`), numa linha só.
     const HELP_EXAMPLE: &str = "<12> rnbqkb-r pppppppp -----n-- -------- ----P--- -------- PPPPKPPP RNBQ-BNR B -1 0 0 1 1 0 7 Newton Einstein 1 2 12 39 39 119 122 2 K/e1-e2 (0:06) Ke2 0";
+
+    /// SEC-05: um relógio `i64::MIN` (que `abs()` estourava) é só linha inválida.
+    #[test]
+    fn a_clock_of_i64_min_is_a_rejected_line_not_a_panic() {
+        for hostile in ["-9223372036854775808", "9223372036854775807", "-1000000001"] {
+            let line = HELP_EXAMPLE.replace(" 119 122 ", &format!(" {hostile} 122 "));
+            assert!(parse_style12(&line).is_none(), "{hostile}");
+        }
+        let ok = HELP_EXAMPLE.replace(" 119 122 ", " -5 122 ");
+        assert_eq!(parse_style12(&ok).expect("negativo válido").white_s, -5);
+    }
 
     #[test]
     fn o_exemplo_da_ajuda_do_style12() {

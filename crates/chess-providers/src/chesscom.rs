@@ -88,6 +88,10 @@ impl fmt::Debug for ChessCom {
     }
 }
 
+/// Teto de meses lidos da lista de arquivos mensais (os mais recentes, sem repetição):
+/// 50 anos de Partidas; o Chess.com tem menos de 20 (SEC-07).
+pub const MAX_ARCHIVE_MONTHS: usize = 600;
+
 impl ChessCom {
     /// `clock` é o relógio injetado (o mesmo da `Net`).
     pub fn new(net: Net, clock: Arc<dyn Clock>) -> Self {
@@ -149,6 +153,9 @@ impl ChessCom {
                 })?);
             }
             months.sort();
+            months.dedup();
+            // Os mais recentes: um pedido serial por mês seria o custo de uma lista hostil.
+            months.drain(..months.len().saturating_sub(MAX_ARCHIVE_MONTHS));
             Ok(months)
         })
     }

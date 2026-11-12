@@ -120,6 +120,45 @@ fn connections_belong_to_the_local_profile() {
 }
 
 #[test]
+fn a_token_pasted_as_a_public_name_is_refused_without_echoing_it() {
+    let mut store = Store::open_in_memory().unwrap();
+    let profile = store.default_profile().unwrap();
+    let long = "a".repeat(40);
+    for token in [
+        "lip_AbCdEf123456",
+        "lio_xyz",
+        "lit_qq",
+        "LIP_upper",
+        long.as_str(),
+    ] {
+        let err = store
+            .add_connection(profile, &public_name("lichess", token))
+            .unwrap_err();
+        assert!(
+            matches!(err, StoreError::IdentifierLooksLikeToken),
+            "{token}"
+        );
+        assert!(
+            !err.to_string().contains(token),
+            "o erro não repete o texto"
+        );
+    }
+    assert!(store.list_connections(profile, None).unwrap().is_empty());
+    // Nomes verdadeiros continuam valendo, inclusive os longos de verdade (até 30).
+    for ok in [
+        "magnus",
+        "DrNykterstein",
+        "lipton",
+        "a_b-c",
+        &"b".repeat(30),
+    ] {
+        store
+            .add_connection(profile, &public_name("lichess", ok))
+            .unwrap();
+    }
+}
+
+#[test]
 fn identifiers_are_trimmed_and_validated() {
     let mut store = Store::open_in_memory().unwrap();
     let profile = store.default_profile().unwrap();

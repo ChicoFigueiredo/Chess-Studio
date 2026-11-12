@@ -2,6 +2,32 @@
 
 Épico [#211](https://github.com/ChicoFigueiredo/Chess-Studio/issues/211). Auditoria de 11/11/2026 do `main` no commit `c723e7f` contra a [especificação free-first](especificacao-free-first-2026-11-11.md), as [decisões de 11/11](../decisoes/) (CX-01 a CX-21, CF, AZ, PO, FC, AD, RD, FD), a [ADR-0006](../adr/0006-rede-offline-por-padrao-provedores-e-conexoes.md) e a [ADR-0007](../adr/0007-partida-online-controlador-segue-o-provedor.md).
 
+## Situação depois das correções
+
+Atualizada em 11/11/2026, no commit `02cd92a` da `main`. **O corpo desta auditoria abaixo é o original, do commit `c723e7f`, e não foi reescrito**: os vereditos FALHOU dele descrevem o que foi achado, não o que existe hoje. Esta tabela diz o que aconteceu com cada uma das 10 issues de falha.
+
+| Issue | Falha | Situação | PR |
+|---|---|---|---|
+| [#261](https://github.com/ChicoFigueiredo/Chess-Studio/issues/261) | Trava de fair play: Engine adversária, busca por Posição e Engine online não consultavam a Trava (crítica) | Corrigida. Os três caminhos pedem licença à Trava (FP-01 a FP-05); a Engine adversária da própria Partida competitiva local é a exceção deliberada | [#286](https://github.com/ChicoFigueiredo/Chess-Studio/pull/286) |
+| [#262](https://github.com/ChicoFigueiredo/Chess-Studio/issues/262) | Engine online entregue, mas catálogo "planejada" e consentimento sem a frase dela | Corrigida, junto com as lacunas do #271 (aviso ao fechar, Ação no Ribbon e na Paleta, força, retomada) | [#284](https://github.com/ChicoFigueiredo/Chess-Studio/pull/284) |
+| [#263](https://github.com/ChicoFigueiredo/Chess-Studio/issues/263) | "conta", "chaveiro" e código HTTP na interface | Corrigida; o teste de palavras proibidas cobre todos os textos das integrações | [#288](https://github.com/ChicoFigueiredo/Chess-Studio/pull/288) |
+| [#264](https://github.com/ChicoFigueiredo/Chess-Studio/issues/264) | Origem sem licença (Central, rating FIDE, Engine remota) | Corrigida: **Licença dos dados** na Central, licença do rating FIDE (migração 18) e Origem na Engine remota | [#288](https://github.com/ChicoFigueiredo/Chess-Studio/pull/288) |
+| [#265](https://github.com/ChicoFigueiredo/Chess-Studio/issues/265) | Explorador sem janela temporal nem aviso de amostra | Corrigida: Período, aviso de amostra e texto de privacidade | [#283](https://github.com/ChicoFigueiredo/Chess-Studio/pull/283) |
+| [#266](https://github.com/ChicoFigueiredo/Chess-Studio/issues/266) | Central sem filtros Com cadastro, Manual e por estado | Corrigida | [#288](https://github.com/ChicoFigueiredo/Chess-Studio/pull/288) |
+| [#267](https://github.com/ChicoFigueiredo/Chess-Studio/issues/267) | Partida online sem vínculo com a Conexão que a joga | **Aberta, em andamento**: será fechada pelo PR da Partida online ([#272](https://github.com/ChicoFigueiredo/Chess-Studio/issues/272)); hoje a Partida não guarda a Conexão | em andamento ([#272](https://github.com/ChicoFigueiredo/Chess-Studio/issues/272)) |
+| [#268](https://github.com/ChicoFigueiredo/Chess-Studio/issues/268) | Documentação atrás do `main`; #247 sem item CX-HOM | Corrigida: estado atual, guia e roteiro refeitos; CX-HOM-15 corrigido, CX-HOM-75 novo para o #247, CX-HOM-54 declarado não usado e itens em ordem | este PR |
+| [#269](https://github.com/ChicoFigueiredo/Chess-Studio/issues/269) | Sem medição de cobertura nem matriz de ramos | Corrigida em parte: matriz de ramos de segurança e fair play e testes dos ramos sem teste; a **medição de cobertura de linhas ficou pendente** (sem `cargo llvm-cov` na máquina) | [#294](https://github.com/ChicoFigueiredo/Chess-Studio/pull/294) |
+| [#270](https://github.com/ChicoFigueiredo/Chess-Studio/issues/270) | Importação de PGN sem prévia, detecção de fonte e confirmação de direitos | Corrigida | [#289](https://github.com/ChicoFigueiredo/Chess-Studio/pull/289) |
+
+Outros PRs que vieram depois da auditoria e mudam o que ela descreve:
+
+- [#287](https://github.com/ChicoFigueiredo/Chess-Studio/pull/287), [#295](https://github.com/ChicoFigueiredo/Chess-Studio/pull/295) e [#297](https://github.com/ChicoFigueiredo/Chess-Studio/pull/297): revisão de segurança do V4 (SEC-01 a SEC-08 corrigidos). Continua aberta a SEC-09 ([#285](https://github.com/ChicoFigueiredo/Chess-Studio/issues/285), `cargo deny check advisories`).
+- [#292](https://github.com/ChicoFigueiredo/Chess-Studio/pull/292): varredura visual do V4 em todos os Temas e tamanhos. [#291](https://github.com/ChicoFigueiredo/Chess-Studio/pull/291): prazos de 30 s nas esperas por evento dos testes.
+- [#277](https://github.com/ChicoFigueiredo/Chess-Studio/pull/277): roteiro de usabilidade e dados de demonstração (`--demo-data`).
+- Em andamento: Engine online visual ([#293](https://github.com/ChicoFigueiredo/Chess-Studio/issues/293)) e investigação do `stop` da análise ([#296](https://github.com/ChicoFigueiredo/Chess-Studio/issues/296)).
+
+O gate final (§15.1 e §13 da especificação) deixou de ser reprovado pela brecha da Trava (#261). Falta fechar o #267 e percorrer o [roteiro de homologação](../homologacao/integracoes.md) com o serviço real: os itens UNVERIFIED continuam UNVERIFIED.
+
 ## Resumo
 
 | Veredito | Itens |

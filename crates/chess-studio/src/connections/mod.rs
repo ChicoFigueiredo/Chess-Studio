@@ -500,6 +500,11 @@ impl ConnectionsUi {
             Some(Err(err)) => {
                 if let Some(form) = self.forms.get_mut(&provider) {
                     form.error = Some(link_error_key(&err));
+                    if matches!(err, StoreError::IdentifierLooksLikeToken) {
+                        // Possível segredo: não fica no campo nem na tela.
+                        form.identifier.clear();
+                        form.identifier.shrink_to_fit();
+                    }
                 }
             }
             None => {
@@ -529,6 +534,7 @@ impl ConnectionsUi {
 pub(crate) fn link_error_key(error: &StoreError) -> &'static str {
     match error {
         StoreError::InvalidConnection(_) => "connections-link-error-invalid",
+        StoreError::IdentifierLooksLikeToken => "connections-link-error-token",
         StoreError::ConnectionExists { .. } => "connections-link-error-exists",
         _ => "connections-link-error-other",
     }
@@ -578,6 +584,28 @@ mod tests {
             None,
         );
         ui.refresh(None);
+    }
+
+    #[test]
+    fn a_token_pasted_as_a_public_name_is_refused_cleared_and_never_stored() {
+        let service = service();
+        let mut ui = ConnectionsUi::default();
+        ui.refresh(None);
+        for token in [
+            "lip_SegredoColadoPorEngano1",
+            "lio_abc",
+            "x".repeat(45).as_str(),
+        ] {
+            ui.forms.entry(ProviderId::Lichess).or_default().identifier = token.into();
+            link(&mut ui, &service, ProviderId::Lichess, token);
+            let form = ui
+                .forms
+                .get(&ProviderId::Lichess)
+                .unwrap_or_else(|| panic!("o formulário fechou: {token} foi aceito?"));
+            assert_eq!(form.error, Some("connections-link-error-token"));
+            assert!(form.identifier.is_empty(), "o campo não guarda o texto");
+        }
+        assert!(ui.of_provider(ProviderId::Lichess).is_empty());
     }
 
     #[test]

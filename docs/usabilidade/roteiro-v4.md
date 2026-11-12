@@ -44,6 +44,27 @@ Cada tarefa tem estes campos (copie o bloco para uma planilha ou imprima):
 
 Sobre os termos: os rótulos da tela seguem o [glossário](../../GLOSSARY.md) (Provedor, Conexão, Central de Conexões, Origem, Cofre, Trava de fair play, Explorador, Engine remota, Engine online). Anote quando a pessoa usar outra palavra para a mesma coisa (por exemplo "conta" para Conexão): é sinal de rótulo ruim.
 
+## Onde a homologação confere o mesmo recurso
+
+Cada tarefa abaixo tem um item no [roteiro de homologação](../homologacao/integracoes.md) (passos e resultado esperado) e, quando fala com um serviço, uma linha na [lista do que só o serviço real prova](verificar-com-servico-real.md). Use a coluna para voltar ao item se a pessoa travar numa tela.
+
+| Tarefa | Item da homologação |
+|---|---|
+| 1.1, 1.3, 2.2 | [CX-HOM-01](../homologacao/integracoes.md#cx-hom-01-offline-por-padrão-e-estado-da-rede), [CX-HOM-02](../homologacao/integracoes.md#cx-hom-02-central-de-conexões-cartões-filtros-e-busca), [CX-HOM-72](../homologacao/integracoes.md#cx-hom-72-central-filtros-com-cadastro-manual-e-por-estado), [CX-HOM-03](../homologacao/integracoes.md#cx-hom-03-ligar-e-desligar-um-provedor) |
+| 2.1, 2.3, 2.4 | [CX-HOM-03](../homologacao/integracoes.md#cx-hom-03-ligar-e-desligar-um-provedor), [CX-HOM-04](../homologacao/integracoes.md#cx-hom-04-vincular-nome-ou-id-público), [CX-HOM-05](../homologacao/integracoes.md#cx-hom-05-testar-a-conexão), [CX-HOM-73](../homologacao/integracoes.md#cx-hom-73-licença-dos-dados-e-origem-central-rating-fide-engine-remota) |
+| 3.1, 3.2, 3.3 | [CX-HOM-25](../homologacao/integracoes.md#cx-hom-25-importar-arquivos-por-origem), [CX-HOM-26](../homologacao/integracoes.md#cx-hom-26-importação-de-arquivo-duplicatas-acentos-arquivo-grande-cancelar), [CX-HOM-79](../homologacao/integracoes.md#cx-hom-79-importar-arquivo-pgn-prévia-fonte-detectada-e-confirmação-de-direitos), [CX-HOM-43](../homologacao/integracoes.md#cx-hom-43-seletor-de-arquivo-escolher-e-salvar-como) |
+| 3.4 | [CX-HOM-22](../homologacao/integracoes.md#cx-hom-22-importar-partidas-do-lichess), [CX-HOM-23](../homologacao/integracoes.md#cx-hom-23-importar-partidas-do-chesscom), [CX-HOM-24](../homologacao/integracoes.md#cx-hom-24-atualizar-sem-duplicar), PlayStrategy: [CX-HOM-46](../homologacao/integracoes.md#cx-hom-46-playstrategy-cartão-na-central-ligar-e-testar) a [48](../homologacao/integracoes.md#cx-hom-48-playstrategy-origem-atualizar-e-duplicatas) |
+| 4.1 a 4.4 | [CX-HOM-14](../homologacao/integracoes.md#cx-hom-14-explorador-aberturas-minha-biblioteca), [CX-HOM-15](../homologacao/integracoes.md#cx-hom-15-explorador-aberturas-fontes-do-lichess), [CX-HOM-16](../homologacao/integracoes.md#cx-hom-16-explorador-sem-provedor-ou-sem-autorização), [CX-HOM-17](../homologacao/integracoes.md#cx-hom-17-explorador-filtros-e-memória-por-perfil-local), [CX-HOM-18](../homologacao/integracoes.md#cx-hom-18-explorador-finais), [CX-HOM-19](../homologacao/integracoes.md#cx-hom-19-avaliação-pronta-em-cache-na-análise), [CX-HOM-76](../homologacao/integracoes.md#cx-hom-76-explorador-janela-temporal-aviso-de-amostra-e-privacidade) |
+| 4.5 | [CX-HOM-75](../homologacao/integracoes.md#cx-hom-75-partida-de-referência-exata-hora-local-e-nomes-de-abertura-em-português), [CX-HOM-15](../homologacao/integracoes.md#cx-hom-15-explorador-aberturas-fontes-do-lichess) |
+| 5.1 a 5.3 | [CX-HOM-27](../homologacao/integracoes.md#cx-hom-27-instalar-problemas-do-lichess), [CX-HOM-28](../homologacao/integracoes.md#cx-hom-28-pacote-filtros-treino-e-remoção), [CX-HOM-44](../homologacao/integracoes.md#cx-hom-44-baixar-problemas-do-lichess-pela-rede), [CX-HOM-78](../homologacao/integracoes.md#cx-hom-78-problemas-do-lichess-depois-do-limite-de-linha) |
+| 6.1 a 6.5 | [CX-HOM-09](../homologacao/integracoes.md#cx-hom-09-autorizar-o-lichess-pelo-navegador), [CX-HOM-35](../homologacao/integracoes.md#cx-hom-35-partida-online-sem-conexão-e-conexão-de-engine) a [42](../homologacao/integracoes.md#cx-hom-42-trava-de-fair-play-na-partida-online); em andamento: #272 (itens a partir do CX-HOM-66) |
+| 7.1 a 7.3 | [CX-HOM-55](../homologacao/integracoes.md#cx-hom-55-fics-na-central-aviso-ligar-e-desligar) a [60](../homologacao/integracoes.md#cx-hom-60-fics-observar-uma-partida) |
+| 8.1, 8.2 | [CX-HOM-49](../homologacao/integracoes.md#cx-hom-49-engine-remota-escolher-aviso-e-consentimento) a [51](../homologacao/integracoes.md#cx-hom-51-engine-remota-sob-a-trava-de-fair-play) |
+| 9.1 a 9.3 | [CX-HOM-52](../homologacao/integracoes.md#cx-hom-52-engine-online-ligar-esperar-jogar-e-parar), [CX-HOM-53](../homologacao/integracoes.md#cx-hom-53-engine-online-limites-usuário-bot-e-falha-da-engine), [CX-HOM-61](../homologacao/integracoes.md#cx-hom-61-engine-online-fechar-o-app-com-partida-em-andamento) a [64](../homologacao/integracoes.md#cx-hom-64-engine-online-retomar-partida-ao-religar); em andamento: #293 |
+| 10.1 a 10.4 | [CX-HOM-29](../homologacao/integracoes.md#cx-hom-29-limpar-os-dados-guardados-de-um-provedor), [CX-HOM-31](../homologacao/integracoes.md#cx-hom-31-desligar-tudo-e-apagar), [CX-HOM-33](../homologacao/integracoes.md#cx-hom-33-limpar-dados-guardados), [CX-HOM-34](../homologacao/integracoes.md#cx-hom-34-apagar-partidas-importadas-por-origem) |
+
+O visual (Temas, densidade, janela estreita, teclado) é conferido em [CX-HOM-30](../homologacao/integracoes.md#cx-hom-30-linguagem-temas-e-janela-estreita) e nas capturas da [varredura visual do V4](../evidencias/varredura-v4/README.md). Os itens em andamento (#272, #267, #293, #296) mudam algumas telas das jornadas 6 e 9; refaça a leitura do roteiro depois que entrarem no `main`.
+
 ---
 
 ## Jornada 1. Primeira vez, offline
@@ -143,8 +164,8 @@ Banco novo e vazio. Computador pode estar sem internet.
 
 - **Cenário:** "Baixou um arquivo `.pgn` do ChessBase e quer trazê-lo para o programa." (Prepare um arquivo pequeno; o roteiro de homologação tem a lista.)
 - **Objetivo:** importar o arquivo dizendo de onde ele veio, e depois importar o mesmo arquivo de novo.
-- **Sucesso:** a primeira vez traz "N novas"; a segunda diz "0 novas" e N repetidas; a pessoa entende por que nada duplicou.
-- **Observar:** se encontra o formulário; se escolhe a Origem certa; se lê a nota de licença; se o resumo (**N novas, N repetidas, N com erro**) é claro.
+- **Sucesso:** a primeira vez traz "N novas"; a segunda diz "0 novas" e N repetidas; a pessoa entende por que nada duplicou. Antes de importar, ela vê a **Prévia do arquivo** e diz quantas Partidas o arquivo tem.
+- **Observar:** se encontra o formulário; se escolhe a Origem certa (ou nota que a prévia já a indicou: **As tags indicam …**); se lê a nota de licença; se entende que, numa fonte de uso restrito (TWIC, PGN Mentor, ChessBase), **Importar** só liga depois de **Confirmo que posso usar estas Partidas**; se o resumo (**N novas, N repetidas, N com erro**) é claro.
 - **Tempo esperado:** 4 min.
 - **Anotações:** (campos acima)
 
@@ -175,16 +196,16 @@ Banco novo e vazio. Computador pode estar sem internet.
 - **Cenário:** "Quer ver o que os mestres jogam nessa posição."
 - **Objetivo:** tentar a fonte de mestres e explicar por que não aparece nada ainda e o que fazer.
 - **Sucesso:** entende que o Provedor está desligado (e, ligado, que falta autorizar), e que existe a alternativa de usar a própria Biblioteca.
-- **Observar:** se os botões **Ligar Lichess**, **Abrir a Central de Conexões** e **Usar Minha Biblioteca** são encontrados e entendidos; se o texto de "Requer autorizar" assusta.
+- **Observar:** se os botões **Ligar Lichess**, **Abrir a Central de Conexões** e **Usar Minha Biblioteca** são encontrados e entendidos; se o texto **Autorize sua conexão do Lichess** assusta.
 - **Tempo esperado:** 3 min.
 - **Anotações:** (campos acima)
 
-### 4.3 Finais exatos e avaliação em cache **[demo]**
+### 4.3 Finais exatos e avaliação pronta **[demo]**
 
 - **Cenário:** "Está estudando um final de peão e quer saber se é vitória."
 - **Objetivo:** carregar a posição `4k3/6KP/8/8/8/8/7p/8 w - - 0 1` (Rei e peão contra Rei e peão) e descobrir o resultado teórico; depois olhar a avaliação da posição inicial no Painel Análise.
 - **Sucesso:** lê "Vitória das Brancas" e **Mate em N Lances**; diz de onde veio a resposta (do cache, de uma data). Os dados vêm do cache de demonstração, só depois de ligar o Lichess, e nenhum pedido sai.
-- **Observar:** se carrega a posição por FEN sem ajuda; se entende o veredito e o DTZ; se a linha **Em cache (Lichess)** é distinta da Engine local; se nota o aviso de idade do dado.
+- **Observar:** se carrega a posição por FEN sem ajuda; se entende o veredito e o DTZ; se a linha **Avaliação pronta (Lichess)** é distinta da Engine local; se nota o aviso de idade do dado.
 - **Tempo esperado:** 5 min.
 - **Anotações:** (campos acima)
 
@@ -193,8 +214,17 @@ Banco novo e vazio. Computador pode estar sem internet.
 - **Cenário:** "Autorizou o Lichess e quer ver o que os jogadores do site fazem."
 - **Objetivo:** ver a tabela de Todos os jogadores filtrando por Blitz e por uma faixa de rating, e fechar e reabrir o app.
 - **Sucesso:** a tabela chega aos poucos; os filtros mudam os números; ao reabrir, as escolhas voltaram.
-- **Observar:** tempo até a primeira linha; se **Recebendo mais resultados…** é compreendido; se os filtros se descobrem sem ajuda.
+- **Observar:** tempo até a primeira linha; se **Recebendo mais resultados…** é compreendido; se os filtros se descobrem sem ajuda; se lê o **Período** e o aviso de que a estatística é de uma amostra (e não avaliação) no rodapé, e o que entende deles.
 - **Tempo esperado:** 5 min.
+- **Anotações:** (campos acima)
+
+### 4.5 Abrir uma Partida de referência **[conta]**
+
+- **Cenário:** "Na tabela dos mestres aparece uma Partida de referência e você quer ver a Partida inteira."
+- **Objetivo:** abrir uma das **Partidas de referência** e dizer de quem é a Partida, quando foi consultada e como se chama a abertura.
+- **Sucesso:** a Partida exata abre (a linha passa por **Abrindo a Partida…**) e fica na Biblioteca com a Origem; na segunda vez abre na hora.
+- **Observar:** se espera a Partida abrir ou clica várias vezes; se a hora (**às 14:32**, **ontem às …**) bate com o relógio dela; se o nome da abertura em português é entendido e se usa a dica com o **Nome original**; reação a uma falha (**Esta Partida não está mais disponível no Lichess.**, ou o Provedor desligado).
+- **Tempo esperado:** 4 min.
 - **Anotações:** (campos acima)
 
 ---
@@ -266,7 +296,7 @@ Exige conta do Lichess **[conta]**. Use uma conta sem importância. Veja o risco
 - **Cenário:** "Agora quer jogar contra uma pessoa."
 - **Objetivo:** buscar um adversário (Rápida 10+5, sem rating), jogar e, no meio, tentar abrir a análise ou o Explorador.
 - **Sucesso:** entende que Engines e Explorador estão desligados durante a Partida e por quê; a Trava some só quando o Lichess confirma o fim.
-- **Observar:** se lê o aviso de **Trava de fair play**; se acha que é defeito; se entende por que Blitz não aparece na busca.
+- **Observar:** se lê o aviso de **Trava de fair play**; se acha que é defeito; se estranha que **Contra a Engine** e a **Engine online** também ficam desabilitados, com o motivo; se entende por que Blitz não aparece na busca.
 - **Tempo esperado:** 10 min (depende do pareamento).
 - **Anotações:** (campos acima)
 
@@ -358,11 +388,11 @@ Exige internet **[internet]**; não exige conta (o FICS é só como visitante, s
 - **Tempo esperado:** 10 min.
 - **Anotações:** (campos acima)
 
-### 9.3 Converter a conta em BOT
+### 9.3 Converter o usuário em BOT
 
-- **Cenário:** "Sua conta de teste ainda não é BOT."
-- **Objetivo:** ler o aviso e decidir se converte; se converter, usar apenas a conta de teste.
-- **Sucesso:** a pessoa diz, antes de marcar, que a conversão não tem volta; só converte depois de marcar a confirmação.
+- **Cenário:** "Sua conta de teste ainda não é BOT." (A tela diz **O usuário ainda não é um usuário BOT?**.)
+- **Objetivo:** ler o aviso e decidir se converte (**Converter em usuário BOT**); se converter, usar apenas o usuário de teste.
+- **Sucesso:** a pessoa diz, antes de marcar, que a conversão não tem volta; só converte depois de marcar **Entendi que isto não tem volta…**.
 - **Observar:** se o aviso é lido; se a confirmação marcada é entendida como confirmação e não como formalidade; se pensa em desistir.
 - **Tempo esperado:** 3 min.
 - **Anotações:** (campos acima)

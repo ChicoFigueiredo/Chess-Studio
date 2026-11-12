@@ -317,11 +317,22 @@ pub(crate) fn parse_https(url: &str) -> Option<Target> {
     let path_ok = path
         .bytes()
         .all(|b| b.is_ascii_alphanumeric() || b"-._~!$&'()*+,;=:@/%".contains(&b));
-    (host_ok && path_ok).then(|| Target {
+    (host_ok && path_ok && path_is_literal(path)).then(|| Target {
         host,
         port,
         path: path.to_owned(),
     })
+}
+
+/// Caminho sem segmentos `.`/`..` e sem escapes que escondem `.`, `/` ou `\` (`%2e`, `%2f`,
+/// `%5c`, em qualquer caixa): o catálogo classifica o pedido pelo prefixo do caminho, e um
+/// servidor que normalize `..` responderia outro endereço (SEC-06).
+fn path_is_literal(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    !["%2e", "%2f", "%5c"].iter().any(|e| lower.contains(e))
+        && !path
+            .split('/')
+            .any(|segment| segment == "." || segment == "..")
 }
 
 /// URL para mensagens: sem consulta (que pode ter nomes de usuário) e cortada.
