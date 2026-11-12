@@ -102,6 +102,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 | CX-HOM-80 | "Relâmpago" no lugar de "Bullet" em todo o app | não | UNVERIFIED |
 | CX-HOM-81 | Trava de fair play com o Treino aberto durante a Partida | não | UNVERIFIED |
 | CX-HOM-82 | Trocar a Partida do tabuleiro durante um Exercício do Treino | não | UNVERIFIED |
+| CX-HOM-83 | Ver a Partida da Engine online com um Exercício no tabuleiro | sim (conta de teste) | UNVERIFIED |
 
 ## Itens
 
@@ -1008,6 +1009,19 @@ O número 54 ficou sem item: a numeração do roteiro passa do CX-HOM-53 para o 
 - **Esperado:** nenhuma Partida some, nenhuma aparece duplicada, nenhum Lance é gravado duas vezes; sair do Treino por esse caminho não põe a Partida guardada de volta por cima da nova.
 - **Serviço real?** Não (a Partida online só no passo 5, com a conta de teste).
 - **Evidência:** [`swap_tests.rs`](../../crates/chess-studio/src/training_ui/swap_tests.rs), decisão [Treino e troca de Sessão](../decisoes/2026-11-12-treino-troca-de-sessao.md).
+
+### CX-HOM-83. Ver a Partida da Engine online com um Exercício no tabuleiro
+
+- **Pré-condição:** uma Partida competitiva local em andamento (Simulação FIDE, com Lances) e uma Partida da Engine online ao vivo (conta de teste).
+- **Passos:**
+  1. Com a Partida competitiva no tabuleiro, abra o Painel Treino e comece um Exercício.
+  2. No Painel da Engine online, use **Ver no tabuleiro**. Confira que o Treino fechou e que o tabuleiro mostra a Partida da Engine, só para ver.
+  3. Tente Análise, Explorador e Engine: todos recusados pela Trava de fair play, o tempo todo.
+  4. Saia do modo espectador. Confira que a Partida competitiva voltou como estava e que o Exercício não aparece na Biblioteca.
+  5. Jogue um Lance nela e confira na Biblioteca que o Lance entrou na Partida competitiva, uma só vez.
+- **Esperado:** a Partida do usuário volta intacta; nenhuma Partida a mais no histórico; a Trava vale do começo ao fim.
+- **Serviço real?** Sim, só para a Partida da Engine online (conta de teste).
+- **Evidência:** [`swap_tests.rs`](../../crates/chess-studio/src/training_ui/swap_tests.rs), [`fair_play_session_tests.rs`](../../crates/chess-studio/src/fair_play_session_tests.rs), decisão [Treino e troca de Sessão](../decisoes/2026-11-12-treino-troca-de-sessao.md).
 
 ## Fora deste roteiro
 

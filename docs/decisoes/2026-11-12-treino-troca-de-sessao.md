@@ -21,3 +21,11 @@ A Partida online pode começar sem Ação do usuário (um desafio aceito, uma bu
 ## Evidência
 
 `crates/chess-studio/src/training_ui/swap_tests.rs`: Nova Partida, Retomar/Biblioteca e Partida online durante o Exercício; nenhum Evento duplicado, nenhuma Partida some, a guardada continua igual no banco e retomável. Homologação: CX-HOM-82.
+
+## Nota (#309): ver a Partida da Engine online com um Exercício no tabuleiro
+
+`Session::watch` guarda por baixo a Sessão que está no tabuleiro. Com um Exercício nele, guardava a **do Exercício**, e a do usuário ficava só no Treino. O guarda do Treino via a época trocada e saía do Treino, jogando a Partida do usuário fora; a persistência, que segue `own()`, passava a gravar o Exercício como uma Partida nova do histórico, e a Trava de fair play (que só olha `own()` quando o Treino não guarda nada) soltava a Partida competitiva. Era alcançável (Painel da Engine online, "Ver no tabuleiro", com o Treino aberto).
+
+Correção (a menor coerente com a regra acima): ao sair do Treino por troca, se o tabuleiro é um espectador cuja Sessão guardada é a do Exercício, a Sessão do usuário que o Treino guardava volta para esse lugar (se o Treino tinha sido aberto sobre um espectador, o espectador antigo é desfeito: um só nível, a Partida do usuário por baixo). Sair do espectador devolve a Partida do usuário intacta; nada é gravado a mais, nem no log errado, e a Trava vale o tempo todo. O modo espectador continua não sendo "troca" para o Treino além disso: a regra do #307 não muda.
+
+Também verificados, sem mudança de código: Retomar/Biblioteca com uma Partida online ao vivo guardada pelo Treino (a Partida online continua no banco, sem Evento novo; é o mesmo que Retomar sem Treino); Treino aberto sobre o espectador e saída em qualquer ordem; os sistemas `training_guard` e `persist_session` rodando num `App` do Bevy, nessa ordem. Não toca a regra da Partida competitiva interrompida (#305).
