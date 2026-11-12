@@ -608,4 +608,62 @@ mod tests {
         assert_eq!(state.ops, vec![Op::Create("Dani".into())]);
         assert_eq!(state.active_name(), Some("Ana"));
     }
+
+    /// Com um Exercício no tabuleiro, a Sessão não é a Partida do usuário: o serviço recusa a
+    /// troca de Perfil local, e a Partida competitiva que o Treino guarda (com a trava dela,
+    /// FP-06) continua guardada, do mesmo Perfil (#304).
+    #[test]
+    fn switching_profiles_is_refused_while_the_training_keeps_the_users_game() {
+        use crate::new_game::NewGameConfig;
+        let mut p = persistence();
+        let ana = p.profile();
+        let beto = p.create_profile("Beto").unwrap();
+        let mut session = p.restore().session;
+        session.start(&NewGameConfig::for_policy(
+            chess_game::PolicyKind::FideSimulation,
+        ));
+        let mut training = TrainingUi::default();
+        training.start_for_tests("afogamento-001", &mut session);
+        let mut state = LocalProfiles::from_persistence(&p);
+        state.request(Op::Switch(beto));
+        let mut app = App::new();
+        app.insert_resource(state)
+            .insert_resource(PersistenceHandle(std::sync::Mutex::new(p)))
+            .insert_resource(training)
+            .insert_resource(session)
+            .insert_resource(crate::presentation::UltraEffects(false))
+            .init_resource::<AidSettings>()
+            .init_resource::<Presentation>()
+            .init_resource::<GraphicsQuality>()
+            .init_resource::<crate::coordinates::BoardCoordinates>()
+            .init_resource::<crate::hover::HoverHighlight>()
+            .init_resource::<crate::ui_theme::Appearance>()
+            .init_resource::<ViewState>()
+            .init_resource::<Dock>()
+            .init_resource::<crate::actions::HiddenPanels>()
+            .init_resource::<crate::screen_layouts::ScreenLayouts>()
+            .init_resource::<InterfaceProfiles>()
+            .init_resource::<EngineUi>()
+            .init_resource::<StudyNotes>()
+            .init_resource::<Controls>()
+            .add_systems(Update, run_ops);
+        app.update();
+        let world = app.world();
+        assert_eq!(
+            world.resource::<LocalProfiles>().error(),
+            Some(OpError::Busy)
+        );
+        assert_eq!(world.resource::<LocalProfiles>().active(), Some(ana));
+        let training = world.resource::<TrainingUi>();
+        assert!(
+            training.session_swapped(),
+            "o Exercício continua no tabuleiro"
+        );
+        assert!(
+            training
+                .kept()
+                .is_some_and(Session::competitive_in_progress),
+            "a Partida competitiva continua guardada"
+        );
+    }
 }

@@ -8,8 +8,9 @@
 //!   capturas e testes);
 //! - acompanha o Perfil local ativo (`Net::set_active_profile`): consentimento e cache são do
 //!   Perfil local;
-//! - liga a Trava de fair play ([`FairPlayGuard`]) enquanto uma Partida competitiva está em
-//!   andamento; as Partidas online contra pessoa seguram a mesma trava pela sessão delas;
+//! - liga a Trava de fair play ([`FairPlayGuard`]) enquanto a Partida competitiva do usuário
+//!   está em andamento, no tabuleiro ou guardada por baixo do Treino ou do modo espectador
+//!   (FP-06); as Partidas online contra pessoa seguram a mesma trava pela sessão delas;
 //! - cria o ponto único da trava no app ([`FairPlay`]), sobre a mesma `FairPlayGuard`: todo
 //!   serviço que calcula (rede ou não) o consulta;
 //! - resume o estado da rede para a barra de status ([`NetSummary`]);
@@ -18,11 +19,12 @@
 //!
 //! Só Apresentação e serviço (ADR-0001): nada aqui toca a Partida.
 
-use crate::fair_play::FairPlay;
+use crate::fair_play::{CompetitiveGame, FairPlay};
 use crate::local_profiles::LocalProfiles;
 use crate::provider_consent::ConsentDialog;
 use crate::secrets::{self, OpenedVault};
 use crate::session::Session;
+use crate::training_ui::TrainingUi;
 use bevy::prelude::*;
 use chess_net::{
     Clock, ConnectionId, LocalProfileId, Net, NetConfig, NetError, NetworkStatus, ProviderId,
@@ -425,25 +427,34 @@ impl NetService {
         }
     }
 
-    /// Segura a Trava de fair play enquanto `competitive_in_progress` e solta quando acaba.
+    /// Segura a Trava de fair play enquanto a Partida competitiva do usuário está em andamento
+    /// (`game`) e solta quando acaba; `last` é o que o quadro anterior viu.
     /// É uma trava própria (`FairPlayHold`), como a de cada Partida online: o fim da Partida
     /// competitiva local nunca solta a trava de uma Partida online em andamento, e o fim de uma
     /// Partida online nunca solta a da competitiva. Quem a segura é o ponto único
     /// ([`FairPlay::follow_competitive`]): a Engine adversária dessa Partida joga com ela (FP-02).
-    pub fn follow_competitive(&self, competitive_in_progress: bool, was_engaged: &mut bool) {
-        if competitive_in_progress == *was_engaged {
+    pub fn follow_competitive(&self, game: CompetitiveGame, last: &mut CompetitiveGame) {
+        if game == *last {
             return;
         }
-        self.fair_play.follow_competitive(competitive_in_progress);
-        *was_engaged = competitive_in_progress;
+        self.fair_play.follow_competitive(game);
+        *last = game;
     }
 
-    /// Segura a trava da Partida competitiva local do **usuário** ([`Self::follow_competitive`]).
-    /// No modo espectador (#302) o tabuleiro mostra a Partida da Engine online, que não liga a
-    /// trava (AD-05); a do usuário, guardada por baixo, continua valendo, inclusive para a
-    /// Engine online (FP-04).
-    pub fn follow_session(&self, session: &Session, was_engaged: &mut bool) {
-        self.follow_competitive(session.own().competitive_in_progress(), was_engaged);
+    /// Segura a trava da Partida competitiva do **usuário** ([`Self::follow_competitive`]), não
+    /// a da Sessão que o tabuleiro mostra (FP-06, #304). O Treino põe a Partida de um Exercício
+    /// no tabuleiro e guarda a do usuário (`training`); o modo espectador (#302) mostra a Partida
+    /// da Engine online, que não liga a trava (AD-05), e guarda a do usuário por baixo. Nos dois
+    /// casos a do usuário continua em andamento e trava tudo, inclusive a Engine online (FP-04)
+    /// e a Engine adversária de outra Partida.
+    pub fn follow_session(
+        &self,
+        shown: &Session,
+        training: Option<&TrainingUi>,
+        last: &mut CompetitiveGame,
+    ) {
+        let kept = training.and_then(TrainingUi::kept);
+        self.follow_competitive(CompetitiveGame::of(shown, kept), last);
     }
 
     /// Porta de entrada dos recursos que precisam de um Provedor: devolve [`Readiness::Ready`] se
@@ -502,17 +513,18 @@ impl Plugin for NetServicePlugin {
     }
 }
 
-/// Acompanha o Perfil local ativo e a Partida competitiva.
+/// Acompanha o Perfil local ativo e a Partida competitiva do usuário.
 fn follow_app_state(
     service: Res<NetService>,
     profiles: Option<Res<LocalProfiles>>,
     session: Res<Session>,
-    mut engaged: Local<bool>,
+    training: Option<Res<TrainingUi>>,
+    mut last: Local<CompetitiveGame>,
 ) {
     if let Some(active) = profiles.as_deref().and_then(LocalProfiles::active) {
         service.follow_profile(active);
     }
-    service.follow_session(&session, &mut engaged);
+    service.follow_session(&session, training.as_deref(), &mut last);
 }
 
 #[cfg(test)]
@@ -594,17 +606,22 @@ mod tests {
     #[test]
     fn the_fair_play_guard_follows_the_competitive_game_only_on_transitions() {
         let service = NetService::in_memory();
-        let mut engaged = false;
-        service.follow_competitive(false, &mut engaged);
+        let mut engaged = CompetitiveGame::None;
+        service.follow_competitive(CompetitiveGame::None, &mut engaged);
         assert!(!service.net().fair_play_guard().is_engaged());
-        service.follow_competitive(true, &mut engaged);
+        service.follow_competitive(CompetitiveGame::OnBoard, &mut engaged);
         assert!(service.net().fair_play_guard().is_engaged());
         assert!(service.summary().fair_play);
-        service.follow_competitive(false, &mut engaged);
+        // Guardada por baixo do Treino ou do modo espectador, a Partida continua segurando.
+        service.follow_competitive(CompetitiveGame::Aside, &mut engaged);
+        assert!(service.net().fair_play_guard().is_engaged());
+        service.follow_competitive(CompetitiveGame::OnBoard, &mut engaged);
+        assert!(service.net().fair_play_guard().is_engaged());
+        service.follow_competitive(CompetitiveGame::None, &mut engaged);
         assert!(!service.net().fair_play_guard().is_engaged());
         // Sem transição, a trava não é tocada (um gatilho futuro pode tê-la ligado).
         service.net().fair_play_guard().engage("outro gatilho");
-        service.follow_competitive(false, &mut engaged);
+        service.follow_competitive(CompetitiveGame::None, &mut engaged);
         assert!(service.net().fair_play_guard().is_engaged());
     }
 
@@ -612,25 +629,25 @@ mod tests {
     fn the_local_competitive_game_and_an_online_game_never_release_each_others_lock() {
         let service = NetService::in_memory();
         let guard = service.net().fair_play_guard().clone();
-        let mut engaged = false;
+        let mut engaged = CompetitiveGame::None;
         // Competitiva local começa; uma Partida online contra pessoa começa por cima.
-        service.follow_competitive(true, &mut engaged);
+        service.follow_competitive(CompetitiveGame::OnBoard, &mut engaged);
         let online = guard.hold("Partida online contra pessoa");
         // A competitiva termina: a online continua segurando.
-        service.follow_competitive(false, &mut engaged);
+        service.follow_competitive(CompetitiveGame::None, &mut engaged);
         assert!(
             guard.is_engaged(),
             "a Partida online ainda está em andamento"
         );
         assert!(service.fair_play().everything_locked());
         // Outra competitiva começa; a online termina: a competitiva continua segurando.
-        service.follow_competitive(true, &mut engaged);
+        service.follow_competitive(CompetitiveGame::OnBoard, &mut engaged);
         drop(online);
         assert!(
             guard.is_engaged(),
             "a competitiva local ainda está em andamento"
         );
-        service.follow_competitive(false, &mut engaged);
+        service.follow_competitive(CompetitiveGame::None, &mut engaged);
         assert!(!guard.is_engaged(), "só cai quando as duas terminaram");
         assert!(!service.fair_play().any());
     }

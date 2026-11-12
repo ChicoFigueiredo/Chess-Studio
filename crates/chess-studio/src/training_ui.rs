@@ -249,6 +249,12 @@ impl TrainingUi {
         self.stashed.is_some()
     }
 
+    /// A Sessão do usuário que o Treino guarda enquanto mostra um Exercício: continua em
+    /// andamento e volta intacta ao sair (a Trava de fair play a segue, FP-06).
+    pub fn kept(&self) -> Option<&Session> {
+        self.stashed.as_ref()
+    }
+
     fn now_ms(&self) -> u64 {
         u64::try_from(self.clock.elapsed().as_millis())
             .unwrap_or(u64::MAX)
@@ -1418,6 +1424,32 @@ fn seed_demo_runs(state: &mut TrainingUi) {
                 .start_run(profile, id, session_id)
                 .and_then(|run_id| store.finish_run(run_id, &summary))
         });
+    }
+}
+
+/// O Treino como o Painel o conduz, para os testes de outros módulos (Trava de fair play, #304).
+#[cfg(test)]
+impl TrainingUi {
+    /// Começa o Exercício `id` (Resolução, memória de sequência ou de posição), sem Auxílios.
+    pub(crate) fn start_for_tests(&mut self, id: &str, session: &mut Session) {
+        self.open(None);
+        self.start(id, session, &AidSettings::physical(), None);
+    }
+
+    /// Memória de sequência: termina a apresentação e passa à reprodução.
+    pub(crate) fn recall_for_tests(&mut self, session: &mut Session) {
+        self.skip_presentation();
+        self.memory_step(session, &AidSettings::physical(), None);
+    }
+
+    /// Desiste da Resolução e abre a revisão do Treino.
+    pub(crate) fn finish_for_tests(&mut self, session: &mut Session) {
+        self.finish(session, None);
+    }
+
+    /// Fecha o Treino: a Partida guardada volta ao tabuleiro.
+    pub(crate) fn leave_for_tests(&mut self, session: &mut Session) {
+        self.leave(session, View::Closed);
     }
 }
 

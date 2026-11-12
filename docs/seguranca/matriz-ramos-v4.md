@@ -17,6 +17,7 @@ Nenhum ramo ficou **SEM TESTE**. Os ramos sem teste negativo (ou positivo) achad
 - `crates/chess-vault/tests/vault.rs`: `a_disk_failure_opening_the_vault_is_a_typed_io_error`
 - `crates/chess-uci/tests/adapter.rs`: `set_option_refuses_names_and_values_that_would_inject_another_command`
 - `crates/chess-studio/src/fair_play_matrix_tests.rs`: a grade `Computation` x estado e os dois testes que amarram a matriz ao código
+- `crates/chess-studio/src/fair_play_session_tests.rs` (#304): a trava com o Treino e o modo espectador por cima da Partida do usuário, e os caminhos que interrompem a Partida competitiva local (seção [FP-06](#a-trava-segue-a-partida-do-usuário-não-a-sessão-mostrada-fp-06-304))
 
 Dois ramos são **N/A** (falha do sistema operacional que a suíte não provoca), ambos em Loopback e OAuth. Cobertura de linhas: ver [Cobertura](#cobertura).
 
@@ -140,6 +141,7 @@ Todos os testes de `fair_play_matrix_tests.rs` percorrem as dez `Computation`.
 | Livre: nenhuma trava | `matrix_free_state_allows_every_computation_on_every_entry_point` | `matrix_provider_engine_and_local_games_are_not_followed` (nada entra na trava) |
 | Trava da rede ligada (`LockScope::Everything`) | `matrix_network_guard_refuses_every_computation_on_every_entry_point` (depois de soltar, volta a passar) | idem; `fair_play.rs`: `the_network_guard_locks_everything_for_every_service` |
 | Trava da Partida competitiva local: só a Engine adversária escapa (FP-02) | `matrix_competitive_hold_spares_only_the_opponent_engine` | idem (Partida online por cima trava a adversária também) |
+| Partida competitiva do usuário guardada por baixo do Treino ou do modo espectador (`CompetitiveGame::Aside`, FP-06, #304) | `matrix_competitive_game_aside_refuses_everything_but_a_competitive_opponent` (a adversária de uma Partida competitiva local em andamento passa; de volta ao tabuleiro e no fim, livre) | o mesmo teste (tudo recusado em todos os pontos de entrada, inclusive a Engine adversária de outra Partida; com Partida online por cima, nem a competitiva); `crates/chess-studio/src/net_service.rs`: `the_fair_play_guard_follows_the_competitive_game_only_on_transitions` (guardada, a trava não cai) |
 | Partida online em tempo real, sem a sessão aberta | `matrix_real_time_game_refuses_every_computation_everywhere` (fim confirmado solta) | idem; `fair_play.rs`: `a_real_time_game_in_progress_locks_everything_even_without_its_session` |
 | Correspondência: a própria Partida em qualquer meio-lance (`LockScope::ThisGame`) | `matrix_correspondence_locks_game_and_structure_but_not_the_rest` (Posição livre passa) | idem; `fair_play.rs`: `the_correspondence_game_itself_is_locked_at_every_ply` |
 | Correspondência: Posição de mesma estrutura, até dois meios-lances à frente (`LockScope::ThisPosition`) | `fair_play.rs`: `correspondence_leaves_other_games_and_its_past_opening_free` | `matrix_correspondence_locks_game_and_structure_but_not_the_rest`; `fair_play.rs`: `correspondence_locks_its_current_position_and_what_is_near_it_anywhere` |
@@ -149,6 +151,23 @@ Todos os testes de `fair_play_matrix_tests.rs` percorrem as dez `Computation`.
 | Ligar antes de saber a Posição (`check_anywhere`, `check_start`, desafio sem Posição) | `matrix_correspondence_locks_game_and_structure_but_not_the_rest` (`check_anywhere` passa só com correspondência) | o mesmo teste (`check_start(None)` recusa); `fair_play.rs`: `a_game_that_starts_in_an_unknown_position_waits_for_every_lock` |
 | FEN ilegível (`check_fen`) | `fair_play.rs`: `an_unreadable_fen_is_refused_while_any_lock_is_on` (sem trava passa) | o mesmo teste e `matrix_correspondence_locks_game_and_structure_but_not_the_rest` |
 | Lock de estado envenenado: na dúvida, trava | todos os outros (lock sadio) | `matrix_a_poisoned_state_lock_refuses_everything` |
+
+### A trava segue a Partida do usuário, não a Sessão mostrada (FP-06, #304)
+
+Testes em `crates/chess-studio/src/fair_play_session_tests.rs` (**novo**, #304). Cada linha chama os serviços que calculam como o app os chama (`GuardedAnalysis::start` e `start_remote`, o ponto único para Explorador e finais, `CloudDriver::drive`, `hud_policy::effective`, `opening_stats`, `search_library`, `GuardedOpponent::start`, `check_anywhere` e `check_start` da Engine online e `GuardedMoveEngine::search`), sobre o que o tabuleiro mostra e sobre a Posição da Partida do usuário digitada num FEN. "Antes" é o `main` antes do #304.
+
+| Combinação | Teste | Antes | Depois |
+|---|---|---|---|
+| Partida competitiva local + Treino (Resolução, memória de sequência, memória de posição) | `opening_the_training_over_a_local_competitive_game_keeps_every_service_locked` | **brecha**: todos os serviços calculavam, no Exercício e na Posição da Partida | tudo recusado |
+| Idem, na reprodução da memória e na revisão do Treino | `the_recall_and_the_training_review_keep_the_lock` | **brecha**: idem | tudo recusado |
+| Idem, com a Posição da Partida carregada por FEN no tabuleiro do Treino | `the_position_of_the_kept_game_typed_on_the_training_board_stays_locked` | **brecha**: idem | tudo recusado |
+| Engine adversária: outra Partida durante o Treino; a da Partida guardada ao sair | `the_opponent_engine_of_the_kept_game_plays_again_when_the_training_closes` | **brecha**: outra Partida contra a Engine começava | outra Partida recusada; a adversária da Partida guardada volta a jogar (FP-02), mesmo antes de a trava ver a troca |
+| Modo espectador e Treino, um por cima do outro | `the_training_over_the_spectator_mode_keeps_the_users_game_locked` | **brecha** menor: no modo espectador, a Engine adversária de outra Partida passava | tudo recusado |
+| Partida online em tempo real + Treino (servidor falso) | `opening_the_training_during_a_real_time_online_game_keeps_every_service_locked` | sem brecha: a sessão segura a trava (PO-17) | sem mudança |
+| Correspondência no tabuleiro + Treino | `opening_the_training_over_a_correspondence_game_keeps_it_locked` | sem brecha na Partida (PO-13: ela e a estrutura dela recusadas); o Exercício calculava | tudo recusado, como no modo espectador |
+| Revisão da Partida competitiva em andamento | `reviewing_the_competitive_game_in_progress_keeps_the_lock` | sem brecha | sem mudança |
+| Nova Partida (também contra a Engine), Retomar, Biblioteca, FEN numa Partida Assistida: a Partida competitiva local é **interrompida** (pausada no banco, DEC-42, #193) | `interrupting_the_competitive_game_releases_its_lock_until_it_comes_back`, `a_fen_keeps_the_policy_and_the_library_study_interrupts` | interrompida, não trava; de volta, trava no mesmo quadro; FEN numa Partida competitiva mantém a Política e trava | sem mudança: regra pendente (#305) |
+| Trocar de Perfil local | `switching_the_local_profile_interrupts_and_switching_back_locks_again`; `crates/chess-studio/src/local_profiles.rs`: `switching_profiles_is_refused_while_the_training_keeps_the_users_game` | interrompe como a Nova Partida; com um Exercício no tabuleiro, recusado (`OpError::Busy`) | sem mudança: regra pendente (#305) |
 
 ## ICS (FICS)
 

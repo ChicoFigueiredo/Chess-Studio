@@ -100,6 +100,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 | CX-HOM-78 | Problemas do Lichess depois do limite de linha | sim | UNVERIFIED |
 | CX-HOM-79 | Importar arquivo PGN: prévia, fonte detectada e confirmação de direitos | não | UNVERIFIED |
 | CX-HOM-80 | "Relâmpago" no lugar de "Bullet" em todo o app | não | UNVERIFIED |
+| CX-HOM-81 | Trava de fair play com o Treino aberto durante a Partida | não | UNVERIFIED |
 
 ## Itens
 
@@ -979,6 +980,21 @@ O número 54 ficou sem item: a numeração do roteiro passa do CX-HOM-53 para o 
 - **Com o serviço real:** não se aplica.
 - **Evidência:** `the_shortest_pace_is_called_relampago_everywhere` e `integration_texts_avoid_the_glossary_banned_words_and_http_codes` (com "bullet" entre as palavras proibidas) em `connections/model.rs`.
 
+### CX-HOM-81. Trava de fair play com o Treino aberto durante a Partida
+
+- **Pré-condição:** Lichess ligado e autorizado; uma Engine instalada; Explorador, Painel Análise e Painel Auxílios abertos.
+- **Passos:**
+  1. Comece uma Partida na Simulação FIDE, faça um Lance e copie o FEN da Posição.
+  2. Abra o Painel Treino e comece um Exercício (Resolução); depois uma memória de sequência e uma memória de posição.
+  3. Com o Exercício no tabuleiro, Painel Auxílios > **Carregar FEN** com o FEN copiado.
+  4. Olhe o Explorador, a linha **Avaliação pronta (Lichess)**, a busca por Posição da Biblioteca, a dica do HUD e a barra de status; tente **Contra a Engine** e ligar a Engine online.
+  5. Feche o Treino e confira a Partida.
+  6. Repita com uma Partida contra a Engine na Simulação FIDE, com uma Partida online em tempo real contra pessoa e com uma correspondência no tabuleiro.
+- **Esperado:** durante o Treino a barra de status mostra **Trava de fair play**; o Explorador e a avaliação pronta ficam indisponíveis, a busca por Posição é recusada com o motivo, a dica e as setas não aparecem, **Contra a Engine** fica desabilitado com o motivo e a Engine online não liga. Nenhuma consulta sai. Ao fechar o Treino a Partida volta como estava (contra a Engine, a Engine continua jogando) e tudo segue travado até o fim dela.
+- **Com o serviço real:** com o monitor de rede, confirme que nada que calcula sai durante o Treino.
+- **Evidência:** [`fair_play_session_tests.rs`](../../crates/chess-studio/src/fair_play_session_tests.rs), [`fair_play_matrix_tests.rs`](../../crates/chess-studio/src/fair_play_matrix_tests.rs) (`matrix_competitive_game_aside_refuses_everything_but_a_competitive_opponent`), decisão [FP-06](../decisoes/2026-11-11-trava-brechas.md), [matriz dos ramos](../seguranca/matriz-ramos-v4.md#a-trava-segue-a-partida-do-usuário-não-a-sessão-mostrada-fp-06-304).
+- **Limite conhecido:** Nova Partida, Biblioteca, Retomar e troca de Perfil **interrompem** a Partida competitiva local (ela fica no banco, pausada) e, interrompida, ela não trava; a regra está pendente ([#305](https://github.com/ChicoFigueiredo/Chess-Studio/issues/305)).
+
 ## Fora deste roteiro
 
 Chat, premove e reclamar empate por ausência não existem no app (ver [`2026-11-11-partida-online.md`](../decisoes/2026-11-11-partida-online.md)).
@@ -990,6 +1006,7 @@ Itens que mudam enquanto estes PRs não entram no `main`. Não percorra os ponto
 | Ponto | PR ou issue | O que muda neste roteiro |
 |---|---|---|
 | Análise da Engine: o `stop` pode se perder (corrida em `AnalysisController::stop`) | [#296](https://github.com/ChicoFigueiredo/Chess-Studio/issues/296), em investigação | Se for defeito de produto, afeta a Trava (CX-HOM-21, 42 e 51), que derruba a análise com `stop` |
+| A Partida competitiva local interrompida (Nova Partida, Biblioteca, Retomar, troca de Perfil) não trava | [#305](https://github.com/ChicoFigueiredo/Chess-Studio/issues/305), aguardando decisão | CX-HOM-21 e CX-HOM-81: enquanto ela está interrompida, o que calcula responde; ao voltar ao tabuleiro, a trava liga |
 | `cargo deny check advisories` falha por dependências sem manutenção do cofre do sistema no Linux (SEC-09) | [#285](https://github.com/ChicoFigueiredo/Chess-Studio/issues/285), aberta | Não é item de homologação; é risco registrado na [revisão de segurança](../seguranca/revisao-v4.md) |
 
 ## O que falta
