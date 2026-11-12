@@ -40,6 +40,8 @@ mod evolution;
 mod packs;
 mod position;
 mod profiles;
+#[cfg(test)]
+mod swap_tests;
 mod themes;
 
 /// Rodadas máximas de "juiz pede, `Session` aplica" por quadro.
@@ -52,7 +54,10 @@ impl Plugin for TrainingPlugin {
         app.init_resource::<TrainingUi>()
             .add_systems(
                 Update,
-                (training_demo, training_judge).chain().after(PlaySet),
+                (training_guard, training_demo, training_judge)
+                    .chain()
+                    .after(PlaySet)
+                    .before(crate::persistence::persist_session),
             )
             .add_systems(Update, (position::tick, position::sync_board).chain())
             .add_systems(Update, (packs::poll, download::poll, download::on_consent))
@@ -118,6 +123,9 @@ pub struct TrainingUi {
     synced: bool,
     /// A Partida em andamento, guardada enquanto a `Session` mostra o Exercício.
     stashed: Option<Session>,
+    /// Época da `Session` que mostra o Exercício: se mudar, outra Ação trocou a Partida do
+    /// tabuleiro por baixo do Treino (#307).
+    exercise_epoch: Option<u64>,
     active: Option<ActiveRun>,
     memory: Option<MemoryActive>,
     review: Option<ReviewState>,
@@ -169,6 +177,7 @@ impl Default for TrainingUi {
             local: None,
             synced: false,
             stashed: None,
+            exercise_epoch: None,
             active: None,
             memory: None,
             review: None,
@@ -319,6 +328,7 @@ impl TrainingUi {
         self.review = None;
         self.position = None;
         self.view = view;
+        self.exercise_epoch = None;
         if let Some(mut original) = self.stashed.take() {
             original.set_move_method(session.move_method());
             original.supersede(session);
@@ -330,10 +340,31 @@ impl TrainingUi {
     fn install(&mut self, session: &mut Session, mut fresh: Session) {
         fresh.set_move_method(session.move_method());
         fresh.supersede(session);
+        fresh.cover(session);
+        self.exercise_epoch = Some(fresh.epoch());
         let previous = std::mem::replace(session, fresh);
         if self.stashed.is_none() {
             self.stashed = Some(previous);
         }
+    }
+
+    /// Nova Partida, Retomar, Biblioteca, FEN ou Partida online que começou durante o Treino
+    /// trocam a `Session` do Exercício por outra (#307). A regra é a do modo espectador: trocar
+    /// a Partida do tabuleiro **sai** do Treino. A Sessão nova é a do usuário; a guardada não
+    /// volta por cima dela (nem é gravada de novo): ela já está no banco, parada onde estava,
+    /// e continua retomável. Devolve `true` se saiu do Treino.
+    fn leave_if_board_replaced(&mut self, session: &Session) -> bool {
+        if self.stashed.is_none() || self.exercise_epoch == Some(session.epoch()) {
+            return false;
+        }
+        self.stashed = None;
+        self.exercise_epoch = None;
+        self.active = None;
+        self.memory = None;
+        self.review = None;
+        self.position = None;
+        self.view = View::Closed;
+        true
     }
 
     /// Começa uma Resolução nova na posição **original** do Exercício (também é o "Repetir").
@@ -414,6 +445,13 @@ impl TrainingUi {
         session.set_review_ply(Some(plies));
         self.view = View::Review;
         self.refresh_metrics(handle);
+    }
+}
+
+/// Antes da persistência e do juiz: se outra Ação trocou a Partida do tabuleiro, o Treino sai.
+fn training_guard(mut state: ResMut<TrainingUi>, session: Res<Session>) {
+    if state.stashed.is_some() {
+        state.leave_if_board_replaced(&session);
     }
 }
 

@@ -206,6 +206,15 @@ impl Session {
         self.revision = previous.revision.wrapping_add(1);
     }
 
+    /// Dá a esta Sessão uma época diferente da de `previous`, que ela encobre sem substituir
+    /// (o Exercício do Treino sobre a Partida do usuário, #307). Sem isso, as duas começariam
+    /// na época 0 e a troca por outra Partida, `previous.epoch() + 1`, voltaria a coincidir
+    /// com a que a persistência acompanha: ela não notaria a troca e gravaria os Eventos da
+    /// Partida nova no log da guardada.
+    pub fn cover(&mut self, previous: &Session) {
+        self.epoch = previous.epoch.wrapping_add(1);
+    }
+
     /// A Partida em si (somente leitura: exportação e persistência).
     pub fn game(&self) -> &Game {
         &self.game
