@@ -1356,8 +1356,12 @@ fn close_on_exit(
     profiles: Res<InterfaceProfiles>,
     controls: Res<crate::controls::Controls>,
     ribbon: Option<Res<crate::ribbon::RibbonState>>,
+    exit_prompt: Option<Res<crate::engine_online::exit::ExitPrompt>>,
 ) {
-    let closing = close_requested.read().count() > 0 || exits.read().count() > 0;
+    // Com a pergunta de saída aberta o app segue vivo: a sessão só fecha quando ele sair.
+    let asked = exit_prompt.is_some_and(|p| p.open);
+    let requested = close_requested.read().count() > 0 && !asked;
+    let closing = requested || exits.read().count() > 0;
     if closing && let Ok(mut p) = handle.0.lock() {
         if !training.session_swapped() {
             p.sync(&session);

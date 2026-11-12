@@ -3,7 +3,7 @@
 //! nenhum banco. Cada cena é fotografada nos Temas Escuro e Claro numa só execução e grava
 //! `engine-online-<cena>-<tema>.png`.
 //!
-//! Cenas da Engine online: `off`, `ready`, `waiting`, `playing`, `stopping`, `lost`,
+//! Cenas da Engine online: `off`, `ready`, `strength`, `resumed`, `exit`, `waiting`, `playing`, `stopping`, `lost`,
 //! `convert`. Cenas da Engine remota (Painel Análise): `remote-warning`, `remote-active`,
 //! `remote-disabled`, `remote-limit`, `remote-fairplay`.
 
@@ -25,6 +25,8 @@ use std::path::PathBuf;
 pub struct Scene {
     pub model: ViewModel,
     pub remote: Option<RemoteScene>,
+    /// A pergunta de saída aberta sobre a cena.
+    pub exit: bool,
     form: fn(&mut Form),
 }
 
@@ -112,11 +114,13 @@ impl Scene {
         let scene = |model: ViewModel, form: fn(&mut Form)| Self {
             model,
             remote: None,
+            exit: false,
             form,
         };
         let remote = |kind| Self {
             model: base(),
             remote: Some(kind),
+            exit: false,
             form: |_| {},
         };
         Some(match name {
@@ -128,6 +132,24 @@ impl Scene {
                 |_| {},
             ),
             "ready" => scene(base(), |_| {}),
+            "strength" => scene(base(), |form| form.settings.elo = Some(1800)),
+            "resumed" => scene(
+                ViewModel {
+                    state: RunState::Playing,
+                    running_engine: Some("Stockfish 17".to_owned()),
+                    counts: (0, 0, 0),
+                    rows: vec![row("Hq3vT8aZ", "TorreDeMadeira", 1720, true, 23, false)],
+                    activity: vec![Activity::GameResumed {
+                        opponent: "TorreDeMadeira".to_owned(),
+                    }],
+                    ..base()
+                },
+                |_| {},
+            ),
+            "exit" => Self {
+                exit: true,
+                ..Self::named("playing")?
+            },
             "waiting" => scene(
                 ViewModel {
                     state: RunState::Waiting,

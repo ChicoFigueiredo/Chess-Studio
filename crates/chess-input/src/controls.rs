@@ -129,12 +129,14 @@ pub enum Action {
     PlayLichessEngine,
     /// Minhas Partidas online em andamento (correspondência inclusive).
     OnlineGames,
+    /// Abre a tela da Engine online (uma Engine local responde a desafios no Lichess).
+    OpenEngineOnline,
     /// Mostra ou oculta o Painel Partida online.
     PanelOnline,
 }
 
 impl Action {
-    pub const ALL: [Action; 76] = [
+    pub const ALL: [Action; 77] = [
         Action::Select,
         Action::Adjust,
         Action::Orbit,
@@ -210,6 +212,7 @@ impl Action {
         Action::ChallengeOnline,
         Action::PlayLichessEngine,
         Action::OnlineGames,
+        Action::OpenEngineOnline,
         Action::PanelOnline,
     ];
 
@@ -285,6 +288,7 @@ impl Action {
             Action::ChallengeOnline => "challenge-online",
             Action::PlayLichessEngine => "play-lichess-engine",
             Action::OnlineGames => "online-games",
+            Action::OpenEngineOnline => "open-engine-online",
             Action::PanelOnline => "panel-online",
             Action::ExportPgn => "export-pgn",
             Action::OpenTraining => "open-training",
