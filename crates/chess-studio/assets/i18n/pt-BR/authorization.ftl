@@ -147,7 +147,7 @@ engine-none = Nenhuma Engine online autorizada.
 engine-act-authorize = Autorizar Engine online…
 engine-act-open-screen = Abrir a tela da Engine online
 engine-act-key = Usar chave pessoal…
-connections-requires-explorer = O Explorador de aberturas requer autorizar sua conexão do { $provider }.
+connections-requires-explorer = Para usar o Explorador de aberturas, autorize sua conexão do { $provider }.
 
 ## Desconectar
 connections-revoke-ok = Desconectado. O Lichess revogou a autorização e a chave foi apagada deste computador.

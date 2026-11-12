@@ -11,6 +11,7 @@ use crate::new_game::NewGameDialog;
 use crate::pieces::{BoardOverride, KingPiece, Piece2d, Piece3d, PieceAt, PiecePlacementSet};
 use crate::presentation::VisibleIn;
 use crate::session::Session;
+use crate::ui_theme::{ButtonVariant, cs_button};
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use chess_core::{Color as Side, Square};
@@ -313,10 +314,14 @@ fn end_dialog(
             ui.label(i18n.t(crate::ui::reason_key(outcome.reason)));
             ui.add_space(8.0);
             ui.horizontal_wrapped(|ui| {
-                review = ui.button(i18n.t("endgame-review")).clicked();
-                start_new = ui.button(i18n.t("button-new-game")).clicked();
+                review = cs_button(ui, &i18n.t("endgame-review"), ButtonVariant::Primary).clicked();
+                start_new =
+                    cs_button(ui, &i18n.t("button-new-game"), ButtonVariant::Secondary).clicked();
                 export = ui
-                    .add_enabled(!hide_notation, egui::Button::new(i18n.t("endgame-export")))
+                    .add_enabled_ui(!hide_notation, |ui| {
+                        cs_button(ui, &i18n.t("endgame-export"), ButtonVariant::Secondary)
+                    })
+                    .inner
                     .clicked();
                 if !tools.pgn_pick.is_unavailable() {
                     ui.add_enabled_ui(!hide_notation, |ui| {
@@ -328,7 +333,7 @@ fn end_dialog(
                         });
                     });
                 }
-                close = ui.button(i18n.t("endgame-close")).clicked();
+                close = cs_button(ui, &i18n.t("endgame-close"), ButtonVariant::Subtle).clicked();
             });
             match &tools.pgn_result {
                 Some(Ok(path)) => {

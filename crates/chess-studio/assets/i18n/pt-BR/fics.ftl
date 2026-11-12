@@ -12,7 +12,7 @@ fics-consent-feature = A Partida online no FICS
 fics-warning-plain = Conexão sem criptografia: os Lances, os comandos e o nome de visitante trafegam em texto puro até o FICS.
 fics-warning-guest = Só como visitante: o FICS dá um nome GuestXXXX e só Partidas sem rating. O app nunca pede nem envia senha.
 fics-warning-drop = Sem reconexão automática: se a conexão cair durante a Partida, o FICS a dá como perdida.
-fics-warning-lag = Sem timeseal: o atraso da rede entra no tempo do seu relógio.
+fics-warning-lag = Sem compensação de atraso: o atraso da rede entra no tempo do seu relógio.
 
 # Central de Conexões
 fics-auth-guest = Visitante, sem senha (o FICS dá o nome)

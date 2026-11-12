@@ -15,7 +15,7 @@ use crate::persistence::PersistenceHandle;
 use crate::session::Session;
 use crate::study::StudyNotes;
 use crate::training_ui::{TrainingUi, with_store};
-use crate::ui_theme::{ButtonVariant, cs_button, cs_dropdown, palette};
+use crate::ui_theme::{ButtonVariant, cs_button, cs_dropdown, cs_text_field, palette};
 use bevy::prelude::*;
 use bevy_egui::egui;
 use chess_core::{CanonicalPosition, Color as Side};
@@ -1411,13 +1411,15 @@ fn mark_current_row(
 ) {
     let (_, ply) = current_position(session);
     ui.horizontal(|ui| {
-        ui.add(
-            egui::TextEdit::singleline(&mut lib.favorite_name)
-                .hint_text(i18n.t_with("library-fav-hint", &[("ply", &ply.to_string())]))
-                .desired_width(150.0),
-        );
-        if ui
-            .button(i18n.t("library-fav-mark"))
+        ui.allocate_ui(egui::vec2(170.0, 0.0), |ui| {
+            cs_text_field(
+                ui,
+                &mut lib.favorite_name,
+                &i18n.t_with("library-fav-hint", &[("ply", &ply.to_string())]),
+                None,
+            );
+        });
+        if cs_button(ui, &i18n.t("library-fav-mark"), ButtonVariant::Secondary)
             .on_hover_text(i18n.t("library-fav-mark-hover"))
             .clicked()
         {
@@ -1466,17 +1468,9 @@ fn draw_games(
         lib.date_to.clone(),
         lib.position.clone(),
     );
-    ui.add(
-        egui::TextEdit::singleline(&mut lib.text)
-            .hint_text(i18n.t("library-search-hint"))
-            .desired_width(f32::INFINITY),
-    );
+    cs_text_field(ui, &mut lib.text, &i18n.t("library-search-hint"), None);
     egui::CollapsingHeader::new(i18n.t("library-filters")).show(ui, |ui| {
-        ui.add(
-            egui::TextEdit::singleline(&mut lib.player)
-                .hint_text(i18n.t("library-filter-player"))
-                .desired_width(f32::INFINITY),
-        );
+        cs_text_field(ui, &mut lib.player, &i18n.t("library-filter-player"), None);
         ui.horizontal_wrapped(|ui| {
             egui::ComboBox::from_id_salt("library-result")
                 .selected_text(i18n.t(lib.result.label_key()))

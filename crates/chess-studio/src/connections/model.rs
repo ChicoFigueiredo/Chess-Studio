@@ -720,7 +720,7 @@ pub fn cost_groups(provider: &Provider) -> Vec<(Cost, Vec<&'static str>)> {
 }
 
 /// Serviços que exigem cadastro e custam mais que o resto do Provedor (o Explorador do
-/// Lichess): a interface diz "Requer autorizar sua conexão do Lichess".
+/// Lichess): a interface diz "Autorize sua conexão do Lichess".
 pub fn requirements(provider: &Provider) -> Vec<&'static str> {
     provider
         .services
