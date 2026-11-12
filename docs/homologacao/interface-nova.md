@@ -27,6 +27,7 @@ Referências: `docs/decisoes/2026-11-09-design-system.md` (DS-04, DS-15), `docs/
 | **UI-NOVA-17** | Partida contra Engine sem o painel esquerdo: a janela "Engine adversária" aparece só quando há o que mostrar (Engine pensando, falha com "Tentar de novo" e "Trocar Engine", "Conectar Engine e retomar" numa Partida reaberta, aviso de execução). | Reabrir uma Partida contra Engine; derrubar a Engine no meio | `engine.rs`, `engine_consent.rs` (testes) | UNVERIFIED |
 | **UI-NOVA-18** | Janela pequena (800x600 e 1024x576): dock vira sobreposição, a barra de essenciais fica acima da barra de status, nada se sobrepõe. | Redimensionar a janela | `responsive.rs` (testes) | UNVERIFIED |
 | **UI-NOVA-19** | 60 FPS com a interface completa no cenário de análise e no de Partida. | `scripts/benchmark_matriz.sh` | `docs/benchmark.md` | UNVERIFIED |
+| **UI-NOVA-20** | Dois cliques numa aba do Ribbon recolhem o Ribbon; dois cliques de novo expandem, com a aba clicada ativa. Um clique só continua trocando de aba (expandido) ou abrindo o corpo por cima do tabuleiro (recolhido). A aba Arquivo não recolhe. O estado volta após reiniciar. | Dois cliques em Início; dois cliques em Análise; reiniciar recolhido | `ribbon/mod.rs::a_double_click_on_a_tab_collapses_and_expands_the_ribbon`, `a_single_click_on_a_tab_keeps_its_old_meaning`, `the_file_tab_never_collapses_the_ribbon` | UNVERIFIED |
 
 ## O que falta
 

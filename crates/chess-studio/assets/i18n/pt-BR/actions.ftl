@@ -198,7 +198,7 @@ action-ui-zoom-out-desc = Diminui a Escala da interface, até 80%.
 action-open-palette = Paleta de Ações
 action-open-palette-desc = Busca qualquer Ação pelo nome e a executa.
 action-toggle-ribbon-collapse = Recolher o Ribbon
-action-toggle-ribbon-collapse-desc = Mostra só as abas do Ribbon, liberando espaço para o tabuleiro.
+action-toggle-ribbon-collapse-desc = Mostra só as abas do Ribbon, liberando espaço para o tabuleiro. Dois cliques numa aba fazem o mesmo.
 
 # Motivos de uma Ação estar desabilitada.
 reason-assisted-only = Só no modo Assistido.
