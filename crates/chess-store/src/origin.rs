@@ -95,6 +95,27 @@ impl ImportSource {
         }
     }
 
+    /// Fontes de uso restrito: o app não conhece direito de redistribuição, então a pessoa
+    /// confirma que pode usar as Partidas antes de importar (#270).
+    pub fn is_restricted(self) -> bool {
+        matches!(self, Self::ChessBase | Self::Twic | Self::PgnMentor)
+    }
+
+    /// A fonte que as tags da Partida indicam (`Site`, `LichessURL`, `Link`), quando indicam.
+    /// Detecção parcial: TWIC, PGN Mentor e ChessBase não deixam marca nas tags.
+    pub fn detect(game: &PgnGame) -> Option<Self> {
+        let has = |tag: &str, host: &str| game.tag(tag).is_some_and(|v| v.contains(host));
+        if has("Site", "playstrategy.org/") {
+            Some(Self::PlayStrategy)
+        } else if has("Site", "lichess.org/") || has("LichessURL", "lichess.org/") {
+            Some(Self::Lichess)
+        } else if has("Link", "chess.com/") || has("Site", "chess.com/") {
+            Some(Self::ChessCom)
+        } else {
+            None
+        }
+    }
+
     pub fn from_provider_id(id: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|s| s.provider_id() == id)
     }

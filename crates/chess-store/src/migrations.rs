@@ -452,6 +452,13 @@ CREATE TABLE fide_ratings (
 );
 ";
 
+/// Versão 18: a licença dos dados guardada com o rating FIDE (ADR-0006, Origem completa: Provedor,
+/// instante e licença; #264). Os ratings já guardados vieram todos do Lichess, que reproduz a
+/// FIDE: ganham a licença dessa cópia.
+const V18_FIDE_LICENSE: &str = "
+ALTER TABLE fide_ratings ADD COLUMN license TEXT NOT NULL DEFAULT 'fide-via-lichess';
+";
+
 /// Migrações em ordem; o índice + 1 é a versão resultante.
 const MIGRATIONS: &[&str] = &[
     V1_CORE,
@@ -471,6 +478,7 @@ const MIGRATIONS: &[&str] = &[
     V15_CONNECTIONS,
     V16_AUTHORIZED_CONNECTIONS,
     V17_FIDE_RATINGS,
+    V18_FIDE_LICENSE,
 ];
 
 /// Versão de esquema desta build.

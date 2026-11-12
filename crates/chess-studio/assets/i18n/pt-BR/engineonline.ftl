@@ -1,10 +1,10 @@
 # Engine online no Lichess (#252, CX-13). Termo do glossário: "Engine online". "BOT" só aparece
-# como o nome do tipo de conta do Lichess.
+# como o nome do tipo de usuário do Lichess.
 
 engine-online-title = Engine online no Lichess
 engine-online-close = Fechar
 engine-online-cancel = Cancelar
-engine-online-intro = Deixe uma Engine instalada neste computador responder a desafios no Lichess, com a sua conta de Engine. Nada começa sozinho: ela só liga quando você clica em Ligar.
+engine-online-intro = Deixe uma Engine instalada neste computador responder a desafios no Lichess, com a sua Conexão de Engine. Nada começa sozinho: ela só liga quando você clica em Ligar.
 
 # Estado
 engine-online-state-stopped = Parada
@@ -78,7 +78,7 @@ engine-online-exit-body = A Engine online tem Partidas em andamento no Lichess (
 engine-online-exit-wait = Parar e esperar terminarem
 engine-online-exit-leave = Sair mesmo assim
 engine-online-act-ended = Partida com { $name } terminou ({ $result }).
-engine-online-act-accept-failed = O desafio de { $name } não pôde ser aceito: { $why } Confira se a conta já é uma conta BOT.
+engine-online-act-accept-failed = O desafio de { $name } não pôde ser aceito: { $why } Confira se o usuário já é um usuário BOT.
 engine-online-act-move-rejected = A Engine propôs um Lance ilegal e ele não foi enviado.
 engine-online-act-engine-failed = A Engine falhou e a Partida foi abandonada.
 engine-online-act-engine-start-failed = A Engine não iniciou e a Partida foi abandonada.
@@ -96,13 +96,13 @@ engine-online-decline-nobot = não joga contra outras Engines
 engine-online-decline-onlybot = só joga contra outras Engines
 engine-online-decline-generic = fora dos limites escolhidos
 
-# Conversão da conta em BOT (irreversível)
-engine-online-convert-title = A conta ainda não é uma conta BOT?
-engine-online-convert-hint = Converter a conta de Engine em conta BOT (não tem volta).
+# Conversão do usuário em BOT (irreversível)
+engine-online-convert-title = O usuário ainda não é um usuário BOT?
+engine-online-convert-hint = Converter o usuário da Engine em usuário BOT (não tem volta).
 engine-online-convert-sending = Enviando o pedido ao Lichess…
-engine-online-convert-done = A conta foi convertida em conta BOT.
-engine-online-convert-failed = O Lichess não converteu a conta. Ela precisa ser nova, sem Partidas jogadas.
-engine-online-convert-understood = Entendi que isto não tem volta e que vou usar uma conta criada só para a Engine.
-engine-online-convert-act = Converter em conta BOT
+engine-online-convert-done = O usuário foi convertido em usuário BOT.
+engine-online-convert-failed = O Lichess não converteu o usuário. Ele precisa ser novo, sem Partidas jogadas.
+engine-online-convert-understood = Entendi que isto não tem volta e que vou usar um usuário criado só para a Engine.
+engine-online-convert-act = Converter em usuário BOT
 
 engine-online-footer = Fechar esta janela não para a Engine; use Parar. Se você fechar o Chess Studio, a Engine deixa de responder e as Partidas em andamento no Lichess perdem por tempo.

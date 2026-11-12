@@ -330,6 +330,7 @@ mod tests {
                     inactive: false,
                     queried_at_ms: 5,
                     source: "lichess".into(),
+                    license: chess_store::FIDE_LICENSE_VIA_LICHESS.into(),
                 },
             )
             .unwrap();
