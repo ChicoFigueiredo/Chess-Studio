@@ -46,6 +46,7 @@ mod hud;
 mod hud_draw;
 mod hud_policy;
 mod i18n;
+mod import_preview_ui;
 mod layout;
 mod library_bulk;
 mod library_ui;
