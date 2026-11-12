@@ -22,6 +22,12 @@ rusqlite.workspace = true
 serde.workspace = true
 # Segredos zerados na memória ao descartar (MIT OR Apache-2.0).
 zeroize = "1.9"
+# Teto do log em tempo de compilação (#273): o `ureq-proto` despeja em TRACE os bytes do
+# pedido e da resposta, com o `Authorization`, o código, o verificador PKCE e o token novo.
+# Com `max_level_debug`, nenhum `log::trace!` existe no binário que tem este crate, então
+# nem `RUST_LOG=trace` põe segredo no log (o DEBUG do `ureq` só mostra cabeçalhos seguros).
+# O `log` é MIT OR Apache-2.0.
+log = { version = "0.4", features = ["max_level_debug", "release_max_level_debug"] }
 
 [dev-dependencies]
 chess-net = { path = ".", features = ["testing"] }

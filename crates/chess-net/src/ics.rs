@@ -67,6 +67,13 @@ pub const DEFAULT_ICS_MAX_LINE: usize = 16 * 1024;
 /// Comando máximo que o app envia (bytes, sem o fim de linha).
 pub const MAX_ICS_COMMAND: usize = 1024;
 
+/// Eventos de uma conexão ICS à espera de quem lê, no máximo (#273). O canal não é cifrado:
+/// um servidor hostil, ou qualquer um no caminho, pode despejar linhas sem parar. Com a fila
+/// cheia, a leitura do socket espera (o TCP segura o resto do outro lado), então a memória
+/// fica em `MAX_ICS_PENDING` linhas de até [`DEFAULT_ICS_MAX_LINE`] bytes, qualquer que seja
+/// a entrada.
+pub const MAX_ICS_PENDING: usize = 1024;
+
 /// Pedido de conexão ICS: Provedor + endereço oficial do catálogo. Nos testes o host vai
 /// para o servidor falso por [`crate::NetConfig::route`] (só loopback).
 #[derive(Debug, Clone, PartialEq, Eq)]

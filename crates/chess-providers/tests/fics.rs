@@ -10,7 +10,8 @@ use chess_game::{EndReason, Event, EventKind, Game, GameResult};
 use chess_net::testing::FakeIcsServer;
 use chess_net::{FakeClock, Net, NetConfig, ProviderId, Secret, Timestamp};
 use chess_providers::{
-    Fics, FicsError, FicsLogin, FicsNotice, FicsSession, FicsStatus, ProviderError,
+    Fics, FicsError, FicsLogin, FicsNotice, FicsSession, FicsStatus, MAX_FICS_EVENTS_PER_POLL,
+    ProviderError,
 };
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -503,6 +504,40 @@ fn hostile_input_neither_hangs_nor_breaks_the_session() {
     // A sessão segue respondendo.
     session.seek(3, 2).unwrap();
     assert!(env.server.wait_line("seek 3 2 unrated", WAIT));
+}
+
+/// Revisão de segurança (#273): um despejo de linhas (servidor hostil ou alguém no caminho do
+/// texto puro) não prende a consulta por quadro, que roda na thread da interface: cada
+/// `poll` trata no máximo [`MAX_FICS_EVENTS_PER_POLL`] eventos, e o resto fica para as
+/// consultas seguintes, sem perda.
+#[test]
+fn a_flood_of_lines_is_handled_a_slice_per_poll_without_loss() {
+    let env = env();
+    let (mut session, mut seen) = login(&env);
+    let total = 2000;
+    env.server
+        .send(&"Your seek has been posted with index 7.\n".repeat(total));
+    // Tempo para tudo chegar ao transporte, sem consultar a sessão.
+    std::thread::sleep(Duration::from_millis(500));
+
+    let seeks = |notices: &[FicsNotice]| {
+        notices
+            .iter()
+            .filter(|n| **n == FicsNotice::SeekPosted)
+            .count()
+    };
+    let first = session.poll();
+    let handled = seeks(&first.notices);
+    assert!(
+        handled > 0 && handled <= MAX_FICS_EVENTS_PER_POLL,
+        "uma consulta tratou {handled} linhas (teto {MAX_FICS_EVENTS_PER_POLL})"
+    );
+    seen.notices.extend(first.notices);
+    assert!(
+        poll_until(&mut session, &mut seen, |s, _| seeks(&s.notices) == total),
+        "as {total} linhas chegam nas consultas seguintes"
+    );
+    assert_eq!(session.status(), FicsStatus::Ready);
 }
 
 #[test]
