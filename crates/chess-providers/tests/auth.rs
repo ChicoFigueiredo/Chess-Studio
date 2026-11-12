@@ -737,3 +737,64 @@ fn revoking_with_the_own_vault_locked_cannot_reach_the_provider_but_still_forget
     );
     assert!(files_containing(&env.dir, TOKEN).is_empty());
 }
+
+// --- Ramos de segurança sem teste negativo (NFR-10, #269) ---------------------------------
+
+#[test]
+fn a_callback_without_a_usable_code_or_with_another_error_is_malformed_and_exchanges_nothing() {
+    let env = env_enabled();
+    env.server.route("/api/token", token_response(TOKEN));
+    let auth = auth(&env);
+    // Com o `state` certo, mas sem código, com dois, com caractere fora do ASCII gráfico e
+    // com um erro que não é a recusa do usuário.
+    for query in [
+        "state=STATE",
+        "code=A&code=B&state=STATE",
+        "code=a%20b&state=STATE",
+        "code=&state=STATE",
+        "error=server_error&state=STATE",
+    ] {
+        let flow = auth
+            .authorize(PLAYER, ConnectionRole::Player)
+            .expect("começa");
+        let (redirect_uri, state, _) = browser_view(&flow);
+        let query = query.replace("STATE", &state);
+        come_back(&redirect_uri, &query).expect("volta");
+        assert_eq!(
+            flow.wait(WAIT),
+            AuthState::Failed(AuthError::MalformedCallback),
+            "{query}"
+        );
+    }
+    assert!(requests_to(&env, "/api/token").is_empty(), "nada trocado");
+    assert!(env.vault.reference(PLAYER).is_none());
+}
+
+#[test]
+fn a_token_answer_that_is_not_a_bearer_token_is_malformed_and_stores_nothing() {
+    let env = env_enabled();
+    let auth = auth(&env);
+    let answers = [
+        FakeResponse::json("não é json"),
+        FakeResponse::json("{\"token_type\":\"Bearer\"}"),
+        FakeResponse::json("{\"token_type\":\"mac\",\"access_token\":\"lio_abc\"}"),
+        FakeResponse::json("{\"token_type\":\"Bearer\",\"access_token\":\"com espaço\"}"),
+        FakeResponse::json("{\"token_type\":\"Bearer\",\"access_token\":\"\"}"),
+    ];
+    for answer in answers {
+        env.server.route("/api/token", answer);
+        let flow = auth
+            .authorize(PLAYER, ConnectionRole::Player)
+            .expect("começa");
+        let (redirect_uri, state, _) = browser_view(&flow);
+        come_back(&redirect_uri, &format!("code={CODE}&state={state}")).expect("volta");
+        assert!(
+            matches!(
+                flow.wait(WAIT),
+                AuthState::Failed(AuthError::Malformed { .. })
+            ),
+            "resposta fora do formato"
+        );
+    }
+    assert!(env.vault.reference(PLAYER).is_none());
+}
