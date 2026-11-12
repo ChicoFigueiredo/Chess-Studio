@@ -30,20 +30,20 @@ const WAIT: Duration = Duration::from_secs(10);
 const PLAYER: ConnectionId = ConnectionId(1);
 
 /// Correspondência na Najdorf: 1.e4 c5 2.Nf3 d6 3.d4 cxd4 4.Nxd4 Nf6.
-const NAJDORF: [&str; 8] = [
+pub(super) const NAJDORF: [&str; 8] = [
     "e2e4", "c7c5", "g1f3", "d7d6", "d2d4", "c5d4", "f3d4", "g8f6",
 ];
 
 /// Executável que não existe: o `EnginePlayer` nasce (é o que a trava impede), o processo não.
-fn engine_config() -> EngineConfig {
+pub(super) fn engine_config() -> EngineConfig {
     EngineConfig::new("/nao/existe/engine-adversaria")
 }
 
-fn seat(color: Color) -> EngineSeat {
+pub(super) fn seat(color: Color) -> EngineSeat {
     EngineSeat { color, elo: 1500 }
 }
 
-fn position_after(moves: &[&str]) -> chess_core::CanonicalPosition {
+pub(super) fn position_after(moves: &[&str]) -> chess_core::CanonicalPosition {
     moves
         .iter()
         .fold(chess_core::CanonicalPosition::start(), |p, m| {
@@ -52,7 +52,7 @@ fn position_after(moves: &[&str]) -> chess_core::CanonicalPosition {
 }
 
 /// Correspondência contra pessoa em andamento, fora do tabuleiro (a trava a segue pelo banco).
-fn correspondence_after(moves: &[&str]) -> chess_game::Game {
+pub(super) fn correspondence_after(moves: &[&str]) -> chess_game::Game {
     let mut game = online_game("cor1", Some(3), Opponent::Human);
     feed(&mut game, moves, None);
     game
@@ -78,18 +78,18 @@ impl chess_net::AuthorizationSource for FakeVault {
     }
 }
 
-struct Env {
-    server: FakeServer,
-    service: NetService,
-    fair: FairPlay,
-    play: OnlinePlay,
-    session: Session,
-    store: Store,
-    profile: ProfileId,
-    events: LiveFeed,
+pub(super) struct Env {
+    pub(super) server: FakeServer,
+    pub(super) service: NetService,
+    pub(super) fair: FairPlay,
+    pub(super) play: OnlinePlay,
+    pub(super) session: Session,
+    pub(super) store: Store,
+    pub(super) profile: ProfileId,
+    pub(super) events: LiveFeed,
 }
 
-fn env() -> Env {
+pub(super) fn env() -> Env {
     let clock = Arc::new(FakeClock::new(T0));
     let server = FakeServer::with_clock(clock.clone());
     let config = NetConfig::in_memory()
@@ -119,7 +119,7 @@ fn env() -> Env {
 
 impl Env {
     /// Um quadro do app, como `online::drive_online` faz.
-    fn frame(&mut self) {
+    pub(super) fn frame(&mut self) {
         self.play.follow_connection(&self.service);
         crate::online::route_intents(&mut self.play, &mut self.session);
         let frame = self.play.frame(Some(StoreAccess {
@@ -130,7 +130,7 @@ impl Env {
         self.fair.follow_games(self.play.locked_games());
     }
 
-    fn until(&mut self, mut cond: impl FnMut(&Self) -> bool) -> bool {
+    pub(super) fn until(&mut self, mut cond: impl FnMut(&Self) -> bool) -> bool {
         let start = Instant::now();
         while start.elapsed() < WAIT {
             self.frame();
@@ -143,7 +143,7 @@ impl Env {
     }
 
     /// Busca em tempo real pareada: a Partida contra "Coruja_Azul" vai ao tabuleiro.
-    fn real_time_game(&mut self) -> LiveFeed {
+    pub(super) fn real_time_game(&mut self) -> LiveFeed {
         let seek = LiveFeed::new();
         self.server
             .route("/api/board/seek", FakeResponse::live(&seek));
@@ -317,10 +317,10 @@ fn a_local_competitive_game_against_the_engine_keeps_its_opponent() {
             &fair,
         )
         .unwrap();
-    let mut engaged = false;
-    service.follow_competitive(session.competitive_in_progress(), &mut engaged);
+    let mut engaged = CompetitiveGame::None;
+    service.follow_session(&session, None, &mut engaged);
     assert!(
-        engaged && fair.everything_locked(),
+        engaged == CompetitiveGame::OnBoard && fair.everything_locked(),
         "a competitiva trava o resto"
     );
     session.tick_engine(&fair);
@@ -411,7 +411,7 @@ fn study_after(moves: &[&str]) -> chess_game::Game {
     game
 }
 
-fn by_position(fen: &str, profile: ProfileId) -> LibraryQuery {
+pub(super) fn by_position(fen: &str, profile: ProfileId) -> LibraryQuery {
     LibraryQuery {
         position: Some(fen.to_owned()),
         profile: Some(profile),

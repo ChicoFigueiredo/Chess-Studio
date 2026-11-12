@@ -10,6 +10,7 @@ use super::spectator::{self, Banner, SpectatorUi, Watch};
 use super::tests::{Env, GAME, WAIT, env, full, move_path, ok, scripted, spec, state};
 use super::view::Intent;
 use super::{EngineOnlineUi, apply_board_intent};
+use crate::fair_play::CompetitiveGame;
 use crate::new_game::NewGameConfig;
 use crate::online::service::StoreAccess;
 use crate::persistence::Persistence;
@@ -257,15 +258,15 @@ fn watching_the_online_engine_does_not_turn_the_fair_play_lock_on() {
     let (env, _feed) = engine_game(&[]);
     let mut session = Session::new();
     watch(&mut session, &env);
-    let mut engaged = false;
-    env.service.follow_session(&session, &mut engaged);
+    let mut engaged = CompetitiveGame::None;
+    env.service.follow_session(&session, None, &mut engaged);
     assert!(!session.competitive_in_progress());
     assert_eq!(
         crate::hud_policy::allowance(&session),
         crate::hud_policy::Allowance::ALL,
         "é a Engine jogando (AD-05)"
     );
-    assert!(!engaged && !env.service.fair_play().any());
+    assert!(engaged == CompetitiveGame::None && !env.service.fair_play().any());
     assert_eq!(env.service.fair_play().followed(), 0);
 }
 
@@ -279,14 +280,14 @@ fn the_users_own_competitive_game_still_locks_the_online_engine_while_watching_f
     session.start(&NewGameConfig::for_policy(PolicyKind::FideSimulation));
     play(&mut session, "e2", "e4");
     assert!(session.competitive_in_progress());
-    let mut engaged = false;
-    env.service.follow_session(&session, &mut engaged);
-    assert!(engaged && env.service.fair_play().any());
+    let mut engaged = CompetitiveGame::None;
+    env.service.follow_session(&session, None, &mut engaged);
+    assert!(engaged == CompetitiveGame::OnBoard && env.service.fair_play().any());
 
     // Ver a Partida da Engine não solta a trava da Partida do usuário, guardada por baixo.
     watch(&mut session, &env);
-    env.service.follow_session(&session, &mut engaged);
-    assert!(engaged && env.service.fair_play().any());
+    env.service.follow_session(&session, None, &mut engaged);
+    assert!(engaged == CompetitiveGame::Aside && env.service.fair_play().any());
 
     // FP-04: no Lance seguinte, a Engine online não recebe a Posição e a Partida é abandonada.
     feed.push(&state("e2e4 e7e5", "started").to_string());
@@ -304,8 +305,8 @@ fn the_users_own_competitive_game_still_locks_the_online_engine_while_watching_f
 
     // Ao sair, a Partida do usuário volta e a trava segue com ela.
     assert!(session.leave_spectator());
-    env.service.follow_session(&session, &mut engaged);
-    assert!(engaged && session.competitive_in_progress());
+    env.service.follow_session(&session, None, &mut engaged);
+    assert!(engaged == CompetitiveGame::OnBoard && session.competitive_in_progress());
 }
 
 /// Um quadro do app: o serviço da Engine grava no banco do app, o modo espectador acompanha e a

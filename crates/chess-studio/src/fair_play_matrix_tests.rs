@@ -85,7 +85,7 @@ fn matrix_network_guard_refuses_every_computation_on_every_entry_point() {
 #[test]
 fn matrix_competitive_hold_spares_only_the_opponent_engine() {
     let fair = fair();
-    fair.follow_competitive(true);
+    fair.follow_competitive(CompetitiveGame::OnBoard);
     for computation in Computation::ALL {
         let expected = if computation == Computation::OpponentEngine {
             Ok(())
@@ -112,10 +112,64 @@ fn matrix_competitive_hold_spares_only_the_opponent_engine() {
         );
     }
     drop(online);
-    fair.follow_competitive(false);
+    fair.follow_competitive(CompetitiveGame::None);
     for computation in Computation::ALL {
         assert_eq!(fair.check(computation, &unrelated()), Ok(()));
     }
+}
+
+/// A Partida competitiva do usuário guardada por baixo do Treino ou do modo espectador (FP-06):
+/// tudo recusado em todos os pontos de entrada, inclusive a Engine adversária de outra Partida.
+/// Só a adversária de uma Partida competitiva local em andamento escapa (FP-02: a que volta ao
+/// tabuleiro antes de a trava ver a troca); com uma Partida online por cima, nem ela.
+#[test]
+fn matrix_competitive_game_aside_refuses_everything_but_a_competitive_opponent() {
+    let fair = fair();
+    fair.follow_competitive(CompetitiveGame::Aside);
+    let start = CanonicalPosition::start();
+    let assisted = Game::new(GameSetup::standard(chess_game::PolicyKind::Assisted));
+    let competitive = Game::new(GameSetup::standard(chess_game::PolicyKind::FideSimulation));
+    for computation in Computation::ALL {
+        let refused = locked(computation, LockScope::Everything);
+        assert_eq!(
+            fair.check(computation, &unrelated()),
+            refused,
+            "{computation:?}"
+        );
+        assert_eq!(fair.check_fen(computation, &start.to_fen()), refused);
+        assert_eq!(fair.check_fen(computation, "lixo"), refused);
+        assert_eq!(fair.check_game(computation, &assisted), refused);
+        assert_eq!(fair.check_anywhere(computation), refused);
+        assert_eq!(fair.check_start(computation, Some(&start)), refused);
+        assert_eq!(fair.check_start(computation, None), refused);
+        let own = if computation == Computation::OpponentEngine {
+            Ok(())
+        } else {
+            refused
+        };
+        assert_eq!(
+            fair.check_game(computation, &competitive),
+            own,
+            "{computation:?}"
+        );
+    }
+    let online = fair.guard().hold("Partida online contra pessoa");
+    assert!(
+        fair.check_game(Computation::OpponentEngine, &competitive)
+            .is_err()
+    );
+    drop(online);
+    // De volta ao tabuleiro: a adversária do tabuleiro joga; ao acabar, tudo livre.
+    fair.follow_competitive(CompetitiveGame::OnBoard);
+    assert_eq!(
+        fair.check_game(Computation::OpponentEngine, &assisted),
+        Ok(())
+    );
+    fair.follow_competitive(CompetitiveGame::None);
+    for computation in Computation::ALL {
+        assert_eq!(fair.check(computation, &unrelated()), Ok(()));
+    }
+    assert!(!fair.any());
 }
 
 /// Partida em tempo real contra pessoa, sem a sessão aberta: nada calcula, em Posição nenhuma.

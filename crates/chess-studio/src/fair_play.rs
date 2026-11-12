@@ -9,6 +9,9 @@
 //!   enquanto houver uma Partida online em **tempo real** contra pessoa sem fim confirmado.
 //!   Só a Engine adversária da própria Partida competitiva local joga com a trava dela (FP-02):
 //!   é a adversária, não um auxílio.
+//! - A trava segue a Partida **do usuário**, não a Sessão que o tabuleiro mostra (FP-06, #304):
+//!   o Treino e o modo espectador guardam a Partida do usuário por baixo, intacta e em
+//!   andamento, e ela trava como se estivesse no tabuleiro ([`CompetitiveGame::Aside`]).
 //! - **Correspondência** (PO-13): com uma Partida por correspondência em andamento e a sessão
 //!   dela fechada (o tabuleiro mostra outra coisa), a trava vale para
 //!   1. a própria Partida, em qualquer meio-lance (revisão inclusive);
@@ -31,7 +34,7 @@
 use crate::session::Session;
 use bevy::prelude::Resource;
 use chess_core::{CanonicalPosition, Color, Piece};
-use chess_game::{Game, ReviewView};
+use chess_game::{Game, PolicyKind, ReviewView};
 use chess_net::{FairPlayGuard, FairPlayHold};
 use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::fmt;
@@ -43,6 +46,52 @@ pub const NEAR_PLIES: usize = 2;
 
 /// Motivo (diagnóstico) da trava que a Partida competitiva local segura (PO-15).
 const COMPETITIVE_REASON: &str = "Partida competitiva em andamento";
+
+/// Onde está a Partida competitiva do usuário em andamento (a local ou a online contra pessoa:
+/// [`Session::competitive_in_progress`]), para a trava que ela segura (PO-15, FP-02, FP-06).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum CompetitiveGame {
+    /// Nenhuma em andamento: nada segura esta trava.
+    #[default]
+    None,
+    /// No tabuleiro: a Engine adversária do tabuleiro é a dela e joga com a trava (FP-02).
+    OnBoard,
+    /// Guardada por baixo de outra Sessão (Treino, modo espectador), intacta e em andamento: a
+    /// trava continua ligada e a Engine adversária de outra Partida não escapa dela (FP-06).
+    Aside,
+}
+
+impl CompetitiveGame {
+    /// Onde está a Partida do usuário: a que o Treino guarda (`kept`), senão a do tabuleiro; no
+    /// modo espectador, a guardada por baixo dela ([`Session::own`]).
+    pub fn of(shown: &Session, kept: Option<&Session>) -> Self {
+        let users = kept.unwrap_or(shown).own();
+        if !users.competitive_in_progress() {
+            Self::None
+        } else if kept.is_none() && !shown.is_spectator() {
+            Self::OnBoard
+        } else {
+            Self::Aside
+        }
+    }
+}
+
+/// A trava que a Partida competitiva do usuário segura na rede e onde a Partida está.
+#[derive(Debug)]
+struct CompetitiveHold {
+    hold: FairPlayHold,
+    on_board: bool,
+}
+
+/// Uma Partida local numa Política competitiva, sem resultado. A Engine adversária dela é uma
+/// adversária, nunca um auxílio (FP-02): começa na Posição inicial e não aceita desfazer nem
+/// variante. Vale também no quadro em que a Partida volta do Treino ao tabuleiro, antes de a
+/// trava ver a troca.
+fn local_competitive_in_progress(game: &Game) -> bool {
+    game.setup().online_game().is_none()
+        && game.setup().policy() != PolicyKind::Assisted
+        && !game.snapshot().is_over()
+}
 
 /// O que um serviço quer calcular.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -340,9 +389,9 @@ struct State {
 pub struct FairPlay {
     guard: FairPlayGuard,
     state: Arc<RwLock<State>>,
-    /// A trava que a Partida competitiva local segura na rede (PO-15), enquanto ela está em
-    /// andamento.
-    competitive: Arc<Mutex<Option<FairPlayHold>>>,
+    /// A trava que a Partida competitiva do usuário segura na rede (PO-15), enquanto ela está em
+    /// andamento, no tabuleiro ou guardada por baixo de outra Sessão (FP-06).
+    competitive: Arc<Mutex<Option<CompetitiveHold>>>,
 }
 
 impl FairPlay {
@@ -355,24 +404,40 @@ impl FairPlay {
         }
     }
 
-    /// Segura a trava da rede enquanto a Partida competitiva local está em andamento e solta
-    /// quando acaba (PO-15). É uma trava própria: nunca solta a de uma Partida online, e a
-    /// Engine adversária dessa mesma Partida joga com ela (FP-02).
-    pub fn follow_competitive(&self, in_progress: bool) {
+    /// Segura a trava da rede enquanto a Partida competitiva do usuário está em andamento, no
+    /// tabuleiro ou guardada por baixo do Treino ou do modo espectador, e solta quando acaba
+    /// (PO-15, FP-06). É uma trava própria: nunca solta a de uma Partida online, e a Engine
+    /// adversária dessa mesma Partida joga com ela (FP-02).
+    pub fn follow_competitive(&self, game: CompetitiveGame) {
         let mut hold = self
             .competitive
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        if in_progress && hold.is_none() {
-            *hold = Some(self.guard.hold(COMPETITIVE_REASON));
-        } else if !in_progress {
-            *hold = None;
+        let on_board = match game {
+            CompetitiveGame::None => {
+                *hold = None;
+                return;
+            }
+            CompetitiveGame::OnBoard => true,
+            CompetitiveGame::Aside => false,
+        };
+        match hold.as_mut() {
+            Some(own) => own.on_board = on_board,
+            None => {
+                *hold = Some(CompetitiveHold {
+                    hold: self.guard.hold(COMPETITIVE_REASON),
+                    on_board,
+                });
+            }
         }
     }
 
-    /// A trava da rede vale para `computation`? Para a Engine adversária, a trava da Partida
-    /// competitiva local não conta: ela é a adversária dessa Partida, não um auxílio (FP-02).
-    fn network_lock(&self, computation: Computation) -> bool {
+    /// A trava da rede vale para `computation` (sobre `game`, se for uma Partida)? Para a
+    /// Engine adversária, a trava da Partida competitiva do usuário não conta quando a Engine é
+    /// a adversária dela, não um auxílio (FP-02): a do tabuleiro, com a Partida no tabuleiro,
+    /// ou a de uma Partida competitiva local em andamento. Com a Partida guardada por baixo de
+    /// outra Sessão, a Engine adversária de outra Partida fica travada como o resto (FP-06).
+    fn network_lock(&self, computation: Computation, game: Option<&Game>) -> bool {
         if computation != Computation::OpponentEngine {
             return self.guard.is_engaged();
         }
@@ -381,8 +446,10 @@ impl FairPlay {
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         match hold.as_ref() {
-            Some(own) => self.guard.is_engaged_besides(own),
-            None => self.guard.is_engaged(),
+            Some(own) if own.on_board || game.is_some_and(local_competitive_in_progress) => {
+                self.guard.is_engaged_besides(&own.hold)
+            }
+            _ => self.guard.is_engaged(),
         }
     }
 
@@ -439,8 +506,18 @@ impl FairPlay {
 
     /// A licença para calcular `computation` sobre `subject`, ou a recusa tipada.
     pub fn check(&self, computation: Computation, subject: &Subject) -> Result<(), FairPlayLocked> {
+        self.check_in(computation, subject, None)
+    }
+
+    /// [`FairPlay::check`] sobre a Posição de `game`, quando se sabe de que Partida ela é.
+    fn check_in(
+        &self,
+        computation: Computation,
+        subject: &Subject,
+        game: Option<&Game>,
+    ) -> Result<(), FairPlayLocked> {
         let refuse = |scope| Err(FairPlayLocked { computation, scope });
-        if self.network_lock(computation) {
+        if self.network_lock(computation, game) {
             return refuse(LockScope::Everything);
         }
         // Lock envenenado: na dúvida, trava.
@@ -482,14 +559,14 @@ impl FairPlay {
     /// Engine adversária pergunta assim, a cada quadro).
     pub fn check_game(&self, computation: Computation, game: &Game) -> Result<(), FairPlayLocked> {
         // Sem trava nenhuma, nem refaz a Partida.
-        if !self.network_lock(computation)
+        if !self.network_lock(computation, Some(game))
             && self.followed() == 0
             && !game.online_human_in_progress()
         {
             return Ok(());
         }
         match Subject::at(game, game.snapshot().history.len()) {
-            Some(subject) => self.check(computation, &subject),
+            Some(subject) => self.check_in(computation, &subject, Some(game)),
             // A Partida não se refaz: na dúvida, trava.
             None => Err(FairPlayLocked {
                 computation,
@@ -505,7 +582,7 @@ impl FairPlay {
             .state
             .read()
             .map_or(true, |s| s.games.values().any(|g| g.realtime));
-        if self.network_lock(computation) || realtime {
+        if self.network_lock(computation, None) || realtime {
             return Err(FairPlayLocked {
                 computation,
                 scope: LockScope::Everything,
@@ -1211,7 +1288,7 @@ mod tests {
     #[test]
     fn the_opponent_engine_of_the_local_competitive_game_plays_under_its_own_lock() {
         let fair = fair();
-        fair.follow_competitive(true);
+        fair.follow_competitive(CompetitiveGame::OnBoard);
         let subject = Subject::at(&local(&["e2e4"]), 1).unwrap();
         assert_eq!(fair.check(Computation::OpponentEngine, &subject), Ok(()));
         for computation in Computation::ALL {
@@ -1229,7 +1306,7 @@ mod tests {
         assert!(fair.check_anywhere(Computation::OpponentEngine).is_err());
         drop(online);
         assert_eq!(fair.check_anywhere(Computation::OpponentEngine), Ok(()));
-        fair.follow_competitive(false);
+        fair.follow_competitive(CompetitiveGame::None);
         assert!(!fair.any());
     }
 
@@ -1343,3 +1420,7 @@ mod service_tests;
 #[cfg(test)]
 #[path = "fair_play_matrix_tests.rs"]
 mod matrix_tests;
+
+#[cfg(test)]
+#[path = "fair_play_session_tests.rs"]
+mod session_tests;
