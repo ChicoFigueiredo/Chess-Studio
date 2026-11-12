@@ -440,7 +440,7 @@ Apagar uma Conexão ou um Perfil local apaga primeiro a autorização guardada. 
 | **Autorização expirada** | Clique em **Autorizar de novo…**. |
 | **Cofre bloqueado** | Clique em **Desbloquear…** e digite a senha-mestra. |
 | **O cofre de segredos não abriu** | Nada é guardado nem lido. Seus dados locais estão intactos. |
-| **O cofre do sistema não respondeu** | Desbloqueie o chaveiro do sistema e abra o Chess Studio de novo. |
+| **O cofre do sistema não respondeu** | Desbloqueie o cofre do sistema e abra o Chess Studio de novo. |
 | **Sem conexão com a internet** | O app mostra o que estava salvo, quando houver. Tente de novo quando a internet voltar. |
 | **Importação manual** | Esse Provedor não tem consulta direta. Baixe o arquivo e importe. |
 
