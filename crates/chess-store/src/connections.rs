@@ -191,6 +191,21 @@ fn valid_provider(provider: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
+/// Nomes públicos de verdade têm até 30 caracteres (Lichess); acima disso, só texto sem espaço
+/// e imprimível de ASCII é tratado como token colado por engano.
+const MAX_REAL_NAME_LEN: usize = 30;
+
+/// `true` se o texto tem a forma de um token de acesso (prefixo `lip_`/`lio_`/`lit_` do Lichess
+/// ou uma sequência longa de ASCII imprimível) e portanto não é um nome público.
+pub fn identifier_looks_like_token(raw: &str) -> bool {
+    let text = raw.trim();
+    let lower = text.to_ascii_lowercase();
+    ["lip_", "lio_", "lit_"]
+        .iter()
+        .any(|p| lower.starts_with(p))
+        || (text.len() > MAX_REAL_NAME_LEN && text.bytes().all(|b| b.is_ascii_graphic()))
+}
+
 fn clean_identifier(raw: &str) -> Result<String> {
     let text = raw.trim();
     if text.is_empty() {
@@ -205,6 +220,9 @@ fn clean_identifier(raw: &str) -> Result<String> {
         return Err(StoreError::InvalidConnection(
             "identificador com espaço ou caractere de controle".into(),
         ));
+    }
+    if identifier_looks_like_token(text) {
+        return Err(StoreError::IdentifierLooksLikeToken);
     }
     Ok(text.to_owned())
 }

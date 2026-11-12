@@ -225,6 +225,7 @@ connections-link-save = Vincular
 connections-link-cancel = Cancelar
 connections-link-error-empty = Digite o nome ou ID público.
 connections-link-error-invalid = Use só o nome ou ID, sem espaços, com até 64 caracteres.
+connections-link-error-token = Isto parece uma chave de acesso, não um nome. O campo foi limpo. Para usar uma chave, use «Chave pessoal» no cartão do Provedor.
 connections-link-error-exists = Este Perfil local já vincula esse nome neste Provedor.
 connections-link-error-other = Não foi possível gravar a Conexão. Tente de novo.
 

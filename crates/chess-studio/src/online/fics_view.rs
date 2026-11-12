@@ -742,7 +742,10 @@ fn observed_card(
                 ] {
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new(glyph).color(p.ink_muted));
-                        ui.label(egui::RichText::new(name).color(p.ink));
+                        ui.label(
+                            egui::RichText::new(crate::display_text::clean_display(name))
+                                .color(p.ink),
+                        );
                         if let Some(ms) = ms {
                             tabular_text(
                                 ui,
