@@ -347,6 +347,10 @@ fn main() {
             if let Some(keys) = option_value("--connections-open") {
                 demo.open_details(keys.split(','));
             }
+            demo.set_filters(
+                option_value("--connections-filter").as_deref(),
+                option_value("--connections-state-filter").as_deref(),
+            );
             if let Some(pixels) = option_value("--connections-scroll").and_then(|v| v.parse().ok())
             {
                 demo.scrolled(pixels);

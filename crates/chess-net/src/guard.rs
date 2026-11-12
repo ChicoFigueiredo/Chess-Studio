@@ -72,6 +72,19 @@ impl FairPlayGuard {
             .map_or(true, |s| s.manual.is_some() || !s.holds.is_empty())
     }
 
+    /// Ligada por outra coisa além de `hold` (outra Partida, ou à mão)? Para quem segura uma
+    /// trava própria e precisa saber se há outra (a Engine adversária da Partida competitiva
+    /// local joga com a trava dessa Partida, nunca com a de uma Partida online). `hold` de outra
+    /// trava: o mesmo que [`FairPlayGuard::is_engaged`]. Lock envenenado: sim.
+    pub fn is_engaged_besides(&self, hold: &FairPlayHold) -> bool {
+        if !Arc::ptr_eq(&self.state, &hold.guard.state) {
+            return self.is_engaged();
+        }
+        self.state.read().map_or(true, |s| {
+            s.manual.is_some() || s.holds.keys().any(|id| Some(*id) != hold.id)
+        })
+    }
+
     pub fn reason(&self) -> Option<String> {
         self.state.read().ok().and_then(|s| {
             s.manual
@@ -129,5 +142,25 @@ mod tests {
                 .check(ProviderId::Lichess, Capability::Explore)
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn quem_segura_a_propria_trava_sabe_se_ha_outra() {
+        let guard = FairPlayGuard::new();
+        let mine = guard.hold("Partida competitiva local");
+        assert!(guard.is_engaged());
+        assert!(!guard.is_engaged_besides(&mine), "só a minha");
+        let online = guard.clone().hold("Partida online contra pessoa");
+        assert!(guard.is_engaged_besides(&mine));
+        drop(online);
+        assert!(!guard.is_engaged_besides(&mine));
+        guard.engage("à mão");
+        assert!(guard.is_engaged_besides(&mine));
+        guard.release();
+        // A trava de outra `FairPlayGuard` não conta como minha.
+        let other = FairPlayGuard::new().hold("outra rede");
+        assert!(guard.is_engaged_besides(&other));
+        drop(mine);
+        assert!(!guard.is_engaged_besides(&other));
     }
 }

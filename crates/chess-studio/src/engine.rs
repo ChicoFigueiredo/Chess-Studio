@@ -17,6 +17,7 @@
 
 use crate::engine_consent::{Consent, Intent, Request, Stage};
 use crate::engine_manager::DbLocation;
+use crate::fair_play::{Computation, FairPlay};
 use crate::i18n::I18n;
 use crate::play::PlaySet;
 use crate::session::Session;
@@ -46,11 +47,15 @@ impl Plugin for EnginePlugin {
     }
 }
 
-/// Dá o pulso à Engine: nunca bloqueia (ela roda em thread própria).
-fn tick_engine(mut session: ResMut<Session>) {
+/// Dá o pulso à Engine: nunca bloqueia (ela roda em thread própria). A Engine só joga com a
+/// licença da Trava de fair play (FP-01); sem o ponto único da Trava (apps parciais de teste),
+/// não joga.
+fn tick_engine(mut session: ResMut<Session>, fair: Option<Res<FairPlay>>) {
     // Leitura imutável primeiro: só toma `&mut` quando há Engine.
-    if session.engine_active() {
-        session.tick_engine();
+    if session.engine_active()
+        && let Some(fair) = fair
+    {
+        session.tick_engine(&fair);
     }
 }
 
@@ -258,26 +263,43 @@ fn failure_key(kind: FailureKind) -> &'static str {
     }
 }
 
-/// Executa a ação liberada: Partida nova, retomada da reaberta ou troca após falha.
-fn apply_launch(session: &mut Session, state: &EngineUi, path: &Path, intent: Intent) {
-    let Some(config) = state.config_for(&path.display().to_string()) else {
+/// Executa a ação liberada: Partida nova, retomada da reaberta ou troca após falha. A Partida
+/// nova e a retomada só sobem a Engine com a licença da Trava de fair play (FP-01): recusada,
+/// nada sobe e a janela explica (`Session::engine_locked`).
+fn apply_launch(
+    session: &mut Session,
+    state: &EngineUi,
+    path: &Path,
+    intent: Intent,
+    fair: Option<&FairPlay>,
+) {
+    let (Some(config), Some(fair)) = (state.config_for(&path.display().to_string()), fair) else {
         return;
     };
-    match intent {
+    // A recusa fica na sessão (`engine_locked`); a janela a mostra.
+    let _refused = match intent {
         Intent::NewGame => {
             let seat = EngineSeat {
                 color: state.user_side.opposite(),
                 elo: state.elo,
             };
-            session.start_engine_game(seat, config);
+            session.start_engine_game(seat, config, fair)
         }
-        Intent::Resume => session.resume_engine(config),
-        Intent::Replace => session.engine_replace(config),
-    }
+        Intent::Resume => session.resume_engine(config, fair),
+        Intent::Replace => {
+            session.engine_replace(config);
+            Ok(())
+        }
+    };
 }
 
 /// Pede a liberação do caminho atual para `intent` e, se já liberado, aplica na hora.
-fn request_launch(session: &mut Session, state: &mut EngineUi, intent: Intent) {
+fn request_launch(
+    session: &mut Session,
+    state: &mut EngineUi,
+    intent: Intent,
+    fair: Option<&FairPlay>,
+) {
     let db = state.db_path.clone();
     let text = state.path_text.clone();
     match state
@@ -286,7 +308,7 @@ fn request_launch(session: &mut Session, state: &mut EngineUi, intent: Intent) {
     {
         Request::Ready(path, intent) => {
             state.not_found = false;
-            apply_launch(session, state, &path, intent);
+            apply_launch(session, state, &path, intent, fair);
         }
         Request::Unconfigured => {
             state.not_found = true;
@@ -297,7 +319,7 @@ fn request_launch(session: &mut Session, state: &mut EngineUi, intent: Intent) {
 }
 
 /// Recolhe o resultado da sonda e, se a Engine falou UCI, aplica a ação pendente.
-fn poll_probe(session: &mut Session, state: &mut EngineUi) {
+fn poll_probe(session: &mut Session, state: &mut EngineUi, fair: Option<&FairPlay>) {
     let Some(rx) = &state.probe_rx else {
         return;
     };
@@ -308,7 +330,7 @@ fn poll_probe(session: &mut Session, state: &mut EngineUi) {
     };
     state.probe_rx = None;
     if let Some((path, intent)) = state.consent.probed(result) {
-        apply_launch(session, state, &path, intent);
+        apply_launch(session, state, &path, intent, fair);
     }
 }
 
@@ -372,9 +394,11 @@ fn engine_window(
     mut session: ResMut<Session>,
     mut state: ResMut<EngineUi>,
     capture: Option<Res<crate::capture::CaptureMode>>,
+    fair: Option<Res<FairPlay>>,
 ) -> Result {
+    let fair = fair.as_deref();
     // O resultado da sonda precisa ser recolhido mesmo com a janela fechada.
-    poll_probe(&mut session, &mut state);
+    poll_probe(&mut session, &mut state, fair);
     let pending = session.engine_pending().is_some();
     let busy = session.engine_active()
         || pending
@@ -393,13 +417,33 @@ fn engine_window(
         .default_pos(top + egui::vec2(16.0, 16.0))
         .show(ctx, |ui| {
             if session.engine_active() {
-                playing_status(ui, &i18n, &mut session, &mut state);
+                playing_status(ui, &i18n, &mut session, &mut state, fair);
             }
             if pending {
                 ui.colored_label(egui::Color32::YELLOW, i18n.t("engine-pending-title"));
-                ui.small(i18n.t("engine-pending-hint"));
-                if ui.button(i18n.t("engine-resume")).clicked() {
-                    request_launch(&mut session, &mut state, Intent::Resume);
+                // Trava de fair play (FP-01): a Engine só volta com a licença.
+                let refusal = match fair {
+                    Some(fair) => fair
+                        .check_game(Computation::OpponentEngine, session.game())
+                        .err(),
+                    None => session.engine_locked(),
+                };
+                match refusal {
+                    Some(locked) => {
+                        let p = crate::ui_theme::palette(ui);
+                        ui.colored_label(p.warning, i18n.t("engine-fairplay-title"));
+                        ui.small(i18n.t(locked.message_key()));
+                    }
+                    None => {
+                        ui.small(i18n.t("engine-pending-hint"));
+                    }
+                }
+                let resume = ui.add_enabled(
+                    refusal.is_none(),
+                    egui::Button::new(i18n.t("engine-resume")),
+                );
+                if resume.clicked() {
+                    request_launch(&mut session, &mut state, Intent::Resume, fair);
                 }
             }
             consent_prompt(ui, &i18n, &mut state);
@@ -410,7 +454,13 @@ fn engine_window(
     Ok(())
 }
 
-fn playing_status(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session, state: &mut EngineUi) {
+fn playing_status(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    session: &mut Session,
+    state: &mut EngineUi,
+    fair: Option<&FairPlay>,
+) {
     let Some(engine) = session.engine() else {
         return;
     };
@@ -451,7 +501,7 @@ fn playing_status(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session, state: 
                 }
                 // "Trocar Engine": usa o caminho do campo abaixo, após o aviso e a sonda.
                 if ui.button(i18n.t("engine-replace")).clicked() {
-                    request_launch(session, state, Intent::Replace);
+                    request_launch(session, state, Intent::Replace, fair);
                 }
             });
             ui.small(i18n.t("engine-replace-hint"));

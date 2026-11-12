@@ -57,7 +57,7 @@ pub use connections::{
 pub use engines::{EngineId, EngineOrigin, EngineRecord};
 pub use error::{Result, StoreError};
 pub use favorites::{Favorite, FavoriteId, FavoriteOrigin, FavoriteQuery, NewFavorite};
-pub use fide::FideSnapshot;
+pub use fide::{FIDE_LICENSE_VIA_LICHESS, FideSnapshot};
 pub use import_preview::{
     DEFAULT_PREVIEW_BYTES, Estimate, ImportPreview, PREVIEW_LIST, PreviewGame, preview_pgn_file,
 };

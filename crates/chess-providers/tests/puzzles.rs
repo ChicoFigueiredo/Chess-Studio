@@ -296,3 +296,29 @@ fn arquivo_que_nao_e_zstd_falha_sem_instalar() {
     assert!(matches!(end, PuzzleEvent::Failed(_)), "{end:?}");
     assert!(list_packs(&env.dir).is_empty());
 }
+
+/// Revisão de segurança (#273): uma bomba de descompressão (poucos KiB de `.zst` que viram
+/// dezenas de MiB sem fim de linha) termina em erro, sem guardar a linha na memória nem
+/// instalar nada.
+#[test]
+fn bomba_de_descompressao_falha_sem_encher_a_memoria_nem_instalar() {
+    let env = env(true);
+    let bomb = zst(&"a".repeat(32 << 20));
+    assert!(
+        bomb.len() < 64 * 1024,
+        "a bomba é pequena: {} bytes",
+        bomb.len()
+    );
+    env.server.route(PATH, FakeResponse::ok(bomb));
+    let mut job = env
+        .lichess
+        .download_puzzles(request(&env, PuzzleFilter::default()));
+    let (_, end) = finish(&mut job);
+    match end {
+        PuzzleEvent::Failed(ProviderError::Malformed { detail, .. }) => {
+            assert!(detail.contains("linha"), "{detail}");
+        }
+        other => panic!("esperava falha de formato, veio {other:?}"),
+    }
+    assert!(list_packs(&env.dir).is_empty());
+}

@@ -7,8 +7,8 @@ mod common;
 
 use chess_net::testing::FakeIcsServer;
 use chess_net::{
-    FakeClock, IcsEvent, IcsLink, IcsRequest, MAX_ICS_COMMAND, Net, NetConfig, NetError,
-    ProviderId, ProviderState, ics_endpoints,
+    FakeClock, IcsEvent, IcsLink, IcsRequest, MAX_ICS_COMMAND, MAX_ICS_PENDING, Net, NetConfig,
+    NetError, ProviderId, ProviderState, ics_endpoints,
 };
 use common::*;
 use std::sync::Arc;
@@ -319,4 +319,61 @@ fn dropping_the_link_closes_the_connection() {
 
     assert!(server.wait_disconnected(WAIT));
     assert!(eventually(WAIT, || net.status().active_requests == 0));
+}
+
+/// Revisão de segurança (#273): o FICS fala em texto puro, então qualquer um no caminho pode
+/// injetar linhas. Um servidor que despeja linhas sem parar, com ninguém lendo, não enche a
+/// memória: a fila de eventos tem teto e a leitura do socket espera por espaço.
+#[test]
+fn a_flooding_server_cannot_fill_the_memory_while_nobody_reads() {
+    let clock = clock();
+    let server = FakeIcsServer::start();
+    let net = fics_net(&server, &clock);
+    net.set_enabled(ProviderId::Fics, true).unwrap();
+    let link = net.connect_ics(fics());
+    assert_eq!(link.next_timeout(WAIT), Some(IcsEvent::Connected));
+    assert!(server.wait_connected(WAIT));
+
+    // 1 MiB de linhas curtas (meio milhão de eventos): muito mais do que a fila comporta.
+    server.send_raw(&b"x\n".repeat(512 * 1024));
+    // Tempo para o transporte ler tudo o que conseguir, sem ninguém do lado de cá.
+    std::thread::sleep(Duration::from_millis(500));
+    link.close();
+    std::thread::sleep(Duration::from_millis(100));
+
+    let mut queued = 0;
+    while link.try_next().is_some() {
+        queued += 1;
+    }
+    assert!(
+        queued <= MAX_ICS_PENDING + 1,
+        "{queued} eventos esperavam na fila (teto {MAX_ICS_PENDING})"
+    );
+}
+
+/// A espera por espaço na fila não perde linha: quem lê devagar recebe todas, em ordem.
+#[test]
+fn a_slow_reader_still_gets_every_line_in_order() {
+    let clock = clock();
+    let server = FakeIcsServer::start();
+    let net = fics_net(&server, &clock);
+    net.set_enabled(ProviderId::Fics, true).unwrap();
+    let link = net.connect_ics(fics());
+    assert_eq!(link.next_timeout(WAIT), Some(IcsEvent::Connected));
+    assert!(server.wait_connected(WAIT));
+
+    let total = 3 * MAX_ICS_PENDING;
+    let text: String = (0..total).map(|i| format!("linha {i}\n")).collect();
+    server.send_raw(text.as_bytes());
+    std::thread::sleep(Duration::from_millis(200));
+
+    let mut lines = Vec::new();
+    let deadline = std::time::Instant::now() + WAIT;
+    while lines.len() < total && std::time::Instant::now() < deadline {
+        if let Some(IcsEvent::Line(line)) = link.next_timeout(Duration::from_millis(50)) {
+            lines.push(line);
+        }
+    }
+    let expected: Vec<String> = (0..total).map(|i| format!("linha {i}")).collect();
+    assert_eq!(lines, expected);
 }

@@ -13,7 +13,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 1. Compile e abra o app: `cargo run -p chess-studio`.
 2. Crie um Perfil local novo para o roteiro (Arquivo > Perfil local), para não misturar com seus dados.
 3. Tenha à mão: um usuário do Lichess (de preferência sem nada importante) e um usuário público do Chess.com; um arquivo `.pgn` de cada origem (Queen Alice, ChessBase, TWIC, PGN Mentor); o arquivo de problemas do Lichess (`.csv` ou `.csv.zst`); um ID da FIDE.
-4. Para o cofre próprio, use um computador (ou conta de sistema) sem chaveiro, ou aceite que o item CX-HOM-08 só vale onde o sistema não oferece cofre.
+4. Para o cofre próprio, use um computador (ou usuário do sistema) sem cofre do sistema, ou aceite que o item CX-HOM-08 só vale onde o sistema não oferece cofre.
 5. Sempre que o item pedir "com o serviço real", ligue a internet. Nos demais, o servidor falso dos testes já cobre.
 
 ## Resumo
@@ -84,7 +84,12 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 | CX-HOM-63 | Engine online: força (Elo) da Engine | sim | UNVERIFIED |
 | CX-HOM-64 | Engine online: retomar Partida ao religar | sim | UNVERIFIED |
 | CX-HOM-76 | Explorador: janela temporal, aviso de amostra e privacidade | sim | UNVERIFIED |
-| CX-HOM-77 | Importar arquivo PGN: prévia, fonte detectada e confirmação de direitos | não | UNVERIFIED |
+| CX-HOM-72 | Central: filtros Com cadastro, Manual e por estado | não | UNVERIFIED |
+| CX-HOM-73 | Licença dos dados e Origem (Central, rating FIDE, Engine remota) | não | UNVERIFIED |
+| CX-HOM-74 | Textos das integrações sem "conta", "chaveiro" nem código HTTP | não | UNVERIFIED |
+| CX-HOM-77 | Log detalhado sem segredo | sim | UNVERIFIED |
+| CX-HOM-78 | Problemas do Lichess depois do limite de linha | sim | UNVERIFIED |
+| CX-HOM-79 | Importar arquivo PGN: prévia, fonte detectada e confirmação de direitos | não | UNVERIFIED |
 
 ## Itens
 
@@ -167,8 +172,8 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
   1. Abra a Central e olhe a faixa do topo.
   2. Autorize o Lichess (CX-HOM-09).
   3. Feche e reabra o app.
-  4. Bloqueie o chaveiro do sistema, reabra o app e abra a Central.
-- **Esperado:** a faixa diz **Segredos guardados no cofre do sistema**. O app não pede senha-mestra. Depois de reabrir, o cartão continua **Autorizado**. Com o chaveiro bloqueado, o sistema pode pedir a senha dele; sem resposta, a faixa mostra **O cofre do sistema não respondeu** e nada novo é guardado.
+  4. Bloqueie o cofre do sistema, reabra o app e abra a Central.
+- **Esperado:** a faixa diz **Segredos guardados no cofre do sistema**. O app não pede senha-mestra. Depois de reabrir, o cartão continua **Autorizado**. Com o cofre do sistema bloqueado, o sistema pode pedir a senha dele; sem resposta, a faixa mostra **O cofre do sistema não respondeu** e nada novo é guardado.
 - **Com o serviço real:** é o único modo de provar a integração com o cofre do sistema. Anote o sistema e a versão. Confira também que nenhum arquivo com a chave aparece na pasta de dados.
 - **Evidência:** [`vault.rs`](../../crates/chess-vault/tests/vault.rs), [`static_secrets.rs`](../../crates/chess-vault/tests/static_secrets.rs), [`docs/evidencias/autorizar-lichess/`](../evidencias/autorizar-lichess/README.md).
 
@@ -571,9 +576,12 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
   1. Numa Partida online contra pessoa em tempo real: tente ligar a Análise, abrir o Explorador, ver a avaliação em cache, a aba Finais, a Biblioteca do Explorador e o Painel Aberturas; revise Lances anteriores.
   2. Abra outra Partida da Biblioteca com a Partida online ainda em andamento.
   3. Com uma correspondência em andamento fora do tabuleiro: estude outra abertura com a Análise; depois cole o FEN da Posição atual da correspondência num tabuleiro de estudo.
-- **Esperado:** em tempo real nada calcula, em Posição nenhuma, enquanto o Lichess não confirmar o fim (abandonar ou fechar o Painel não solta). Destinos legais, último Lance e coordenadas continuam. Na correspondência, outras Partidas e Posições ficam livres; a Posição da Partida (e o que se joga a partir dela) mostra **Posição de uma Partida em andamento** e nada é consultado.
-- **Com o serviço real:** com o monitor de rede, nenhum pedido ao Explorador, à avaliação em cache ou aos finais sai nesses casos.
-- **Evidência:** [`fair_play.rs`](../../crates/chess-studio/src/fair_play.rs), [`online/tests.rs`](../../crates/chess-studio/src/online/tests.rs), [decisões PO-13 a PO-19](../decisoes/2026-11-11-partida-online.md).
+  4. Engine adversária (#261): com a Partida em tempo real em andamento, veja **Início > Contra a Engine** (passe o mouse); abra **Nova Partida**, escolha a Engine como adversária e tente **Iniciar**; troque o tabuleiro (Dois jogadores) e repita. Antes de começar a Partida online, deixe uma Partida contra a Engine em curso e volte a ela depois (Retomar).
+  5. Busca por Posição (#261): na Biblioteca, filtre pela **Posição atual** com a Partida em tempo real em andamento; com a correspondência, cole o FEN da Posição dela no filtro de Posição e depois o de outra abertura.
+  6. Engine online (#261), com a Conexão de Engine autorizada: tente **Ligar a Engine online** com a Partida em tempo real em andamento. Com só a correspondência em andamento, ligue-a e desafie a sua conta de Engine, pelo site, a partir da Posição da correspondência; depois, um desafio comum.
+- **Esperado:** em tempo real nada calcula, em Posição nenhuma, enquanto o Lichess não confirmar o fim (abandonar ou fechar o Painel não solta). Destinos legais, último Lance e coordenadas continuam. Na correspondência, outras Partidas e Posições ficam livres; a Posição da Partida (e o que se joga a partir dela) mostra **Posição de uma Partida em andamento** e nada é consultado. **Contra a Engine** fica desabilitado com o motivo da Trava; a Nova Partida contra a Engine não inicia e diz por quê; a Partida contra a Engine que já estava em curso fica com a Engine pendente ("Conectar Engine e retomar" desabilitado, com o motivo) até o fim confirmado. A busca por Posição não lista nada e explica a Trava; a de outra abertura (correspondência) lista normalmente, e os filtros de texto e jogador seguem. A Engine online não liga em tempo real (mensagem da Trava); com a correspondência, o desafio a partir da Posição é recusado ("Trava de fair play" na atividade) e o comum é aceito.
+- **Com o serviço real:** com o monitor de rede, nenhum pedido ao Explorador, à avaliação em cache ou aos finais sai nesses casos; nenhum `POST` de Lance da Engine online sai na Partida recusada.
+- **Evidência:** [`fair_play.rs`](../../crates/chess-studio/src/fair_play.rs), [`fair_play_tests.rs`](../../crates/chess-studio/src/fair_play_tests.rs), [`online/tests.rs`](../../crates/chess-studio/src/online/tests.rs), [decisões PO-13 a PO-19](../decisoes/2026-11-11-partida-online.md) e [FP-01 a FP-05](../decisoes/2026-11-11-trava-brechas.md).
 
 ### CX-HOM-43. Seletor de arquivo: escolher e Salvar como…
 
@@ -752,7 +760,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Esperado:** o rodapé traz a Origem, o **Período** (nas fontes do Lichess: "o Lichess não informa as datas desta base, e o app não filtra por data"; na Biblioteca: "todas as Partidas da sua Biblioteca") e a frase de que a estatística é histórica, não é avaliação e que vitórias por cor não mostram vantagem objetiva nem o melhor Lance. O texto do estado desligado diz que vão a Posição, a chave da conexão autorizada e, em "Um jogador", o nome digitado.
 - **Serviço real?** sim, só para ver os números reais; o texto não depende do serviço.
 - **Evidência:** testes em `explorer/view.rs`, [capturas](../evidencias/explorador-janela/README.md).
-### CX-HOM-77. Importar arquivo PGN: prévia, fonte detectada e confirmação de direitos
+### CX-HOM-79. Importar arquivo PGN: prévia, fonte detectada e confirmação de direitos
 
 - **Passos:**
   1. Biblioteca > Importar > **Arquivo PGN**. Escolha um PGN exportado do Lichess (fonte "Outro ou não sei").
@@ -761,6 +769,57 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 - **Esperado:** assim que o arquivo é escolhido aparece a **Prévia do arquivo** (quantas Partidas, "Cerca de N" quando o arquivo é grande, os cabeçalhos das primeiras e "As tags indicam Lichess"), e a fonte já vem como Lichess; nada foi gravado na Biblioteca. Com fonte restrita (TWIC, PGN Mentor, ChessBase), **Importar** fica desligado até marcar a confirmação. Depois de importar, o resumo traz "N Partidas com licença restrita". Um arquivo do Lichess entra com o id do Lichess (importar de novo conta como repetidas).
 - **Serviço real?** não.
 - **Evidência:** [`chess-store/tests/import_preview.rs`](../../crates/chess-store/tests/import_preview.rs), `import_preview_ui.rs`, [capturas](../evidencias/previa-importacao-pgn/README.md).
+
+### CX-HOM-72. Central: filtros Com cadastro, Manual e por estado
+
+- **Pré-condição:** CX-HOM-02.
+- **Passos:**
+  1. Arquivo > Conexões. Clique em **Com cadastro** e depois em **Manual**.
+  2. Volte a **Todos**. Na linha **Estado**, clique em **Desligados**, **Ligados**, **Com autorização**, **Importação manual** e **Em breve**.
+  3. Combine um filtro de custo com um de estado e digite um nome na busca.
+- **Esperado:** cada botão mostra só os Provedores daquele grupo; o número ao lado dos filtros de custo bate com a lista. **Manual** e **Importação manual** mostram só quem não tem API (TWIC, PGN Mentor, Queen Alice…). **Com autorização** mostra só os Provedores com Conexão autorizada. Combinar filtros estreita a lista; sem resultado aparece "Nenhum Provedor combina com a busca e o filtro."
+- **Com o serviço real:** não se aplica.
+- **Evidência:** `connections/model.rs` (testes `signup_and_manual_filters_follow_the_catalog` e `the_state_filter_uses_the_state_of_each_card`), [`docs/evidencias/central-origem-textos/`](../evidencias/central-origem-textos/README.md).
+
+### CX-HOM-73. Licença dos dados e Origem
+
+- **Pré-condição:** CX-HOM-02; para o rating, um ID da FIDE vinculado (CX-HOM-04 e a consulta do rating).
+- **Passos:**
+  1. Na Central, abra **Detalhes** nos cartões do Lichess, Chess.com e TWIC e leia a linha **Licença dos dados**.
+  2. Em Perfil local, veja o rating FIDE consultado.
+  3. No Painel Análise, escolha a Engine remota (Chess-API.com) e espere uma resposta.
+- **Esperado:** **Licença dos dados** mostra a licença e, em cinza, as restrições, em linguagem de usuário (TWIC: uso pessoal; Chess.com: sem redistribuição; FIDE: reprodução restrita). O rating FIDE traz "Dados da FIDE reproduzidos pelo Lichess; os direitos são da FIDE…" junto de "consultado …". Com a Engine remota, o Painel mostra "Origem: Chess-API.com, consultado …" e os termos do resultado, e **não** mostra Threads, Hash, Carga nem o aviso da segunda Engine.
+- **Com o serviço real (UNVERIFIED):** a resposta real do Chess-API.com (instante e termos) e o rating real da FIDE via Lichess.
+- **Evidência:** `connections/model.rs` e `fide_profile.rs` e `remote_engine_tests.rs` (testes), `chess-store/tests/fide_and_bulk.rs` (migração 18), [`docs/evidencias/central-origem-textos/`](../evidencias/central-origem-textos/README.md).
+
+### CX-HOM-74. Textos sem "conta", "chaveiro" nem código HTTP
+
+- **Pré-condição:** nenhuma.
+- **Passos:**
+  1. Percorra a Central, as janelas de autorização e cofre, a Engine online (incluindo **Converter em usuário BOT**), o aviso da Engine remota e o download de problemas do Lichess (com a internet desligada e com um erro do Provedor).
+- **Esperado:** nenhum texto fala em "conta", "chaveiro", "login", "credencial" nem mostra um número de erro; aparecem "Conexão", "usuário BOT", "cofre do sistema" e "O Lichess não respondeu como esperado."
+- **Com o serviço real:** não se aplica.
+- **Evidência:** `connections/model.rs` (teste `integration_texts_avoid_the_glossary_banned_words_and_http_codes`).
+### CX-HOM-77. Log detalhado sem segredo
+
+- **Pré-condição:** uma Conexão do Lichess autorizada (CX-HOM-09 ou CX-HOM-11); internet; terminal.
+- **Passos:**
+  1. Abra o app pelo terminal com o log mais detalhado e guarde a saída: `RUST_LOG=trace cargo run -p chess-studio 2> log-trace.txt` (no pacote: `RUST_LOG=trace chess-studio 2> log-trace.txt`).
+  2. Use o Explorador do Lichess (fonte Mestres) numa Posição qualquer; depois, na Central, **Autorizar** de novo pelo navegador e conclua.
+  3. Feche o app e procure o começo do seu token no arquivo (`grep -c "lio_" log-trace.txt` e `grep -ci "authorization" log-trace.txt`).
+- **Esperado:** nenhuma linha com o token, com `Authorization: Bearer`, com o código de autorização ou com o verificador PKCE, nem em texto nem no despejo hexadecimal. As linhas de `DEBUG` da rede mostram só método, endereço sem consulta e cabeçalhos seguros.
+- **Com o serviço real (UNVERIFIED):** o teste automático usa o servidor falso; só aqui o pedido real ao Lichess passa pelo log.
+- **Evidência:** [`log_secrets.rs`](../../crates/chess-net/tests/log_secrets.rs), [revisão de segurança SEC-01](../seguranca/revisao-v4.md#sec-01-token-código-e-verificador-pkce-no-log-em-trace).
+
+### CX-HOM-78. Problemas do Lichess depois do limite de linha
+
+- **Pré-condição:** internet; Lichess ligado.
+- **Passos:**
+  1. Refaça os passos 1 e 2 do CX-HOM-44 (200 problemas de poucos temas).
+  2. Instale também, de arquivo, o `lichess_db_puzzle.csv.zst` baixado do site (passos do CX-HOM-27).
+- **Esperado:** os dois terminam como antes, com o pacote instalado: as linhas reais (uns 200 bytes) ficam muito abaixo do limite de 64 KiB. Um arquivo que não é a base (uma linha gigante) para com **linha acima de 65536 bytes: não é a base de problemas do Lichess** e nada é instalado.
+- **Com o serviço real (UNVERIFIED):** confirma que nenhuma linha da base real passa do limite.
+- **Evidência:** [`lichess.rs`](../../crates/chess-training/tests/lichess.rs), [`puzzles.rs`](../../crates/chess-providers/tests/puzzles.rs), [revisão de segurança SEC-02](../seguranca/revisao-v4.md#sec-02-bomba-de-descompressão-nos-problemas-do-lichess).
 
 ## Fora deste roteiro
 
