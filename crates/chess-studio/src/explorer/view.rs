@@ -705,7 +705,7 @@ fn ago_text(i18n: &I18n, age: Age) -> String {
     }
 }
 
-/// "Lichess · consultado às 14:32 · CC0", "do cache, de 09/11" ou "Sua Biblioteca, offline".
+/// "Lichess · consultado às 14:32 · CC0", "avaliação guardada em 09/11" ou "Sua Biblioteca, offline".
 /// A hora é a local do computador; sem fuso do sistema, "consultado há 3 min" (#239).
 pub fn origin_text(i18n: &I18n, origin: &OriginNote, now: Timestamp) -> String {
     let mut args: Vec<(&str, String)> = vec![
@@ -1197,7 +1197,7 @@ mod tests {
         // 01:30 UTC de 12/11 ainda é 11/11 em Brasília.
         let at = Timestamp::from_millis(NOW + 10 * 3_600_000);
         let line = testing::with(LocalClock::fixed(-180), || text(How::Cached(at)));
-        assert_eq!(line, "Lichess \u{b7} do cache, de 11/11 \u{b7} CC0");
+        assert_eq!(line, "Lichess \u{b7} avaliação guardada em 11/11 \u{b7} CC0");
     }
 
     #[test]
