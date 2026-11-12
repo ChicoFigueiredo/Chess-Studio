@@ -65,7 +65,7 @@ explorer-origin-queried-at = { $provider } · consultado { $when } · { $license
 explorer-origin-queried-minutes = { $provider } · consultado há { $count } min · { $license }
 explorer-origin-queried-hours = { $provider } · consultado há { $count } h · { $license }
 explorer-origin-queried-days = { $provider } · consultado há { $count } d · { $license }
-explorer-origin-cached = { $provider } · do cache, de { $date } · { $license }
+explorer-origin-cached = { $provider } · avaliação guardada em { $date } · { $license }
 explorer-window-library = Período: todas as Partidas da sua Biblioteca
 explorer-window-unreported = Período: o { $provider } não informa as datas desta base, e o app não filtra por data.
 explorer-sample-note = Estatística histórica de uma amostra: não é avaliação. Vitórias por cor não mostram vantagem objetiva nem o melhor Lance.
@@ -77,7 +77,7 @@ explorer-stale = Sem conexão com a internet. Mostrando o que estava salvo, de {
 
 ## Estados do Painel
 explorer-fairplay-title = Indisponível durante a Partida
-explorer-fairplay-text = A Trava de fair play desliga o Explorador, os finais e a avaliação em cache enquanto uma Partida competitiva, ou uma Partida online contra uma pessoa, está em andamento. Nada é consultado. Eles voltam quando a Partida terminar.
+explorer-fairplay-text = A Trava de fair play desliga o Explorador, os finais e as avaliações prontas enquanto uma Partida competitiva, ou uma Partida online contra uma pessoa, está em andamento. Nada é consultado. Eles voltam quando a Partida terminar.
 explorer-fairplay-position-title = Posição de uma Partida em andamento
 explorer-fairplay-position-text = Esta Posição é de uma Partida por correspondência ainda em andamento, ou vem dela. A Trava de fair play não consulta nada para ela. Outras Partidas e Posições continuam livres.
 explorer-training-title = Indisponível durante um Exercício
@@ -85,7 +85,7 @@ explorer-training-text = Termine ou saia do Exercício para consultar o Explorad
 explorer-off-title = O { $provider } está desligado
 explorer-off-text = Ligue o { $provider } para consultar esta fonte. Vão a Posição do tabuleiro e a chave da sua conexão autorizada, que identifica o seu usuário no { $provider }; na fonte "Um jogador", vai também o nome digitado.
 explorer-off-button = Ligar { $provider }
-explorer-signin-title = Requer autorizar sua conexão do { $provider }
+explorer-signin-title = Autorize sua conexão do { $provider }
 explorer-signin-text = O Explorador de aberturas do { $provider } só responde a quem autorizou a conexão. Autorize na Central de Conexões e esta fonte passa a funcionar.
 explorer-signin-center = Abrir a Central de Conexões
 explorer-use-library = Usar Minha Biblioteca
@@ -133,9 +133,9 @@ explorer-end-dtz = DTZ { $count }
 explorer-end-dtz-tip = Distância até o próximo Lance de Peão ou captura (zeramento da regra dos 50 Lances), em meios-Lances.
 
 ## Avaliação em cache (Painel Análise)
-explorer-cloud-title = Em cache (Lichess)
-explorer-cloud-none = Sem avaliação em cache para esta Posição.
-explorer-cloud-loading = Consultando o cache do Lichess…
+explorer-cloud-title = Avaliação pronta (Lichess)
+explorer-cloud-none = Sem avaliação pronta para esta Posição.
+explorer-cloud-loading = Consultando as avaliações prontas do Lichess…
 explorer-cloud-off = O Lichess está desligado. Ligue para ver avaliações já calculadas por outros.
 explorer-cloud-fairplay = Indisponível: Trava de fair play.
 explorer-cloud-limited = O serviço pediu uma pausa. Volta sozinho em instantes.
