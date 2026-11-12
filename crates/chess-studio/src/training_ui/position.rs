@@ -266,6 +266,8 @@ impl TrainingUi {
         let mut fresh = Session::from_game(Game::new(setup));
         fresh.set_move_method(session.move_method());
         fresh.supersede(session);
+        fresh.cover(session);
+        self.exercise_epoch = Some(fresh.epoch());
         let previous = std::mem::replace(session, fresh);
         if self.stashed.is_none() {
             self.stashed = Some(previous);

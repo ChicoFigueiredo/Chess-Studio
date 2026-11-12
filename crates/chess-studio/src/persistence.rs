@@ -1148,7 +1148,7 @@ impl Plugin for PersistencePlugin {
     }
 }
 
-fn persist_session(
+pub(crate) fn persist_session(
     session: Res<Session>,
     handle: Res<PersistenceHandle>,
     training: Res<TrainingUi>,

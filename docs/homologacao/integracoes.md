@@ -101,6 +101,7 @@ Legenda: **UNVERIFIED** = pendente do usuário (não é PASS). Marque PASS ou FA
 | CX-HOM-79 | Importar arquivo PGN: prévia, fonte detectada e confirmação de direitos | não | UNVERIFIED |
 | CX-HOM-80 | "Relâmpago" no lugar de "Bullet" em todo o app | não | UNVERIFIED |
 | CX-HOM-81 | Trava de fair play com o Treino aberto durante a Partida | não | UNVERIFIED |
+| CX-HOM-82 | Trocar a Partida do tabuleiro durante um Exercício do Treino | não | UNVERIFIED |
 
 ## Itens
 
@@ -994,6 +995,19 @@ O número 54 ficou sem item: a numeração do roteiro passa do CX-HOM-53 para o 
 - **Com o serviço real:** com o monitor de rede, confirme que nada que calcula sai durante o Treino.
 - **Evidência:** [`fair_play_session_tests.rs`](../../crates/chess-studio/src/fair_play_session_tests.rs), [`fair_play_matrix_tests.rs`](../../crates/chess-studio/src/fair_play_matrix_tests.rs) (`matrix_competitive_game_aside_refuses_everything_but_a_competitive_opponent`), decisão [FP-06](../decisoes/2026-11-11-trava-brechas.md), [matriz dos ramos](../seguranca/matriz-ramos-v4.md#a-trava-segue-a-partida-do-usuário-não-a-sessão-mostrada-fp-06-304).
 - **Limite conhecido:** Nova Partida, Biblioteca, Retomar e troca de Perfil **interrompem** a Partida competitiva local (ela fica no banco, pausada) e, interrompida, ela não trava; a regra está pendente ([#305](https://github.com/ChicoFigueiredo/Chess-Studio/issues/305)).
+
+### CX-HOM-82. Trocar a Partida do tabuleiro durante um Exercício do Treino
+
+- **Pré-condição:** duas Partidas não terminadas com Lances no histórico (A e B, B no tabuleiro).
+- **Passos:**
+  1. Abra o Painel Treino e comece um Exercício; faça um Lance nele.
+  2. **Nova Partida** > **Iniciar**. Confira que o Treino fechou e que o tabuleiro mostra a Partida nova, vazia.
+  3. Em **Retomar**, volte para B; repita o passo 1 e agora use **Retomar** (e, em outra rodada, **Abrir** pela Biblioteca) com o Exercício no tabuleiro. Confira que a Partida aberta fica no tabuleiro, pausada, e que o Treino fechou.
+  4. Abra a Biblioteca e confira que a Partida que estava guardada continua lá, com os mesmos Lances, uma só vez, e que **Retomar** a oferece.
+  5. Se tiver uma Partida online para começar com o Exercício aberto, confira o mesmo: o Treino fecha, a Partida online fica no tabuleiro e a guardada continua intacta.
+- **Esperado:** nenhuma Partida some, nenhuma aparece duplicada, nenhum Lance é gravado duas vezes; sair do Treino por esse caminho não põe a Partida guardada de volta por cima da nova.
+- **Serviço real?** Não (a Partida online só no passo 5, com a conta de teste).
+- **Evidência:** [`swap_tests.rs`](../../crates/chess-studio/src/training_ui/swap_tests.rs), decisão [Treino e troca de Sessão](../decisoes/2026-11-12-treino-troca-de-sessao.md).
 
 ## Fora deste roteiro
 
