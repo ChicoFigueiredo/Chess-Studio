@@ -330,7 +330,7 @@ fn is_name(text: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
-fn is_id(text: &str) -> bool {
+pub(crate) fn is_id(text: &str) -> bool {
     (1..=20).contains(&text.len()) && text.bytes().all(|b| b.is_ascii_alphanumeric())
 }
 

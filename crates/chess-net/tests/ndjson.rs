@@ -161,6 +161,46 @@ fn a_stream_delivers_lines_and_then_ends() {
 }
 
 #[test]
+fn a_flood_of_lines_waits_in_a_bounded_queue_and_nothing_is_lost() {
+    // SEC-07: a fila do fluxo tinha `mpsc::channel()` sem teto.
+    const LINES: usize = 6000;
+    let clock = clock();
+    let server = server(&clock);
+    let body = "{\"a\":1}\n".repeat(LINES);
+    server.route(
+        "/api/games/user/someone",
+        FakeResponse::stream(&[body.as_bytes()]),
+    );
+    let net = net_enabled(&server, &clock, &[ProviderId::Lichess]);
+    let request = Request::get(
+        ProviderId::Lichess,
+        "https://lichess.org/api/games/user/someone",
+    )
+    .accept("application/x-ndjson");
+
+    let stream = net.stream(request);
+    std::thread::sleep(Duration::from_millis(500));
+    let mut at_once = 0;
+    while let Some(StreamEvent::Line(_)) = stream.try_next() {
+        at_once += 1;
+    }
+    assert!(
+        at_once <= 2 * chess_net::MAX_STREAM_PENDING,
+        "{at_once} linhas esperando de uma vez"
+    );
+
+    let mut total = at_once;
+    loop {
+        match stream.next_timeout(Duration::from_secs(5)) {
+            Some(StreamEvent::Line(_)) => total += 1,
+            Some(StreamEvent::Ended) => break,
+            other => panic!("{other:?}"),
+        }
+    }
+    assert_eq!(total, LINES);
+}
+
+#[test]
 fn a_stream_obeys_the_same_gate_as_any_request() {
     let clock = clock();
     let server = server(&clock);
