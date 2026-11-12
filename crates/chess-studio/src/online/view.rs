@@ -1666,10 +1666,12 @@ pub(super) fn panel_body(
     // rolar: a linha da vez já diz quando a conexão não está ao vivo. Respiro curto
     // (`space-1`) entre as linhas; o resto do Painel também.
     ui.spacing_mut().item_spacing.y = crate::panel_chrome::token("space-1", 4.0);
-    clocks(ui, session, online);
     // Sem sessão no FICS: a Partida de visitante não continua (FC-08); o fim não foi
-    // confirmado e só o jogador a encerra no app (FC-22).
+    // confirmado e só o jogador a encerra no app (FC-22). Sem relógio: ninguém mais joga.
     let unconfirmed = provider == Provider::Fics && (view.dropped || view.link.is_none());
+    if !unconfirmed {
+        clocks(ui, session, online);
+    }
     let state = turn_state(snapshot, online, view, provider, unconfirmed);
     match &state {
         TurnState::Sending(san) => {
