@@ -69,6 +69,9 @@ pub enum StoreError {
     ScoresheetNotDelivered(GameId),
     /// Conexão com Provedor ou identificador inválido (detalhe em português).
     InvalidConnection(String),
+    /// O nome público tem a forma de um token de acesso (colado por engano); o texto nunca é
+    /// repetido no erro.
+    IdentifierLooksLikeToken,
     /// O Perfil local já tem uma Conexão com este identificador neste Provedor.
     ConnectionExists {
         provider: String,
@@ -144,6 +147,12 @@ impl fmt::Display for StoreError {
                 "o arquivo descompactado passa do limite de {limit} bytes e foi interrompido"
             ),
             Self::InvalidConnection(detail) => write!(f, "Conexão inválida: {detail}"),
+            Self::IdentifierLooksLikeToken => {
+                write!(
+                    f,
+                    "o identificador parece um token de acesso e foi recusado"
+                )
+            }
             Self::ConnectionExists {
                 provider,
                 identifier,

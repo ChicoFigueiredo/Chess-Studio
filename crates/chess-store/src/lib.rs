@@ -51,7 +51,7 @@ mod training_profiles;
 
 pub use connections::{
     Connection, ConnectionId, ConnectionKind, ConnectionRole, MAX_IDENTIFIER_LEN, MAX_NICKNAME_LEN,
-    NewConnection,
+    NewConnection, identifier_looks_like_token,
 };
 pub use engines::{EngineId, EngineOrigin, EngineRecord};
 pub use error::{Result, StoreError};

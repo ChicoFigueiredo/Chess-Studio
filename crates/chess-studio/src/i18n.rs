@@ -165,7 +165,11 @@ impl I18n {
     pub fn t_with(&self, key: &str, args: &[(&str, &str)]) -> String {
         let mut fluent_args = FluentArgs::new();
         for (name, value) in args {
-            fluent_args.set(*name, FluentValue::from((*value).to_owned()));
+            // Todo argumento é texto possivelmente vindo de fora: sem controles nem marcas bidi.
+            fluent_args.set(
+                *name,
+                FluentValue::from(crate::display_text::clean_argument(value)),
+            );
         }
         self.format(key, Some(&fluent_args))
     }
@@ -227,6 +231,13 @@ mod tests {
             i18n.t_with("game-last-move", &[("san", "Nf3")]),
             "Último lance: Nf3"
         );
+    }
+
+    #[test]
+    fn arguments_from_outside_lose_bidi_and_control_characters() {
+        let text =
+            I18n::pt_br().t_with("game-last-move", &[("san", "N\u{202E}f\u{200B}3\u{0007}")]);
+        assert_eq!(text, "Último lance: Nf3");
     }
 
     #[test]

@@ -222,6 +222,11 @@ impl View<'_> {
             });
         if !dialog.is_busy() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             ops.push(Op::CloseVaultDialog);
+            // Esc fecha sem passar pelos botões: o histórico de desfazer do `egui` esquece
+            // a senha digitada do mesmo jeito (SEC-08).
+            for id in ["password", "confirm", "current"] {
+                forget_secret_field(ctx, egui::Id::new(("vault-field", id)));
+            }
         }
         self.ops.extend(ops);
     }

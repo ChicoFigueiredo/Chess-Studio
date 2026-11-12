@@ -222,11 +222,19 @@ pub enum Failure {
     /// O banco da Biblioteca não está em arquivo (só nas capturas).
     NoDatabase,
     /// Qualquer outra coisa; o texto já é legível.
-    Other(String),
+    /// Falha sem categoria própria. O detalhe técnico vai só para o log, nunca para a tela.
+    Other,
 }
 
 impl Failure {
-    fn of(site: Site, error: &ProviderError) -> Self {
+    /// Falha genérica: a mensagem da tela é fixa e o detalhe (que pode citar valores da
+    /// resposta, como o `serde_json`) fica só no log.
+    fn other(detail: impl std::fmt::Display) -> Self {
+        bevy::log::warn!("importação online falhou: {detail}");
+        Failure::Other
+    }
+
+    pub(crate) fn of(site: Site, error: &ProviderError) -> Self {
         match error {
             ProviderError::Disabled { .. } => Failure::Off(site),
             ProviderError::RateLimited { until, .. } => Failure::Limited { until: *until },
@@ -235,7 +243,7 @@ impl Failure {
             ProviderError::Net(NetError::Unreachable { .. } | NetError::Timeout { .. }) => {
                 Failure::Offline
             }
-            other => Failure::Other(other.to_string()),
+            other => Failure::other(other),
         }
     }
 }
@@ -302,7 +310,7 @@ pub fn run(
             cancelled: summary.cancelled,
             skipped_variants,
         }),
-        (Err(error), None) => Err(Failure::Other(error.to_string())),
+        (Err(error), None) => Err(Failure::other(error)),
     }
 }
 
@@ -368,7 +376,7 @@ impl Job {
             let outcome = match db {
                 None => Err(Failure::NoDatabase),
                 Some(path) => Store::open(&path)
-                    .map_err(|e| Failure::Other(e.to_string()))
+                    .map_err(Failure::other)
                     .and_then(|mut store| {
                         let feed = clients.feed(&request, now);
                         run(request.site, feed, &mut store, profile, &cancel, &mut |p| {
