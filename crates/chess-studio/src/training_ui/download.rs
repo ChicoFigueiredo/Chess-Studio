@@ -315,10 +315,11 @@ fn failure_text(i18n: &I18n, error: &ProviderError) -> String {
         ProviderError::Net(NetError::RedirectRefused { .. }) => {
             i18n.t("training-download-error-redirect")
         }
-        other => i18n.t_with(
-            "training-download-error-other",
-            &[("reason", &other.to_string())],
-        ),
+        other => {
+            // O detalhe pode citar valores da resposta: vai só para o log.
+            bevy::log::warn!("download de problemas falhou: {other}");
+            i18n.t("training-download-error-other")
+        }
     }
 }
 
@@ -1053,6 +1054,9 @@ mod tests {
                 provider: lichess,
                 detail: "x".into(),
             },
+            ProviderError::InvalidInput {
+                reason: "valor-secreto-da-resposta".into(),
+            },
             ProviderError::Net(chess_net::NetError::RedirectRefused {
                 provider: lichess,
                 location: "https://exemplo.invalid/x".into(),
@@ -1064,6 +1068,7 @@ mod tests {
                 text.contains("nada foi") || text.contains("Nada foi"),
                 "{text}"
             );
+            assert!(!text.contains("valor-secreto"), "{text}");
             assert!(
                 !text.contains("training-download"),
                 "chave sem texto: {text}"

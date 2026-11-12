@@ -24,6 +24,7 @@ mod controls;
 mod coordinates;
 mod demo_data;
 mod detached;
+mod display_text;
 mod dock;
 mod end_game;
 mod engine;

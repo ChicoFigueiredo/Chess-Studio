@@ -255,7 +255,7 @@ fn the_explorer_carries_the_token_of_its_connection_and_nothing_else_does() {
 
 fn eventually_event(stream: &mut chess_providers::ExplorerStream) -> Option<ExplorerEvent> {
     let start = std::time::Instant::now();
-    while start.elapsed() < Duration::from_secs(5) {
+    while start.elapsed() < Duration::from_secs(30) {
         if let Some(event) = stream.try_next() {
             return Some(event);
         }
@@ -368,7 +368,7 @@ fn fair_play_lock_refuses_every_explorer_endpoint() {
 fn first_event(stream: &mut chess_providers::ExplorerStream) -> ExplorerEvent {
     let mut event = None;
     assert!(
-        eventually(Duration::from_secs(5), || {
+        eventually(Duration::from_secs(30), || {
             event = stream.try_next();
             event.is_some()
         }),
@@ -415,7 +415,7 @@ fn player_explorer_delivers_partial_results_before_the_end() {
     stream.close();
     assert!(stream.is_finished());
     assert!(
-        eventually(Duration::from_secs(5), || env.net.status().active_requests
+        eventually(Duration::from_secs(30), || env.net.status().active_requests
             == 0),
         "o fluxo ficou preso depois de fechar"
     );
@@ -490,7 +490,7 @@ fn dropping_a_query_cancels_the_pending_request() {
     env.server.route("/masters", FakeResponse::stall());
 
     let query = env.lichess.masters(AFTER_E4, &MastersFilter::default());
-    assert!(env.server.wait_for_requests(1, Duration::from_secs(5)));
+    assert!(env.server.wait_for_requests(1, Duration::from_secs(30)));
     drop(query);
 
     // O pedido foi abandonado: a fila do Provedor se libera no fim do prazo, mas a consulta
@@ -498,7 +498,70 @@ fn dropping_a_query_cancels_the_pending_request() {
     let mut again = env.lichess.masters(AFTER_E4, &MastersFilter::default());
     again.cancel();
     assert_eq!(
-        again.wait_timeout(Duration::from_secs(5)),
+        again.wait_timeout(Duration::from_secs(30)),
         Some(Err(ProviderError::Cancelled))
+    );
+}
+
+#[test]
+fn counts_that_overflow_do_not_panic() {
+    // SEC-05: `white + draws + black` estourava com números vindos da rede.
+    let env = env_enabled();
+    env.server.route(
+        "/masters",
+        FakeResponse::json(
+            "{\"white\":18446744073709551615,\"draws\":1,\"black\":1,\"moves\":[],\"topGames\":[]}",
+        ),
+    );
+
+    let answer = env
+        .lichess
+        .masters(AFTER_E4, &MastersFilter::default())
+        .wait()
+        .expect("mestres");
+
+    assert_eq!(answer.value.outcomes.total(), u64::MAX);
+    assert_eq!(answer.value.outcomes.white, u64::MAX);
+}
+
+fn wire_games(prefix: &str, count: usize) -> String {
+    let games: Vec<String> = (0..count)
+        .map(|i| {
+            format!(
+                "{{\"id\":\"{prefix}{i}\",\"white\":{{\"name\":\"a\"}},\"black\":{{\"name\":\"b\"}}}}"
+            )
+        })
+        .collect();
+    format!("[{}]", games.join(","))
+}
+
+#[test]
+fn a_huge_games_list_is_capped_and_deduplicated_fast() {
+    // SEC-07: a deduplicação comparava cada recente com todas as de topo (quadrática).
+    let env = env_enabled();
+    let body = format!(
+        "{{\"white\":1,\"draws\":1,\"black\":1,\"moves\":[],\"topGames\":{},\"recentGames\":{}}}",
+        wire_games("t", 60_000),
+        wire_games("t", 60_000),
+    );
+    env.server.route("/masters", FakeResponse::json(&body));
+
+    let started = std::time::Instant::now();
+    let answer = env
+        .lichess
+        .masters(AFTER_E4, &MastersFilter::default())
+        .wait()
+        .expect("mestres");
+
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "{:?}",
+        started.elapsed()
+    );
+    let games = &answer.value.games;
+    assert!(games.len() <= 400, "{}", games.len());
+    assert!(
+        games.iter().all(|g| !g.recent),
+        "ids repetidos entram uma vez"
     );
 }

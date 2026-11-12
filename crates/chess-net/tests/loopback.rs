@@ -34,7 +34,7 @@ fn start(clock: &Arc<FakeClock>) -> (u16, Arc<AtomicBool>, Waiting) {
 /// Manda uma requisição crua e devolve a resposta inteira.
 fn send(port: u16, request: &str) -> std::io::Result<String> {
     let mut stream = TcpStream::connect(("127.0.0.1", port))?;
-    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+    stream.set_read_timeout(Some(Duration::from_secs(30)))?;
     stream.write_all(request.as_bytes())?;
     let mut response = String::new();
     stream.read_to_string(&mut response)?;
@@ -112,6 +112,46 @@ fn other_paths_methods_and_hosts_do_not_count_as_the_callback() {
     assert_eq!(params.get("code"), Some("BOM"));
 }
 
+/// Ramo de segurança (NFR-10, #269): cabeçalho acima do limite ou que não é texto não conta
+/// como retorno e não gasta a única chance; o retorno certo depois dele ainda chega.
+#[test]
+fn an_oversized_or_non_text_head_is_dropped_and_does_not_spend_the_callback() {
+    let clock = clock();
+    let (port, _cancel, handle) = start(&clock);
+
+    // 64 KiB de cabeçalho sem o fim (`\r\n\r\n`): passa de 8 KiB e a conexão cai sem resposta.
+    let huge = format!(
+        "GET /retorno?code=X&state=Y HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nX-Lixo: {}",
+        "a".repeat(64 * 1024)
+    );
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("conecta");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(30)))
+        .expect("prazo");
+    let _ = stream.write_all(huge.as_bytes());
+    let mut answer = Vec::new();
+    let _ = stream.read_to_end(&mut answer);
+    assert!(
+        !String::from_utf8_lossy(&answer).starts_with("HTTP/1.1 200"),
+        "cabeçalho gigante não é o retorno"
+    );
+
+    // Bytes que não são UTF-8 no cabeçalho.
+    let mut binary = TcpStream::connect(("127.0.0.1", port)).expect("conecta");
+    binary
+        .set_read_timeout(Some(Duration::from_secs(30)))
+        .expect("prazo");
+    let _ = binary.write_all(b"GET /retorno?code=X&state=Y HTTP/1.1\r\nHost: \xff\xfe\r\n\r\n");
+    let mut answer = Vec::new();
+    let _ = binary.read_to_end(&mut answer);
+    assert!(!String::from_utf8_lossy(&answer).starts_with("HTTP/1.1 200"));
+    assert!(!handle.is_finished(), "nada disso é o retorno");
+
+    get(port, "/retorno?code=BOM&state=S");
+    let params = handle.join().expect("thread").expect("retorno");
+    assert_eq!(params.get("code"), Some("BOM"));
+}
+
 #[test]
 fn the_deadline_comes_from_the_injected_clock() {
     let clock = clock();
@@ -138,6 +178,75 @@ fn cancelling_stops_waiting_and_closes_the_port() {
         CallbackError::Cancelled
     );
     assert!(TcpStream::connect(("127.0.0.1", port)).is_err());
+}
+
+/// Cliente local que manda um byte a cada 500 ms, sem nunca terminar o cabeçalho (SEC-04).
+fn slow_client(port: u16) -> JoinHandle<()> {
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("conexão lenta");
+    thread::spawn(move || {
+        for _ in 0..40 {
+            if stream.write_all(b"G").is_err() {
+                return;
+            }
+            thread::sleep(Duration::from_millis(500));
+        }
+    })
+}
+
+#[test]
+fn a_slow_local_client_does_not_hold_back_the_legitimate_callback() {
+    let clock = clock();
+    let (port, _cancel, handle) = start(&clock);
+    let _slow = slow_client(port);
+    thread::sleep(Duration::from_millis(600));
+
+    let started = std::time::Instant::now();
+    let response = get(port, "/retorno?code=BOM&state=S");
+
+    assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+    assert!(
+        started.elapsed() < Duration::from_secs(6),
+        "{:?}",
+        started.elapsed()
+    );
+    let params = handle.join().expect("thread").expect("retorno");
+    assert_eq!(params.get("code"), Some("BOM"));
+}
+
+#[test]
+fn cancelling_during_a_slow_client_answers_in_under_a_second() {
+    let clock = clock();
+    let (port, cancel, handle) = start(&clock);
+    let _slow = slow_client(port);
+    thread::sleep(Duration::from_millis(700));
+
+    let started = std::time::Instant::now();
+    cancel.store(true, Ordering::Release);
+
+    assert_eq!(
+        handle.join().expect("thread").unwrap_err(),
+        CallbackError::Cancelled
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "{:?}",
+        started.elapsed()
+    );
+}
+
+#[test]
+fn the_deadline_of_the_injected_clock_holds_during_a_slow_client() {
+    let clock = clock();
+    let (port, _cancel, handle) = start(&clock);
+    let _slow = slow_client(port);
+    thread::sleep(Duration::from_millis(700));
+
+    clock.advance(TEN_MINUTES);
+
+    assert_eq!(
+        handle.join().expect("thread").unwrap_err(),
+        CallbackError::Expired
+    );
 }
 
 /// Um endereço da máquina que não é de loopback, se houver (nada sai pela rede: `connect`

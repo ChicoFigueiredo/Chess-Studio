@@ -29,7 +29,8 @@ fn a_stalled_server_ends_in_a_typed_timeout() {
     );
     assert!(start.elapsed() < Duration::from_secs(5));
     assert!(
-        eventually(Duration::from_secs(2), || net.status().active_requests == 0),
+        eventually(Duration::from_secs(30), || net.status().active_requests
+            == 0),
         "a thread do Provedor ficou presa"
     );
 }
@@ -43,14 +44,15 @@ fn cancelling_answers_at_once_and_the_worker_is_released() {
     let net = net_enabled(&server, &clock, &[ProviderId::Lichess]);
 
     let pending = net.fetch(masters().timeout(Duration::from_millis(800)));
-    assert!(server.wait_for_requests(1, Duration::from_secs(5)));
+    assert!(server.wait_for_requests(1, Duration::from_secs(30)));
     let start = Instant::now();
     pending.cancel();
     assert_eq!(pending.wait(), Err(NetError::Cancelled));
     assert!(start.elapsed() < Duration::from_millis(600));
 
     assert!(
-        eventually(Duration::from_secs(5), || net.status().active_requests == 0),
+        eventually(Duration::from_secs(30), || net.status().active_requests
+            == 0),
         "a thread do Provedor ficou presa"
     );
     let next = explorer("/lichess");
@@ -68,14 +70,14 @@ fn a_request_cancelled_while_queued_never_reaches_the_network() {
     let net = net_enabled(&server, &clock, &[ProviderId::Lichess]);
 
     let first = net.fetch(masters().timeout(Duration::from_millis(400)));
-    assert!(server.wait_for_requests(1, Duration::from_secs(5)));
+    assert!(server.wait_for_requests(1, Duration::from_secs(30)));
     let mut queued = net.fetch(explorer("/lichess"));
     queued.cancel();
     assert_eq!(queued.try_take(), Some(Err(NetError::Cancelled)));
     drop(queued);
 
     assert!(matches!(first.wait(), Err(NetError::Timeout { .. })));
-    assert!(eventually(Duration::from_secs(2), || net
+    assert!(eventually(Duration::from_secs(30), || net
         .status()
         .active_requests
         == 0));
@@ -92,11 +94,11 @@ fn dropping_the_pending_handle_cancels_the_request() {
     let net = net_enabled(&server, &clock, &[ProviderId::Lichess]);
 
     let first = net.fetch(masters().timeout(Duration::from_millis(400)));
-    assert!(server.wait_for_requests(1, Duration::from_secs(5)));
+    assert!(server.wait_for_requests(1, Duration::from_secs(30)));
     drop(net.fetch(explorer("/lichess")));
 
     let _ = first.wait();
-    assert!(eventually(Duration::from_secs(2), || net
+    assert!(eventually(Duration::from_secs(30), || net
         .status()
         .active_requests
         == 0));

@@ -82,6 +82,9 @@ pub(super) fn page(
     profile_name: Option<&str>,
 ) {
     state.sync(service, handle);
+    for id in state.auth.forget_fields.drain(..) {
+        crate::ui_theme::forget_secret_field(ctx, id);
+    }
     let mut status = service.net().status();
     apply_capture_state(&mut status);
     let last = model::last_queries(&service.net().recent_operations());
@@ -1607,6 +1610,87 @@ mod tests {
             found.iter().all(|(t, _)| !t.contains("senha-secreta")),
             "o campo é mascarado"
         );
+    }
+
+    /// Guarda no `egui` um estado de campo com cursor, como se alguém tivesse digitado.
+    fn seed_field(ctx: &egui::Context, id: egui::Id) {
+        let mut state = egui::text_edit::TextEditState::default();
+        state
+            .cursor
+            .set_char_range(Some(egui::text::CCursorRange::one(
+                egui::text::CCursor::new(5),
+            )));
+        state.store(ctx, id);
+    }
+
+    fn field_is_forgotten(ctx: &egui::Context, id: egui::Id) -> bool {
+        egui::text_edit::TextEditState::load(ctx, id)
+            .is_none_or(|s| s.cursor.char_range().is_none())
+    }
+
+    fn run_page(
+        ctx: &egui::Context,
+        ui_state: &mut ConnectionsUi,
+        service: &NetService,
+        events: Vec<egui::Event>,
+    ) {
+        let i18n = I18n::pt_br();
+        let mut dialog = ConsentDialog::default();
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                vec2(1200.0, 3000.0),
+            )),
+            events,
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(raw, |ui| {
+            let ctx = ui.ctx().clone();
+            page(ui, &ctx, &i18n, ui_state, service, &mut dialog, None, None);
+        });
+        out.textures_delta.clear();
+    }
+
+    #[test]
+    fn escape_on_the_master_password_dialog_forgets_every_secret_field() {
+        let ctx = test_context(ThemeId::from_key("dark").unwrap(), Density::Comfortable);
+        let scene = super::super::demo::scene("vault-create").unwrap();
+        let super::super::demo::Scene { mut ui, service } = scene;
+        run_page(&ctx, &mut ui, &service, vec![]);
+        let ids: Vec<egui::Id> = ["password", "confirm", "current"]
+            .into_iter()
+            .map(|f| egui::Id::new(("vault-field", f)))
+            .collect();
+        for id in &ids {
+            seed_field(&ctx, *id);
+        }
+        ui.auth.vault_dialog.as_mut().unwrap().password =
+            zeroize::Zeroizing::new("senha-secreta".to_owned());
+        let esc = egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        run_page(&ctx, &mut ui, &service, vec![esc]);
+        assert!(ui.auth.vault_dialog.is_none(), "o diálogo fechou");
+        for id in ids {
+            assert!(field_is_forgotten(&ctx, id), "{id:?} guardou o texto");
+        }
+    }
+
+    #[test]
+    fn switching_the_local_profile_forgets_the_personal_key_field() {
+        let ctx = test_context(ThemeId::from_key("dark").unwrap(), Density::Comfortable);
+        let scene = super::super::demo::scene("key-form").unwrap();
+        let super::super::demo::Scene { mut ui, service } = scene;
+        run_page(&ctx, &mut ui, &service, vec![]);
+        let id = egui::Id::new(("auth-key-field", ProviderId::Lichess.key(), false));
+        seed_field(&ctx, id);
+        ui.reset_for_profile();
+        run_page(&ctx, &mut ui, &service, vec![]);
+        assert!(field_is_forgotten(&ctx, id));
     }
 
     const BANNED: [&str; 8] = [

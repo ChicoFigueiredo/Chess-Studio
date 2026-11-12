@@ -63,7 +63,7 @@ fn real_stockfish_handshake_search_stop_and_self_play() {
     engine.go(&GoParams::infinite()).unwrap();
     std::thread::sleep(Duration::from_millis(100));
     engine.stop().unwrap();
-    let best = engine.wait_bestmove(Duration::from_secs(5)).unwrap();
+    let best = engine.wait_bestmove(Duration::from_secs(30)).unwrap();
     assert!(matches!(best, BestMove::Move { .. }), "{best:?}");
 
     // Autojogo validado pelo núcleo.

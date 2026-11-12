@@ -1339,3 +1339,7 @@ mod tests {
 #[cfg(test)]
 #[path = "fair_play_tests.rs"]
 mod service_tests;
+
+#[cfg(test)]
+#[path = "fair_play_matrix_tests.rs"]
+mod matrix_tests;

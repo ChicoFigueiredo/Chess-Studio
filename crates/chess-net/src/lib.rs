@@ -90,6 +90,7 @@ pub use ics::{
 pub use limits::RetryPolicy;
 pub use loopback::{CallbackError, CallbackParams, LoopbackCallback};
 pub use ndjson::{NdjsonError, NdjsonItem, NdjsonReader};
+pub use net::MAX_STREAM_PENDING;
 pub use net::{Download, DownloadEvent, DownloadMeter, DownloadReader};
 pub use net::{Net, NetConfig, Pending, Stream, StreamEvent};
 pub use request::{Method, Request};

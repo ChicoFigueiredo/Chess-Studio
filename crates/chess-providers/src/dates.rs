@@ -28,11 +28,13 @@ impl YearMonth {
         Self::new(y.parse().ok()?, m.parse().ok()?).ok()
     }
 
+    /// O mês seguinte; no último mês representável (dezembro de 65535) devolve o próprio mês
+    /// em vez de estourar (SEC-05).
     pub fn next(self) -> Self {
         if self.month == 12 {
-            Self {
-                year: self.year + 1,
-                month: 1,
+            match self.year.checked_add(1) {
+                Some(year) => Self { year, month: 1 },
+                None => self,
             }
         } else {
             Self {
@@ -176,6 +178,15 @@ mod tests {
         assert_eq!(day.start_ms(), 1_794_355_200_000);
         assert_eq!(day.end_ms(), 1_794_355_200_000 + 86_399_999);
         assert_eq!(Day::new(1970, 1, 1).expect("data").start_ms(), 0);
+    }
+
+    #[test]
+    fn the_month_after_the_last_representable_one_does_not_overflow() {
+        let last = YearMonth {
+            year: u16::MAX,
+            month: 12,
+        };
+        assert_eq!(last.next(), last);
     }
 
     #[test]
