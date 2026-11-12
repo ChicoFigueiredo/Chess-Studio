@@ -238,7 +238,7 @@ mod tests {
             ..NewGameConfig::default()
         };
         let mut session = Session::new();
-        session.start(&config, None);
+        session.start(&config);
         app.insert_resource(session);
         let before = {
             let s = app.world().resource::<Session>();

@@ -2169,7 +2169,13 @@ mod tests {
             engine_elo: 1700,
             ..NewGameConfig::for_policy(PolicyKind::FideSimulation)
         };
-        session.start(&config, Some(chess_uci::EngineConfig::new("/nao/existe")));
+        session
+            .start_vs_engine(
+                &config,
+                chess_uci::EngineConfig::new("/nao/existe"),
+                &crate::fair_play::FairPlay::new(chess_net::FairPlayGuard::new()),
+            )
+            .unwrap();
         assert!(session.engine_active());
         play(&mut session, "e2", "e4");
         session.press_clock();
