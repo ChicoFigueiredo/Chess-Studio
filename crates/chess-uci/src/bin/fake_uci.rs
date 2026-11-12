@@ -28,7 +28,10 @@
 //!
 //! Opções extras: `--elo` anuncia `UCI_Elo` (min 1320, max 3190); `--trace <arquivo>`
 //! acrescenta ao arquivo cada linha recebida (para os testes inspecionarem `position`,
-//! `go` e `setoption`).
+//! `go` e `setoption`); se o arquivo não abre, a Engine sai com erro em vez de seguir sem
+//! rastro. `--deaf-after-infinite`: depois de responder a `go infinite`, a Engine para de
+//! ler a entrada, como um processo que não ganha CPU; o `stop` fica no cano, sem ser lido
+//! nem rastreado, até a Engine ser morta (#296).
 
 use std::io::{self, BufRead, Write};
 use std::time::Duration;
@@ -55,6 +58,7 @@ fn main() {
     let mut backends = String::from("cuda-auto,blas");
     let mut fail_backend: Option<String> = None;
     let mut backend = String::new();
+    let mut deaf_after_infinite = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -67,14 +71,20 @@ fn main() {
             "--backends" => backends = args.next().unwrap_or_default(),
             "--fail-backend" => fail_backend = args.next(),
             "--info-depths" => info_depths = args.next().and_then(|v| v.parse().ok()).unwrap_or(5),
+            "--deaf-after-infinite" => deaf_after_infinite = true,
             "--trace" => {
-                trace = args.next().and_then(|p| {
-                    std::fs::OpenOptions::new()
-                        .create(true)
-                        .append(true)
-                        .open(p)
-                        .ok()
-                });
+                let path = args.next().unwrap_or_default();
+                match std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&path)
+                {
+                    Ok(file) => trace = Some(file),
+                    Err(e) => {
+                        eprintln!("fake_uci: o rastro {path:?} não abriu: {e}");
+                        std::process::exit(2);
+                    }
+                }
             }
             "--delay-ms" => delay_ms = args.next().and_then(|v| v.parse().ok()).unwrap_or(0),
             _ => {}
@@ -173,6 +183,11 @@ fn main() {
                         emit_info(&position, multipv, info_depths, mate);
                     }
                     pending_stop = true;
+                    if deaf_after_infinite {
+                        loop {
+                            std::thread::park();
+                        }
+                    }
                     continue;
                 }
                 answer(&mode, &position);

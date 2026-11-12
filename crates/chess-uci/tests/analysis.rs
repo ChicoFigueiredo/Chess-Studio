@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use chess_core::Move;
 use chess_uci::{
     AnalysisConfig, AnalysisController, AnalysisEvent, AnalysisUpdate, EngineConfig, FailureKind,
-    Limits, PositionSpec, Score, Timeouts,
+    Limits, PositionSpec, Score, Stage, Timeouts,
 };
 
 const FAKE: &str = env!("CARGO_BIN_EXE_fake_uci");
@@ -18,14 +18,17 @@ fn ms(n: u64) -> Duration {
     Duration::from_millis(n)
 }
 
+/// Folgas largas, como em `load.rs` (#236): só o teste do `stop` que a Engine não lê
+/// exercita um estouro, e ele aperta o próprio `stop_grace`. Com a máquina carregada um
+/// prazo curto mata a Engine falsa, que nem chega a ler o `stop` (#296).
 fn timeouts() -> Timeouts {
     Timeouts {
-        handshake: ms(1500),
-        ready: ms(1500),
-        search_slack: ms(100),
-        search_default: ms(300),
-        stop_grace: ms(300),
-        quit: ms(300),
+        handshake: ms(10_000),
+        ready: ms(10_000),
+        search_slack: ms(2_000),
+        search_default: ms(5_000),
+        stop_grace: ms(5_000),
+        quit: ms(2_000),
     }
 }
 
@@ -64,7 +67,8 @@ fn mv(text: &str) -> Move {
     text.parse().unwrap()
 }
 
-/// Consome eventos até `pred` aceitar um (ou 5 s): devolve o aceito.
+/// Consome eventos até `pred` aceitar um (ou 30 s): devolve o aceito. Uma falha que `pred`
+/// não aceita encerra o teste na hora, com o motivo, em vez de esperar o prazo à toa.
 fn wait_for(
     ctrl: &mut AnalysisController,
     mut pred: impl FnMut(&AnalysisEvent) -> bool,
@@ -75,6 +79,10 @@ fn wait_for(
             if pred(&event) {
                 return event;
             }
+            assert!(
+                !matches!(event, AnalysisEvent::Failed(_)),
+                "a análise falhou: {event:?}"
+            );
         }
         std::thread::sleep(ms(5));
     }
@@ -97,6 +105,34 @@ fn trace_lines(path: &PathBuf) -> Vec<String> {
         .lines()
         .map(str::to_owned)
         .collect()
+}
+
+/// Espera o rastro mostrar que a Engine **leu** o `stop`. O rastro só guarda o que a Engine
+/// leu: se ela não lê o `stop` dentro do `stop_grace`, o worker a encerra e avisa com
+/// `Failed`, e o `stop` nunca aparece (#296). Por isso a espera também olha os eventos e,
+/// se falhar, mostra o rastro inteiro e o estado do controlador.
+fn wait_engine_read_stop(ctrl: &mut AnalysisController, trace: &PathBuf) {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let mut events = Vec::new();
+    while !trace_lines(trace).iter().any(|l| l == "stop") {
+        while let Some(event) = ctrl.poll() {
+            assert!(
+                !matches!(event, AnalysisEvent::Failed(_)),
+                "a análise falhou antes de a Engine ler o stop: {event:?}; rastro: {:?}",
+                trace_lines(trace)
+            );
+            events.push(event);
+        }
+        assert!(
+            Instant::now() < deadline,
+            "stop não chegou à Engine; rastro: {:?}; is_analyzing={}, is_dead={}; eventos: \
+             {events:?}",
+            trace_lines(trace),
+            ctrl.is_analyzing(),
+            ctrl.is_dead()
+        );
+        std::thread::sleep(ms(5));
+    }
 }
 
 #[test]
@@ -176,11 +212,7 @@ fn stop_pauses_the_analysis_and_resuming_works() {
     assert!(!ctrl.is_analyzing());
     // O `stop` chega à Engine de forma assíncrona: espera pelo rastro, em vez de supor o
     // tempo (#236). Atualizações emitidas antes dele podem já estar na fila; descarta-as.
-    let deadline = Instant::now() + Duration::from_secs(30);
-    while !trace_lines(&trace).iter().any(|l| l == "stop") {
-        assert!(Instant::now() < deadline, "stop não chegou à Engine");
-        std::thread::sleep(ms(5));
-    }
+    wait_engine_read_stop(&mut ctrl, &trace);
     while ctrl.poll().is_some() {}
     // Daí em diante, nenhuma atualização nova.
     std::thread::sleep(ms(200));
@@ -189,6 +221,37 @@ fn stop_pauses_the_analysis_and_resuming_works() {
     }
     ctrl.analyze(PositionSpec::startpos(), 1);
     update_at_depth(&mut ctrl, 5);
+}
+
+/// A ordem que o #296 viu: o worker escreve o `stop`, mas a Engine não o lê (sob carga, um
+/// processo pode ficar sem CPU além do `stop_grace`). O pedido não se perde em silêncio:
+/// passado o `stop_grace`, o worker encerra a Engine e avisa com `Failed` na etapa de parada.
+/// Só o rastro, que guarda o que a Engine leu, fica sem o `stop`.
+#[test]
+fn a_stop_the_engine_never_reads_ends_the_engine_with_a_timeout() {
+    let trace = trace_path("deaf");
+    let mut cfg = config(&["--deaf-after-infinite"], Some(&trace));
+    cfg.engine.timeouts.stop_grace = ms(300);
+    let mut ctrl = started(cfg);
+    ctrl.analyze(PositionSpec::startpos(), 1);
+    update_at_depth(&mut ctrl, 5);
+    ctrl.stop();
+    let event = wait_for(&mut ctrl, |e| matches!(e, AnalysisEvent::Failed(_)));
+    let AnalysisEvent::Failed(failure) = event else {
+        unreachable!()
+    };
+    assert_eq!(failure.kind, FailureKind::Timeout, "{failure:?}");
+    assert!(
+        failure.message.contains(&Stage::Stop.to_string()),
+        "o stop foi enviado e o prazo dele estourou: {failure:?}"
+    );
+    assert!(ctrl.is_dead());
+    let lines = trace_lines(&trace);
+    assert_eq!(
+        lines.last().map(String::as_str),
+        Some("go infinite"),
+        "a Engine não leu nada depois do go: {lines:?}"
+    );
 }
 
 #[test]
