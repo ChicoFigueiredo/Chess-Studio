@@ -34,8 +34,8 @@ impl Score {
         match side {
             Color::White => self,
             Color::Black => match self {
-                Self::Centipawns(cp) => Self::Centipawns(-cp),
-                Self::Mate(n) => Self::Mate(-n),
+                Self::Centipawns(cp) => Self::Centipawns(cp.saturating_neg()),
+                Self::Mate(n) => Self::Mate(n.saturating_neg()),
             },
         }
     }
@@ -202,5 +202,27 @@ impl Lichess {
             freshness: Freshness::Cache,
             age,
         })))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// SEC-05: negar o extremo de `i32` (que a rede pode mandar) não estoura.
+    #[test]
+    fn flipping_the_extreme_scores_does_not_overflow() {
+        assert_eq!(
+            Score::Centipawns(i32::MIN).for_side(Color::Black),
+            Score::Centipawns(i32::MAX)
+        );
+        assert_eq!(
+            Score::Mate(i32::MIN).for_side(Color::Black),
+            Score::Mate(i32::MAX)
+        );
+        assert_eq!(
+            Score::Centipawns(150).for_side(Color::Black),
+            Score::Centipawns(-150)
+        );
     }
 }

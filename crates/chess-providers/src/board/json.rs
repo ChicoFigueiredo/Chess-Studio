@@ -311,6 +311,11 @@ impl TryFrom<GameInfoJson> for GameInfo {
             .as_deref()
             .and_then(color)
             .ok_or_else(|| "Partida sem a cor do jogador".to_owned())?;
+        // O id entra no caminho de várias URLs (fluxo, ações, Lances): só o alfabeto e o
+        // comprimento de um id do Lichess, nunca `/`, `..`, `?`, `#` ou `%` (SEC-06).
+        if !super::is_id(&j.game_id) {
+            return Err("Partida com identificador inválido".to_owned());
+        }
         Ok(Self {
             game_id: j.game_id,
             color: local,

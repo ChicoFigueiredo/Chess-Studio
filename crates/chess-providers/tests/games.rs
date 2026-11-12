@@ -323,6 +323,35 @@ fn chesscom_profile_and_archives_parse_the_real_answers() {
 }
 
 #[test]
+fn a_hostile_archive_list_is_deduplicated_and_capped_to_the_newest_months() {
+    // SEC-07: a lista não tinha teto e aceitava meses repetidos (um pedido por item).
+    let env = chesscom_env();
+    let mut urls: Vec<String> = Vec::new();
+    for year in 1990..2090 {
+        for month in 1..=12 {
+            let url = format!("https://api.chess.com/pub/player/erik/games/{year}/{month:02}");
+            urls.push(url.clone());
+            urls.push(url);
+        }
+    }
+    env.server.route(
+        "/pub/player/erik/games/archives",
+        FakeResponse::json(&serde_json::json!({ "archives": urls }).to_string()),
+    );
+
+    let months = env
+        .chesscom
+        .archives("erik")
+        .wait()
+        .expect("arquivos")
+        .value;
+
+    assert_eq!(months.len(), 600);
+    assert!(months.windows(2).all(|w| w[0] < w[1]), "sem repetição");
+    assert_eq!(months.last(), Some(&YearMonth::new(2089, 12).expect("mês")));
+}
+
+#[test]
 fn chesscom_errors_are_typed() {
     let env = env_enabled();
     env.server

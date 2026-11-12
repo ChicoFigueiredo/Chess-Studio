@@ -364,3 +364,32 @@ fn a_newer_request_replaces_the_older_one() {
     assert_eq!(update.id, new, "só vale o pedido mais novo");
     let _ = env;
 }
+
+#[test]
+fn a_hostile_answer_with_a_huge_line_and_many_variants_is_cut_before_validation() {
+    // SEC-07: a continuação e a lista de variantes eram validadas inteiras antes do corte.
+    let (env, mut engine) = setup();
+    let cycle = ["g1f3", "g8f6", "f3g1", "f6g8"];
+    let continuation: Vec<&str> = cycle.iter().copied().cycle().take(3_000).collect();
+    let item = serde_json::json!({
+        "type": "move", "lan": "g1f3", "depth": 12, "eval": 0.2, "centipawns": "20",
+        "continuationArr": continuation,
+    });
+    let items: Vec<&serde_json::Value> = std::iter::repeat_n(&item, 200).collect();
+    env.server.route(
+        "/v1",
+        chess_net::testing::FakeResponse::json(&serde_json::to_string(&items).unwrap()),
+    );
+
+    engine.analyze(PositionSpec::startpos(), 3);
+    let update = update(next_result(&mut engine));
+
+    assert!(update.lines.len() <= usize::from(chess_uci::MAX_MULTIPV));
+    for line in &update.lines {
+        assert!(
+            line.pv.len() <= 64 && line.san.len() <= 64,
+            "{}",
+            line.pv.len()
+        );
+    }
+}

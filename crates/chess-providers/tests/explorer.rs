@@ -502,3 +502,66 @@ fn dropping_a_query_cancels_the_pending_request() {
         Some(Err(ProviderError::Cancelled))
     );
 }
+
+#[test]
+fn counts_that_overflow_do_not_panic() {
+    // SEC-05: `white + draws + black` estourava com números vindos da rede.
+    let env = env_enabled();
+    env.server.route(
+        "/masters",
+        FakeResponse::json(
+            "{\"white\":18446744073709551615,\"draws\":1,\"black\":1,\"moves\":[],\"topGames\":[]}",
+        ),
+    );
+
+    let answer = env
+        .lichess
+        .masters(AFTER_E4, &MastersFilter::default())
+        .wait()
+        .expect("mestres");
+
+    assert_eq!(answer.value.outcomes.total(), u64::MAX);
+    assert_eq!(answer.value.outcomes.white, u64::MAX);
+}
+
+fn wire_games(prefix: &str, count: usize) -> String {
+    let games: Vec<String> = (0..count)
+        .map(|i| {
+            format!(
+                "{{\"id\":\"{prefix}{i}\",\"white\":{{\"name\":\"a\"}},\"black\":{{\"name\":\"b\"}}}}"
+            )
+        })
+        .collect();
+    format!("[{}]", games.join(","))
+}
+
+#[test]
+fn a_huge_games_list_is_capped_and_deduplicated_fast() {
+    // SEC-07: a deduplicação comparava cada recente com todas as de topo (quadrática).
+    let env = env_enabled();
+    let body = format!(
+        "{{\"white\":1,\"draws\":1,\"black\":1,\"moves\":[],\"topGames\":{},\"recentGames\":{}}}",
+        wire_games("t", 60_000),
+        wire_games("t", 60_000),
+    );
+    env.server.route("/masters", FakeResponse::json(&body));
+
+    let started = std::time::Instant::now();
+    let answer = env
+        .lichess
+        .masters(AFTER_E4, &MastersFilter::default())
+        .wait()
+        .expect("mestres");
+
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "{:?}",
+        started.elapsed()
+    );
+    let games = &answer.value.games;
+    assert!(games.len() <= 400, "{}", games.len());
+    assert!(
+        games.iter().all(|g| !g.recent),
+        "ids repetidos entram uma vez"
+    );
+}
