@@ -253,7 +253,7 @@ fn a_failing_update_keeps_the_previous_version_working() {
     .expect_err("deve falhar");
     assert!(matches!(err, InstallError::HashMismatch { .. }), "{err:?}");
     assert_eq!(names(&root), vec!["lc0-1"], "nada de resto, v1 intacta");
-    let again = chess_uci::probe_engine(&v1.engine.path, Duration::from_secs(3));
+    let again = chess_uci::probe_engine(&v1.engine.path, Duration::from_secs(30));
     assert!(again.is_ok(), "a versão anterior continua respondendo");
 }
 

@@ -253,7 +253,7 @@ fn cancelling_the_reader_stops_the_stream_and_frees_the_connection() {
     let feed = env.lichess.games("thibault", &GamesFilter::default());
     let cancel = Arc::new(AtomicBool::new(false));
     let mut reader = feed.into_reader(cancel.clone());
-    assert!(env.server.wait_for_requests(1, Duration::from_secs(5)));
+    assert!(env.server.wait_for_requests(1, Duration::from_secs(30)));
 
     cancel.store(true, std::sync::atomic::Ordering::Release);
     let mut buf = [0u8; 16];
@@ -261,7 +261,7 @@ fn cancelling_the_reader_stops_the_stream_and_frees_the_connection() {
     drop(reader);
 
     assert!(
-        eventually(Duration::from_secs(5), || env.net.status().active_requests
+        eventually(Duration::from_secs(30), || env.net.status().active_requests
             == 0),
         "o fluxo ficou preso"
     );

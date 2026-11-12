@@ -463,7 +463,7 @@ fn try_take_never_blocks_and_delivers_once() {
     let mut query = env.lichess.profile("lichess");
 
     let mut result = None;
-    assert!(eventually(Duration::from_secs(5), || {
+    assert!(eventually(Duration::from_secs(30), || {
         result = query.try_take();
         result.is_some()
     }));

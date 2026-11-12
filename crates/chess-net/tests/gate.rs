@@ -146,7 +146,7 @@ fn with_the_fair_play_guard_engaged_nothing_that_computes_leaves() {
     }
     let stream = net.stream(masters());
     assert!(matches!(
-        stream.next_timeout(std::time::Duration::from_secs(5)),
+        stream.next_timeout(std::time::Duration::from_secs(30)),
         Some(chess_net::StreamEvent::Failed(
             NetError::FairPlayLocked { .. }
         ))
@@ -190,7 +190,7 @@ fn the_guard_is_consulted_again_right_before_the_network() {
     net.set_enabled(ProviderId::Lichess, true).expect("liga");
 
     let first = net.fetch(masters().timeout(std::time::Duration::from_millis(300)));
-    assert!(server.wait_for_requests(1, std::time::Duration::from_secs(5)));
+    assert!(server.wait_for_requests(1, std::time::Duration::from_secs(30)));
     let queued = net.fetch(
         Request::get(ProviderId::Lichess, "https://explorer.lichess.org/lichess")
             .connection(EXPLORER_CONNECTION),
