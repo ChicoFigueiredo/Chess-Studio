@@ -117,8 +117,11 @@ pub enum Action {
     ToggleRibbonCollapse,
     /// Aumenta a Escala da interface (Ctrl+=), até 200%.
     UiZoomIn,
-    /// Diminui a Escala da interface (Ctrl+-), até 80%.
+    /// Diminui a Escala da interface (Ctrl+-), até 30%.
     UiZoomOut,
+    /// Devolve a Escala da interface a 100% (Ctrl+0): saída de emergência quando a tela
+    /// fica ilegível (#315).
+    UiZoomReset,
     /// Início > Nova Partida > Online (Lichess): abre a tela da Partida online.
     NewGameOnline,
     /// Busca adversário no Lichess (tempo real ou correspondência).
@@ -136,7 +139,7 @@ pub enum Action {
 }
 
 impl Action {
-    pub const ALL: [Action; 77] = [
+    pub const ALL: [Action; 78] = [
         Action::Select,
         Action::Adjust,
         Action::Orbit,
@@ -207,6 +210,7 @@ impl Action {
         Action::ToggleRibbonCollapse,
         Action::UiZoomIn,
         Action::UiZoomOut,
+        Action::UiZoomReset,
         Action::NewGameOnline,
         Action::SeekOnline,
         Action::ChallengeOnline,
@@ -296,6 +300,7 @@ impl Action {
             Action::ToggleRibbonCollapse => "toggle-ribbon-collapse",
             Action::UiZoomIn => "ui-zoom-in",
             Action::UiZoomOut => "ui-zoom-out",
+            Action::UiZoomReset => "ui-zoom-reset",
         }
     }
 
@@ -624,6 +629,10 @@ fn defaults_for(action: Action) -> Vec<Trigger> {
         Action::UiZoomOut => vec![
             key("Minus").with_mods(ModSet::CTRL),
             key("NumpadSubtract").with_mods(ModSet::CTRL),
+        ],
+        Action::UiZoomReset => vec![
+            key("Digit0").with_mods(ModSet::CTRL),
+            key("Numpad0").with_mods(ModSet::CTRL),
         ],
         _ => Vec::new(),
     }

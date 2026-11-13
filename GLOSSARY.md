@@ -134,7 +134,7 @@ Busca por nome de qualquer Ação habilitada (Ctrl+K), que a executa ao confirma
 _Evitar_: paleta de comandos, command palette
 
 **Densidade** (_en_: `Density`):
-Espaçamento da interface, Confortável ou Compacta; junto com a Escala da interface (80% a 200%), é preferência do Perfil local, como o Tema.
+Espaçamento da interface, Confortável ou Compacta; junto com a Escala da interface (30% a 200%), é preferência do Perfil local, como o Tema.
 _Evitar_: zoom (para densidade)
 
 **Mapa de controles** (_en_: `ControlMap`):

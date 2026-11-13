@@ -22,7 +22,9 @@ opt-theme-following = Seguindo o sistema: agora { $theme }.
 opt-density = Densidade
 opt-density-hint = Tamanho dos controles: Confortável (32 px) ou Compacta (24 px).
 opt-scale = Escala da interface · { $percent }%
-opt-scale-hint = Aumenta ou diminui toda a interface, de 80% a 200%. Também vale Ctrl+= e Ctrl+-.
+opt-scale-hint = Aumenta ou diminui toda a interface, de 30% a 200%. Vale ao soltar o mouse. Ctrl+= e Ctrl+- andam de 5 em 5; Ctrl+0 volta a 100%.
+opt-scale-type = Digite a Escala e aperte Enter.
+opt-scale-presets = Valores
 opt-interface-profile = Perfil de interface
 opt-interface-profile-hint = Apresentação, painéis e Auxílios de uma vez: de fábrica ou salvos por você.
 opt-quality = Qualidade gráfica
