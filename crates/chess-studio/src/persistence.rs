@@ -59,6 +59,8 @@ const KEY_LEGACY_PANEL_SETS: &str = "panel_sets";
 const KEY_RIBBON: &str = "ribbon_state";
 /// Mapa de controles (US-28): ação -> atalhos, por perfil de usuário.
 const KEY_CONTROLS: &str = "controls";
+/// Tamanho e posição da janela principal (#316), por Perfil local.
+const KEY_WINDOW: &str = "window_geometry";
 /// Efeitos opcionais da qualidade Ultra (US-30): ligados ou desligados.
 const KEY_ULTRA_EFFECTS: &str = "ultra_effects";
 /// Coordenadas a–h / 1–8 nas bordas do tabuleiro (C16): ligadas ou desligadas.
@@ -172,6 +174,7 @@ pub struct Persistence {
     saved_hidden: Option<Value>,
     saved_screen_layouts: Option<Value>,
     saved_ribbon: Option<Value>,
+    saved_window: Option<WindowGeometry>,
     /// Último mapa de controles gravado (ou carregado).
     saved_controls: Option<Value>,
     failing: bool,
@@ -199,6 +202,51 @@ impl std::fmt::Display for ScoresheetError {
 impl From<StoreError> for ScoresheetError {
     fn from(err: StoreError) -> Self {
         Self::Store(err)
+    }
+}
+
+/// Tamanho (em pontos lógicos) e posição da janela principal (#316). A posição é `None` onde
+/// o sistema não a informa nem deixa escolher (Wayland): ali só o tamanho volta.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WindowGeometry {
+    pub width: u32,
+    pub height: u32,
+    pub position: Option<(i32, i32)>,
+}
+
+impl WindowGeometry {
+    /// Menor janela que se grava ou restaura: abaixo disso a interface não cabe.
+    pub const MIN: (u32, u32) = (640, 480);
+    const MAX: u32 = 16_384;
+    /// Posições além disto são lixo (monitor que não existe mais, valor corrompido).
+    const MAX_OFFSET: i32 = 32_000;
+
+    /// Limita o tamanho ao que faz sentido e descarta posição absurda.
+    pub fn new(width: u32, height: u32, position: Option<(i32, i32)>) -> Self {
+        Self {
+            width: width.clamp(Self::MIN.0, Self::MAX),
+            height: height.clamp(Self::MIN.1, Self::MAX),
+            position: position
+                .filter(|(x, y)| x.abs() <= Self::MAX_OFFSET && y.abs() <= Self::MAX_OFFSET),
+        }
+    }
+
+    fn to_json(self) -> Value {
+        json!({
+            "width": self.width,
+            "height": self.height,
+            "position": self.position.map(|(x, y)| [x, y]),
+        })
+    }
+
+    fn from_json(value: &Value) -> Option<Self> {
+        let side = |key: &str| value.get(key)?.as_u64().and_then(|v| u32::try_from(v).ok());
+        let position = value.get("position").and_then(|p| {
+            let x = i32::try_from(p.get(0)?.as_i64()?).ok()?;
+            let y = i32::try_from(p.get(1)?.as_i64()?).ok()?;
+            Some((x, y))
+        });
+        Some(Self::new(side("width")?, side("height")?, position))
     }
 }
 
@@ -249,6 +297,7 @@ impl Persistence {
             saved_hidden: None,
             saved_screen_layouts: None,
             saved_ribbon: None,
+            saved_window: None,
             saved_controls: None,
             failing: false,
             scoresheet_failing: false,
@@ -815,6 +864,28 @@ impl Persistence {
         }
     }
 
+    /// Tamanho e posição da janela gravados; ausente ou ilegível é `None` (a janela abre no
+    /// tamanho de fábrica).
+    pub fn load_window(&mut self) -> Option<WindowGeometry> {
+        let stored = self.store.get_pref(self.profile, KEY_WINDOW).ok().flatten();
+        self.saved_window = stored.as_ref().and_then(WindowGeometry::from_json);
+        self.saved_window
+    }
+
+    /// Grava o tamanho e a posição da janela se mudaram desde a última chamada.
+    pub fn sync_window(&mut self, geometry: WindowGeometry) {
+        if self.saved_window == Some(geometry) {
+            return;
+        }
+        match self
+            .store
+            .set_pref(self.profile, KEY_WINDOW, &geometry.to_json())
+        {
+            Ok(()) => self.saved_window = Some(geometry),
+            Err(err) => self.report(&err),
+        }
+    }
+
     fn notes_key(&self) -> Option<String> {
         self.current.map(|id| format!("{KEY_STUDY_NOTES}.{}", id.0))
     }
@@ -1121,7 +1192,13 @@ impl Plugin for PersistencePlugin {
                 EngineUi::default().with_saved(prefs.engine_user_side, prefs.engine_elo),
             )
             .insert_resource(crate::engine_manager::DbLocation(path.clone()))
+            .insert_resource(WindowMemory {
+                restore: persistence.load_window(),
+                ..WindowMemory::default()
+            })
             .insert_resource(PersistenceHandle(Mutex::new(persistence)))
+            .add_systems(Startup, restore_window)
+            .add_systems(Update, persist_window)
             .add_systems(
                 Update,
                 (
@@ -1320,6 +1397,76 @@ fn persist_profiles(profiles: Res<InterfaceProfiles>, handle: Res<PersistenceHan
     }
 }
 
+/// O que a janela tinha ao abrir e o que foi visto nela desde então (#316).
+#[derive(Resource, Debug, Default)]
+struct WindowMemory {
+    /// Tamanho e posição a devolver à janela no primeiro quadro.
+    restore: Option<WindowGeometry>,
+    seen: Option<WindowGeometry>,
+    /// Quadros seguidos com o mesmo tamanho e posição.
+    stable: u32,
+}
+
+/// Quadros parada antes de gravar: redimensionar ou arrastar a janela muda o tamanho a cada
+/// quadro, e só o estado final interessa.
+const WINDOW_SETTLE_FRAMES: u32 = 30;
+
+/// Tamanho e posição atuais da janela; `None` em tela cheia (que tem preferência própria e
+/// não deve virar o "tamanho" da janela).
+fn window_geometry(window: &Window) -> Option<WindowGeometry> {
+    if window.mode != bevy::window::WindowMode::Windowed {
+        return None;
+    }
+    let position = match window.position {
+        WindowPosition::At(at) => Some((at.x, at.y)),
+        _ => None,
+    };
+    Some(WindowGeometry::new(
+        window.resolution.width().round() as u32,
+        window.resolution.height().round() as u32,
+        position,
+    ))
+}
+
+/// Devolve à janela principal o tamanho e a posição gravados.
+fn restore_window(
+    memory: Res<WindowMemory>,
+    mut windows: Query<&mut Window, With<bevy::window::PrimaryWindow>>,
+) {
+    let (Some(geometry), Ok(mut window)) = (memory.restore, windows.single_mut()) else {
+        return;
+    };
+    window
+        .resolution
+        .set(geometry.width as f32, geometry.height as f32);
+    if let Some((x, y)) = geometry.position {
+        window.position = WindowPosition::At(IVec2::new(x, y));
+    }
+}
+
+/// Grava o tamanho e a posição da janela quando param de mudar.
+fn persist_window(
+    mut memory: ResMut<WindowMemory>,
+    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
+    handle: Res<PersistenceHandle>,
+) {
+    let Some(now) = windows.single().ok().and_then(window_geometry) else {
+        return;
+    };
+    if memory.seen != Some(now) {
+        memory.seen = Some(now);
+        memory.stable = 0;
+        return;
+    }
+    if memory.stable < WINDOW_SETTLE_FRAMES {
+        memory.stable += 1;
+        return;
+    }
+    if let Ok(mut p) = handle.0.lock() {
+        p.sync_window(now);
+    }
+}
+
 /// Lê o estado do Ribbon gravado (a construção do `RibbonPlugin` usa isto).
 pub(crate) fn load_ribbon_setup(world: &World) -> Option<RibbonSetup> {
     let handle = world.get_resource::<PersistenceHandle>()?;
@@ -1360,6 +1507,7 @@ fn close_on_exit(
     profiles: Res<InterfaceProfiles>,
     controls: Res<crate::controls::Controls>,
     ribbon: Option<Res<crate::ribbon::RibbonState>>,
+    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
     exit_prompt: Option<Res<crate::engine_online::exit::ExitPrompt>>,
 ) {
     // Com a pergunta de saída aberta o app segue vivo: a sessão só fecha quando ele sair.
@@ -1373,6 +1521,9 @@ fn close_on_exit(
         p.sync_layout(&dock.layout);
         p.sync_profiles(&profiles.state);
         p.sync_controls(controls.map());
+        if let Some(geometry) = windows.single().ok().and_then(window_geometry) {
+            p.sync_window(geometry);
+        }
         if let Some(ribbon) = ribbon {
             p.sync_ribbon(&ribbon.setup());
         }
@@ -1768,6 +1919,48 @@ mod tests {
     }
 
     /// UI-02: layout, tamanhos e visibilidade persistem no SQLite e voltam ao reabrir.
+    #[test]
+    fn the_window_size_and_position_survive_a_restart() {
+        let mut p = new_persistence();
+        assert_eq!(p.load_window(), None, "banco novo: tamanho de fábrica");
+        let geometry = WindowGeometry::new(1600, 900, Some((120, -40)));
+        p.sync_window(geometry);
+        let mut p2 = Persistence::new(p.into_store());
+        assert_eq!(p2.load_window(), Some(geometry));
+        // Sem posição (Wayland): só o tamanho volta.
+        let sized = WindowGeometry::new(1024, 700, None);
+        p2.sync_window(sized);
+        let mut p3 = Persistence::new(p2.into_store());
+        assert_eq!(p3.load_window(), Some(sized));
+    }
+
+    #[test]
+    fn an_absurd_window_geometry_is_tamed_and_garbage_is_ignored() {
+        let tiny = WindowGeometry::new(10, 10, Some((999_999, 0)));
+        assert_eq!((tiny.width, tiny.height), WindowGeometry::MIN);
+        assert_eq!(tiny.position, None);
+        assert_eq!(WindowGeometry::from_json(&json!("lixo")), None);
+        assert_eq!(WindowGeometry::from_json(&json!({"width": 800})), None);
+        assert_eq!(
+            WindowGeometry::from_json(&json!({"width": 800, "height": 600, "position": null})),
+            Some(WindowGeometry::new(800, 600, None))
+        );
+    }
+
+    #[test]
+    fn a_fullscreen_window_is_not_recorded_as_the_window_size() {
+        let mut window = Window::default();
+        window.resolution.set(1280.0, 720.0);
+        window.position = WindowPosition::At(IVec2::new(30, 40));
+        assert_eq!(
+            window_geometry(&window),
+            Some(WindowGeometry::new(1280, 720, Some((30, 40))))
+        );
+        window.mode =
+            bevy::window::WindowMode::BorderlessFullscreen(bevy::window::MonitorSelection::Current);
+        assert_eq!(window_geometry(&window), None);
+    }
+
     #[test]
     fn dock_layout_round_trips_through_sqlite() {
         use crate::dock::ids;
