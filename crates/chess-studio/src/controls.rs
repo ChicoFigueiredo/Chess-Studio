@@ -326,7 +326,7 @@ const POINTER_ACTIONS: [Action; 5] = [
     Action::Pan,
     Action::Zoom,
 ];
-const KEY_ACTIONS: [Action; 22] = [
+const KEY_ACTIONS: [Action; 23] = [
     Action::Cancel,
     Action::ClockPress,
     Action::ViewTop,
@@ -350,6 +350,7 @@ const KEY_ACTIONS: [Action; 22] = [
     Action::ToggleRibbonCollapse,
     Action::UiZoomIn,
     Action::UiZoomOut,
+    Action::UiZoomReset,
 ];
 
 /// A Ação tem linha na tela "Controles".

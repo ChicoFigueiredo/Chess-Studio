@@ -428,6 +428,14 @@ pub fn meta(action: Action) -> ActionMeta {
             "interface",
             "ID"
         ),
+        A::UiZoomReset => item!(
+            "ui-zoom-reset",
+            "magnifying-glass",
+            Command,
+            View,
+            "interface",
+            "IZ"
+        ),
         A::ToggleRibbonCollapse => item!(
             "toggle-ribbon-collapse",
             "caret-line-up",

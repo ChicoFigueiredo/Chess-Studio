@@ -389,6 +389,7 @@ impl ActionEnv<'_> {
             Action::ExportPgn => self.export_pgn(),
             Action::UiZoomIn => self.appearance.scale = self.appearance.scale.zoom_in(),
             Action::UiZoomOut => self.appearance.scale = self.appearance.scale.zoom_out(),
+            Action::UiZoomReset => self.appearance.scale = crate::ui_theme::UiScale::default(),
             other => match other.panel() {
                 Some((id, _)) => self.toggle_panel(id),
                 // Gestos, ClockPress/Cancel (consumidos por `clock` e `play`) e superfícies

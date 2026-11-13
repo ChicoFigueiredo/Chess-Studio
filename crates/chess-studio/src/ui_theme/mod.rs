@@ -134,7 +134,7 @@ pub fn apply_to_context(
     if !state.fonts_requested {
         // As fontes só valem no passe seguinte; os estilos que as usam esperam por ele.
         ctx.set_fonts(fonts::definitions());
-        // A Escala é nossa (Ações UiZoomIn e UiZoomOut, em degraus); o atalho de zoom do egui sai.
+        // A Escala é nossa (Ações UiZoomIn, UiZoomOut e UiZoomReset); o atalho de zoom do egui sai.
         ctx.options_mut(|o| o.zoom_with_keyboard = false);
         state.fonts_requested = true;
         return;

@@ -90,45 +90,59 @@ impl Density {
     }
 }
 
-/// Escala da interface em porcentagem, sempre entre 80% e 200% (DS-13).
+/// Escala da interface em porcentagem, sempre entre 30% e 200% (DS-13, #315).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct UiScale(u16);
 
 impl UiScale {
-    pub const MIN_PERCENT: u16 = 80;
+    pub const MIN_PERCENT: u16 = 30;
     pub const MAX_PERCENT: u16 = 200;
-    /// Degraus de Ctrl+= e Ctrl+-.
-    const STEPS: [u16; 9] = [80, 90, 100, 110, 125, 150, 175, 190, 200];
+    /// Passo do controle deslizante e de Ctrl+= e Ctrl+-.
+    pub const STEP_PERCENT: u16 = 5;
+    /// Valores prontos da lista ao lado do controle deslizante.
+    pub const PRESETS: [u16; 7] = [30, 50, 75, 100, 125, 150, 200];
 
     /// Limita ao intervalo permitido.
     pub fn from_percent(percent: i64) -> Self {
         Self(percent.clamp(Self::MIN_PERCENT.into(), Self::MAX_PERCENT.into()) as u16)
     }
 
+    /// Lê o que o usuário digitou na caixa da Escala: `85`, `85%` ou ` 85 % `. Fora da faixa é
+    /// limitado a ela; um valor que não é múltiplo do passo vale como está. O que não é número
+    /// inteiro devolve `None` (a caixa volta ao valor em uso).
+    pub fn parse(text: &str) -> Option<Self> {
+        let digits = text.trim().trim_end_matches('%').trim_end();
+        digits.parse::<i64>().ok().map(Self::from_percent)
+    }
+
     pub fn percent(self) -> u16 {
         self.0
     }
 
-    /// Multiplicador do egui (`zoom_factor`), de 0,8 a 2,0.
+    /// Multiplicador do egui (`zoom_factor`), de 0,3 a 2,0.
     pub fn factor(self) -> f32 {
         f32::from(self.0) / 100.0
     }
 
-    /// Próximo degrau acima (Ctrl+=); no máximo, fica onde está.
+    /// Próximo múltiplo do passo acima (Ctrl+=); no máximo, fica onde está.
     pub fn zoom_in(self) -> Self {
-        Self::STEPS
-            .into_iter()
-            .find(|&s| s > self.0)
-            .map_or(self, Self)
+        let step = Self::STEP_PERCENT;
+        Self::from_percent(i64::from((self.0 / step + 1) * step))
     }
 
-    /// Próximo degrau abaixo (Ctrl+-); no mínimo, fica onde está.
+    /// Próximo múltiplo do passo abaixo (Ctrl+-); no mínimo, fica onde está.
     pub fn zoom_out(self) -> Self {
-        Self::STEPS
-            .into_iter()
-            .rev()
-            .find(|&s| s < self.0)
-            .map_or(self, Self)
+        let step = Self::STEP_PERCENT;
+        Self::from_percent(i64::from(self.0.saturating_sub(1) / step * step))
+    }
+
+    /// O controle deslizante só aplica a Escala ao soltar o mouse (#315): mudar a Escala muda o
+    /// layout inteiro, e aplicar a cada movimento faz a tela pular debaixo do cursor. `draft` é
+    /// o valor mostrado no controle e `holding` diz se o botão do mouse ainda está apertado
+    /// nele. Devolve a Escala a aplicar agora, se houver.
+    pub fn settle(self, draft: f32, holding: bool) -> Option<Self> {
+        let wanted = Self::from_percent(draft.round() as i64);
+        (!holding && wanted != self).then_some(wanted)
     }
 }
 
@@ -168,34 +182,71 @@ mod tests {
     }
 
     #[test]
-    fn scale_is_clamped_to_80_through_200_percent() {
-        assert_eq!(UiScale::from_percent(10).percent(), 80);
-        assert_eq!(UiScale::from_percent(-5).percent(), 80);
+    fn scale_is_clamped_to_30_through_200_percent() {
+        assert_eq!(UiScale::from_percent(10).percent(), 30);
+        assert_eq!(UiScale::from_percent(-5).percent(), 30);
         assert_eq!(UiScale::from_percent(500).percent(), 200);
         assert_eq!(UiScale::from_percent(125).percent(), 125);
-        assert!((UiScale::from_percent(80).factor() - 0.8).abs() < 1e-6);
+        assert!((UiScale::from_percent(30).factor() - 0.3).abs() < 1e-6);
         assert!((UiScale::from_percent(200).factor() - 2.0).abs() < 1e-6);
         assert_eq!(UiScale::default().percent(), 100);
     }
 
     #[test]
-    fn zoom_steps_walk_the_ladder_and_stop_at_the_ends() {
+    fn zoom_steps_walk_five_by_five_and_stop_at_the_ends() {
         let mut s = UiScale::default();
         s = s.zoom_in();
-        assert_eq!(s.percent(), 110);
+        assert_eq!(s.percent(), 105);
         s = s.zoom_out().zoom_out();
-        assert_eq!(s.percent(), 90);
-        for _ in 0..20 {
+        assert_eq!(s.percent(), 95);
+        for _ in 0..50 {
             s = s.zoom_in();
         }
         assert_eq!(s.percent(), 200);
-        for _ in 0..20 {
+        for _ in 0..50 {
             s = s.zoom_out();
         }
-        assert_eq!(s.percent(), 80);
-        // Um valor fora da escada (125 vira 150, 118 vira 125 e volta a 110).
-        assert_eq!(UiScale::from_percent(118).zoom_in().percent(), 125);
-        assert_eq!(UiScale::from_percent(118).zoom_out().percent(), 110);
+        assert_eq!(s.percent(), 30);
+        // Um valor digitado fora do passo volta para a grade no primeiro toque.
+        assert_eq!(UiScale::from_percent(118).zoom_in().percent(), 120);
+        assert_eq!(UiScale::from_percent(118).zoom_out().percent(), 115);
+    }
+
+    #[test]
+    fn the_presets_are_inside_the_range_and_on_the_step() {
+        for p in UiScale::PRESETS {
+            assert_eq!(UiScale::from_percent(p.into()).percent(), p);
+            assert_eq!(p % UiScale::STEP_PERCENT, 0);
+        }
+        assert_eq!(UiScale::PRESETS[0], UiScale::MIN_PERCENT);
+        assert_eq!(UiScale::PRESETS[6], UiScale::MAX_PERCENT);
+    }
+
+    #[test]
+    fn the_typed_scale_accepts_a_number_with_or_without_the_percent_sign() {
+        assert_eq!(UiScale::parse("85").map(UiScale::percent), Some(85));
+        assert_eq!(UiScale::parse(" 85 % ").map(UiScale::percent), Some(85));
+        // Fora do passo vale como está; fora da faixa é limitado.
+        assert_eq!(UiScale::parse("87").map(UiScale::percent), Some(87));
+        assert_eq!(UiScale::parse("5").map(UiScale::percent), Some(30));
+        assert_eq!(UiScale::parse("999%").map(UiScale::percent), Some(200));
+        assert_eq!(UiScale::parse(""), None);
+        assert_eq!(UiScale::parse("grande"), None);
+        assert_eq!(UiScale::parse("1,5"), None);
+    }
+
+    #[test]
+    fn the_slider_applies_the_scale_only_when_the_mouse_is_released() {
+        let now = UiScale::default();
+        // Arrastando: nada muda, por mais longe que o controle vá.
+        assert_eq!(now.settle(45.0, true), None);
+        assert_eq!(now.settle(200.0, true), None);
+        // Soltou: aplica o valor em que parou.
+        assert_eq!(now.settle(45.0, false).map(UiScale::percent), Some(45));
+        // Soltou onde já estava: nada a aplicar.
+        assert_eq!(now.settle(100.0, false), None);
+        // Teclado (sem botão apertado): aplica na hora.
+        assert_eq!(now.settle(105.0, false).map(UiScale::percent), Some(105));
     }
 
     /// A preferência antiga (o `Debug` do enum de antes) continua carregando.

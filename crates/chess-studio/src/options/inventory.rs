@@ -273,7 +273,7 @@ pub const INVENTORY: &[InventoryItem] = &[
             Opt(OptionId::Theme),
             Opt(OptionId::Density),
             Opt(OptionId::Scale),
-            Actions(&[Action::UiZoomIn, Action::UiZoomOut]),
+            Actions(&[Action::UiZoomIn, Action::UiZoomOut, Action::UiZoomReset]),
         ],
     },
     InventoryItem {

@@ -31,7 +31,8 @@ use crate::profiles::InterfaceProfiles;
 use crate::session::Session;
 use crate::ui_theme::{
     Appearance, ButtonVariant, Density, Palette, ThemeMode, UiScale, cs_button, cs_dropdown,
-    cs_radio_value, cs_slider, cs_switch, icon_job, palette, strong,
+    cs_dropdown_placeholder, cs_radio_value, cs_slider, cs_switch, cs_text_field, icon_job,
+    palette, strong,
 };
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
@@ -614,6 +615,86 @@ fn footer(ui: &mut egui::Ui, i18n: &I18n, state: &mut OptionsUi, env: &mut Optio
     });
 }
 
+/// Escala da interface (#315): controle deslizante que só aplica ao soltar o mouse, uma caixa
+/// para digitar o valor e a lista de valores prontos. Devolve a Escala a aplicar, se houver.
+fn scale_control(ui: &mut egui::Ui, i18n: &I18n, current: UiScale) -> Option<UiScale> {
+    let draft_id = ui.id().with("options/scale-draft");
+    let text_id = ui.id().with("options/scale-text");
+    let mut draft: f32 = ui
+        .data(|d| d.get_temp(draft_id))
+        .unwrap_or_else(|| f32::from(current.percent()));
+    let mut picked = None;
+
+    let (_, hint_key) = OptionId::Scale.texts();
+    let muted = palette(ui).ink_muted;
+    let shown = UiScale::from_percent(draft.round() as i64).percent();
+    let label = i18n.t_with("opt-scale", &[("percent", &shown.to_string())]);
+    ui.label(strong(ui.ctx(), label));
+    ui.label(egui::RichText::new(i18n.t(hint_key)).small().color(muted));
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        let slider = cs_slider(
+            ui,
+            &mut draft,
+            f32::from(UiScale::MIN_PERCENT)..=f32::from(UiScale::MAX_PERCENT),
+            f32::from(UiScale::STEP_PERCENT),
+        );
+        let holding = slider.is_pointer_button_down_on();
+        if let Some(scale) = current.settle(draft, holding) {
+            picked = Some(scale);
+        }
+        if holding {
+            ui.data_mut(|d| d.insert_temp(draft_id, draft));
+        } else {
+            ui.data_mut(|d| d.remove::<f32>(draft_id));
+        }
+
+        // Caixa de digitar: enquanto não tem o foco, acompanha o valor do controle.
+        let mut text: String = ui
+            .data(|d| d.get_temp(text_id))
+            .unwrap_or_else(|| shown.to_string());
+        let field = ui
+            .scope(|ui| {
+                ui.set_max_width(64.0);
+                cs_text_field(ui, &mut text, "", None)
+            })
+            .inner
+            .on_hover_text(i18n.t("opt-scale-type"));
+        ui.label("%");
+        if field.lost_focus() {
+            if ui.input(|i| i.key_pressed(egui::Key::Enter))
+                && let Some(scale) = UiScale::parse(&text)
+                && scale != current
+            {
+                picked = Some(scale);
+            }
+            ui.data_mut(|d| d.remove::<String>(text_id));
+        } else if field.has_focus() {
+            ui.data_mut(|d| d.insert_temp(text_id, text));
+        }
+
+        // Lista de valores prontos: escolher um aplica na hora.
+        let presets: Vec<(u16, String)> = UiScale::PRESETS
+            .iter()
+            .map(|p| (*p, format!("{p}%")))
+            .collect();
+        let mut preset = current.percent();
+        cs_dropdown_placeholder(
+            ui,
+            "options/scale-presets",
+            &mut preset,
+            &presets,
+            &i18n.t("opt-scale-presets"),
+        );
+        if preset != current.percent() {
+            picked = Some(UiScale::from_percent(preset.into()));
+        }
+    });
+    ui.add_space(6.0);
+    ui.separator();
+    picked
+}
+
 /// Linha: rótulo e explicação à esquerda, controle à direita.
 fn row(
     ui: &mut egui::Ui,
@@ -716,18 +797,9 @@ fn appearance(ui: &mut egui::Ui, i18n: &I18n, env: &mut OptionsEnv) {
     });
     env.apply(OptionChange::Density(density));
 
-    let percent = env.appearance.scale.percent();
-    let mut slider = f32::from(percent);
-    let label = i18n.t_with("opt-scale", &[("percent", &percent.to_string())]);
-    row(ui, i18n, OptionId::Scale, Some(label), |ui| {
-        cs_slider(
-            ui,
-            &mut slider,
-            f32::from(UiScale::MIN_PERCENT)..=f32::from(UiScale::MAX_PERCENT),
-            5.0,
-        );
-    });
-    env.apply(OptionChange::Scale(slider.round() as u16));
+    if let Some(scale) = scale_control(ui, i18n, env.appearance.scale) {
+        env.apply(OptionChange::Scale(scale.percent()));
+    }
 
     block_row(ui, i18n, OptionId::InterfaceProfile, |ui| {
         crate::profiles::profiles_section(ui, i18n, &mut env.extra.profiles);
