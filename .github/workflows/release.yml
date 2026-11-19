@@ -6,8 +6,16 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag do draft release (ex.: v0.1.0-rc1)'
+        description: 'Tag do release (ex.: v0.1.0-rc1)'
         required: true
+      publicar:
+        description: 'Publicar direto, visível a todos (tag com "-" vira pre-release). Desmarcado: só draft.'
+        type: boolean
+        default: false
+      alvo:
+        description: 'SHA do commit onde criar a tag (vazio: o commit do workflow). Fora de .github/, o código precisa ser idêntico.'
+        required: false
+        default: ''
 
 env:
   CARGO_TERM_COLOR: always
@@ -70,12 +78,31 @@ jobs:
             dist/*.tar.gz
             dist/*.dmg
 
-  draft-release:
+  release:
     needs: [linux, windows, macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      REPO: ${{ github.repository }}
+      PUBLICAR: ${{ github.event.inputs.publicar || 'false' }}
+      ALVO: ${{ github.event.inputs.alvo || github.sha }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Alvo da tag com o mesmo código dos pacotes
+        run: |
+          ALVO=$(git rev-parse --verify "$ALVO^{commit}")
+          echo "ALVO=$ALVO" >> "$GITHUB_ENV"
+          # Os pacotes vêm de $GITHUB_SHA; a tag só pode apontar para um commit com o mesmo código.
+          if ! git diff --quiet "$ALVO" "$GITHUB_SHA" -- . ':(exclude).github'; then
+            git diff --stat "$ALVO" "$GITHUB_SHA" -- . ':(exclude).github'
+            echo "::error::$ALVO tem código diferente de $GITHUB_SHA (fora de .github/)"
+            exit 1
+          fi
       - uses: actions/download-artifact@v4
         with:
           path: artefatos
@@ -88,17 +115,29 @@ jobs:
           ls -la
           sha256sum *.tar.gz *.deb *.zip *.dmg > SHA256SUMS
           cat SHA256SUMS
-      - name: Draft release (nunca publicado automaticamente)
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.inputs.tag || github.ref_name }}
-          REPO: ${{ github.repository }}
+      - name: Release (draft, a menos que publicar=true)
         working-directory: artefatos
         run: |
           if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
             gh release upload "$TAG" --repo "$REPO" --clobber *.tar.gz *.deb *.zip *.dmg SHA256SUMS THIRD-PARTY-LICENSES
-          else
-            gh release create "$TAG" --repo "$REPO" --draft --target "${{ github.sha }}" \
-              --title "$TAG" --notes "Draft gerado pela CI. Revise antes de publicar." \
-              *.tar.gz *.deb *.zip *.dmg SHA256SUMS THIRD-PARTY-LICENSES
+            exit 0
           fi
+          if [[ "$PUBLICAR" == "true" ]]; then
+            MODO=()
+            [[ "$TAG" == *-* ]] && MODO=(--prerelease)
+            cat > ../notas.md <<NOTAS
+          Pacotes gerados pela CI a partir do commit ${ALVO:0:7}, sem assinatura nem notarização.
+
+          - **Linux:** \`.deb\` (Ubuntu/Debian) ou \`.tar.gz\` portátil (x86_64)
+          - **Windows:** \`.zip\` portátil (x86_64); o SmartScreen avisa na primeira execução
+          - **macOS:** \`.dmg\` ou \`.tar.gz\` com o \`Chess Studio.app\` (Apple Silicon); o Gatekeeper bloqueia a primeira abertura
+
+          Como instalar e liberar os avisos: \`INSTALACAO.md\` dentro de cada pacote. Confira os downloads com \`SHA256SUMS\`.
+          NOTAS
+          else
+            MODO=(--draft)
+            echo "Draft gerado pela CI. Revise antes de publicar." > ../notas.md
+          fi
+          gh release create "$TAG" --repo "$REPO" "${MODO[@]}" --target "$ALVO" \
+            --title "$TAG" --notes-file ../notas.md \
+            *.tar.gz *.deb *.zip *.dmg SHA256SUMS THIRD-PARTY-LICENSES
