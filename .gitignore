@@ -10,3 +10,4 @@ Thumbs.db
 .mcp copy.json
 .claude/worktrees/
 /dist/
+tmp/

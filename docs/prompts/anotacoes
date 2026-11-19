@@ -1,0 +1,8 @@
+- Incluir ponteiro mão ao passar sobre a peça (indicador de move)
+- clicar/dar a sensação de clicar na peça ao 'passar por cima da peça e clicar'
+   - passar o mouse sobre a peça seleciona a peça por assim dizer
+- opção para mostrar/ocultar coordenadas (a-h/1-8) nas bordas do tabuleiro
+- Adição de um gadget para uma visão 2D técnico ao lado
+- permitir alterar a ordem / dock dos gadgets laterais (exemplo, ter o visão 2D Técnico como aba na mesma caixa de notação e/ou janeleta separada e/ou um grad separado)
+- consulta biblioteca de aberturas para verificar estatísticas em gadget próprio
+- nos gadgets aparece maozinha e no tabuleiro ponto :(
