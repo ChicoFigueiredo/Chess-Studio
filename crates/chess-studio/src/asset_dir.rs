@@ -17,8 +17,12 @@ pub fn candidates(platform: Platform, exe_dir: &Path) -> Vec<PathBuf> {
     // Tarball/zip: assets ao lado do executável.
     let mut list = vec![exe_dir.join("assets")];
     match platform {
-        // Linux instalado (/usr/bin -> /usr/share/chess-studio/assets).
-        Platform::Linux => list.push(exe_dir.join("../share/chess-studio/assets")),
+        // Linux instalado: .deb e AppImage do cargo-packager (/usr/bin -> /usr/lib/chess-studio)
+        // e o layout FHS clássico (/usr/bin -> /usr/share/chess-studio).
+        Platform::Linux => list.extend([
+            exe_dir.join("../lib/chess-studio/assets"),
+            exe_dir.join("../share/chess-studio/assets"),
+        ]),
         // Chess Studio.app/Contents/MacOS/chess-studio -> Contents/Resources/assets.
         Platform::MacOs => list.push(exe_dir.join("../Resources/assets")),
         Platform::Windows => {}
@@ -114,6 +118,20 @@ mod tests {
     }
 
     #[test]
+    fn linux_installer_package_uses_lib() {
+        // .deb e AppImage do cargo-packager: /usr/bin/chess-studio + /usr/lib/chess-studio/assets.
+        let want = PathBuf::from("/usr/bin/../lib/chess-studio/assets");
+        let got = resolve(
+            Platform::Linux,
+            Some(Path::new("/usr/bin")),
+            &no_env,
+            &|c| c == want,
+            Path::new("/dev/assets"),
+        );
+        assert_eq!(got, want);
+    }
+
+    #[test]
     fn macos_bundle_uses_resources() {
         let want = PathBuf::from("/A/Chess Studio.app/Contents/MacOS/../Resources/assets");
         let got = resolve(
@@ -127,16 +145,20 @@ mod tests {
     }
 
     #[test]
-    fn share_layout_is_ignored_outside_linux() {
-        let share = PathBuf::from("/usr/bin/../share/chess-studio/assets");
-        let got = resolve(
-            Platform::Windows,
-            Some(Path::new("/usr/bin")),
-            &no_env,
-            &|c| c == share,
-            Path::new("/dev/assets"),
-        );
-        assert_eq!(got, PathBuf::from("/dev/assets"));
+    fn share_and_lib_layouts_are_ignored_outside_linux() {
+        for linux_only in ["share", "lib"] {
+            let cand = PathBuf::from(format!("/usr/bin/../{linux_only}/chess-studio/assets"));
+            for p in [Platform::Windows, Platform::MacOs] {
+                let got = resolve(
+                    p,
+                    Some(Path::new("/usr/bin")),
+                    &no_env,
+                    &|c| c == cand,
+                    Path::new("/dev/assets"),
+                );
+                assert_eq!(got, PathBuf::from("/dev/assets"), "{linux_only} em {p:?}");
+            }
+        }
     }
 
     #[test]

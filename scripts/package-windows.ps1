@@ -1,5 +1,6 @@
-# Empacota o Chess Studio para Windows em dist\: .zip portátil (executável + assets).
+# Empacota o Chess Studio para Windows em dist\: instalador NSIS (-setup.exe) e .zip portátil.
 # Uso (PowerShell, na raiz do repositório): .\scripts\package-windows.ps1 [-SkipBuild]
+# Requer cargo-packager (cargo install cargo-packager --locked --version 0.11.8); ele baixa o NSIS.
 param([switch]$SkipBuild)
 $ErrorActionPreference = "Stop"
 Set-Location (Join-Path $PSScriptRoot "..")
@@ -26,5 +27,20 @@ $zip = "dist\$name.zip"
 if (Test-Path $zip) { Remove-Item $zip }
 Compress-Archive -Path $stage -DestinationPath $zip
 Remove-Item -Recurse -Force $stage
-Get-FileHash $zip -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $name.zip" } | Set-Content dist\SHA256SUMS-windows
 Write-Host "gerado: $zip"
+
+# --- Instalador (cargo-packager + NSIS): só para o usuário atual, atalho no Menu Iniciar ---------
+if (-not (Get-Command cargo-packager -ErrorAction SilentlyContinue)) {
+  throw "cargo-packager ausente: cargo install cargo-packager --locked --version 0.11.8"
+}
+$out = Join-Path (Get-Location) "dist\packager"
+if (Test-Path $out) { Remove-Item -Recurse -Force $out }
+cargo packager --release -p chess-studio --formats nsis --out-dir $out
+if ($LASTEXITCODE) { throw "cargo packager falhou" }
+$setup = "dist\$name-setup.exe"
+Move-Item -Force (Join-Path $out "chess-studio_${version}_x64-setup.exe") $setup
+Remove-Item -Recurse -Force $out
+Write-Host "gerado: $setup"
+
+Get-ChildItem $zip, $setup | Get-FileHash -Algorithm SHA256 |
+  ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path -Leaf $_.Path)" } | Set-Content dist\SHA256SUMS-windows

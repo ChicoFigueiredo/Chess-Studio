@@ -70,6 +70,10 @@ jiff = "0.2"
 # em tempo de execução, `zenity` de reserva; sem GTK) e os backends nativos de Windows e macOS.
 rfd = { version = "0.18", default-features = false, features = ["xdg-portal"] }
 
+[build-dependencies]
+# Ícone e nome do app no .exe do Windows (MIT); só age quando o alvo é Windows (build.rs).
+winresource = "0.1.34"
+
 [dev-dependencies]
 png = "0.18"
 # Servidor falso da camada de rede (CX-17): só nos testes, nunca serviço real.
@@ -77,3 +81,56 @@ chess-net = { workspace = true, features = ["testing"] }
 
 [lints]
 workspace = true
+
+# Instaladores (`cargo packager --release`, ferramenta MIT OR Apache-2.0, não é dependência do app):
+# NSIS no Windows, .app/.dmg no macOS, .deb e AppImage no Linux. Caminhos relativos a este diretório.
+# Use pelos scripts/package-*.sh, que compilam antes e dão nome aos arquivos em dist/.
+[package.metadata.packager]
+product-name = "Chess Studio"
+identifier = "io.github.chicofigueiredo.chess-studio"
+description = "Mesa pessoal de treinamento de xadrez"
+long-description = "Tabuleiro 3D e 2D, tres politicas de arbitragem e Engine UCI externa. Funciona offline, sem login."
+homepage = "https://github.com/ChicoFigueiredo/Chess-Studio"
+authors = ["Chico Figueiredo"]
+publisher = "Chico Figueiredo"
+copyright = "Chico Figueiredo. MIT OR Apache-2.0"
+category = "BoardGame"
+binaries = [{ path = "chess-studio", main = true }]
+# Ícone provisório (scripts/gerar-icone.py); o .icns e os ícones do Linux saem dos PNGs.
+icons = [
+    "icons/32x32.png",
+    "icons/64x64.png",
+    "icons/128x128.png",
+    "icons/128x128@2x.png",
+    "icons/256x256.png",
+    "icons/512x512.png",
+    "icons/512x512@2x.png",
+    "icons/icon.ico",
+]
+# Windows: $INSTDIR\assets; macOS: Contents/Resources/assets; Linux: /usr/lib/chess-studio/assets.
+resources = [
+    "assets",
+    "../../LICENSE-MIT",
+    "../../LICENSE-APACHE",
+    "../../THIRD-PARTY-LICENSES",
+]
+
+[package.metadata.packager.macos]
+minimum-system-version = "12.0"
+
+[package.metadata.packager.nsis]
+# Só para o usuário atual: sem pedir administrador.
+installer-mode = "currentUser"
+installer-icon = "icons/icon.ico"
+languages = ["PortugueseBR"]
+
+[package.metadata.packager.deb]
+section = "games"
+depends = [
+    "libc6",
+    "libvulkan1",
+    "libxkbcommon0",
+    "libxkbcommon-x11-0",
+    "libwayland-client0",
+    "libudev1",
+]

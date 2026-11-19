@@ -20,6 +20,8 @@ on:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
+  # Instaladores (scripts/package-*): mesma versão nos três sistemas.
+  PACKAGER_VERSION: 0.11.8
 
 jobs:
   linux:
@@ -39,13 +41,18 @@ jobs:
         run: |
           cargo install cargo-about --locked --features cli
           scripts/gerar-licencas.sh
+      - run: cargo install cargo-packager --locked --version "$PACKAGER_VERSION"
       - run: scripts/package-linux.sh
+        env:
+          # linuxdeploy e appimagetool são AppImages; o runner não tem FUSE.
+          APPIMAGE_EXTRACT_AND_RUN: 1
       - uses: actions/upload-artifact@v4
         with:
           name: linux
           path: |
             dist/*.tar.gz
             dist/*.deb
+            dist/*.AppImage
             THIRD-PARTY-LICENSES
 
   windows:
@@ -56,12 +63,16 @@ jobs:
       - shell: bash
         run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-packager --locked --version "$PACKAGER_VERSION"
+        shell: bash
       - run: .\scripts\package-windows.ps1
         shell: pwsh
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: dist/*.zip
+          path: |
+            dist/*.zip
+            dist/*-setup.exe
 
   macos:
     runs-on: macos-latest
@@ -70,13 +81,12 @@ jobs:
       - uses: actions/checkout@v4
       - run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-packager --locked --version "$PACKAGER_VERSION"
       - run: scripts/package-macos.sh
       - uses: actions/upload-artifact@v4
         with:
           name: macos
-          path: |
-            dist/*.tar.gz
-            dist/*.dmg
+          path: dist/*.dmg
 
   release:
     needs: [linux, windows, macos]
@@ -113,31 +123,35 @@ jobs:
           # Uploads com vários caminhos guardam a pasta (ex.: dist/); traz tudo para a raiz.
           find . -mindepth 2 -type f -exec mv -f -t . {} +
           ls -la
-          sha256sum *.tar.gz *.deb *.zip *.dmg > SHA256SUMS
+          # Glob sem arquivo fica literal e o sha256sum falha: falta de pacote derruba o release.
+          sha256sum *.dmg *-setup.exe *.zip *.AppImage *.deb *.tar.gz > SHA256SUMS
           cat SHA256SUMS
       - name: Release (draft, a menos que publicar=true)
         working-directory: artefatos
         run: |
+          ARQUIVOS=(*.dmg *-setup.exe *.zip *.AppImage *.deb *.tar.gz SHA256SUMS THIRD-PARTY-LICENSES)
           if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
-            gh release upload "$TAG" --repo "$REPO" --clobber *.tar.gz *.deb *.zip *.dmg SHA256SUMS THIRD-PARTY-LICENSES
+            gh release upload "$TAG" --repo "$REPO" --clobber "${ARQUIVOS[@]}"
             exit 0
           fi
           if [[ "$PUBLICAR" == "true" ]]; then
             MODO=()
             [[ "$TAG" == *-* ]] && MODO=(--prerelease)
+            GUIA="https://github.com/$REPO/blob/$ALVO/docs/instalacao.md"
             cat > ../notas.md <<NOTAS
-          Pacotes gerados pela CI a partir do commit ${ALVO:0:7}, sem assinatura nem notarização.
+          Gerado pela CI a partir do commit ${ALVO:0:7}. Pacotes sem assinatura nem notarização; ícone provisório.
 
-          - **Linux:** \`.deb\` (Ubuntu/Debian) ou \`.tar.gz\` portátil (x86_64)
-          - **Windows:** \`.zip\` portátil (x86_64); o SmartScreen avisa na primeira execução
-          - **macOS:** \`.dmg\` ou \`.tar.gz\` com o \`Chess Studio.app\` (Apple Silicon); o Gatekeeper bloqueia a primeira abertura
+          | Sistema | Baixe | Como instalar |
+          |---|---|---|
+          | **macOS** (Apple Silicon, M1 ou mais novo) | \`$(ls *.dmg)\` | Abra o .dmg e arraste o Chess Studio para Aplicativos. Na primeira abertura o Gatekeeper bloqueia: Ajustes do Sistema > Privacidade e Segurança > **Abrir Mesmo Assim** |
+          | **Windows** 10/11 (x64) | \`$(ls *-setup.exe)\` | Execute o instalador (não pede administrador); cria o atalho no Menu Iniciar. SmartScreen: **Mais informações** > **Executar mesmo assim**. Portátil: \`$(ls *.zip)\` |
+          | **Linux** (x86_64) | \`$(ls *.AppImage)\` | Arquivo único: marque como executável e abra. Ou \`sudo apt install ./$(ls *.deb)\` (Ubuntu/Debian). Portátil: \`$(ls *.tar.gz)\` |
 
-          Como instalar e liberar os avisos: \`INSTALACAO.md\` dentro de cada pacote. Confira os downloads com \`SHA256SUMS\`.
+          Passo a passo, desinstalação e onde ficam os dados: [guia de instalação]($GUIA). Confira os downloads com \`SHA256SUMS\`.
           NOTAS
           else
             MODO=(--draft)
             echo "Draft gerado pela CI. Revise antes de publicar." > ../notas.md
           fi
           gh release create "$TAG" --repo "$REPO" "${MODO[@]}" --target "$ALVO" \
-            --title "$TAG" --notes-file ../notas.md \
-            *.tar.gz *.deb *.zip *.dmg SHA256SUMS THIRD-PARTY-LICENSES
+            --title "$TAG" --notes-file ../notas.md "${ARQUIVOS[@]}"

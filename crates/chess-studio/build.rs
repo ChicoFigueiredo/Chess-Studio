@@ -1,8 +1,12 @@
-//! Embute o commit git (curto) no binário para o relatório do benchmark.
+//! Embute o commit git (curto) no binário para o relatório do benchmark e, no Windows, o ícone
+//! e o nome do app no `.exe` (atalhos do instalador e Gerenciador de Tarefas usam os do executável).
 
 use std::process::Command;
 
 fn main() {
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        windows_resources();
+    }
     let commit = Command::new("git")
         .args(["rev-parse", "--short=12", "HEAD"])
         .output()
@@ -21,4 +25,17 @@ fn main() {
     );
     println!("cargo:rerun-if-changed=../../.git/HEAD");
     println!("cargo:rerun-if-changed=../../.git/index");
+}
+
+/// Ícone e metadados do `.exe` (recurso Win32). Falhar aqui é falhar o build: sem ícone, os
+/// atalhos do Menu Iniciar mostrariam o ícone genérico.
+fn windows_resources() {
+    println!("cargo:rerun-if-changed=icons/icon.ico");
+    let mut res = winresource::WindowsResource::new();
+    res.set_icon("icons/icon.ico")
+        .set("FileDescription", "Chess Studio")
+        .set("ProductName", "Chess Studio");
+    if let Err(e) = res.compile() {
+        panic!("não foi possível embutir o ícone no .exe: {e}");
+    }
 }
