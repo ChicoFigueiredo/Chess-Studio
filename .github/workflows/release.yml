@@ -16,6 +16,11 @@ on:
         description: 'SHA do commit onde criar a tag (vazio: o commit do workflow). Fora de .github/, o código precisa ser idêntico.'
         required: false
         default: ''
+      plataformas:
+        description: 'Pacotes a gerar. Com o release já existente, só os destas plataformas são repostos.'
+        type: choice
+        options: [todas, linux-windows, linux, windows, macos]
+        default: todas
 
 env:
   CARGO_TERM_COLOR: always
@@ -25,7 +30,10 @@ env:
 
 jobs:
   linux:
-    runs-on: ubuntu-latest
+    if: ${{ !github.event.inputs.plataformas || github.event.inputs.plataformas == 'todas' || contains(github.event.inputs.plataformas, 'linux') }}
+    # Fixo no 24.04: o binário exige a glibc do runner (2.39 aqui; o ubuntu-latest 26.04 exige 2.43
+    # e deixaria de fora o Ubuntu 24.04 e o Debian 12/13).
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -37,6 +45,8 @@ jobs:
             libx11-dev libxcursor-dev libxi-dev libxrandr-dev
       - run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ubuntu-24.04
       - name: THIRD-PARTY-LICENSES
         run: |
           cargo install cargo-about --locked --features cli
@@ -56,6 +66,7 @@ jobs:
             THIRD-PARTY-LICENSES
 
   windows:
+    if: ${{ !github.event.inputs.plataformas || github.event.inputs.plataformas == 'todas' || contains(github.event.inputs.plataformas, 'windows') }}
     runs-on: windows-latest
     timeout-minutes: 90
     steps:
@@ -75,6 +86,7 @@ jobs:
             dist/*-setup.exe
 
   macos:
+    if: ${{ !github.event.inputs.plataformas || github.event.inputs.plataformas == 'todas' || contains(github.event.inputs.plataformas, 'macos') }}
     runs-on: macos-latest
     timeout-minutes: 90
     steps:
@@ -90,6 +102,8 @@ jobs:
 
   release:
     needs: [linux, windows, macos]
+    # Roda com plataformas puladas (repor só algumas), nunca com falha ou cancelamento.
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -98,6 +112,7 @@ jobs:
       TAG: ${{ github.event.inputs.tag || github.ref_name }}
       REPO: ${{ github.repository }}
       PUBLICAR: ${{ github.event.inputs.publicar || 'false' }}
+      PLATAFORMAS: ${{ github.event.inputs.plataformas || 'todas' }}
       ALVO: ${{ github.event.inputs.alvo || github.sha }}
     steps:
       - uses: actions/checkout@v4
@@ -117,23 +132,42 @@ jobs:
         with:
           path: artefatos
           merge-multiple: true
-      - name: SHA256SUMS
-        working-directory: artefatos
-        run: |
-          # Uploads com vários caminhos guardam a pasta (ex.: dist/); traz tudo para a raiz.
-          find . -mindepth 2 -type f -exec mv -f -t . {} +
-          ls -la
-          # Glob sem arquivo fica literal e o sha256sum falha: falta de pacote derruba o release.
-          sha256sum *.dmg *-setup.exe *.zip *.AppImage *.deb *.tar.gz > SHA256SUMS
-          cat SHA256SUMS
       - name: Release (draft, a menos que publicar=true)
         working-directory: artefatos
         run: |
-          ARQUIVOS=(*.dmg *-setup.exe *.zip *.AppImage *.deb *.tar.gz SHA256SUMS THIRD-PARTY-LICENSES)
+          shopt -s nullglob
+          # Uploads com vários caminhos guardam a pasta (ex.: dist/); traz tudo para a raiz.
+          find . -mindepth 2 -type f -exec mv -f -t . {} +
+          ls -la
+          PACOTES=(*.dmg *-setup.exe *.zip *.AppImage *.deb *.tar.gz)
+          EXTRAS=()
+          [[ -f THIRD-PARTY-LICENSES ]] && EXTRAS=(THIRD-PARTY-LICENSES)
+          (( ${#PACOTES[@]} > 0 )) || { echo "::error::nenhum pacote gerado"; exit 1; }
+          sha256sum "${PACOTES[@]}" > novos.sums
+
           if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
-            gh release upload "$TAG" --repo "$REPO" --clobber "${ARQUIVOS[@]}"
+            # Release já existe: repõe só os pacotes desta execução (mesmos nomes e links) e
+            # refaz o SHA256SUMS mantendo as linhas dos demais.
+            gh release download "$TAG" --repo "$REPO" -p SHA256SUMS -O antigo.sums || : > antigo.sums
+            awk 'NR==FNR { novo[$2] = 1; next } !($2 in novo)' novos.sums antigo.sums > SHA256SUMS
+            cat novos.sums >> SHA256SUMS
+            sort -k2 -o SHA256SUMS SHA256SUMS
+            cat SHA256SUMS
+            gh release upload "$TAG" --repo "$REPO" --clobber "${PACOTES[@]}" SHA256SUMS "${EXTRAS[@]}"
+            gh release view "$TAG" --repo "$REPO" --json body -q .body > corpo.md
+            printf '\n_Pacotes de %s refeitos em %s a partir do commit %s._\n' \
+              "$PLATAFORMAS" "$(date -u +%Y-%m-%d)" "${GITHUB_SHA:0:7}" >> corpo.md
+            gh release edit "$TAG" --repo "$REPO" --notes-file corpo.md
             exit 0
           fi
+
+          # Release novo: exige os seis pacotes e as licenças.
+          for p in '*.dmg' '*-setup.exe' '*.zip' '*.AppImage' '*.deb' '*.tar.gz' THIRD-PARTY-LICENSES; do
+            compgen -G "$p" >/dev/null || { echo "::error::falta $p"; exit 1; }
+          done
+          mv novos.sums SHA256SUMS
+          cat SHA256SUMS
+          ARQUIVOS=("${PACOTES[@]}" SHA256SUMS THIRD-PARTY-LICENSES)
           if [[ "$PUBLICAR" == "true" ]]; then
             MODO=()
             [[ "$TAG" == *-* ]] && MODO=(--prerelease)

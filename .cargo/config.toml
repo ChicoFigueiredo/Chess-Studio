@@ -1,0 +1,4 @@
+# Windows (MSVC): runtime do Visual C++ embutido no .exe. Sem isso, o app depende do
+# VCRUNTIME140.dll, que um Windows recém-instalado pode não ter, e não abre.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

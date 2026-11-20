@@ -27,7 +27,7 @@ O job Linux roda os testes dentro de `xvfb-run` (display virtual) com `mesa-vulk
 git tag v0.1.0 && git push origin v0.1.0   # ou dispare manualmente
 ```
 
-Por tag ou sem `publicar`, o resultado é um draft em Releases; revise e publique à mão. Disparado à mão com `publicar` marcado, o release sai público (tag com `-`, como `v0.1.0-rc1`, vira pre-release). O campo `alvo` (SHA) cria a tag em outro commit, desde que o código fora de `.github/` seja idêntico ao compilado; serve para rodar uma versão nova do workflow a partir de um branch e marcar o commit da `main`. macOS sem assinatura/notarização (veja `docs/instalacao.md`).
+Por tag ou sem `publicar`, o resultado é um draft em Releases; revise e publique à mão. Disparado à mão com `publicar` marcado, o release sai público (tag com `-`, como `v0.1.0-rc1`, vira pre-release). O campo `alvo` (SHA) cria a tag em outro commit, desde que o código fora de `.github/` seja idêntico ao compilado; serve para rodar uma versão nova do workflow a partir de um branch e marcar o commit da `main`. O campo `plataformas` (`todas`, `linux-windows`, `linux`, `windows`, `macos`) roda só os jobs escolhidos; com o release já existente, repõe apenas esses pacotes (mesmos nomes e links), refaz o `SHA256SUMS` mantendo os demais e anota a troca nas notas. O job Linux roda fixo no `ubuntu-24.04` (glibc 2.39), e o `.exe` do Windows embute o runtime do Visual C++ (`.cargo/config.toml`, `crt-static`). macOS sem assinatura/notarização (veja `docs/instalacao.md`).
 
 ## Reproduzir localmente
 

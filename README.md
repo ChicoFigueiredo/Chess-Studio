@@ -43,7 +43,7 @@ O app é **offline por padrão**. Partidas, treino e preferências ficam num ban
 | **Processador** | Chip Apple (M1 ou mais novo). Mac Intel: compile do código | Intel ou AMD de 64 bits (x64) | Intel ou AMD de 64 bits |
 | **Vídeo** | Metal (todo Mac com chip Apple tem) | DirectX 12 ou Vulkan, com o driver da placa atualizado | Vulkan: driver Mesa (Intel, AMD) ou NVIDIA |
 | **Espaço em disco** | cerca de 150 MB | cerca de 150 MB | cerca de 150 MB |
-| **Algo a instalar antes** | Nada | Normalmente nada. Se o Windows avisar que falta `VCRUNTIME140.dll`, instale o [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe) | `.deb`: nada, o `apt` resolve. AppImage e `.tar.gz`: `libvulkan1`, `libxkbcommon0` e, no X11, `libxkbcommon-x11-0` (já vêm na maioria dos desktops). O AppImage usa o `fusermount` (pacote `fuse3`) |
+| **Algo a instalar antes** | Nada | Nada (o runtime do Visual C++ vem embutido no `.exe`) | `.deb`: nada, o `apt` resolve. AppImage e `.tar.gz`: `libvulkan1`, `libxkbcommon0` e, no X11, `libxkbcommon-x11-0` (já vêm na maioria dos desktops). O AppImage usa o `fusermount` (pacote `fuse3`) |
 
 E também:
 
