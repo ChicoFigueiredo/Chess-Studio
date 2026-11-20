@@ -123,6 +123,10 @@ minimum-system-version = "12.0"
 installer-mode = "currentUser"
 installer-icon = "icons/icon.ico"
 languages = ["PortugueseBR"]
+# O módulo LZMA (padrão) do NSIS é CPL-1.0; o zlib é zlib/libpng, como o resto do NSIS (ADR-0004).
+compression = "zlib"
+# Template do cargo-packager sem o plugin ApplicationID, que não declara licença (ver o cabeçalho).
+template = "packaging/nsis/installer.nsi"
 
 [package.metadata.packager.deb]
 section = "games"

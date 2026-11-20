@@ -58,3 +58,16 @@ PASS: saída 0, 7 capturas, offline, nenhuma Engine instalada sozinha
 ```
 
 Capturas: `3d-profissional-{padrao,obliqua,superior}`, `mesa-imersiva-{padrao,obliqua,superior}`, `2d-tecnico` (6,7 a 13,4 ms/quadro). Windows e macOS não foram testados aqui (cobertos pelas VMs do D1/`docs/build/`): UNVERIFIED.
+
+## 5. Instaladores (cargo-packager), 2026-11-20
+
+Os instaladores (`-setup.exe`, `.dmg`, `.deb`, AppImage) são montados pelo `cargo-packager` 0.11.8 (MIT OR Apache-2.0), uma ferramenta de build que não entra no app. O binário do app não muda; ganhou só o ícone embutido no `.exe` pelo `winresource` (MIT, dependência de build, fora do `THIRD-PARTY-LICENSES` por `ignore-build-dependencies`). O que vai **dentro** de cada pacote, além do app e dos assets:
+
+| Pacote | Componente de terceiros | Licença | Situação |
+|---|---|---|---|
+| `-setup.exe` (Windows) | Stub do instalador NSIS 3.09 e os plugins do cargo-packager | zlib/libpng (`COPYING` do NSIS) | OK. A compressão foi fixada em `zlib` (`compression = "zlib"`): o módulo LZMA, padrão do NSIS, é CPL-1.0 |
+| `.dmg` (macOS) | Nenhum: só o `Chess Studio.app` e o atalho para Aplicativos (o script `create-dmg`, MIT, roda no build e não é distribuído) | — | OK |
+| `.deb` (Linux) | Nenhum | — | OK |
+| AppImage (Linux) | Runtime do AppImage ([type2-runtime](https://github.com/AppImage/type2-runtime), MIT), que traz a **libfuse estática (LGPL-2.0)**, e as bibliotecas `libwayland-client` e `libffi` copiadas pelo linuxdeploy | Runtime MIT + libfuse LGPL-2.0; Wayland e libffi MIT | **Decisão do usuário.** O runtime é um programa separado que monta a imagem e executa o app; nenhum código LGPL entra no binário do app (letra da ADR-0004), no mesmo espírito da Engine GPL como processo externo (ADR-0003). O código-fonte do runtime e da libfuse é público nos repositórios do AppImage e da libfuse. Alternativa: tirar o AppImage e ficar com `.deb` e `.tar.gz` |
+
+Verificação (Linux, contêiner sem GPU, Vulkan por software): `.deb` instalado com `apt install ./chess-studio_0.1.0_amd64.deb` e `scripts/smoke-offline.sh /usr/bin/chess-studio` com a pasta de assets de desenvolvimento escondida: PASS (assets lidos de `/usr/lib/chess-studio/assets`). Windows e macOS: montados só no GitHub Actions; instalação real UNVERIFIED.
