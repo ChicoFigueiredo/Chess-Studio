@@ -8,7 +8,7 @@ Implementa a issue #56 (DEC-25: CI depois que o Linux estava sólido). Workflows
 |---|---|---|
 | `ci.yml` | `linux` (obrigatório) | matriz P0 (`--check`), `cargo fmt --check`, `clippy -D warnings`, `cargo test --workspace`, `cargo deny check licenses` |
 | `ci.yml` | `build-test` (Windows, macOS) | testes de domínio (`chess-core`, `-game`, `-store`, `-uci`, `-pgn`, `-training`, `-input`) e build do `chess-studio` |
-| `release.yml` | `linux`, `windows`, `macos`, `draft-release` | empacota com `scripts/package-*`, gera `SHA256SUMS` e `THIRD-PARTY-LICENSES` e anexa a um **draft release** (nunca publica sozinho) |
+| `release.yml` | `linux`, `windows`, `macos`, `release` | empacota com `scripts/package-*` (instaladores pelo `cargo-packager`: `-setup.exe` NSIS, `.dmg`, `.deb` e AppImage; mais os portáteis `.zip` e `.tar.gz`), gera `SHA256SUMS` e `THIRD-PARTY-LICENSES` e anexa a um **draft release**; só publica se disparado à mão com `publicar` marcado |
 
 Execuções antigas do mesmo branch são canceladas (`concurrency`). O cache de cargo usa `Swatinem/rust-cache`.
 
@@ -27,7 +27,7 @@ O job Linux roda os testes dentro de `xvfb-run` (display virtual) com `mesa-vulk
 git tag v0.1.0 && git push origin v0.1.0   # ou dispare manualmente
 ```
 
-O resultado é um draft em Releases; revise e publique à mão. macOS sem assinatura/notarização (veja `docs/instalacao.md`).
+Por tag ou sem `publicar`, o resultado é um draft em Releases; revise e publique à mão. Disparado à mão com `publicar` marcado, o release sai público (tag com `-`, como `v0.1.0-rc1`, vira pre-release). O campo `alvo` (SHA) cria a tag em outro commit, desde que o código fora de `.github/` seja idêntico ao compilado; serve para rodar uma versão nova do workflow a partir de um branch e marcar o commit da `main`. O campo `plataformas` (`todas`, `linux-windows`, `linux`, `windows`, `macos`) roda só os jobs escolhidos; com o release já existente, repõe apenas esses pacotes (mesmos nomes e links), refaz o `SHA256SUMS` mantendo os demais e anota a troca nas notas. O job Linux roda fixo no `ubuntu-24.04` (glibc 2.39), e o `.exe` do Windows embute o runtime do Visual C++ (`.cargo/config.toml`, `crt-static`). macOS sem assinatura/notarização (veja `docs/instalacao.md`).
 
 ## Reproduzir localmente
 
@@ -37,5 +37,6 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 xvfb-run -a cargo test --workspace      # ou sem xvfb-run, em máquina com display
 cargo deny check licenses
-scripts/package-linux.sh                # pacotes em dist/
+cargo install cargo-packager --locked --version 0.11.8   # instaladores (uma vez)
+scripts/package-linux.sh                # pacotes em dist/ (.tar.gz, .deb, AppImage)
 ```

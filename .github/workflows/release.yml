@@ -16,14 +16,24 @@ on:
         description: 'SHA do commit onde criar a tag (vazio: o commit do workflow). Fora de .github/, o código precisa ser idêntico.'
         required: false
         default: ''
+      plataformas:
+        description: 'Pacotes a gerar. Com o release já existente, só os destas plataformas são repostos.'
+        type: choice
+        options: [todas, linux-windows, linux, windows, macos]
+        default: todas
 
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
+  # Instaladores (scripts/package-*): mesma versão nos três sistemas.
+  PACKAGER_VERSION: 0.11.8
 
 jobs:
   linux:
-    runs-on: ubuntu-latest
+    if: ${{ !github.event.inputs.plataformas || github.event.inputs.plataformas == 'todas' || contains(github.event.inputs.plataformas, 'linux') }}
+    # Fixo no 24.04: o binário exige a glibc do runner (2.39 aqui; o ubuntu-latest 26.04 exige 2.43
+    # e deixaria de fora o Ubuntu 24.04 e o Debian 12/13).
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -35,20 +45,28 @@ jobs:
             libx11-dev libxcursor-dev libxi-dev libxrandr-dev
       - run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ubuntu-24.04
       - name: THIRD-PARTY-LICENSES
         run: |
           cargo install cargo-about --locked --features cli
           scripts/gerar-licencas.sh
+      - run: cargo install cargo-packager --locked --version "$PACKAGER_VERSION"
       - run: scripts/package-linux.sh
+        env:
+          # linuxdeploy e appimagetool são AppImages; o runner não tem FUSE.
+          APPIMAGE_EXTRACT_AND_RUN: 1
       - uses: actions/upload-artifact@v4
         with:
           name: linux
           path: |
             dist/*.tar.gz
             dist/*.deb
+            dist/*.AppImage
             THIRD-PARTY-LICENSES
 
   windows:
+    if: ${{ !github.event.inputs.plataformas || github.event.inputs.plataformas == 'todas' || contains(github.event.inputs.plataformas, 'windows') }}
     runs-on: windows-latest
     timeout-minutes: 90
     steps:
@@ -56,30 +74,36 @@ jobs:
       - shell: bash
         run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-packager --locked --version "$PACKAGER_VERSION"
+        shell: bash
       - run: .\scripts\package-windows.ps1
         shell: pwsh
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: dist/*.zip
+          path: |
+            dist/*.zip
+            dist/*-setup.exe
 
   macos:
+    if: ${{ !github.event.inputs.plataformas || github.event.inputs.plataformas == 'todas' || contains(github.event.inputs.plataformas, 'macos') }}
     runs-on: macos-latest
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-packager --locked --version "$PACKAGER_VERSION"
       - run: scripts/package-macos.sh
       - uses: actions/upload-artifact@v4
         with:
           name: macos
-          path: |
-            dist/*.tar.gz
-            dist/*.dmg
+          path: dist/*.dmg
 
   release:
     needs: [linux, windows, macos]
+    # Roda com plataformas puladas (repor só algumas), nunca com falha ou cancelamento.
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -88,6 +112,7 @@ jobs:
       TAG: ${{ github.event.inputs.tag || github.ref_name }}
       REPO: ${{ github.repository }}
       PUBLICAR: ${{ github.event.inputs.publicar || 'false' }}
+      PLATAFORMAS: ${{ github.event.inputs.plataformas || 'todas' }}
       ALVO: ${{ github.event.inputs.alvo || github.sha }}
     steps:
       - uses: actions/checkout@v4
@@ -107,37 +132,60 @@ jobs:
         with:
           path: artefatos
           merge-multiple: true
-      - name: SHA256SUMS
-        working-directory: artefatos
-        run: |
-          # Uploads com vários caminhos guardam a pasta (ex.: dist/); traz tudo para a raiz.
-          find . -mindepth 2 -type f -exec mv -f -t . {} +
-          ls -la
-          sha256sum *.tar.gz *.deb *.zip *.dmg > SHA256SUMS
-          cat SHA256SUMS
       - name: Release (draft, a menos que publicar=true)
         working-directory: artefatos
         run: |
+          shopt -s nullglob
+          # Uploads com vários caminhos guardam a pasta (ex.: dist/); traz tudo para a raiz.
+          find . -mindepth 2 -type f -exec mv -f -t . {} +
+          ls -la
+          PACOTES=(*.dmg *-setup.exe *.zip *.AppImage *.deb *.tar.gz)
+          EXTRAS=()
+          [[ -f THIRD-PARTY-LICENSES ]] && EXTRAS=(THIRD-PARTY-LICENSES)
+          (( ${#PACOTES[@]} > 0 )) || { echo "::error::nenhum pacote gerado"; exit 1; }
+          sha256sum "${PACOTES[@]}" > novos.sums
+
           if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
-            gh release upload "$TAG" --repo "$REPO" --clobber *.tar.gz *.deb *.zip *.dmg SHA256SUMS THIRD-PARTY-LICENSES
+            # Release já existe: repõe só os pacotes desta execução (mesmos nomes e links) e
+            # refaz o SHA256SUMS mantendo as linhas dos demais.
+            gh release download "$TAG" --repo "$REPO" -p SHA256SUMS -O antigo.sums || : > antigo.sums
+            awk 'NR==FNR { novo[$2] = 1; next } !($2 in novo)' novos.sums antigo.sums > SHA256SUMS
+            cat novos.sums >> SHA256SUMS
+            sort -k2 -o SHA256SUMS SHA256SUMS
+            cat SHA256SUMS
+            gh release upload "$TAG" --repo "$REPO" --clobber "${PACOTES[@]}" SHA256SUMS "${EXTRAS[@]}"
+            gh release view "$TAG" --repo "$REPO" --json body -q .body > corpo.md
+            printf '\n_Pacotes de %s refeitos em %s a partir do commit %s._\n' \
+              "$PLATAFORMAS" "$(date -u +%Y-%m-%d)" "${GITHUB_SHA:0:7}" >> corpo.md
+            gh release edit "$TAG" --repo "$REPO" --notes-file corpo.md
             exit 0
           fi
+
+          # Release novo: exige os seis pacotes e as licenças.
+          for p in '*.dmg' '*-setup.exe' '*.zip' '*.AppImage' '*.deb' '*.tar.gz' THIRD-PARTY-LICENSES; do
+            compgen -G "$p" >/dev/null || { echo "::error::falta $p"; exit 1; }
+          done
+          mv novos.sums SHA256SUMS
+          cat SHA256SUMS
+          ARQUIVOS=("${PACOTES[@]}" SHA256SUMS THIRD-PARTY-LICENSES)
           if [[ "$PUBLICAR" == "true" ]]; then
             MODO=()
             [[ "$TAG" == *-* ]] && MODO=(--prerelease)
+            GUIA="https://github.com/$REPO/blob/$ALVO/docs/instalacao.md"
             cat > ../notas.md <<NOTAS
-          Pacotes gerados pela CI a partir do commit ${ALVO:0:7}, sem assinatura nem notarização.
+          Gerado pela CI a partir do commit ${ALVO:0:7}. Pacotes sem assinatura nem notarização; ícone provisório.
 
-          - **Linux:** \`.deb\` (Ubuntu/Debian) ou \`.tar.gz\` portátil (x86_64)
-          - **Windows:** \`.zip\` portátil (x86_64); o SmartScreen avisa na primeira execução
-          - **macOS:** \`.dmg\` ou \`.tar.gz\` com o \`Chess Studio.app\` (Apple Silicon); o Gatekeeper bloqueia a primeira abertura
+          | Sistema | Baixe | Como instalar |
+          |---|---|---|
+          | **macOS** (Apple Silicon, M1 ou mais novo) | \`$(ls *.dmg)\` | Abra o .dmg e arraste o Chess Studio para Aplicativos. Na primeira abertura o Gatekeeper bloqueia: Ajustes do Sistema > Privacidade e Segurança > **Abrir Mesmo Assim** |
+          | **Windows** 10/11 (x64) | \`$(ls *-setup.exe)\` | Execute o instalador (não pede administrador); cria o atalho no Menu Iniciar. SmartScreen: **Mais informações** > **Executar mesmo assim**. Portátil: \`$(ls *.zip)\` |
+          | **Linux** (x86_64) | \`$(ls *.AppImage)\` | Arquivo único: marque como executável e abra. Ou \`sudo apt install ./$(ls *.deb)\` (Ubuntu/Debian). Portátil: \`$(ls *.tar.gz)\` |
 
-          Como instalar e liberar os avisos: \`INSTALACAO.md\` dentro de cada pacote. Confira os downloads com \`SHA256SUMS\`.
+          Passo a passo, desinstalação e onde ficam os dados: [guia de instalação]($GUIA). Confira os downloads com \`SHA256SUMS\`.
           NOTAS
           else
             MODO=(--draft)
             echo "Draft gerado pela CI. Revise antes de publicar." > ../notas.md
           fi
           gh release create "$TAG" --repo "$REPO" "${MODO[@]}" --target "$ALVO" \
-            --title "$TAG" --notes-file ../notas.md \
-            *.tar.gz *.deb *.zip *.dmg SHA256SUMS THIRD-PARTY-LICENSES
+            --title "$TAG" --notes-file ../notas.md "${ARQUIVOS[@]}"
