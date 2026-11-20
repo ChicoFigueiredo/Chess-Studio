@@ -65,7 +65,7 @@ CHESS_STUDIO_STOCKFISH=/caminho/stockfish cargo test -p chess-uci --test stockfi
 
 ## Empacotar (B17)
 
-Gera `dist/chess-studio-<versão>-linux-<arch>.tar.gz` (executável + `assets/` + licenças) e `dist/chess-studio_<versão>_<arch>.deb` (`/usr/bin/chess-studio` + `/usr/share/chess-studio/assets`), mais `dist/SHA256SUMS`. Só precisa de `dpkg-deb` para o `.deb`.
+Gera `dist/chess-studio-<versão>-linux-<arch>.tar.gz` (executável + `assets/` + licenças), e pelo `cargo-packager` o `dist/chess-studio_<versão>_<arch>.deb` e o `dist/chess-studio-<versão>-linux-<arch>.AppImage` (`/usr/bin/chess-studio` + `/usr/lib/chess-studio/assets`, atalho e ícone no menu), mais `dist/SHA256SUMS`. Instale antes `cargo install cargo-packager --locked --version 0.11.8`. Na primeira vez ele baixa o linuxdeploy; sem FUSE (contêiner, CI), rode com `APPIMAGE_EXTRACT_AND_RUN=1`.
 
 ```bash
 scripts/package-linux.sh                 # compila em release e empacota (--skip-build reaproveita o binário)
@@ -73,6 +73,6 @@ mkdir /tmp/cs && tar -C /tmp/cs -xzf dist/chess-studio-*-linux-*.tar.gz
 cd /tmp/cs/chess-studio-* && ./chess-studio --screenshot /tmp/cs/cap   # o 3D deve aparecer nos PNGs, não preto
 ```
 
-O app acha os `assets/` (nesta ordem) por `CHESS_STUDIO_ASSETS`, `./assets` ao lado do executável, `../share/chess-studio/assets` e, por último, a pasta do código-fonte. Para regenerar `THIRD-PARTY-LICENSES` (após mudar dependências): `cargo install cargo-about --locked --features cli && scripts/gerar-licencas.sh`.
+O app acha os `assets/` (nesta ordem) por `CHESS_STUDIO_ASSETS`, `./assets` ao lado do executável, `../lib/chess-studio/assets`, `../share/chess-studio/assets` e, por último, a pasta do código-fonte. Para regenerar `THIRD-PARTY-LICENSES` (após mudar dependências): `cargo install cargo-about --locked --features cli && scripts/gerar-licencas.sh`.
 
 Teste sem rede (PLAT-02): `unshare -rn ./chess-studio` (sem interfaces de rede) ou desligue a rede e jogue; veja `docs/instalacao.md`.

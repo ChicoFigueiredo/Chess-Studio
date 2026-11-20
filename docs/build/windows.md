@@ -74,7 +74,7 @@ Copie para os campos `PENDENTE (usuário)` de `docs/relatorios/gate-a.md`:
 
 ## Empacotar (B17)
 
-Gera `dist\chess-studio-<versão>-windows-x86_64.zip` (`chess-studio.exe` + `assets\` + licenças) e `dist\SHA256SUMS-windows`. O `THIRD-PARTY-LICENSES` já vem no repositório.
+Gera `dist\chess-studio-<versão>-windows-x86_64.zip` (`chess-studio.exe` + `assets\` + licenças), o instalador `dist\chess-studio-<versão>-windows-x86_64-setup.exe` (NSIS pelo `cargo-packager`: instala para o usuário atual, sem administrador, com atalho no Menu Iniciar) e `dist\SHA256SUMS-windows`. Instale antes `cargo install cargo-packager --locked --version 0.11.8`; ele baixa o NSIS na primeira vez. O `THIRD-PARTY-LICENSES` já vem no repositório.
 
 ```powershell
 .\scripts\package-windows.ps1            # compila em release e empacota (-SkipBuild reaproveita o binário)
@@ -83,7 +83,7 @@ cd $env:TEMP\cs-teste\chess-studio-*
 .\chess-studio.exe --screenshot $env:TEMP\cs-teste\cap    # o 3D deve aparecer nos PNGs, não preto
 ```
 
-Se o PowerShell bloquear o script: `powershell -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1`. O `.exe` não é assinado; o SmartScreen mostra aviso (veja `docs/instalacao.md`). Não há `.msi` neste momento (exigiria WiX/cargo-packager; fica para depois do CI).
+Se o PowerShell bloquear o script: `powershell -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1`. O `.exe` não é assinado; o SmartScreen mostra aviso (veja `docs/instalacao.md`). O instalador é NSIS (`-setup.exe`), não `.msi`.
 
 Teste sem rede (PLAT-02): desative o adaptador de rede da VM (ou `Disable-NetAdapter`), abra o `.exe` e jogue algumas partidas.
 

@@ -54,12 +54,13 @@ Copie para os campos `PENDENTE (usuário)` de `docs/relatorios/gate-a.md`:
 
 ## Empacotar (B17)
 
-Gera `dist/chess-studio-<versão>-macos-<arch>.tar.gz` e `.dmg` com **Chess Studio.app** (`Contents/MacOS/chess-studio` + `Contents/Resources/assets` + licenças). Sem assinatura nem notarização.
+Gera, pelo `cargo-packager`, `dist/chess-studio-<versão>-macos-<arch>.dmg` com **Chess Studio.app** (`Contents/MacOS/chess-studio` + `Contents/Resources/assets` + licenças, ícone provisório) e o atalho para Aplicativos. Instale antes `cargo install cargo-packager --locked --version 0.11.8`. Sem assinatura nem notarização.
 
 ```bash
 scripts/package-macos.sh                 # compila em release e empacota (--skip-build reaproveita o binário)
-mkdir -p /tmp/cs && tar -C /tmp/cs -xzf dist/chess-studio-*-macos-*.tar.gz
-"/tmp/cs/$(ls /tmp/cs)/Chess Studio.app/Contents/MacOS/chess-studio" --screenshot /tmp/cs/cap   # o 3D deve aparecer, não preto
+hdiutil attach dist/chess-studio-*-macos-*.dmg -mountpoint /tmp/cs-dmg
+"/tmp/cs-dmg/Chess Studio.app/Contents/MacOS/chess-studio" --screenshot /tmp/cs/cap   # o 3D deve aparecer, não preto
+hdiutil detach /tmp/cs-dmg
 ```
 
 Na VM sem Metal acelerado a janela pode não abrir (esperado, veja acima); nesse caso registre o erro e valide só o conteúdo do `.app` (`ls "Chess Studio.app/Contents/Resources/assets"`). O Gatekeeper bloqueia a primeira abertura do `.app` baixado: `xattr -dr com.apple.quarantine "Chess Studio.app"` ou botão direito > Abrir (`docs/instalacao.md`). Para compilar em Intel e Apple Silicon, rode o script em cada arquitetura (não há binário universal).

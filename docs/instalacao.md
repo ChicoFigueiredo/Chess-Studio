@@ -213,7 +213,7 @@ A pasta `assets/` traz modelos, texturas e fontes. O app a procura nesta ordem:
 
 1. a variável de ambiente `CHESS_STUDIO_ASSETS`, se existir;
 2. a pasta `assets` ao lado do executável (pacotes portáteis `.zip` e `.tar.gz`);
-3. no Linux instalado, `../lib/chess-studio/assets` ou `../share/chess-studio/assets`, relativas ao executável. O `.deb` e o AppImage do instalador usam `/usr/lib/chess-studio/assets`;
+3. no Linux instalado, `../lib/chess-studio/assets` e depois `../share/chess-studio/assets`, relativas ao executável. O `.deb` e o AppImage usam `/usr/lib/chess-studio/assets`;
 4. no macOS, `../Resources/assets`, dentro do `Chess Studio.app`.
 
 Se o executável for movido sem a pasta `assets/`, o tabuleiro 3D aparece quase preto. Mantenha os dois juntos.
