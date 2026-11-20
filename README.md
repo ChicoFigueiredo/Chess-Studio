@@ -23,6 +23,16 @@ Mesa pessoal de treinamento de xadrez para macOS, Windows e Linux, feita para vo
 
 O app é **offline por padrão**. Partidas, treino e preferências ficam num banco SQLite no seu computador, e não há cadastro. A rede só é usada quando você liga um serviço (um Provedor, como o Lichess) ou pede um download, e o app diz antes o que vai sair ([ADR-0006](docs/adr/0006-rede-offline-por-padrao-provedores-e-conexoes.md)).
 
+![Mesa imersiva: tabuleiro 3D sobre a mesa, relógio de xadrez 3D, Ribbon no alto e Painéis de Relógio, Notação e Auxílios à direita](docs/evidencias/aba-tabuleiro/mesa-imersiva-padrao.png)
+<sub>Mesa imersiva: o tabuleiro sobre a mesa, com o relógio de xadrez ao lado, como numa Partida presencial.</sub>
+
+| | |
+|---|---|
+| ![3D profissional com o Ribbon na aba Exibir](docs/evidencias/exibir-paineis/exibir-classico.png) | ![2D técnico no Tema Torneio, com a notação ao lado](docs/evidencias/galeria-temas/cena-torneio/2d-tecnico.png) |
+| **3D profissional** e o Ribbon (aba Exibir) | **2D técnico** no Tema claro Torneio |
+| ![Partida online pelo Lichess, com o relógio do Provedor e a Trava de fair play](docs/evidencias/partida-online/escuro/playing.png) | ![Fim da Partida por xeque-mate, com Revisar, Nova Partida e Exportar PGN](docs/evidencias/varredura-v4/depois/fim-de-partida-escuro-1600x900.png) |
+| **Partida online** pelo Lichess (dados de demonstração) | **Fim da Partida**: revisar, exportar PGN ou começar outra |
+
 > **Estado (19/11/2026):** versão 0.1.0. O primeiro pacote publicado é o pre-release `v0.1.0-rc1`. Tudo o que está descrito aqui está na `main` e coberto pela suíte automatizada, mas **a homologação pelo usuário ainda não terminou**. A interface nunca foi aprovada em janela real no Windows nem no macOS, e as integrações nunca foram conferidas com os serviços de verdade. Veja [Estado e homologação](#estado-e-homologação).
 
 ## O que você precisa
