@@ -157,11 +157,10 @@ chmod +x chess-studio-0.1.0-linux-x86_64.AppImage
 
 Pelo gerenciador de arquivos, o mesmo é feito em Propriedades > Permissões > "Permitir executar como programa". Guarde o arquivo numa pasta fixa, como `~/Aplicativos`. O AppImage não cria entrada no menu sozinho.
 
-Possível requisito: o AppImage precisa da biblioteca FUSE 2. Se aparecer um erro com `libfuse.so.2` ou "AppImages require FUSE to run", instale-a ([documentação do AppImage](https://docs.appimage.org/user-guide/troubleshooting/fuse.html)):
+Possível requisito: o AppImage monta a si mesmo com o programa `fusermount` do sistema; as bibliotecas de FUSE já vêm dentro dele (não precisa de `libfuse2`). Se aparecer "No suitable fusermount binary found" ou "AppImages require FUSE to run":
 
-- Ubuntu 22.04 e 23.x: `sudo apt install libfuse2`
-- Ubuntu 24.04 ou mais novo, onde o pacote mudou de nome: `sudo apt install libfuse2t64`
-- Sem FUSE: `./chess-studio-0.1.0-linux-x86_64.AppImage --appimage-extract-and-run` (mais lento para abrir)
+- instale o pacote `fuse3` (`sudo apt install fuse3`, `sudo dnf install fuse3`); ou
+- rode sem FUSE: `./chess-studio-0.1.0-linux-x86_64.AppImage --appimage-extract-and-run` (mais lento para abrir).
 
 ### Pacote .deb (Debian, Ubuntu e derivados)
 
@@ -240,6 +239,7 @@ Antes de executar um arquivo pela primeira vez, o app pede a sua confirmação e
 - **macOS: o botão Abrir Mesmo Assim não aparece:** tente abrir o app de novo e volte a Privacidade e Segurança em até uma hora, ou use o comando `xattr` acima.
 - **macOS: "está danificado e não pode ser aberto":** use o comando `xattr` acima. Não é preciso baixar de novo se a soma do `SHA256SUMS` bateu.
 - **Windows: "O Windows protegeu o computador":** clique em **Mais informações** > **Executar mesmo assim**.
-- **Linux: o AppImage não abre e cita `libfuse.so.2`:** instale a FUSE 2 (veja [AppImage](#appimage-qualquer-distribuição)).
+- **Linux: o AppImage não abre e cita `fusermount` ou FUSE:** instale o pacote `fuse3` ou use `--appimage-extract-and-run` (veja [AppImage](#appimage-qualquer-distribuição)).
+- **Linux: erro `GLIBC_2.39 not found`:** a distribuição é mais antiga que o Ubuntu 24.04 ou o Debian 13. Atualize a distribuição ou [compile a partir do código](build/linux.md).
 - **Tabuleiro quase preto ou sem peças:** o app não encontrou a pasta `assets/`. Mantenha-a ao lado do executável ou aponte `CHESS_STUDIO_ASSETS` para ela (veja [Onde o app procura os assets](#onde-o-app-procura-os-assets)).
 - **A janela não abre:** teste outro backend gráfico pelo terminal, por exemplo `WGPU_BACKEND=vulkan` (Linux e Windows), `dx12` (Windows) ou `gl`.

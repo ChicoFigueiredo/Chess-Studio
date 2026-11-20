@@ -1,5 +1,22 @@
 # Chess Studio
 
+## ⬇️ Baixar: releases para Mac, Windows e Linux
+
+**Versão `v0.1.0-rc1` (pre-release, 19/11/2026)**. [Página do release](https://github.com/ChicoFigueiredo/Chess-Studio/releases/tag/v0.1.0-rc1), com notas, `SHA256SUMS` e todos os arquivos. Versões: [todas as releases](https://github.com/ChicoFigueiredo/Chess-Studio/releases).
+
+| Sistema | Baixe | Tipo |
+|---|---|---|
+| **macOS** 12 ou mais novo, chip Apple (M1, M2, M3, M4…) | [**chess-studio-0.1.0-macos-arm64.dmg**](https://github.com/ChicoFigueiredo/Chess-Studio/releases/download/v0.1.0-rc1/chess-studio-0.1.0-macos-arm64.dmg) | Disco: arraste para Aplicativos |
+| **Windows** 10 e 11 (64 bits) | [**chess-studio-0.1.0-windows-x86_64-setup.exe**](https://github.com/ChicoFigueiredo/Chess-Studio/releases/download/v0.1.0-rc1/chess-studio-0.1.0-windows-x86_64-setup.exe) | Instalador (sem administrador) |
+| | [chess-studio-0.1.0-windows-x86_64.zip](https://github.com/ChicoFigueiredo/Chess-Studio/releases/download/v0.1.0-rc1/chess-studio-0.1.0-windows-x86_64.zip) | Portátil: extraia e rode |
+| **Linux** x86_64 (Ubuntu 24.04+, Debian 13+, Fedora 40+ e equivalentes) | [**chess-studio-0.1.0-linux-x86_64.AppImage**](https://github.com/ChicoFigueiredo/Chess-Studio/releases/download/v0.1.0-rc1/chess-studio-0.1.0-linux-x86_64.AppImage) | Arquivo único: marque como executável e abra |
+| | [chess-studio_0.1.0_amd64.deb](https://github.com/ChicoFigueiredo/Chess-Studio/releases/download/v0.1.0-rc1/chess-studio_0.1.0_amd64.deb) | Pacote Debian/Ubuntu, com ícone no menu |
+| | [chess-studio-0.1.0-linux-x86_64.tar.gz](https://github.com/ChicoFigueiredo/Chess-Studio/releases/download/v0.1.0-rc1/chess-studio-0.1.0-linux-x86_64.tar.gz) | Portátil: extraia e rode |
+
+Os pacotes são gratuitos, não pedem cadastro e não são assinados digitalmente: na primeira abertura, o macOS e o Windows avisam, e [Instalar](#instalar) mostra como liberar. Antes, confira [O que você precisa](#o-que-você-precisa). Mac com processador Intel e distribuições Linux mais antigas: [compile a partir do código](#compilar-a-partir-do-código).
+
+---
+
 [![CI](https://github.com/ChicoFigueiredo/Chess-Studio/actions/workflows/ci.yml/badge.svg)](https://github.com/ChicoFigueiredo/Chess-Studio/actions/workflows/ci.yml) · CI/CD: [docs/ci.md](docs/ci.md)
 
 Mesa pessoal de treinamento de xadrez para macOS, Windows e Linux, feita para você aprender a jogar no tabuleiro físico **sem depender de auxílios digitais**. Há um tabuleiro 3D sobre uma mesa discreta e um 2D técnico, três Políticas de arbitragem que simulam a Partida presencial, relógio, Súmula manual, Exercícios e análise por uma Engine UCI que você mesmo escolhe.
@@ -8,9 +25,26 @@ O app é **offline por padrão**. Partidas, treino e preferências ficam num ban
 
 > **Estado (19/11/2026):** versão 0.1.0. O primeiro pacote publicado é o pre-release `v0.1.0-rc1`. Tudo o que está descrito aqui está na `main` e coberto pela suíte automatizada, mas **a homologação pelo usuário ainda não terminou**. A interface nunca foi aprovada em janela real no Windows nem no macOS, e as integrações nunca foram conferidas com os serviços de verdade. Veja [Estado e homologação](#estado-e-homologação).
 
+## O que você precisa
+
+| | macOS | Windows | Linux |
+|---|---|---|---|
+| **Sistema** | macOS 12 Monterey ou mais novo | Windows 10 ou 11, 64 bits | x86_64 com glibc 2.39 ou mais nova: Ubuntu 24.04+, Debian 13+, Fedora 40+, Linux Mint 22+ e derivados |
+| **Processador** | Chip Apple (M1 ou mais novo). Mac Intel: compile do código | Intel ou AMD de 64 bits (x64) | Intel ou AMD de 64 bits |
+| **Vídeo** | Metal (todo Mac com chip Apple tem) | DirectX 12 ou Vulkan, com o driver da placa atualizado | Vulkan: driver Mesa (Intel, AMD) ou NVIDIA |
+| **Espaço em disco** | cerca de 150 MB | cerca de 150 MB | cerca de 150 MB |
+| **Algo a instalar antes** | Nada | Normalmente nada. Se o Windows avisar que falta `VCRUNTIME140.dll`, instale o [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe) | `.deb`: nada, o `apt` resolve. AppImage e `.tar.gz`: `libvulkan1`, `libxkbcommon0` e, no X11, `libxkbcommon-x11-0` (já vêm na maioria dos desktops). O AppImage usa o `fusermount` (pacote `fuse3`) |
+
+E também:
+
+- **Internet:** não precisa para jogar, treinar nem estudar. Ela só entra para baixar o app e, se você quiser, baixar uma Engine ou ligar um Provedor (Lichess, Chess.com, FICS, PlayStrategy, FIDE).
+- **Conta ou cadastro:** nenhum. Uma conta no Lichess só é necessária para as funções online dele (Partida online, Engine online, Explorador autenticado).
+- **Engine (opcional):** jogar contra o computador e a Análise precisam de uma Engine UCI. Na primeira vez, o assistente de Engine procura uma instalada ou baixa o Stockfish 19 do site oficial, se você aceitar a licença dele. Também dá para instalar por conta própria (`brew install stockfish` no Mac, `sudo apt install stockfish` no Linux). Dois jogadores no mesmo computador, a Súmula e os Exercícios funcionam sem Engine.
+- **Seus dados:** ficam num banco SQLite na pasta do usuário (veja [onde](docs/instalacao.md#onde-ficam-os-seus-dados)). Desinstalar não apaga as suas Partidas. Cópia de segurança e recuperação: [docs/atualizacao-e-recuperacao.md](docs/atualizacao-e-recuperacao.md).
+
 ## Instalar
 
-Baixe o pacote do seu sistema na página de [Releases](https://github.com/ChicoFigueiredo/Chess-Studio/releases). Os pacotes não são assinados, então cada sistema avisa na primeira abertura. Abaixo está como liberar. O guia completo, com desinstalação, pasta de dados e problemas comuns, está em [docs/instalacao.md](docs/instalacao.md).
+Baixe o pacote do seu sistema na tabela [Baixar](#️-baixar-releases-para-mac-windows-e-linux) ou na página de [Releases](https://github.com/ChicoFigueiredo/Chess-Studio/releases). Os pacotes não são assinados, então cada sistema avisa na primeira abertura. Abaixo está como liberar. O guia completo, com desinstalação, pasta de dados e problemas comuns, está em [docs/instalacao.md](docs/instalacao.md).
 
 ### macOS (Apple Silicon: M1 ou mais novo)
 
@@ -34,7 +68,7 @@ Num Mac com processador Intel não há pacote: [compile a partir do código](doc
 
 ### Linux (x86_64)
 
-- **AppImage (qualquer distribuição):** rode `chmod +x chess-studio-0.1.0-linux-x86_64.AppImage` e abra o arquivo. Algumas distribuições pedem a `libfuse2` para rodar AppImage (no Ubuntu 24.04 ou mais novo, o pacote se chama `libfuse2t64`).
+- **AppImage (qualquer distribuição recente):** rode `chmod +x chess-studio-0.1.0-linux-x86_64.AppImage` e abra o arquivo. Se aparecer "No suitable fusermount binary found", instale o pacote `fuse3` ou rode com `--appimage-extract-and-run`.
 - **Debian e Ubuntu:** `sudo apt install ./chess-studio_0.1.0_amd64.deb`. O "Chess Studio" aparece no menu de aplicativos, com ícone.
 - **Portátil:** extraia `chess-studio-0.1.0-linux-x86_64.tar.gz` e rode `./chess-studio` dentro da pasta.
 
