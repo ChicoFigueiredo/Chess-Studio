@@ -20,6 +20,7 @@
 mod spectator;
 mod study_mode;
 
+#[allow(unused_imports)] // API para os tickets da Notação, da faixa e da Análise (#323 a #325)
 pub use study_mode::{StudyLine, StudyMove};
 
 use crate::fair_play::{FairPlay, FairPlayLocked, GuardedOpponent};
@@ -237,16 +238,16 @@ impl Session {
         self.epoch
     }
 
-    /// Revisão em curso, se houver. Durante a revisão a Partida não aceita gestos.
+    /// Revisão em curso, se houver (a posição mostrada: de um Lance da Partida, de uma variante
+    /// da Análise ou da Linha de estudo). Durante a revisão a Partida não aceita gestos: fora de
+    /// Partida competitiva em andamento, um gesto de mover uma peça inicia o Modo de estudo
+    /// (`study_mode`), que também só lê.
     pub fn review(&self) -> Option<&ReviewView> {
         self.review.as_ref()
     }
 
     /// Entra, navega ou sai (`None`) da revisão. `ply` além do histórico é ignorado.
     pub fn set_review_ply(&mut self, ply: Option<usize>) {
-        // Navegar pela Revisão comum deixa o Modo de estudo (a Linha de estudo se perde).
-        self.study = None;
-        self.study_promotion = None;
         let next = match ply {
             Some(p) => match self.game.review_at_ply(p) {
                 Some(view) => Some(view),
@@ -254,7 +255,10 @@ impl Session {
             },
             None => None,
         };
-        if next != self.review || self.variation {
+        // Navegar pela Revisão comum deixa o Modo de estudo (a Linha de estudo se perde).
+        let leaving_study = self.study.take().is_some();
+        self.study_promotion = None;
+        if next != self.review || self.variation || leaving_study {
             self.review = next;
             self.variation = false;
             self.interpreter
@@ -449,7 +453,8 @@ impl Session {
         Timestamp { mono_ms, wall_ms }
     }
 
-    /// Evento de gesto -> Comandos do intérprete -> Partida.
+    /// Evento de gesto -> Comandos do intérprete -> Partida. Numa Revisão (fora de Partida
+    /// competitiva em andamento) ou em estudo, o gesto joga na Linha de estudo, nunca na Partida.
     pub fn gesture(&mut self, event: GestureEvent) {
         // Na vez da Engine o ponteiro não move nada (ela joga as próprias peças).
         // Modo de estudo (#322): numa Revisão ou na Linha de estudo o gesto joga na linha.
@@ -912,13 +917,16 @@ fn lifted(p: Vec3) -> Vec3 {
     Vec3::new(p.x, DRAG_HEIGHT, p.z)
 }
 
+/// Peças de uma posição, em ordem de casa: casa, cor e tipo.
+type PieceList = Vec<(Square, Color, Piece)>;
+
 /// As peças de `position` com a de `from` em `to` (o peão que chegou à casa de promoção, ainda
 /// sem a peça escolhida), em ordem de casa, e a cor dela. `None` se `from` está vazia.
 fn moved_pieces(
     position: &chess_core::CanonicalPosition,
     from: Square,
     to: Square,
-) -> Option<(Color, Vec<(Square, Color, Piece)>)> {
+) -> Option<(Color, PieceList)> {
     let (color, piece) = position.piece_at(from)?;
     let mut pieces: Vec<(Square, Color, Piece)> = chess_input::all_squares()
         .filter(|s| *s != from && *s != to)
@@ -2001,6 +2009,13 @@ mod tests {
     #[test]
     fn navigating_the_plain_review_ends_the_study() {
         let mut s = reviewing_after_e4();
+        tap(&mut s, "c7", "c5");
+        s.set_review_ply(Some(99));
+        assert!(s.studying(), "ply inválido é ignorado e não sai do estudo");
+        s.study_to_start();
+        s.set_review_ply(Some(1));
+        assert!(!s.studying(), "mesmo o ponto de partida: a Revisão comum volta");
+        assert_eq!(s.review().unwrap().ply, 1);
         tap(&mut s, "c7", "c5");
         s.set_review_ply(Some(2));
         assert!(!s.studying(), "clicar num Lance da Partida deixa o estudo");

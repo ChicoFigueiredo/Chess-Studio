@@ -11,6 +11,10 @@
 //! - Cada Lance é validado pelo núcleo de regras (`chess-core`); o intérprete de gestos é o
 //!   mesmo do jogo normal, alimentado com a posição do estudo.
 
+// A API pública abaixo é consumida pelos tickets seguintes (lista da Notação #323, faixa e Ação
+// no tabuleiro #324, Análise e Explorador #325); até lá, só os testes e o gesto a usam.
+#![allow(dead_code)]
+
 use super::{Session, SettleHint, lifted, moved_pieces};
 use crate::study::{StudyRefusal, study_mode_available};
 use bevy::prelude::Vec3;
