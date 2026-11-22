@@ -125,12 +125,20 @@ pub fn percentages(stats: &OpeningMoveStats) -> (u32, u32, u32) {
     (parts[0], parts[1], parts[2])
 }
 
-/// A abertura nomeada mais recente na linha da Partida até o meio-lance `ply`.
+/// A abertura nomeada mais recente na linha da Partida até o meio-lance `ply` e, no Modo de
+/// estudo, na Linha de estudo que parte dele até o Lance mostrado.
 pub fn opening_at(book: &OpeningBook, session: &Session, ply: usize) -> Option<Opening> {
-    let positions: Vec<CanonicalPosition> = (0..=ply)
+    let mut positions: Vec<CanonicalPosition> = (0..=ply)
         .filter_map(|p| session.game().review_at_ply(p))
         .map(|view| view.position)
         .collect();
+    if let Some(line) = session.study_line() {
+        positions.extend(
+            line.moves()[..line.cursor()]
+                .iter()
+                .map(|m| m.position_after.clone()),
+        );
+    }
     book.along(positions.iter()).cloned()
 }
 
@@ -142,6 +150,8 @@ struct QueryKey {
     epoch: u64,
     ply: usize,
     total: usize,
+    /// Os Lances da Linha de estudo até o mostrado (vazio fora do estudo).
+    study: Vec<chess_core::Move>,
     fen: String,
 }
 
@@ -245,12 +255,12 @@ impl OpeningsUi {
         rebuild: bool,
         fair: &crate::fair_play::FairPlay,
     ) {
-        let ply = notation::current_ply(session);
-        let total = session.snapshot().history.len();
-        let Some(view) = session.game().review_at_ply(ply) else {
+        // A Posição da Linha de estudo, no Modo de estudo; senão, a da Revisão ou a ao vivo.
+        let Some(followed) = crate::followed::Followed::of(session) else {
             return;
         };
-        let Some(subject) = crate::fair_play::Subject::at(session.game(), ply) else {
+        let (ply, total) = (followed.ply, followed.total);
+        let Some(subject) = crate::fair_play::Subject::followed(session) else {
             return;
         };
         // A Trava vale a cada quadro, antes do cache.
@@ -262,11 +272,12 @@ impl OpeningsUi {
             self.key = None;
             return;
         }
-        let fen = view.position.to_fen();
+        let fen = followed.position.to_fen();
         let key = QueryKey {
             epoch: session.epoch(),
             ply,
             total,
+            study: followed.study,
             fen: fen.clone(),
         };
         let due = self.refreshed.is_none_or(|at| at.elapsed() >= AUTO_REFRESH);
@@ -310,11 +321,18 @@ impl OpeningsUi {
 
     /// Mostra o lance como variante (somente leitura): nenhum Comando, nenhum Evento.
     fn show(&mut self, session: &mut Session, san: &str) {
-        let ply = notation::current_ply(session);
-        let total = session.snapshot().history.len();
-        let Some(base) = session.game().review_at_ply(ply).map(|v| v.position) else {
+        let Some(followed) = crate::followed::Followed::of(session) else {
             return;
         };
+        // No Modo de estudo o Lance entra na Linha de estudo (e o tabuleiro segue o estudo).
+        if session.studying() {
+            if let Ok(mv) = followed.position.parse_san(san) {
+                session.study_play(mv);
+            }
+            self.preview = None;
+            return;
+        }
+        let (ply, total, base) = (followed.ply, followed.total, followed.position);
         if let Some(view) = variation_after(&base, ply, total, san) {
             session.show_variation(view);
             self.preview = Some(san.to_owned());
@@ -354,7 +372,7 @@ fn draw(
         ui.small(i18n.t("openings-legend"));
     }
     ui.add_space(4.0);
-    if session.showing_variation() {
+    if session.showing_variation() && !session.studying() {
         ui.small(i18n.t("openings-showing"));
         if ui.button(i18n.t("openings-back")).clicked() {
             actions.push(Action::Back);
@@ -546,5 +564,60 @@ mod tests {
         assert_eq!(at_5.eco, "C60");
         let at_end = opening_at(book, &session, 7).unwrap();
         assert!(at_end.name.starts_with("Ruy Lopez"), "{}", at_end.name);
+    }
+
+    /// Sessão em Modo de estudo (a partir da Posição inicial) com os Lances `san` na linha.
+    fn studying(san: &[&str]) -> Session {
+        let mut session = Session::new();
+        session.study_here().unwrap();
+        let mut state = OpeningsUi::default();
+        for m in san {
+            state.show(&mut session, m);
+        }
+        session
+    }
+
+    fn fair() -> crate::fair_play::FairPlay {
+        crate::fair_play::FairPlay::new(chess_net::FairPlayGuard::new())
+    }
+
+    #[test]
+    fn the_opening_and_the_query_follow_the_study_line_and_return_to_the_game() {
+        let mut session = studying(&["e4", "e5", "Nf3", "Nc6", "Bb5"]);
+        assert!(session.studying());
+        assert_eq!(session.snapshot().history.len(), 0, "a Partida não mudou");
+        let mut state = OpeningsUi::default();
+        state.refresh(&session, None, false, &fair());
+        let ruy = "r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3";
+        assert_eq!(state.key.as_ref().unwrap().fen, ruy);
+        assert_eq!(state.opening.as_ref().unwrap().eco, "C60");
+        assert!(!state.fair_locked);
+
+        // Voltar um Lance na linha: a consulta acompanha.
+        session.study_step_back();
+        state.refresh(&session, None, false, &fair());
+        assert_ne!(state.key.as_ref().unwrap().fen, ruy);
+        assert_eq!(state.opening.as_ref().unwrap().eco, "C44");
+
+        // Sair do estudo: de volta à Posição da Partida (a inicial, sem nome).
+        session.leave_study();
+        state.refresh(&session, None, false, &fair());
+        assert_eq!(
+            state.key.as_ref().unwrap().fen,
+            CanonicalPosition::start().to_fen()
+        );
+        assert!(state.opening.is_none());
+    }
+
+    #[test]
+    fn a_move_of_the_panel_goes_into_the_study_line_and_not_into_a_variation() {
+        let session = studying(&["e4", "e5"]);
+        assert_eq!(session.study_line().unwrap().moves().len(), 2);
+        assert!(session.studying());
+        // Sem estudo, o Lance do painel é uma variante da Revisão, como sempre.
+        let mut plain = Session::new();
+        OpeningsUi::default().show(&mut plain, "e4");
+        assert!(plain.showing_variation());
+        assert!(!plain.studying());
     }
 }

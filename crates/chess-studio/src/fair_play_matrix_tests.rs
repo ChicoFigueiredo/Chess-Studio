@@ -323,6 +323,114 @@ fn matrix_provider_engine_and_local_games_are_not_followed() {
     assert!(!fair.any());
 }
 
+/// Sessão Assistida local com os primeiros `plies` Lances de `SCOTCH` já jogados, em Modo de
+/// estudo a partir da posição ao vivo, com `line` jogados na Linha de estudo.
+fn studying(plies: usize, line: &[&str]) -> Session {
+    let mut game = Game::new(GameSetup::standard(chess_game::PolicyKind::Assisted));
+    for (i, m) in SCOTCH.iter().take(plies).enumerate() {
+        let mv: Move = m.parse().unwrap();
+        game.handle(
+            Command::Release {
+                from: mv.from(),
+                to: mv.to(),
+            },
+            Timestamp::mono(1000 * (i as u64 + 1)),
+        )
+        .unwrap();
+    }
+    let mut session = Session::from_game(game);
+    session.study_here().unwrap();
+    for m in line {
+        assert!(session.study_play(m.parse().unwrap()), "{m}");
+    }
+    session
+}
+
+/// Modo de estudo (#325): cada `Computation` sobre a Posição da Linha de estudo. Livre, passa;
+/// com a trava da rede, a recusa vale em todos os pontos, como em qualquer Posição; a Posição
+/// da linha é a que a trava de correspondência avalia, e uma estrutura travada pelo caminho da
+/// linha trava o resto dela. Sair do estudo volta à Posição da Partida.
+#[test]
+fn matrix_study_mode_checks_the_study_line_position_for_every_computation() {
+    let fair = fair();
+    let mut session = studying(6, &["f3d4", "g8f6"]);
+    assert!(session.studying());
+    let shown = Subject::shown(&session).unwrap();
+    assert_eq!(Subject::followed(&session).unwrap(), shown);
+    for computation in Computation::ALL {
+        assert_eq!(fair.check(computation, &shown), Ok(()), "{computation:?}");
+    }
+
+    // Trava da rede: o estudo não escapa dela.
+    let hold = fair.guard().hold("Partida online contra pessoa");
+    for computation in Computation::ALL {
+        assert_eq!(
+            fair.check(computation, &shown),
+            locked(computation, LockScope::Everything),
+            "{computation:?}"
+        );
+    }
+    drop(hold);
+
+    // Sair do estudo: a Posição é a da Partida, de novo.
+    let in_study = shown;
+    session.leave_study();
+    let back = Subject::followed(&session).unwrap();
+    assert_ne!(back, in_study);
+    assert_eq!(back, Subject::at(session.game(), 6).unwrap());
+}
+
+/// A trava de correspondência avalia a Posição da linha (não a da Partida) e o caminho dela:
+/// a Partida local está livre, a linha chega a uma estrutura travada e, daí em diante, tudo o
+/// que vem depois dela continua travado, ainda que a estrutura já tenha mudado.
+#[test]
+fn matrix_study_mode_follows_the_correspondence_lock_along_the_whole_line() {
+    let fair = fair();
+    fair.follow_games([&correspondence("cor1")]);
+    // A Partida local parou no 6º meio-lance: livre, e o início do estudo também.
+    let mut session = studying(6, &[]);
+    for computation in Computation::ALL {
+        assert_eq!(
+            fair.check(computation, &Subject::followed(&session).unwrap()),
+            Ok(()),
+            "{computation:?}"
+        );
+    }
+    // A linha completa a Partida de correspondência (Escocesa) em 4 Lances: travada.
+    for m in &SCOTCH[6..] {
+        assert!(session.study_play(m.parse().unwrap()));
+    }
+    let on_the_locked_structure = Subject::shown(&session).unwrap();
+    for computation in Computation::ALL {
+        assert_eq!(
+            fair.check(computation, &on_the_locked_structure),
+            locked(computation, LockScope::ThisPosition),
+            "{computation:?}"
+        );
+    }
+    // Três Lances adiante, fora do alcance de estrutura da trava: o caminho ainda a pega.
+    for m in ["b1c3", "d7d6", "c1e3"] {
+        assert!(session.study_play(m.parse().unwrap()), "{m}");
+    }
+    let beyond = Subject::shown(&session).unwrap();
+    for computation in Computation::ALL {
+        assert_eq!(
+            fair.check(computation, &beyond),
+            locked(computation, LockScope::ThisPosition),
+            "{computation:?}"
+        );
+    }
+    // De volta ao início da linha, a Posição é livre outra vez.
+    session.study_to_start();
+    for computation in Computation::ALL {
+        assert_eq!(
+            fair.check(computation, &Subject::shown(&session).unwrap()),
+            Ok(()),
+            "{computation:?}"
+        );
+    }
+}
+
 // --- A matriz documentada cobre toda a `Computation` ---------------------------------------
 
 const SOURCE: &str = include_str!("fair_play.rs");

@@ -22,6 +22,10 @@ use chess_core::{CanonicalPosition, Color, Move, Piece, Square};
 use chess_game::{Command, HistoryEntry, PendingPromotion, ProvisionalView, ReviewView};
 use chess_input::GestureEvent;
 
+#[cfg(test)]
+#[path = "study_follow_tests.rs"]
+mod follow_tests;
+
 /// Um Lance da Linha de estudo.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StudyMove {
@@ -144,6 +148,21 @@ impl Session {
         }
         line.cursor = cursor;
         self.show_study();
+    }
+
+    /// Joga `mv` na Linha de estudo, a partir da posição mostrada (a da linha ou a da Revisão
+    /// em curso), como um gesto jogaria: legal pelo núcleo de regras, sem tocar a Partida. É o
+    /// que as Aberturas, o Explorador e a Análise usam para "seguir por aqui". `false`, sem
+    /// mudar nada, se o estudo não é permitido, não há posição de estudo ou o Lance é ilegal.
+    pub fn study_play(&mut self, mv: Move) -> bool {
+        let Some(position) = self.study_position() else {
+            return false;
+        };
+        if !position.legal_moves().into_iter().any(|m| m == mv) {
+            return false;
+        }
+        self.study_push(mv);
+        true
     }
 
     /// Um Lance para trás na linha. No primeiro Lance, para no ponto de partida e **permanece
