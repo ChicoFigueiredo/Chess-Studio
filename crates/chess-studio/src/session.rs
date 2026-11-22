@@ -744,6 +744,14 @@ impl Session {
         self.engine.as_ref().map(GuardedOpponent::player)
     }
 
+    /// Atraso de resposta da Engine adversária (#335, Opções > Engines): ela segura o Lance
+    /// até esse tempo, só para parecer que pensa. Sem Engine na Partida, não faz nada.
+    pub fn set_engine_think_delay(&mut self, delay: std::time::Duration) {
+        if let Some(engine) = &mut self.engine {
+            engine.set_think_delay(delay);
+        }
+    }
+
     pub fn engine_retry(&mut self) {
         if let Some(engine) = &mut self.engine {
             engine.retry();

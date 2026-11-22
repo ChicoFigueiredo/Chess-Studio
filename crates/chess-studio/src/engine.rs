@@ -31,6 +31,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::{Mutex, PoisonError};
 use std::thread;
+use std::time::Duration;
 
 /// Variável de ambiente com o caminho do executável da Engine.
 pub const ENGINE_ENV: &str = "CHESS_STUDIO_ENGINE";
@@ -50,11 +51,19 @@ impl Plugin for EnginePlugin {
 /// Dá o pulso à Engine: nunca bloqueia (ela roda em thread própria). A Engine só joga com a
 /// licença da Trava de fair play (FP-01); sem o ponto único da Trava (apps parciais de teste),
 /// não joga.
-fn tick_engine(mut session: ResMut<Session>, fair: Option<Res<FairPlay>>) {
+fn tick_engine(
+    mut session: ResMut<Session>,
+    fair: Option<Res<FairPlay>>,
+    ui: Option<Res<EngineUi>>,
+) {
     // Leitura imutável primeiro: só toma `&mut` quando há Engine.
     if session.engine_active()
         && let Some(fair) = fair
     {
+        // O atraso de resposta vale a cada quadro, então mudar nas Opções pega já.
+        if let Some(ui) = ui {
+            session.set_engine_think_delay(Duration::from_secs(ui.think_delay_s().into()));
+        }
         session.tick_engine(&fair);
     }
 }
@@ -122,11 +131,16 @@ pub fn resolve_engine() -> Option<PathBuf> {
 pub const MIN_ELO: u32 = chess_uci::NOMINAL_MIN_ELO;
 pub const MAX_ELO: u32 = 3190;
 
+/// Maior atraso de resposta da Engine, em segundos (Opções > Engines, #335).
+pub const MAX_THINK_DELAY_S: u32 = 10;
+
 /// Escolhas do painel (lado, Elo, caminho).
 #[derive(Resource, Debug)]
 pub struct EngineUi {
     user_side: Side,
     elo: u32,
+    /// Atraso de resposta da Engine, em segundos; 0 = sem atraso (#335).
+    think_delay_s: u32,
     path_text: String,
     not_found: bool,
     /// Pedido de abertura do assistente de Engine (B10), atendido por `engine_wizard`.
@@ -146,6 +160,7 @@ impl Default for EngineUi {
         Self {
             user_side: Side::White,
             elo: 1500,
+            think_delay_s: 0,
             path_text: resolve_engine()
                 .map(|p| p.display().to_string())
                 .unwrap_or_default(),
@@ -189,6 +204,22 @@ impl EngineUi {
 
     pub fn elo(&self) -> u32 {
         self.elo
+    }
+
+    /// Atraso de resposta gravado, sobre o padrão (sem atraso).
+    pub fn with_think_delay_s(mut self, seconds: u32) -> Self {
+        self.think_delay_s = seconds.min(MAX_THINK_DELAY_S);
+        self
+    }
+
+    /// Atraso de resposta da Engine em segundos, dentro de `0..=MAX_THINK_DELAY_S`
+    /// (Opções > Engines).
+    pub fn set_think_delay_s(&mut self, seconds: u32) {
+        self.think_delay_s = seconds.min(MAX_THINK_DELAY_S);
+    }
+
+    pub fn think_delay_s(&self) -> u32 {
+        self.think_delay_s
     }
 
     /// Caminho escolhido no assistente ou no gerenciador de Engines (ambos já fizeram o
@@ -540,6 +571,45 @@ mod tests {
     fn empty_variable_falls_back_to_path_search() {
         let found = find_engine(os(""), os("/a:/b"), |p| p == Path::new("/b/stockfish"));
         assert_eq!(found, Some(PathBuf::from("/b/stockfish")));
+    }
+
+    #[test]
+    fn the_think_delay_of_the_options_reaches_the_running_engine_every_frame() {
+        use chess_game::EngineSeat;
+        let fair = FairPlay::new(chess_net::FairPlayGuard::new());
+        let mut session = Session::new();
+        let config = chess_uci::EngineConfig::new("/nao/existe/engine-adversaria");
+        let seat = EngineSeat {
+            color: Side::Black,
+            elo: 1500,
+        };
+        session.start_engine_game(seat, config, &fair).unwrap();
+        let mut app = App::new();
+        app.insert_resource(session)
+            .insert_resource(fair)
+            .insert_resource(EngineUi::default().with_think_delay_s(3))
+            .add_systems(Update, tick_engine);
+        app.update();
+        let delay = |app: &App| {
+            app.world()
+                .resource::<Session>()
+                .engine()
+                .unwrap()
+                .think_delay()
+        };
+        assert_eq!(delay(&app), Duration::from_secs(3));
+        // Mudar nas Opções vale na hora, no meio da Partida.
+        app.world_mut()
+            .resource_mut::<EngineUi>()
+            .set_think_delay_s(0);
+        app.update();
+        assert_eq!(delay(&app), Duration::ZERO);
+        // E o valor é limitado ao máximo do controle.
+        app.world_mut()
+            .resource_mut::<EngineUi>()
+            .set_think_delay_s(999);
+        app.update();
+        assert_eq!(delay(&app), Duration::from_secs(MAX_THINK_DELAY_S.into()));
     }
 
     #[test]

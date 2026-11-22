@@ -42,6 +42,7 @@ const KEY_MOVE_METHOD: &str = "move_method";
 const KEY_PRESENTATION: &str = "presentation";
 const KEY_QUALITY: &str = "quality";
 const KEY_ENGINE_ELO: &str = "engine_elo";
+const KEY_ENGINE_THINK_DELAY: &str = "engine_think_delay_s";
 const KEY_ENGINE_USER_SIDE: &str = "engine_user_side";
 /// Tela cheia e modo Foco (C3, UI-03/04): preferências de interface.
 const KEY_FULLSCREEN: &str = "fullscreen";
@@ -88,6 +89,8 @@ pub struct SavedPrefs {
     pub quality: GraphicsQuality,
     /// Elo escolhido para a Engine adversária (B9).
     pub engine_elo: u32,
+    /// Atraso de resposta da Engine, em segundos (#335).
+    pub engine_think_delay_s: u32,
     /// Lado do usuário contra a Engine (B9).
     pub engine_user_side: Color,
     /// Tela cheia (F11) e modo Foco (F10), independentes.
@@ -116,6 +119,7 @@ impl Default for SavedPrefs {
             presentation: Presentation::default(),
             quality: GraphicsQuality::default(),
             engine_elo: 1500,
+            engine_think_delay_s: 0,
             engine_user_side: Color::White,
             view: ViewState::default(),
             ultra_effects: UltraEffects::default(),
@@ -661,6 +665,12 @@ impl Persistence {
                 .and_then(|v| v.as_u64())
                 .and_then(|v| u32::try_from(v).ok())
                 .map_or(defaults.engine_elo, |v| v.clamp(MIN_ELO, MAX_ELO)),
+            engine_think_delay_s: get(KEY_ENGINE_THINK_DELAY)
+                .and_then(|v| v.as_u64())
+                .and_then(|v| u32::try_from(v).ok())
+                .map_or(defaults.engine_think_delay_s, |v| {
+                    v.min(crate::engine::MAX_THINK_DELAY_S)
+                }),
             engine_user_side: from_debug_id(
                 &[Color::White, Color::Black],
                 get(KEY_ENGINE_USER_SIDE),
@@ -1035,6 +1045,9 @@ impl Persistence {
         if before.engine_elo != now.engine_elo {
             writes.push((KEY_ENGINE_ELO, json!(now.engine_elo)));
         }
+        if before.engine_think_delay_s != now.engine_think_delay_s {
+            writes.push((KEY_ENGINE_THINK_DELAY, json!(now.engine_think_delay_s)));
+        }
         if before.engine_user_side != now.engine_user_side {
             writes.push((KEY_ENGINE_USER_SIDE, debug_id(&now.engine_user_side)));
         }
@@ -1189,7 +1202,9 @@ impl Plugin for PersistencePlugin {
             .insert_resource(screen_layouts)
             .insert_resource(notes)
             .insert_resource(
-                EngineUi::default().with_saved(prefs.engine_user_side, prefs.engine_elo),
+                EngineUi::default()
+                    .with_saved(prefs.engine_user_side, prefs.engine_elo)
+                    .with_think_delay_s(prefs.engine_think_delay_s),
             )
             .insert_resource(crate::engine_manager::DbLocation(path.clone()))
             .insert_resource(WindowMemory {
@@ -1265,6 +1280,7 @@ fn persist_prefs(
             presentation: *presentation,
             quality: *quality,
             engine_elo: engine_ui.elo(),
+            engine_think_delay_s: engine_ui.think_delay_s(),
             engine_user_side: engine_ui.user_side(),
             view: *view,
             ultra_effects: *ultra_effects,
@@ -1812,6 +1828,7 @@ mod tests {
             presentation: Presentation::Technical2d,
             quality: GraphicsQuality::Economic,
             engine_elo: 2100,
+            engine_think_delay_s: 3,
             engine_user_side: Color::Black,
             view: ViewState {
                 focus: true,
