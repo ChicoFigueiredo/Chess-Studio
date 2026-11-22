@@ -462,3 +462,100 @@ fn full_game_of_the_fake_engine_against_a_scripted_human_reaches_a_result_or_kee
     }
     assert!(plies(&game) >= 10);
 }
+
+// --- Atraso de resposta da Engine (#335): parece pensar, sem mexer na regra ---
+
+/// Dá tempo real para a Engine falsa responder, sem avançar o relógio injetado: o Lance
+/// chega ao jogador, mas o instante da Partida continua em `at_ms`.
+fn let_engine_answer(player: &mut EnginePlayer, game: &mut Game, at_ms: u64) {
+    for _ in 0..60 {
+        player.drive(game, Timestamp::mono(at_ms));
+        std::thread::sleep(ms(5));
+    }
+}
+
+#[test]
+fn the_think_delay_holds_the_move_until_the_minimum_time_passes() {
+    let mut game =
+        Game::new(GameSetup::standard(PolicyKind::Assisted).with_engine(black_engine(1500)));
+    let mut player =
+        EnginePlayer::new(black_engine(1500), config("normal")).with_think_delay(ms(2000));
+    human_move(&mut game, &Clock0(Instant::now()), "e2", "e4");
+
+    // Instante 0: a Engine já respondeu (é rápida), mas o Lance fica retido.
+    let_engine_answer(&mut player, &mut game, 0);
+    assert_eq!(plies(&game), 1, "o Lance não entra antes do atraso");
+    assert_eq!(player.status(), PlayerStatus::Thinking, "segue pensando");
+
+    // Variação leve: o mínimo vai de 70% a 130% do valor pedido.
+    player.drive(&mut game, Timestamp::mono(1399));
+    assert_eq!(plies(&game), 1, "70% de 2 s ainda não passou");
+    player.drive(&mut game, Timestamp::mono(2600));
+    assert_eq!(plies(&game), 2, "130% de 2 s já passou");
+    assert_eq!(game.snapshot().history[1].san, "a5");
+    assert_eq!(player.status(), PlayerStatus::Waiting);
+}
+
+#[test]
+fn without_a_think_delay_the_move_enters_at_once() {
+    let mut game =
+        Game::new(GameSetup::standard(PolicyKind::Assisted).with_engine(black_engine(1500)));
+    let mut player =
+        EnginePlayer::new(black_engine(1500), config("normal")).with_think_delay(Duration::ZERO);
+    human_move(&mut game, &Clock0(Instant::now()), "e2", "e4");
+    let_engine_answer(&mut player, &mut game, 0);
+    assert_eq!(plies(&game), 2);
+}
+
+#[test]
+fn the_think_delay_can_change_while_the_game_runs() {
+    let mut game =
+        Game::new(GameSetup::standard(PolicyKind::Assisted).with_engine(black_engine(1500)));
+    let mut player = EnginePlayer::new(black_engine(1500), config("normal"));
+    player.set_think_delay(ms(3000));
+    human_move(&mut game, &Clock0(Instant::now()), "e2", "e4");
+    let_engine_answer(&mut player, &mut game, 0);
+    assert_eq!(plies(&game), 1);
+    // Desligar o atraso no meio solta o Lance retido.
+    player.set_think_delay(Duration::ZERO);
+    player.drive(&mut game, Timestamp::mono(0));
+    assert_eq!(plies(&game), 2);
+}
+
+#[test]
+fn with_a_clock_the_delay_never_spends_more_than_a_quarter_of_the_engine_time() {
+    let seat = EngineSeat {
+        color: Color::White,
+        elo: 1500,
+    };
+    let mut game = Game::new(
+        GameSetup::standard(PolicyKind::FideSimulation)
+            .with_time_control(TimeControl {
+                base_ms: 8_000,
+                increment_ms: 0,
+            })
+            .with_engine(seat),
+    );
+    let mut player = EnginePlayer::new(seat, config("normal")).with_think_delay(ms(10_000));
+    let_engine_answer(&mut player, &mut game, 0);
+    assert_eq!(plies(&game), 0, "retido");
+    // Um quarto de 8 s: 2 s. Pedir 10 s não deixa a Engine perder por tempo de propósito.
+    player.drive(&mut game, Timestamp::mono(2_000));
+    assert_eq!(plies(&game), 1);
+}
+
+#[test]
+fn a_takeback_during_the_delay_discards_the_held_move() {
+    let mut game =
+        Game::new(GameSetup::standard(PolicyKind::Assisted).with_engine(black_engine(1500)));
+    let mut player =
+        EnginePlayer::new(black_engine(1500), config("normal")).with_think_delay(ms(2000));
+    human_move(&mut game, &Clock0(Instant::now()), "e2", "e4");
+    let_engine_answer(&mut player, &mut game, 0);
+    assert_eq!(plies(&game), 1);
+    game.handle(Command::Undo, Timestamp::mono(100)).unwrap();
+    // A resposta retida valia para a posição que sumiu: não pode entrar depois.
+    player.drive(&mut game, Timestamp::mono(5_000));
+    assert_eq!(plies(&game), 0);
+    assert!(!matches!(player.status(), PlayerStatus::Failed(_)));
+}

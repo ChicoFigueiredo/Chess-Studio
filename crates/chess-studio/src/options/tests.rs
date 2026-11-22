@@ -275,6 +275,19 @@ fn an_unchanged_value_does_not_mark_the_resource_as_changed() {
 }
 
 #[test]
+fn the_engine_think_delay_is_an_option_that_stays_inside_the_allowed_range() {
+    let mut app = options_app();
+    assert_eq!(app.world().resource::<EngineUi>().think_delay_s(), 0);
+    apply(&mut app, OptionChange::EngineThinkDelay(2));
+    assert_eq!(app.world().resource::<EngineUi>().think_delay_s(), 2);
+    apply(&mut app, OptionChange::EngineThinkDelay(99_999));
+    assert_eq!(
+        app.world().resource::<EngineUi>().think_delay_s(),
+        crate::engine::MAX_THINK_DELAY_S
+    );
+}
+
+#[test]
 fn the_engine_elo_stays_inside_the_allowed_range() {
     let mut app = options_app();
     apply(&mut app, OptionChange::EngineElo(99_999));
@@ -292,6 +305,7 @@ fn change_everything(app: &mut App) {
     apply(app, OptionChange::Coordinates(false));
     apply(app, OptionChange::Aids(AidSettings::physical()));
     apply(app, OptionChange::EngineElo(2400));
+    apply(app, OptionChange::EngineThinkDelay(4));
 }
 
 #[test]
@@ -339,6 +353,11 @@ fn restore_defaults_asks_for_confirmation_before_changing_anything() {
     assert!(world.resource::<BoardCoordinates>().0);
     assert_eq!(*world.resource::<AidSettings>(), AidSettings::default());
     assert_eq!(world.resource::<EngineUi>().elo(), 1500);
+    assert_eq!(
+        world.resource::<EngineUi>().think_delay_s(),
+        0,
+        "sem atraso por padrão"
+    );
 }
 
 #[test]

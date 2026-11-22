@@ -854,6 +854,11 @@ impl GuardedOpponent {
         self.player.seat()
     }
 
+    /// Atraso de resposta da Engine (#335): só segura o Lance; não pede nem lê nada da Engine.
+    pub fn set_think_delay(&mut self, delay: std::time::Duration) {
+        self.player.set_think_delay(delay);
+    }
+
     /// "Tentar de novo": a próxima jogada ainda passa por [`GuardedOpponent::drive`].
     pub fn retry(&mut self) {
         self.player.retry();

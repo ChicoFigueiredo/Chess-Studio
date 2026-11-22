@@ -41,8 +41,27 @@ pub enum PlayerStatus {
 #[derive(Debug)]
 enum State {
     Idle,
-    Thinking { id: u64, events_len: usize },
+    Thinking {
+        id: u64,
+        events_len: usize,
+        /// Instante (da Partida) em que a Engine começou a pensar.
+        since_ms: u64,
+        /// Teto do atraso quando a Partida tem relógio: um quarto do tempo da Engine.
+        delay_cap: Option<Duration>,
+        /// Lance já devolvido pela Engine, retido até passar o atraso de resposta.
+        held: Option<String>,
+    },
     Failed(Failure),
+}
+
+/// Variação leve do atraso, de 70% a 130%, em milésimos. Determinística (vem do tamanho do log
+/// de Eventos): o domínio não sorteia nada e o teste não depende de sorte.
+fn jitter_permille(salt: usize) -> u64 {
+    let mixed = (salt as u64)
+        .wrapping_add(1)
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        >> 40;
+    700 + mixed % 601
 }
 
 #[derive(Debug)]
@@ -50,6 +69,8 @@ pub struct EnginePlayer {
     seat: EngineSeat,
     config: EngineConfig,
     movetime: Duration,
+    /// Tempo mínimo de resposta ("parecer pensar"); zero desliga (#335).
+    think_delay: Duration,
     controller: EngineController,
     state: State,
     /// Tamanho do log de Eventos quando a situação foi avaliada pela última vez.
@@ -66,6 +87,7 @@ impl EnginePlayer {
             seat,
             config,
             movetime: DEFAULT_MOVETIME,
+            think_delay: Duration::ZERO,
             controller,
             state: State::Idle,
             evaluated_len: None,
@@ -78,6 +100,24 @@ impl EnginePlayer {
     pub fn with_movetime(mut self, movetime: Duration) -> Self {
         self.movetime = movetime;
         self
+    }
+
+    /// Tempo mínimo até o Lance da Engine entrar na Partida, só para parecer que ela pensa
+    /// (#335). O valor sofre uma variação leve de 70% a 130% e, com relógio, nunca passa de
+    /// um quarto do tempo da Engine. Se ela demorar mais, o Lance entra quando terminar.
+    pub fn with_think_delay(mut self, delay: Duration) -> Self {
+        self.think_delay = delay;
+        self
+    }
+
+    /// O atraso de resposta em vigor.
+    pub fn think_delay(&self) -> Duration {
+        self.think_delay
+    }
+
+    /// Muda o atraso com a Partida em andamento (vale já para o Lance retido).
+    pub fn set_think_delay(&mut self, delay: Duration) {
+        self.think_delay = delay;
     }
 
     pub fn seat(&self) -> EngineSeat {
@@ -150,11 +190,38 @@ impl EnginePlayer {
             self.state = State::Idle;
             self.evaluated_len = None;
         }
+        changed |= self.release_held(game, at);
         if matches!(self.state, State::Idle) && self.evaluated_len != Some(game.events().len()) {
             self.evaluated_len = Some(game.events().len());
             changed |= self.start_turn(game, at);
         }
         changed
+    }
+
+    /// Solta o Lance retido se o atraso de resposta já passou.
+    fn release_held(&mut self, game: &mut Game, at: Timestamp) -> bool {
+        let State::Thinking {
+            events_len,
+            since_ms,
+            delay_cap,
+            held: Some(_),
+            ..
+        } = &self.state
+        else {
+            return false;
+        };
+        let wanted = self.think_delay.as_millis() as u64 * jitter_permille(*events_len) / 1000;
+        let due = delay_cap.map_or(wanted, |cap| wanted.min(cap.as_millis() as u64));
+        if at.mono_ms.saturating_sub(*since_ms) < due {
+            return false;
+        }
+        let State::Thinking { held, .. } = &mut self.state else {
+            return false;
+        };
+        match held.take() {
+            Some(uci) => self.apply_move(game, uci, at),
+            None => false,
+        }
     }
 
     fn on_event(&mut self, event: ControllerEvent, game: &mut Game, at: Timestamp) -> bool {
@@ -165,10 +232,12 @@ impl EnginePlayer {
                 false
             }
             ControllerEvent::Move { id, uci } => {
-                if !matches!(self.state, State::Thinking { id: cur, .. } if cur == id) {
-                    return false;
+                match &mut self.state {
+                    State::Thinking { id: cur, held, .. } if *cur == id => *held = Some(uci),
+                    _ => return false,
                 }
-                self.apply_move(game, uci, at)
+                // Atraso zero (ou já vencido): entra agora; senão fica retido.
+                self.release_held(game, at)
             }
             ControllerEvent::NoMove { .. } => {
                 self.state = State::Failed(Failure::new(
@@ -230,10 +299,16 @@ impl EnginePlayer {
             }
         }
         let request = self.build_request(game, &snapshot, at);
+        let delay_cap = snapshot
+            .clock_at(at)
+            .map(|reading| Duration::from_millis(reading.remaining(self.seat.color) / 4));
         let id = self.controller.search(request);
         self.state = State::Thinking {
             id,
             events_len: game.events().len(),
+            since_ms: at.mono_ms,
+            delay_cap,
+            held: None,
         };
         changed
     }

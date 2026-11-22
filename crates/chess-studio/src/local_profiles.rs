@@ -212,6 +212,7 @@ impl Applied<'_> {
         *self.interface = InterfaceProfiles::with_state(interface);
         self.engine
             .apply_saved(prefs.engine_user_side, prefs.engine_elo);
+        self.engine.set_think_delay_s(prefs.engine_think_delay_s);
         *self.notes = StudyNotes::loaded(epoch, notes);
         *self.controls = Controls::with_map(controls);
     }

@@ -76,6 +76,10 @@ opt-engine-wizard-hint = Detecta ou baixa uma Engine e a deixa pronta para jogar
 opt-engine-wizard-open = Abrir assistente…
 opt-engine-elo = Elo da Engine · { $elo }
 opt-engine-elo-hint = Força da Engine adversária nas próximas Partidas.
+opt-engine-think-delay = Atraso de resposta da Engine · { $value }
+opt-engine-think-delay-hint = A Engine espera esse tempo antes de jogar, só para parecer que pensa. Varia um pouco de Lance a Lance e, com relógio, nunca passa de um quarto do tempo dela.
+opt-engine-think-delay-off = sem atraso
+opt-engine-think-delay-s = { $seconds } s
 opt-engine-side = Você joga de
 opt-engine-side-hint = Lado do usuário contra a Engine.
 

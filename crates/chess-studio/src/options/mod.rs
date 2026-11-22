@@ -20,7 +20,7 @@ use crate::camera::CameraRig;
 use crate::controls::{Controls, ControlsUi};
 use crate::coordinates::BoardCoordinates;
 use crate::dock::Dock;
-use crate::engine::{EngineUi, MAX_ELO, MIN_ELO};
+use crate::engine::{EngineUi, MAX_ELO, MAX_THINK_DELAY_S, MIN_ELO};
 use crate::hover::HoverHighlight;
 use crate::hud::{HudProfile, HudSettings};
 use crate::hud_policy::{self, Allowance};
@@ -114,6 +114,7 @@ pub enum OptionId {
     EngineManager,
     EngineWizard,
     EngineElo,
+    EngineThinkDelay,
     EngineSide,
     ControlsOpen,
     ControlsSummary,
@@ -124,7 +125,7 @@ pub enum OptionId {
 impl OptionId {
     /// Todas as linhas do diálogo (conferidas pelos testes do inventário).
     #[cfg(test)]
-    pub const ALL: [OptionId; 29] = [
+    pub const ALL: [OptionId; 30] = [
         OptionId::Theme,
         OptionId::Density,
         OptionId::Scale,
@@ -149,6 +150,7 @@ impl OptionId {
         OptionId::EngineManager,
         OptionId::EngineWizard,
         OptionId::EngineElo,
+        OptionId::EngineThinkDelay,
         OptionId::EngineSide,
         OptionId::ControlsOpen,
         OptionId::ControlsSummary,
@@ -166,7 +168,9 @@ impl OptionId {
             }
             AidProfile | AidDestinations | AidGhosts | AidSelected | AidLastMove | AidCheck
             | AidExplanation | HudEnabled | HudProfile => Category::Aids,
-            EngineManager | EngineWizard | EngineElo | EngineSide => Category::Engines,
+            EngineManager | EngineWizard | EngineElo | EngineThinkDelay | EngineSide => {
+                Category::Engines
+            }
             ControlsOpen | ControlsSummary => Category::Controls,
             LocalProfile | LocalProfileManage => Category::Profile,
         }
@@ -200,6 +204,7 @@ impl OptionId {
             EngineManager => ("opt-engine-manager", "opt-engine-manager-hint"),
             EngineWizard => ("opt-engine-wizard", "opt-engine-wizard-hint"),
             EngineElo => ("opt-engine-elo", "opt-engine-elo-hint"),
+            EngineThinkDelay => ("opt-engine-think-delay", "opt-engine-think-delay-hint"),
             EngineSide => ("opt-engine-side", "opt-engine-side-hint"),
             ControlsOpen => ("opt-controls", "opt-controls-hint"),
             ControlsSummary => ("opt-controls-summary", "opt-controls-summary-hint"),
@@ -226,6 +231,8 @@ pub enum OptionChange {
     Aids(AidSettings),
     Hud(HudSettings),
     EngineElo(u32),
+    /// Atraso de resposta da Engine, em segundos (#335).
+    EngineThinkDelay(u32),
     EngineSide(Side),
 }
 
@@ -307,6 +314,11 @@ impl OptionsEnv<'_> {
                     self.engine_ui.set_elo(v);
                 }
             }
+            OptionChange::EngineThinkDelay(v) => {
+                if self.engine_ui.think_delay_s() != v.min(MAX_THINK_DELAY_S) {
+                    self.engine_ui.set_think_delay_s(v);
+                }
+            }
             OptionChange::EngineSide(v) => {
                 if self.engine_ui.user_side() != v {
                     self.engine_ui.set_user_side(v);
@@ -333,6 +345,7 @@ impl OptionsEnv<'_> {
             OptionChange::Aids(AidSettings::default()),
             OptionChange::Hud(HudSettings::default()),
             OptionChange::EngineElo(DEFAULT_ENGINE_ELO),
+            OptionChange::EngineThinkDelay(0),
             OptionChange::EngineSide(Side::White),
         ] {
             self.apply(change);
@@ -395,9 +408,22 @@ pub struct OptionsPlugin;
 impl Plugin for OptionsPlugin {
     fn build(&self, app: &mut App) {
         // `--options`: abre o diálogo já na partida (evidências com `--screenshot`).
-        let open = std::env::args().any(|a| a == "--options");
+        let args: Vec<String> = std::env::args().collect();
+        let open = args.iter().any(|a| a == "--options");
+        // `--options-category engines`: abre numa categoria (só evidência).
+        let category = args
+            .iter()
+            .position(|a| a == "--options-category")
+            .and_then(|i| args.get(i + 1))
+            .and_then(|name| {
+                Category::ALL
+                    .into_iter()
+                    .find(|c| c.key().ends_with(name.as_str()))
+            })
+            .unwrap_or_default();
         app.insert_resource(OptionsUi {
             open,
+            category,
             ..OptionsUi::default()
         })
         .add_systems(
@@ -1005,6 +1031,21 @@ fn engines(ui: &mut egui::Ui, i18n: &I18n, env: &mut OptionsEnv, state: &mut Opt
         cs_slider(ui, &mut slider, MIN_ELO as f32..=MAX_ELO as f32, 10.0);
     });
     env.apply(OptionChange::EngineElo(slider.round() as u32));
+    let delay = env.engine_ui.think_delay_s();
+    let mut delay_slider = delay as f32;
+    let delay_text = if delay == 0 {
+        i18n.t("opt-engine-think-delay-off")
+    } else {
+        i18n.t_with(
+            "opt-engine-think-delay-s",
+            &[("seconds", &delay.to_string())],
+        )
+    };
+    let label = i18n.t_with("opt-engine-think-delay", &[("value", &delay_text)]);
+    row(ui, i18n, OptionId::EngineThinkDelay, Some(label), |ui| {
+        cs_slider(ui, &mut delay_slider, 0.0..=MAX_THINK_DELAY_S as f32, 1.0);
+    });
+    env.apply(OptionChange::EngineThinkDelay(delay_slider.round() as u32));
     let mut side = env.engine_ui.user_side();
     row(ui, i18n, OptionId::EngineSide, None, |ui| {
         cs_radio_value(ui, &mut side, Side::White, &i18n.t("engine-side-white"));
