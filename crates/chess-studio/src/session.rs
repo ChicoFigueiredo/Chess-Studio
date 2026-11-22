@@ -20,8 +20,7 @@
 mod spectator;
 mod study_mode;
 
-#[allow(unused_imports)] // API para os tickets da Notação, da faixa e da Análise (#323 a #325)
-pub use study_mode::{StudyLine, StudyMove};
+pub use study_mode::StudyLine;
 
 use crate::fair_play::{FairPlay, FairPlayLocked, GuardedOpponent};
 use crate::new_game::{NewGameConfig, Opponent};

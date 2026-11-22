@@ -11,10 +11,6 @@
 //! - Cada Lance é validado pelo núcleo de regras (`chess-core`); o intérprete de gestos é o
 //!   mesmo do jogo normal, alimentado com a posição do estudo.
 
-// A API pública abaixo é consumida pelos tickets seguintes (lista da Notação #323, faixa e Ação
-// no tabuleiro #324, Análise e Explorador #325); até lá, só os testes e o gesto a usam.
-#![allow(dead_code)]
-
 use super::{Session, SettleHint, lifted, moved_pieces};
 use crate::study::{StudyRefusal, study_mode_available};
 use bevy::prelude::Vec3;
@@ -76,6 +72,7 @@ impl StudyLine {
         self.cursor == 0
     }
 
+    #[cfg(test)]
     pub fn is_at_end(&self) -> bool {
         self.cursor == self.moves.len()
     }
@@ -167,6 +164,7 @@ impl Session {
 
     /// Um Lance para trás na linha. No primeiro Lance, para no ponto de partida e **permanece
     /// no estudo**.
+    #[cfg(test)]
     pub fn study_step_back(&mut self) {
         if let Some(line) = &self.study {
             self.study_set_cursor(line.cursor.saturating_sub(1));
@@ -174,6 +172,7 @@ impl Session {
     }
 
     /// Um Lance para a frente na linha; no fim, não faz nada.
+    #[cfg(test)]
     pub fn study_step_forward(&mut self) {
         if let Some(line) = &self.study {
             self.study_set_cursor(line.cursor.saturating_add(1));
@@ -181,11 +180,13 @@ impl Session {
     }
 
     /// Volta ao ponto de partida da linha (início), ainda no estudo.
+    #[cfg(test)]
     pub fn study_to_start(&mut self) {
         self.study_set_cursor(0);
     }
 
     /// Vai ao último Lance da linha (fim).
+    #[cfg(test)]
     pub fn study_to_end(&mut self) {
         self.study_set_cursor(usize::MAX);
     }
