@@ -360,15 +360,13 @@ impl Session {
         snapshot.side_to_move = position.side_to_move();
         snapshot.in_check = position.is_check();
         snapshot.outcome = None;
-        snapshot.provisional = self
-            .study_promotion
-            .and_then(|(from, to)| {
-                let (side, pieces) = moved_pieces(position, from, to)?;
-                Some(ProvisionalView {
-                    pending_promotion: PendingPromotion { side, from, to },
-                    pieces,
-                })
-            });
+        snapshot.provisional = self.study_promotion.and_then(|(from, to)| {
+            let (side, pieces) = moved_pieces(position, from, to)?;
+            Some(ProvisionalView {
+                pending_promotion: PendingPromotion { side, from, to },
+                pieces,
+            })
+        });
         snapshot.paused = false;
         snapshot.touched.clear();
         snapshot.must_move_from.clear();

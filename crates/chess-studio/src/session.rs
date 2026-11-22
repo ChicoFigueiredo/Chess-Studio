@@ -1899,7 +1899,10 @@ mod tests {
         let mut s = played(&["e2e4", "e7e5"]);
         s.mark_exercise();
         s.set_review_ply(Some(1));
-        assert_eq!(s.study_refusal(), Some(crate::study::StudyRefusal::Exercise));
+        assert_eq!(
+            s.study_refusal(),
+            Some(crate::study::StudyRefusal::Exercise)
+        );
         tap(&mut s, "e7", "e5");
         assert!(!s.studying(), "a apresentação do Treino é só leitura");
     }
@@ -1929,7 +1932,10 @@ mod tests {
         assert_eq!(s.review().unwrap().last_move.as_ref().unwrap().san, "e4");
         assert_eq!(s.review().unwrap().position.piece_at(sq("c5")), None);
         s.study_step_back();
-        assert!(s.studying(), "anterior no ponto de partida não sai do estudo");
+        assert!(
+            s.studying(),
+            "anterior no ponto de partida não sai do estudo"
+        );
         assert_eq!(s.study_line().unwrap().cursor(), 0);
 
         s.study_step_forward();
@@ -2014,7 +2020,10 @@ mod tests {
         assert!(s.studying(), "ply inválido é ignorado e não sai do estudo");
         s.study_to_start();
         s.set_review_ply(Some(1));
-        assert!(!s.studying(), "mesmo o ponto de partida: a Revisão comum volta");
+        assert!(
+            !s.studying(),
+            "mesmo o ponto de partida: a Revisão comum volta"
+        );
         assert_eq!(s.review().unwrap().ply, 1);
         tap(&mut s, "c7", "c5");
         s.set_review_ply(Some(2));
@@ -2050,7 +2059,10 @@ mod tests {
         assert_eq!(s.game().events(), events_before.as_slice());
         notes.follow(s.epoch());
         assert_eq!(notes, notes_before);
-        assert!(!pgn_before.contains("c5"), "a Linha de estudo nunca vai ao PGN");
+        assert!(
+            !pgn_before.contains("c5"),
+            "a Linha de estudo nunca vai ao PGN"
+        );
     }
 
     /// A Engine adversária joga `uci` na Partida, como o faz `tick_engine` (sem processo UCI).
@@ -2086,7 +2098,10 @@ mod tests {
         assert!(s.studying());
         assert_eq!(s.study_line().unwrap().moves().len(), 1);
         assert_eq!(s.study_line().unwrap().base_ply(), 1);
-        assert!(s.study_game_advanced(), "a faixa avisa: Lance novo na Partida");
+        assert!(
+            s.study_game_advanced(),
+            "a faixa avisa: Lance novo na Partida"
+        );
 
         // O aviso some com o estudo, e um estudo novo parte da Partida de agora.
         s.leave_study();
@@ -2123,7 +2138,9 @@ mod tests {
         assert!(s.studying() && s.study_line().unwrap().moves().is_empty());
 
         tap(&mut s, "a7", "a8");
-        s.command(Command::ChoosePromotion { piece: Piece::Knight });
+        s.command(Command::ChoosePromotion {
+            piece: Piece::Knight,
+        });
         assert_eq!(s.promotion_pending(), None);
         let line = s.study_line().unwrap();
         assert_eq!(line.moves().len(), 1);
@@ -2161,7 +2178,10 @@ mod tests {
         s.set_review_ply(Some(0));
         tap(&mut s, "a7", "a8");
         assert!(s.promotion_pending().is_some());
-        assert!(!s.studying(), "o estudo começa com o Lance, depois da escolha");
+        assert!(
+            !s.studying(),
+            "o estudo começa com o Lance, depois da escolha"
+        );
         s.command(Command::ChoosePromotion { piece: Piece::Rook });
         assert_eq!(s.study_line().unwrap().moves()[0].san, "a8=R+");
         assert_eq!(s.study_line().unwrap().base_ply(), 0);
