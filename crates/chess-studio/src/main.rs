@@ -73,6 +73,7 @@ mod pieces;
 mod play;
 mod presentation;
 mod profiles;
+mod promotion_dialog;
 mod provider_consent;
 mod ready;
 mod remote_engine;
