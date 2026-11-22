@@ -5,7 +5,7 @@
 
 use crate::dock::{PanelAccess, PanelDef, ids};
 use crate::i18n::I18n;
-use crate::session::Session;
+use crate::session::{Session, StudyLine};
 use crate::study::{StudyNotes, StudyPanelRequest};
 use bevy::prelude::*;
 use bevy_egui::egui;
@@ -82,6 +82,35 @@ pub fn current_ply(session: &Session) -> usize {
 pub fn navigate(session: &mut Session, ply: usize) {
     let total = session.snapshot().history.len();
     session.set_review_ply(if ply >= total { None } else { Some(ply) });
+}
+
+/// As linhas da lista "Linha de estudo" (#323): os Lances da linha em duas colunas, numerados
+/// a partir do Lance de partida (o número do lance completo da posição de onde ela partiu).
+pub fn study_rows(line: &StudyLine) -> Vec<Row> {
+    let entries: Vec<HistoryEntry> = line
+        .moves()
+        .iter()
+        .map(|m| HistoryEntry {
+            ply: m.ply,
+            side: m.side,
+            mv: m.mv,
+            san: m.san.clone(),
+        })
+        .collect();
+    rows(&entries, line.start().position.fullmove_number())
+}
+
+/// Meio-lance (na numeração da Partida) do Lance atual da linha; `None` no ponto de partida.
+pub fn study_current_ply(line: &StudyLine) -> Option<usize> {
+    (line.cursor() > 0).then(|| line.base_ply() + line.cursor())
+}
+
+/// Vai ao Lance `ply` da Linha de estudo (clicado na lista). Fica no estudo.
+pub fn navigate_study(session: &mut Session, ply: usize) {
+    if let Some(line) = session.study_line() {
+        let cursor = ply.saturating_sub(line.base_ply());
+        session.study_set_cursor(cursor);
+    }
 }
 
 pub struct NotationPlugin;
@@ -292,8 +321,76 @@ fn move_cell(
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
-/// Conteúdo do painel Notação.
-/// Conteúdo do painel Notação; com `quick`, cada Lance ganha a nota rápida (#180).
+/// Uma lista de Lances em três colunas (número, brancas, pretas). Devolve o meio-lance
+/// clicado. `current` é o Lance destacado; `follow` rola até ele. Com `quick`, cada Lance
+/// ganha a nota rápida (#180); abrir o Painel Anotações também conta como clique.
+fn move_grid(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    id: &str,
+    rows: Vec<Row>,
+    current: Option<usize>,
+    follow: bool,
+    mut quick: Option<&mut QuickNotes<'_>>,
+) -> Option<usize> {
+    let p = crate::panel_chrome::palette_of(ui.visuals());
+    let mut go_to = None;
+    // NotationList: três colunas (número, brancas, pretas).
+    egui::Grid::new(id)
+        .num_columns(3)
+        .spacing([4.0, 2.0])
+        .show(ui, |ui| {
+            for row in rows {
+                // Números tabulares: a coluna não muda de largura entre 9. e 10.
+                let font = egui::TextStyle::Body.resolve(ui.style());
+                crate::ui_theme::tabular_text(ui, &format!("{}.", row.number), font, p.ink_muted);
+                for (cell, gap) in [(&row.white, row.white.is_none()), (&row.black, false)] {
+                    match cell {
+                        Some(cell) => {
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 2.0;
+                                let is_current = current == Some(cell.ply);
+                                let response = move_cell(ui, p, &cell.san, is_current);
+                                if is_current && follow {
+                                    response.scroll_to_me(Some(egui::Align::Center));
+                                }
+                                if response.clicked() {
+                                    go_to = Some(cell.ply);
+                                }
+                                if let Some(quick) = quick.as_deref_mut() {
+                                    let hover = response.hovered();
+                                    if note_slot(ui, i18n, p, quick, cell.ply, hover) {
+                                        go_to = Some(cell.ply);
+                                        *quick.open_study = true;
+                                    }
+                                }
+                            });
+                        }
+                        None if gap => {
+                            ui.label(egui::RichText::new("…").color(p.ink_muted));
+                        }
+                        None => {
+                            ui.label("");
+                        }
+                    }
+                }
+                ui.end_row();
+            }
+        });
+    go_to
+}
+
+/// `true` quando o Lance atual guardado em `key` mudou desde o último quadro (a rolagem
+/// automática só ocorre então: não briga com a rolagem manual).
+fn changed_since_last_frame(ui: &egui::Ui, key: egui::Id, current: Option<usize>) -> bool {
+    let previous: Option<Option<usize>> = ui.data(|d| d.get_temp(key));
+    ui.data_mut(|d| d.insert_temp(key, current));
+    previous != Some(current)
+}
+
+/// Conteúdo do painel Notação; com `quick`, cada Lance ganha a nota rápida (#180). Em Modo de
+/// estudo (#323), a lista da Partida fica congelada em cima e a lista "Linha de estudo" vem
+/// empilhada abaixo.
 pub fn ui_with_notes(
     ui: &mut egui::Ui,
     i18n: &I18n,
@@ -306,7 +403,7 @@ pub fn ui_with_notes(
         return;
     }
     let snapshot = session.snapshot().clone();
-    if snapshot.history.is_empty() {
+    if snapshot.history.is_empty() && !session.studying() {
         ui.weak(i18n.t("notation-empty"));
         return;
     }
@@ -316,73 +413,62 @@ pub fn ui_with_notes(
         .game()
         .review_at_ply(0)
         .map_or(1, |v| v.position.fullmove_number());
+    // Em estudo, a lista da Partida fica no Lance de onde a linha partiu (a Revisão).
     let current = current_ply(session);
-    let previous_id = ui.id().with("last-current-ply");
-    let previous: Option<usize> = ui.data(|d| d.get_temp(previous_id));
-    // Rolagem automática só quando o Lance atual muda: não briga com a rolagem manual.
-    let follow = previous != Some(current);
+    let follow = changed_since_last_frame(ui, ui.id().with("last-current-ply"), Some(current));
+    let study = session.study_line().map(|line| {
+        (
+            study_rows(line),
+            study_current_ply(line),
+            line.moves().is_empty(),
+        )
+    });
     let mut go_to = None;
+    let mut study_go_to = None;
     let p = crate::panel_chrome::palette_of(ui.visuals());
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
-            // NotationList: três colunas (número, brancas, pretas).
-            egui::Grid::new("notation_grid")
-                .num_columns(3)
-                .spacing([4.0, 2.0])
-                .show(ui, |ui| {
-                    for row in rows(&snapshot.history, first_number) {
-                        // Números tabulares: a coluna não muda de largura entre 9. e 10.
-                        let font = egui::TextStyle::Body.resolve(ui.style());
-                        crate::ui_theme::tabular_text(
-                            ui,
-                            &format!("{}.", row.number),
-                            font,
-                            p.ink_muted,
-                        );
-                        for (cell, gap) in [(&row.white, row.white.is_none()), (&row.black, false)]
-                        {
-                            match cell {
-                                Some(cell) => {
-                                    ui.horizontal(|ui| {
-                                        ui.spacing_mut().item_spacing.x = 2.0;
-                                        let response =
-                                            move_cell(ui, p, &cell.san, cell.ply == current);
-                                        if cell.ply == current && follow {
-                                            response.scroll_to_me(Some(egui::Align::Center));
-                                        }
-                                        if response.clicked() {
-                                            go_to = Some(cell.ply);
-                                        }
-                                        if let Some(quick) = quick.as_mut() {
-                                            let hover = response.hovered();
-                                            if note_slot(ui, i18n, p, quick, cell.ply, hover) {
-                                                go_to = Some(cell.ply);
-                                                *quick.open_study = true;
-                                            }
-                                        }
-                                    });
-                                }
-                                None if gap => {
-                                    ui.label(egui::RichText::new("…").color(p.ink_muted));
-                                }
-                                None => {
-                                    ui.label("");
-                                }
-                            }
-                        }
-                        ui.end_row();
-                    }
-                });
+            go_to = move_grid(
+                ui,
+                i18n,
+                "notation_grid",
+                rows(&snapshot.history, first_number),
+                Some(current),
+                follow,
+                quick.as_mut(),
+            );
             if let Some(outcome) = snapshot.outcome {
                 ui.separator();
                 ui.strong(score(outcome.result));
                 ui.small(crate::ui::outcome_text(i18n, outcome));
             }
+            if let Some((study_rows, study_current, empty)) = study {
+                ui.separator();
+                ui.strong(i18n.t("notation-study-heading"));
+                if empty {
+                    ui.small(
+                        egui::RichText::new(i18n.t("notation-study-empty")).color(p.ink_muted),
+                    );
+                }
+                let follow =
+                    changed_since_last_frame(ui, ui.id().with("last-study-ply"), study_current);
+                study_go_to = move_grid(
+                    ui,
+                    i18n,
+                    "notation_study_grid",
+                    study_rows,
+                    study_current,
+                    follow,
+                    None,
+                );
+            }
         });
-    ui.data_mut(|d| d.insert_temp(previous_id, current));
+    // Um Lance da lista da Partida encerra o estudo e mostra esse Lance (Revisão comum).
     if let Some(ply) = go_to {
         navigate(session, ply);
+    } else if let Some(ply) = study_go_to {
+        navigate_study(session, ply);
     }
 }
 
@@ -480,6 +566,144 @@ mod tests {
         assert!(s.review().is_none(), "o último Lance é a Partida ao vivo");
         assert_eq!(s.game().events().len(), events, "nenhum Evento gerado");
         assert_eq!(s.snapshot(), &snapshot);
+    }
+
+    fn tap(session: &mut Session, name: &str) {
+        let square = Some(name.parse().unwrap());
+        session.gesture(chess_input::GestureEvent::PointerDown {
+            button: chess_input::PointerButton::Primary,
+            square,
+            modifiers: chess_input::Modifiers::default(),
+        });
+        session.gesture(chess_input::GestureEvent::PointerUp { square });
+    }
+
+    /// 1.e4 e5 2.Nf3, revista após 1.e4 e5, com a Linha de estudo 2.d4 d5 3.Nc3.
+    fn studying() -> Session {
+        let mut s = session_with(&[("e2", "e4"), ("e7", "e5"), ("g1", "f3")]);
+        s.set_review_ply(Some(2));
+        for (from, to) in [("d2", "d4"), ("d7", "d5"), ("b1", "c3")] {
+            tap(&mut s, from);
+            tap(&mut s, to);
+        }
+        assert!(s.studying());
+        s
+    }
+
+    fn sans(rows: &[Row]) -> Vec<(u16, Option<&str>, Option<&str>)> {
+        rows.iter()
+            .map(|r| {
+                (
+                    r.number,
+                    r.white.as_ref().map(|c| c.san.as_str()),
+                    r.black.as_ref().map(|c| c.san.as_str()),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_study_list_is_numbered_from_the_starting_move_in_the_same_two_columns() {
+        let s = studying();
+        let rows = study_rows(s.study_line().unwrap());
+        assert_eq!(
+            sans(&rows),
+            vec![(2, Some("d4"), Some("d5")), (3, Some("Nc3"), None)]
+        );
+        // Os meios-lances seguem a numeração da Partida (a linha partiu do meio-lance 2).
+        let plies: Vec<usize> = rows
+            .iter()
+            .flat_map(|r| [&r.white, &r.black])
+            .flatten()
+            .map(|c| c.ply)
+            .collect();
+        assert_eq!(plies, vec![3, 4, 5]);
+    }
+
+    #[test]
+    fn a_study_that_starts_on_blacks_turn_begins_with_a_gap_in_the_white_column() {
+        let mut s = session_with(&[("e2", "e4"), ("e7", "e5")]);
+        s.set_review_ply(Some(1));
+        tap(&mut s, "c7");
+        tap(&mut s, "c5");
+        let rows = study_rows(s.study_line().unwrap());
+        assert_eq!(sans(&rows), vec![(1, None, Some("c5"))]);
+    }
+
+    #[test]
+    fn the_study_cursor_marks_the_current_move_and_a_click_goes_to_it() {
+        let mut s = studying();
+        let line = s.study_line().unwrap();
+        assert_eq!(study_current_ply(line), Some(5), "o cursor está no fim");
+        navigate_study(&mut s, 4);
+        let line = s.study_line().unwrap();
+        assert_eq!(line.cursor(), 2);
+        assert_eq!(study_current_ply(line), Some(4));
+        assert!(s.studying(), "clicar num Lance da linha fica no estudo");
+        s.study_to_start();
+        assert_eq!(study_current_ply(s.study_line().unwrap()), None);
+    }
+
+    #[test]
+    fn during_the_study_the_game_list_is_frozen_on_the_starting_move() {
+        let s = studying();
+        assert_eq!(
+            current_ply(&s),
+            2,
+            "o Lance de partida fica destacado na lista da Partida"
+        );
+        assert_eq!(s.snapshot().history.len(), 3, "a Partida não mudou");
+    }
+
+    #[test]
+    fn clicking_a_move_of_the_game_list_ends_the_study_and_shows_that_move() {
+        let mut s = studying();
+        let events = s.game().events().len();
+        navigate(&mut s, 1);
+        assert!(!s.studying());
+        assert_eq!(current_ply(&s), 1);
+        assert_eq!(s.review().unwrap().last_move.as_ref().unwrap().san, "e4");
+        assert_eq!(s.game().events().len(), events, "nenhum Evento gerado");
+    }
+
+    /// Desenha o painel num quadro de 230 px de largura e devolve a altura e a largura usadas.
+    fn render(session: &mut Session, dark: bool) -> (f32, f32) {
+        let ctx = egui::Context::default();
+        ctx.set_visuals(if dark {
+            egui::Visuals::dark()
+        } else {
+            egui::Visuals::light()
+        });
+        let i18n = I18n::pt_br();
+        let mut used = (0.0, 0.0);
+        for _ in 0..2 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(230.0, 2000.0),
+                )),
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| {
+                egui::CentralPanel::default().show(ui, |ui| {
+                    ui_with_notes(ui, &i18n, session, false, None);
+                    used = (ui.min_rect().height(), ui.min_rect().width());
+                });
+            });
+            out.textures_delta.clear();
+        }
+        used
+    }
+
+    #[test]
+    fn the_panel_with_a_study_list_draws_in_230_px_in_both_themes_without_leaving_the_study() {
+        for dark in [false, true] {
+            let mut s = studying();
+            let (_, width) = render(&mut s, dark);
+            assert!(width <= 230.0 + 0.5, "cabe nos 230 px (largura {width})");
+            assert!(s.studying(), "desenhar não sai do estudo");
+            assert_eq!(s.study_line().unwrap().moves().len(), 3);
+        }
     }
 
     #[test]

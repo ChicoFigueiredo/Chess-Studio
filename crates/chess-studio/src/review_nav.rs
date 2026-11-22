@@ -366,7 +366,11 @@ mod tests {
         assert!(step(&mut s, ReviewStep::Next));
         assert!(step(&mut s, ReviewStep::Next));
         assert!(!step(&mut s, ReviewStep::Next), "no fim da linha");
-        assert_eq!(s.study_line().unwrap().moves().len(), 3, "a linha segue inteira");
+        assert_eq!(
+            s.study_line().unwrap().moves().len(),
+            3,
+            "a linha segue inteira"
+        );
         assert_eq!(s.game().events().len(), events, "nenhum Evento novo");
     }
 
