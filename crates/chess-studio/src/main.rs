@@ -129,6 +129,9 @@ fn capture_script() -> capture::CaptureScript {
         hud: option_value("--hud"),
         inverted: std::env::args().any(|a| a == "--inverted"),
         review: option_value("--review").and_then(|s| s.parse().ok()),
+        study: option_value("--study")
+            .map(|m| m.split(',').map(str::to_owned).collect())
+            .unwrap_or_default(),
         config: capture::parse_config(
             option_value("--policy").as_deref(),
             option_value("--time").as_deref(),

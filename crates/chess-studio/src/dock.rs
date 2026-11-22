@@ -1288,6 +1288,10 @@ pub(crate) fn dock_ui(world: &mut World) {
                     "regroup" => {
                         dock.layout.move_into_group_of(ids::CLOCK, ids::NOTATION);
                     }
+                    // Evidência da Linha de estudo (#323): a Notação no grupo alto do Relógio.
+                    "tallnotation" => {
+                        dock.layout.move_into_group_of(ids::NOTATION, ids::CLOCK);
+                    }
                     "float" => {
                         dock.layout
                             .detach(ids::STUDY, [160.0, 90.0], DEFAULT_FLOAT_SIZE);

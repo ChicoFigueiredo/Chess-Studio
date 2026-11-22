@@ -423,6 +423,7 @@ Passos:
 2. Ctrl+K e digite "nova"; Alt e as letras; Ctrl+F1; dois cliques numa aba.
 3. Abra Opções pela Paleta e percorra as categorias.
 4. Com uma Partida de uns 6 Lances, use ← → Home End e os botões do cabeçalho da Notação; depois clique numa nota rápida e digite com as setas.
+5. Modo de estudo na Notação (#323): revise um Lance do meio e mova uma peça no tabuleiro. Confira a lista "Linha de estudo" abaixo da lista da Partida. Use ← → Home e os botões, clique num Lance da linha, depois End (ou o botão de posição atual). Repita clicando num Lance da lista da Partida. Teste também com o painel Notação estreito, no Tema claro e no escuro.
 
 Critérios de aceite:
 
@@ -431,6 +432,9 @@ Critérios de aceite:
 - [ ] Dois cliques numa aba recolhem e expandem o Ribbon.
 - [ ] Opções cobre o que o painel antigo fazia, sem item sem caminho.
 - [ ] Na Notação, os quatro botões (início, anterior, próximo, posição atual) e as teclas ← → Home End navegam na Revisão; End volta ao vivo; digitando numa nota rápida, as setas não navegam (#321).
+- [ ] Ao mover uma peça numa posição revista, aparece a lista "Linha de estudo" abaixo da lista da Partida (empilhada), com os Lances numerados a partir do Lance de partida e o Lance atual da linha destacado; a lista da Partida fica com o Lance de partida destacado (#323).
+- [ ] Clicar num Lance da linha vai até ele; ← → Home e os botões andam pela linha sem descartá-la; End e o botão de posição atual encerram o estudo e a lista some; clicar num Lance da lista da Partida também encerra o estudo e mostra esse Lance (#323).
+- [ ] A lista cabe no painel estreito, sem corte nem rolagem horizontal, nos dois Temas (#323).
 
 Registre:
 

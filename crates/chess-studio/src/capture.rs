@@ -92,6 +92,9 @@ pub struct CaptureScript {
     pub aids: Option<String>,
     /// Entra na revisão neste meio-lance antes das fotos.
     pub review: Option<usize>,
+    /// `--study d2d4,d7d5`: depois da revisão, move estas peças (por gestos) e inicia a Linha de
+    /// estudo (#323).
+    pub study: Vec<String>,
     /// `--policy`, `--time`, `--side`: configuração da Partida de roteiro (B7/B8).
     pub config: Option<NewGameConfig>,
     /// `--hud off|study|analysis`: perfil de HUD da captura (C5).
@@ -272,6 +275,17 @@ fn run_capture(
         }
         if let Some(ply) = mode.script.review {
             session.set_review_ply(Some(ply));
+        }
+        for mv in &mode.script.study {
+            for name in [mv.get(0..2), mv.get(2..4)] {
+                let square = name.and_then(|n| n.parse().ok());
+                session.gesture(GestureEvent::PointerDown {
+                    button: PointerButton::Primary,
+                    square,
+                    modifiers: Modifiers::default(),
+                });
+                session.gesture(GestureEvent::PointerUp { square });
+            }
         }
     }
     let view = if mode.script.inverted && step.view != CameraView::Top {
