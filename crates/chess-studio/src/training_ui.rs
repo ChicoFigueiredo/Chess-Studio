@@ -341,6 +341,8 @@ impl TrainingUi {
         fresh.set_move_method(session.move_method());
         fresh.supersede(session);
         fresh.cover(session);
+        // O Exercício não é a Partida do usuário: sem Modo de estudo (#322).
+        fresh.mark_exercise();
         self.exercise_epoch = Some(fresh.epoch());
         let previous = std::mem::replace(session, fresh);
         if self.stashed.is_none() {

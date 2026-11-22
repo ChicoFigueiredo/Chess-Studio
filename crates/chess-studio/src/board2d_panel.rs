@@ -464,7 +464,7 @@ fn panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
             if !events.is_empty() {
                 let mut session = world.resource_mut::<Session>();
                 for event in events {
-                    session.gesture(event);
+                    session.gesture_from_panel(event);
                 }
             }
         }
@@ -590,7 +590,7 @@ mod tests {
 
     fn feed(session: &mut Session, drive: &mut Drive, f: PointerFrame) {
         for e in drive.events(f) {
-            session.gesture(e);
+            session.gesture_from_panel(e);
         }
     }
 

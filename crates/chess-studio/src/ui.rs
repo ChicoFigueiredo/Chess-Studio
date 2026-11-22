@@ -91,11 +91,12 @@ fn promotion_selector(
     i18n: Res<I18n>,
     mut session: ResMut<Session>,
 ) -> Result {
-    if session.snapshot().provisional.is_none() {
+    if session.promotion_pending().is_none() {
         return Ok(());
     }
     let mut choice = None;
-    let competitive = session.is_competitive();
+    // No Modo de estudo não há arbitragem: o seletor é o do Assistido (#322).
+    let competitive = session.is_competitive() && !session.studying();
     let mut always_queen = session.always_queen();
     egui::Window::new(i18n.t("promotion-title"))
         .collapsible(false)

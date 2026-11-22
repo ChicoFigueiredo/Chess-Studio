@@ -18,6 +18,10 @@
 //! ([`Session::own`]), e volta ao sair. Nenhum gesto vira Lance nem intenção.
 
 mod spectator;
+mod study_mode;
+
+#[allow(unused_imports)] // API para os tickets da Notação, da faixa e da Análise (#323 a #325)
+pub use study_mode::{StudyLine, StudyMove};
 
 use crate::fair_play::{FairPlay, FairPlayLocked, GuardedOpponent};
 use crate::new_game::{NewGameConfig, Opponent};
@@ -138,6 +142,13 @@ pub struct Session {
     review: Option<ReviewView>,
     /// A revisão em curso é uma variante da análise (C8), não um Lance do histórico.
     variation: bool,
+    /// Modo de estudo (#322): a Linha de estudo em curso, só leitura e fora do log.
+    study: Option<StudyLine>,
+    /// A `Session` é a de um Exercício do Treino: não é a Partida do usuário e não tem Modo de
+    /// estudo.
+    exercise: bool,
+    /// Peão na última fileira no estudo: a peça é escolhida antes de o Lance entrar na linha.
+    study_promotion: Option<(Square, Square)>,
     /// Configuração da Nova Partida (derivada do `GameSetup` ao reabrir).
     config: NewGameConfig,
     notice: Option<(Notice, Instant)>,
@@ -192,6 +203,9 @@ impl Session {
             epoch: 0,
             review: None,
             variation: false,
+            study: None,
+            exercise: false,
+            study_promotion: None,
             online,
             config,
             notice: None,
@@ -224,7 +238,10 @@ impl Session {
         self.epoch
     }
 
-    /// Revisão em curso, se houver. Durante a revisão a Partida não aceita gestos.
+    /// Revisão em curso, se houver (a posição mostrada: de um Lance da Partida, de uma variante
+    /// da Análise ou da Linha de estudo). Durante a revisão a Partida não aceita gestos: fora de
+    /// Partida competitiva em andamento, um gesto de mover uma peça inicia o Modo de estudo
+    /// (`study_mode`), que também só lê.
     pub fn review(&self) -> Option<&ReviewView> {
         self.review.as_ref()
     }
@@ -238,7 +255,10 @@ impl Session {
             },
             None => None,
         };
-        if next != self.review || self.variation {
+        // Navegar pela Revisão comum deixa o Modo de estudo (a Linha de estudo se perde).
+        let leaving_study = self.study.take().is_some();
+        self.study_promotion = None;
+        if next != self.review || self.variation || leaving_study {
             self.review = next;
             self.variation = false;
             self.interpreter
@@ -251,6 +271,7 @@ impl Session {
     /// nenhum Comando e nenhum Evento. `view.ply` é o meio-lance de onde a variante parte.
     /// Qualquer navegação da revisão (`set_review_ply`) a substitui.
     pub fn show_variation(&mut self, view: ReviewView) {
+        self.study_promotion = None;
         self.review = Some(view);
         self.variation = true;
         self.interpreter
@@ -404,7 +425,7 @@ impl Session {
             return;
         }
         self.always_queen = on;
-        if on && self.snapshot.provisional.is_some() {
+        if on && self.promotion_pending().is_some() {
             self.command(Command::ChoosePromotion {
                 piece: Piece::Queen,
             });
@@ -432,9 +453,15 @@ impl Session {
         Timestamp { mono_ms, wall_ms }
     }
 
-    /// Evento de gesto -> Comandos do intérprete -> Partida.
+    /// Evento de gesto -> Comandos do intérprete -> Partida. Numa Revisão (fora de Partida
+    /// competitiva em andamento) ou em estudo, o gesto joga na Linha de estudo, nunca na Partida.
     pub fn gesture(&mut self, event: GestureEvent) {
         // Na vez da Engine o ponteiro não move nada (ela joga as próprias peças).
+        // Modo de estudo (#322): numa Revisão ou na Linha de estudo o gesto joga na linha.
+        if let Some(position) = self.study_position() {
+            self.study_gesture(event, &position);
+            return;
+        }
         if self.engine_turn() || self.review.is_some() {
             return;
         }
@@ -468,6 +495,8 @@ impl Session {
     /// Comando vindo da interface (painel e seletor de promoção).
     pub fn command(&mut self, command: Command) {
         if self.review.is_some() {
+            // Só a escolha da peça de uma promoção no estudo vale numa Revisão (#322).
+            self.study_command(&command);
             return;
         }
         if self.online.is_some() {
@@ -738,12 +767,7 @@ impl Session {
             return;
         };
         match engine.drive(fair, &mut self.game, at) {
-            Ok(true) => {
-                self.snapshot = self.game.snapshot();
-                self.revision = self.revision.wrapping_add(1);
-                self.interpreter
-                    .handle(GestureEvent::Resync, &self.snapshot);
-            }
+            Ok(true) => self.game_advanced_by_engine(),
             Ok(false) => {}
             Err(locked) => {
                 let seat = engine.seat();
@@ -752,6 +776,14 @@ impl Session {
                 self.engine_locked = Some(locked);
             }
         }
+    }
+
+    /// A Engine adversária jogou: a Partida andou. Um estudo em curso continua onde está (#322):
+    /// só a Partida e o aviso [`Session::study_game_advanced`] mudam.
+    fn game_advanced_by_engine(&mut self) {
+        self.snapshot = self.game.snapshot();
+        self.revision = self.revision.wrapping_add(1);
+        self.resync_interpreter();
     }
 
     fn apply(&mut self, command: Command, start: Option<Vec3>) {
@@ -885,6 +917,26 @@ fn lifted(p: Vec3) -> Vec3 {
     Vec3::new(p.x, DRAG_HEIGHT, p.z)
 }
 
+/// Peças de uma posição, em ordem de casa: casa, cor e tipo.
+type PieceList = Vec<(Square, Color, Piece)>;
+
+/// As peças de `position` com a de `from` em `to` (o peão que chegou à casa de promoção, ainda
+/// sem a peça escolhida), em ordem de casa, e a cor dela. `None` se `from` está vazia.
+fn moved_pieces(
+    position: &chess_core::CanonicalPosition,
+    from: Square,
+    to: Square,
+) -> Option<(Color, PieceList)> {
+    let (color, piece) = position.piece_at(from)?;
+    let mut pieces: Vec<(Square, Color, Piece)> = chess_input::all_squares()
+        .filter(|s| *s != from && *s != to)
+        .filter_map(|s| position.piece_at(s).map(|(c, p)| (s, c, p)))
+        .collect();
+    pieces.push((to, color, piece));
+    pieces.sort_by_key(|(s, _, _)| (s.rank(), s.file()));
+    Some((color, pieces))
+}
+
 /// A leitura da Partida online para o tabuleiro: a intenção enviada aparece como o Lance
 /// feito (a peça no destino, ainda fora da Posição canônica) e a promoção em escolha, como a
 /// Posição visual provisória. Nada disso está no log.
@@ -901,14 +953,8 @@ fn online_overlay(mut snapshot: Snapshot, promotion: Option<(Square, Square)>) -
         });
     }
     if let Some((from, to)) = promotion
-        && let Some((color, piece)) = snapshot.position.piece_at(from)
+        && let Some((color, pieces)) = moved_pieces(&snapshot.position, from, to)
     {
-        let mut pieces: Vec<(Square, Color, Piece)> = chess_input::all_squares()
-            .filter(|s| *s != from && *s != to)
-            .filter_map(|s| snapshot.position.piece_at(s).map(|(c, p)| (s, c, p)))
-            .collect();
-        pieces.push((to, color, piece));
-        pieces.sort_by_key(|(s, _, _)| (s.rank(), s.file()));
         snapshot.provisional = Some(ProvisionalView {
             pending_promotion: PendingPromotion {
                 side: color,
@@ -1683,5 +1729,485 @@ mod tests {
         b.command(Command::PressClock);
         assert_eq!(a.snapshot().position, b.snapshot().position);
         assert_eq!(a.snapshot().history, b.snapshot().history);
+    }
+
+    // --- Modo de estudo e Linha de estudo (#322) ---------------------------------------
+
+    /// Partida Assistida com `moves` (ex.: "e2e4") jogados por gestos.
+    fn played(moves: &[&str]) -> Session {
+        let mut s = Session::new();
+        for m in moves {
+            tap(&mut s, &m[..2], &m[2..4]);
+        }
+        s
+    }
+
+    /// Três meios-lances jogados (1.e4 e5 2.Cf3), revisando a posição após 1.e4.
+    fn reviewing_after_e4() -> Session {
+        let mut s = played(&["e2e4", "e7e5", "g1f3"]);
+        s.set_review_ply(Some(1));
+        s
+    }
+
+    #[test]
+    fn moving_a_piece_in_review_starts_the_study_line_and_never_writes_the_game() {
+        let mut s = reviewing_after_e4();
+        let events = s.game().events().len();
+        let snapshot = s.snapshot().clone();
+        assert!(!s.studying());
+        tap(&mut s, "c7", "c5");
+        assert!(s.studying());
+        let line = s.study_line().unwrap();
+        assert_eq!(line.base_ply(), 1, "parte da posição revisada");
+        assert_eq!(line.moves().len(), 1);
+        assert_eq!(line.moves()[0].san, "c5");
+        assert_eq!(line.cursor(), 1);
+        // O tabuleiro mostra a posição do estudo; a Partida não muda.
+        assert_eq!(
+            s.review().unwrap().position.piece_at(sq("c5")),
+            Some((Color::Black, Piece::Pawn))
+        );
+        assert_eq!(s.game().events().len(), events);
+        assert_eq!(s.snapshot(), &snapshot);
+    }
+
+    #[test]
+    fn an_illegal_move_is_refused_and_does_not_leave_the_study() {
+        let mut s = reviewing_after_e4();
+        // Em Revisão, Lance ilegal não inicia o estudo.
+        tap(&mut s, "e7", "e3");
+        assert!(!s.studying());
+        tap(&mut s, "c7", "c5");
+        let line = s.study_line().unwrap().clone();
+        // No estudo, a peça volta à origem e a linha fica como estava.
+        s.take_hint();
+        tap(&mut s, "b1", "b4");
+        assert_eq!(s.study_line(), Some(&line));
+        assert_eq!(
+            s.take_hint().map(|h| h.square),
+            Some(sq("b1")),
+            "a peça volta à casa de origem"
+        );
+        // Mover a peça do lado sem a vez (agora é das Brancas) também não faz nada.
+        tap(&mut s, "b8", "c6");
+        assert_eq!(s.study_line(), Some(&line));
+        assert!(s.studying());
+    }
+
+    #[test]
+    fn study_here_enters_the_study_from_the_live_position() {
+        let mut s = played(&["e2e4", "e7e5"]);
+        let events = s.game().events().len();
+        assert_eq!(s.study_here(), Ok(()));
+        assert!(s.studying());
+        let line = s.study_line().unwrap();
+        assert!(line.moves().is_empty());
+        assert_eq!(line.base_ply(), 2, "parte da posição ao vivo");
+        assert!(line.is_at_start() && line.is_at_end());
+        // Mover uma peça já vai para a linha.
+        tap(&mut s, "g1", "f3");
+        assert_eq!(s.study_line().unwrap().moves()[0].san, "Nf3");
+        assert_eq!(s.game().events().len(), events);
+        assert_eq!(s.snapshot().history.len(), 2, "a Partida não andou");
+    }
+
+    #[test]
+    fn study_here_from_a_reviewed_position_starts_at_that_position() {
+        let mut s = played(&["e2e4", "e7e5", "g1f3"]);
+        s.set_review_ply(Some(2));
+        assert_eq!(s.study_here(), Ok(()));
+        assert_eq!(s.study_line().unwrap().base_ply(), 2);
+    }
+
+    #[test]
+    fn study_is_refused_with_a_reason_in_competitive_play_online_and_spectator() {
+        use crate::study::StudyRefusal;
+        // Simulação FIDE em andamento: o gesto numa Revisão não faz nada e a Ação recusa.
+        let mut s = competitive(PolicyKind::FideSimulation);
+        tap(&mut s, "e2", "e4");
+        s.press_clock();
+        s.set_review_ply(Some(0));
+        assert_eq!(s.study_refusal(), Some(StudyRefusal::Competitive));
+        tap(&mut s, "d2", "d4");
+        assert!(!s.studying());
+        assert_eq!(s.study_here(), Err(StudyRefusal::Competitive));
+        assert!(!s.studying());
+
+        // Eliminação Imediata, o mesmo.
+        let s = competitive(PolicyKind::SuddenElimination);
+        assert_eq!(s.study_refusal(), Some(StudyRefusal::Competitive));
+
+        // Partida online.
+        let mut s = online_session(&["e2e4"]);
+        s.set_review_ply(Some(0));
+        assert_eq!(s.study_here(), Err(StudyRefusal::Online));
+        tap(&mut s, "d2", "d4");
+        assert!(!s.studying());
+
+        // Modo espectador.
+        let mut s = Session::new();
+        assert!(s.watch(&watched_engine_game()));
+        assert_eq!(s.study_here(), Err(StudyRefusal::Spectator));
+    }
+
+    #[test]
+    fn study_is_allowed_in_assisted_and_in_finished_competitive_games() {
+        let mut s = played(&["e2e4"]);
+        assert_eq!(s.study_refusal(), None);
+        assert_eq!(s.study_here(), Ok(()));
+
+        let mut s = competitive(PolicyKind::FideSimulation);
+        tap(&mut s, "e2", "e4");
+        s.press_clock();
+        s.command(Command::Resign { side: Color::Black });
+        assert!(s.snapshot().outcome.is_some());
+        s.set_review_ply(Some(1));
+        tap(&mut s, "d7", "d5");
+        assert!(s.studying(), "Partida terminada: o gesto inicia o estudo");
+        assert_eq!(s.study_line().unwrap().moves()[0].san, "d5");
+    }
+
+    /// Partida da Engine online, a que o modo espectador mostra.
+    fn watched_engine_game() -> Game {
+        use chess_game::{OnlineGame, OnlinePlayer, Variant};
+        let setup = GameSetup::online(
+            OnlineGame {
+                provider: "lichess-bot".into(),
+                remote_id: "En9ineQ1".into(),
+                local_color: Color::White,
+                opponent: chess_game::Opponent::Human,
+                white: OnlinePlayer {
+                    name: "Motor".into(),
+                    rating: None,
+                },
+                black: OnlinePlayer {
+                    name: "Salma".into(),
+                    rating: None,
+                },
+                rated: false,
+                days_per_move: None,
+            },
+            Variant::Standard,
+            None,
+        )
+        .unwrap();
+        Game::new(setup)
+    }
+
+    #[test]
+    fn a_training_exercise_session_has_no_study_mode() {
+        let mut s = played(&["e2e4", "e7e5"]);
+        s.mark_exercise();
+        s.set_review_ply(Some(1));
+        assert_eq!(
+            s.study_refusal(),
+            Some(crate::study::StudyRefusal::Exercise)
+        );
+        tap(&mut s, "e7", "e5");
+        assert!(!s.studying(), "a apresentação do Treino é só leitura");
+    }
+
+    #[test]
+    fn navigation_walks_inside_the_line_and_stops_at_the_starting_point() {
+        let mut s = reviewing_after_e4();
+        tap(&mut s, "c7", "c5"); // 1...c5
+        tap(&mut s, "g1", "f3"); // 2.Cf3
+        tap(&mut s, "d7", "d6"); // 2...d6
+        assert_eq!(s.study_line().unwrap().cursor(), 3);
+
+        s.study_step_back();
+        assert_eq!(s.study_line().unwrap().cursor(), 2);
+        assert_eq!(s.review().unwrap().last_move.as_ref().unwrap().san, "Nf3");
+        assert_eq!(
+            s.review().unwrap().position.piece_at(sq("d6")),
+            None,
+            "a posição mostrada é a do ponto da linha"
+        );
+        s.study_step_back();
+        s.study_step_back();
+        // O primeiro Lance da linha desfeito: a posição de onde ela partiu, ainda no estudo.
+        assert_eq!(s.study_line().unwrap().cursor(), 0);
+        assert!(s.studying());
+        assert_eq!(s.review().unwrap().ply, 1);
+        assert_eq!(s.review().unwrap().last_move.as_ref().unwrap().san, "e4");
+        assert_eq!(s.review().unwrap().position.piece_at(sq("c5")), None);
+        s.study_step_back();
+        assert!(
+            s.studying(),
+            "anterior no ponto de partida não sai do estudo"
+        );
+        assert_eq!(s.study_line().unwrap().cursor(), 0);
+
+        s.study_step_forward();
+        assert_eq!(s.study_line().unwrap().cursor(), 1);
+        s.study_to_end();
+        assert_eq!(s.study_line().unwrap().cursor(), 3);
+        s.study_step_forward();
+        assert_eq!(s.study_line().unwrap().cursor(), 3, "o fim da linha para");
+        s.study_to_start();
+        assert_eq!(s.study_line().unwrap().cursor(), 0);
+        s.study_set_cursor(2);
+        assert_eq!(s.study_line().unwrap().cursor(), 2);
+        s.study_set_cursor(99);
+        assert_eq!(s.study_line().unwrap().cursor(), 3, "fora da linha é o fim");
+    }
+
+    #[test]
+    fn a_new_move_in_the_middle_of_the_line_replaces_the_rest() {
+        let mut s = reviewing_after_e4();
+        tap(&mut s, "c7", "c5");
+        tap(&mut s, "g1", "f3");
+        tap(&mut s, "d7", "d6");
+        s.study_set_cursor(1); // depois de 1...c5
+        tap(&mut s, "b1", "c3"); // 2.Cc3 no lugar de 2.Cf3
+        let line = s.study_line().unwrap();
+        let sans: Vec<&str> = line.moves().iter().map(|m| m.san.as_str()).collect();
+        assert_eq!(sans, ["c5", "Nc3"], "uma só linha: o resto foi descartado");
+        assert_eq!(line.cursor(), 2);
+        assert!(line.is_at_end());
+    }
+
+    #[test]
+    fn leaving_the_study_restores_the_game_position_exactly() {
+        let mut s = reviewing_after_e4();
+        let snapshot = s.snapshot().clone();
+        let events = s.game().events().len();
+        tap(&mut s, "c7", "c5");
+        tap(&mut s, "g1", "f3");
+        s.leave_study();
+        assert!(!s.studying());
+        assert!(s.study_line().is_none());
+        assert!(s.review().is_none(), "volta à posição de jogo, ao vivo");
+        assert!(!s.showing_variation());
+        assert_eq!(s.snapshot(), &snapshot);
+        assert_eq!(s.game().events().len(), events);
+        // Os gestos voltam a jogar a Partida de verdade (a vez é das Pretas).
+        tap(&mut s, "b8", "c6");
+        assert_eq!(s.snapshot().history.len(), 4);
+        // Sair sem estudo não faz nada.
+        s.leave_study();
+        assert_eq!(s.snapshot().history.len(), 4);
+    }
+
+    #[test]
+    fn replacing_the_game_clears_the_study() {
+        let new_game = |s: &mut Session| s.start(&NewGameConfig::for_policy(PolicyKind::Assisted));
+        let other_game = |s: &mut Session| {
+            s.open_game(Game::new(GameSetup::standard(PolicyKind::Assisted)));
+        };
+        let fen = |s: &mut Session| {
+            s.load_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
+        };
+        let library = |s: &mut Session| {
+            s.study_from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
+        };
+        let actions: [&dyn Fn(&mut Session); 4] = [&new_game, &other_game, &fen, &library];
+        for replace in actions {
+            let mut s = reviewing_after_e4();
+            tap(&mut s, "c7", "c5");
+            assert!(s.studying());
+            replace(&mut s);
+            assert!(!s.studying());
+            assert!(s.review().is_none());
+        }
+    }
+
+    #[test]
+    fn navigating_the_plain_review_ends_the_study() {
+        let mut s = reviewing_after_e4();
+        tap(&mut s, "c7", "c5");
+        s.set_review_ply(Some(99));
+        assert!(s.studying(), "ply inválido é ignorado e não sai do estudo");
+        s.study_to_start();
+        s.set_review_ply(Some(1));
+        assert!(
+            !s.studying(),
+            "mesmo o ponto de partida: a Revisão comum volta"
+        );
+        assert_eq!(s.review().unwrap().ply, 1);
+        tap(&mut s, "c7", "c5");
+        s.set_review_ply(Some(2));
+        assert!(!s.studying(), "clicar num Lance da Partida deixa o estudo");
+        assert_eq!(s.review().unwrap().ply, 2);
+        tap(&mut s, "c7", "c5");
+        s.set_review_ply(None);
+        assert!(!s.studying());
+        assert!(s.review().is_none());
+    }
+
+    #[test]
+    fn nothing_of_the_study_is_recorded_in_the_log_the_notes_or_the_pgn() {
+        let mut s = reviewing_after_e4();
+        let mut notes = crate::study::StudyNotes::loaded(
+            s.epoch(),
+            std::collections::BTreeMap::from([(1, "Abertura do rei".to_owned())]),
+        );
+        let notes_before = notes.clone();
+        let exported = |s: &Session, notes: &crate::study::StudyNotes| {
+            s.export_pgn(true, &notes.export(s.epoch()))
+        };
+        let pgn_before = exported(&s, &notes);
+        let events_before = s.game().events().to_vec();
+
+        tap(&mut s, "c7", "c5");
+        tap(&mut s, "g1", "f3");
+        s.study_step_back();
+        assert_eq!(exported(&s, &notes), pgn_before, "durante o estudo");
+        assert_eq!(s.game().events(), events_before.as_slice());
+        s.leave_study();
+        assert_eq!(exported(&s, &notes), pgn_before, "depois de voltar");
+        assert_eq!(s.game().events(), events_before.as_slice());
+        notes.follow(s.epoch());
+        assert_eq!(notes, notes_before);
+        assert!(
+            !pgn_before.contains("c5"),
+            "a Linha de estudo nunca vai ao PGN"
+        );
+    }
+
+    /// A Engine adversária joga `uci` na Partida, como o faz `tick_engine` (sem processo UCI).
+    fn engine_plays(s: &mut Session, uci: &str) {
+        let at = s.now();
+        s.game
+            .handle(Command::EngineMove { uci: uci.into() }, at)
+            .unwrap();
+        s.game_advanced_by_engine();
+    }
+
+    fn engine_game_as_black() -> Session {
+        let seat = EngineSeat {
+            color: Color::Black,
+            elo: 1500,
+        };
+        let setup = GameSetup::standard(PolicyKind::Assisted).with_engine(seat);
+        Session::from_game(Game::new(setup))
+    }
+
+    #[test]
+    fn the_engine_keeps_playing_the_game_while_the_study_stays_and_the_session_says_so() {
+        let mut s = engine_game_as_black();
+        tap(&mut s, "e2", "e4");
+        s.study_here().unwrap();
+        tap(&mut s, "d7", "d5"); // no estudo as Pretas jogam, mesmo sendo a vez da Engine
+        assert!(!s.study_game_advanced());
+
+        engine_plays(&mut s, "e7e5");
+        // A Partida entrou o Lance da Engine; o estudo continua como estava.
+        assert_eq!(s.snapshot().history.len(), 2);
+        assert_eq!(s.game().snapshot().history[1].san, "e5");
+        assert!(s.studying());
+        assert_eq!(s.study_line().unwrap().moves().len(), 1);
+        assert_eq!(s.study_line().unwrap().base_ply(), 1);
+        assert!(
+            s.study_game_advanced(),
+            "a faixa avisa: Lance novo na Partida"
+        );
+
+        // O aviso some com o estudo, e um estudo novo parte da Partida de agora.
+        s.leave_study();
+        assert!(!s.study_game_advanced());
+        s.study_here().unwrap();
+        assert!(!s.study_game_advanced());
+        assert_eq!(s.study_line().unwrap().base_ply(), 2);
+    }
+
+    /// Um peão branco em a7 pronto para promover e o Rei de cada lado.
+    fn promoting_study() -> Session {
+        let mut s = Session::new();
+        s.load_fen("4k3/P7/8/8/8/8/8/4K3 w - - 0 1").unwrap();
+        s.study_here().unwrap();
+        s
+    }
+
+    #[test]
+    fn promotion_in_the_study_uses_the_same_chooser_and_the_result_goes_to_the_line() {
+        let mut s = promoting_study();
+        assert_eq!(s.promotion_pending(), None);
+        tap(&mut s, "a7", "a8");
+        // O seletor abre; a linha ainda não tem o Lance e a Partida não sabe de nada.
+        let pending = s.promotion_pending().unwrap();
+        assert_eq!((pending.from, pending.to), (sq("a7"), sq("a8")));
+        assert!(s.study_line().unwrap().moves().is_empty());
+        assert!(s.snapshot().provisional.is_none());
+        let pieces = s.study_pending_pieces().unwrap();
+        assert!(pieces.contains(&(sq("a8"), Color::White, Piece::Pawn)));
+        assert!(!pieces.iter().any(|(sq_, ..)| *sq_ == sq("a7")));
+        // Esc retrata: o peão volta à casa e o seletor fecha, sem sair do estudo.
+        s.gesture(GestureEvent::Escape);
+        assert_eq!(s.promotion_pending(), None);
+        assert!(s.studying() && s.study_line().unwrap().moves().is_empty());
+
+        tap(&mut s, "a7", "a8");
+        s.command(Command::ChoosePromotion {
+            piece: Piece::Knight,
+        });
+        assert_eq!(s.promotion_pending(), None);
+        let line = s.study_line().unwrap();
+        assert_eq!(line.moves().len(), 1);
+        assert_eq!(line.moves()[0].san, "a8=N");
+        assert_eq!(
+            s.review().unwrap().position.piece_at(sq("a8")),
+            Some((Color::White, Piece::Knight))
+        );
+        assert!(s.game().events().iter().all(|e| !matches!(
+            e.kind,
+            EventKind::PromotionPending { .. } | EventKind::MoveCompleted { .. }
+        )));
+    }
+
+    #[test]
+    fn always_queen_promotes_in_the_study_without_the_chooser() {
+        let mut s = promoting_study();
+        s.set_always_queen(true);
+        tap(&mut s, "a7", "a8");
+        assert_eq!(s.promotion_pending(), None);
+        assert_eq!(s.study_line().unwrap().moves()[0].san, "a8=Q+");
+        // Ligar a opção com o seletor aberto promove a dama na hora.
+        let mut s = promoting_study();
+        tap(&mut s, "a7", "a8");
+        assert!(s.promotion_pending().is_some());
+        s.set_always_queen(true);
+        assert_eq!(s.study_line().unwrap().moves()[0].san, "a8=Q+");
+    }
+
+    #[test]
+    fn a_promotion_can_start_the_study_from_a_review() {
+        let mut s = Session::new();
+        s.load_fen("4k3/P7/8/8/8/8/8/4K3 w - - 0 1").unwrap();
+        tap(&mut s, "e1", "e2");
+        s.set_review_ply(Some(0));
+        tap(&mut s, "a7", "a8");
+        assert!(s.promotion_pending().is_some());
+        assert!(
+            !s.studying(),
+            "o estudo começa com o Lance, depois da escolha"
+        );
+        s.command(Command::ChoosePromotion { piece: Piece::Rook });
+        assert_eq!(s.study_line().unwrap().moves()[0].san, "a8=R+");
+        assert_eq!(s.study_line().unwrap().base_ply(), 0);
+    }
+
+    #[test]
+    fn the_board2d_panel_gestures_go_to_the_study_and_do_nothing_in_a_plain_review() {
+        let mut s = reviewing_after_e4();
+        let plies = s.snapshot().history.len();
+        // Revisão comum: o gesto do painel 2D continua sem efeito (não inicia estudo).
+        for event in [down("c7"), up("c7"), down("c5"), up("c5")] {
+            s.gesture_from_panel(event);
+        }
+        assert!(!s.studying());
+        // Em estudo, o gesto do painel vai para a Linha de estudo.
+        s.study_here().unwrap();
+        for event in [down("c7"), up("c7"), down("c5"), up("c5")] {
+            s.gesture_from_panel(event);
+        }
+        assert_eq!(s.study_line().unwrap().moves()[0].san, "c5");
+        assert_eq!(s.snapshot().history.len(), plies, "a Partida não andou");
+        // Sem Revisão nem estudo, joga a Partida como sempre.
+        s.leave_study();
+        for event in [down("b8"), up("b8"), down("c6"), up("c6")] {
+            s.gesture_from_panel(event);
+        }
+        assert_eq!(s.snapshot().history.len(), plies + 1);
     }
 }

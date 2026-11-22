@@ -117,6 +117,45 @@ pub fn quick_notes_available(competitive_in_progress: bool, training_swapped: bo
     !competitive_in_progress && !training_swapped
 }
 
+/// Por que o Modo de estudo não liga (Modo de estudo, #320 decisão 4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StudyRefusal {
+    /// Partida competitiva (Simulação FIDE, Eliminação Imediata) em andamento.
+    Competitive,
+    /// Partida online: quem escreve é o Provedor.
+    Online,
+    /// Modo espectador (#302): o tabuleiro mostra a Partida de outra pessoa.
+    Spectator,
+    /// Exercício do Treino: a `Session` não é a Partida do usuário.
+    Exercise,
+}
+
+/// O Modo de estudo liga? A regra das Anotações de estudo ([`quick_notes_available`]), mais
+/// Partida online e modo espectador: livre em Assistido, Partida terminada, importada ou da
+/// Biblioteca; recusado, com o motivo, em Partida competitiva em andamento, online e
+/// espectador. Pura: a `Session` só informa os fatos.
+pub fn study_mode_available(
+    competitive_in_progress: bool,
+    online: bool,
+    spectator: bool,
+    training_swapped: bool,
+) -> Result<(), StudyRefusal> {
+    if spectator {
+        return Err(StudyRefusal::Spectator);
+    }
+    if online {
+        return Err(StudyRefusal::Online);
+    }
+    if !quick_notes_available(competitive_in_progress, training_swapped) {
+        return Err(if training_swapped {
+            StudyRefusal::Exercise
+        } else {
+            StudyRefusal::Competitive
+        });
+    }
+    Ok(())
+}
+
 /// Pedido da Notação (Shift+Enter) para abrir o Painel Anotações no Lance já navegado.
 #[derive(Resource, Debug, Default)]
 pub struct StudyPanelRequest(pub bool);
@@ -441,5 +480,36 @@ mod tests {
         assert!(quick_notes_available(false, false));
         assert!(!quick_notes_available(true, false), "UI-08");
         assert!(!quick_notes_available(false, true), "Exercício de Treino");
+    }
+
+    #[test]
+    fn study_mode_follows_the_quick_notes_rule_and_also_refuses_online_and_spectator() {
+        assert_eq!(study_mode_available(false, false, false, false), Ok(()));
+        assert_eq!(
+            study_mode_available(true, false, false, false),
+            Err(StudyRefusal::Competitive)
+        );
+        assert_eq!(
+            study_mode_available(false, true, false, false),
+            Err(StudyRefusal::Online)
+        );
+        assert_eq!(
+            study_mode_available(false, true, true, false),
+            Err(StudyRefusal::Spectator),
+            "o modo espectador é uma Partida online: o motivo é o espectador"
+        );
+        assert_eq!(
+            study_mode_available(false, false, false, true),
+            Err(StudyRefusal::Exercise)
+        );
+        // Dica: a mesma pergunta das Anotações de estudo dá a mesma resposta.
+        for competitive in [false, true] {
+            for training in [false, true] {
+                assert_eq!(
+                    study_mode_available(competitive, false, false, training).is_ok(),
+                    quick_notes_available(competitive, training)
+                );
+            }
+        }
     }
 }

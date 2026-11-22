@@ -283,17 +283,22 @@ fn update_marks(
     *key = Some(now);
     let snapshot = session.snapshot();
     let next = match session.review() {
-        Some(view) => compute_marks(
-            &effective,
-            ShownPosition {
-                position: &view.position,
-                side_to_move: view.side_to_move,
-                in_check: view.in_check,
-                last_move: view.last_move.as_ref().map(|h| (h.mv.from(), h.mv.to())),
-            },
-            None,
-            &[],
-        ),
+        // Revisão e Linha de estudo: último Lance e xeque da posição mostrada; só no estudo há
+        // peça selecionada, com os destinos legais da posição do estudo.
+        Some(view) => {
+            let dests = origin.map_or_else(Vec::new, |o| session.study_destinations(o));
+            compute_marks(
+                &effective,
+                ShownPosition {
+                    position: &view.position,
+                    side_to_move: view.side_to_move,
+                    in_check: view.in_check,
+                    last_move: view.last_move.as_ref().map(|h| (h.mv.from(), h.mv.to())),
+                },
+                origin.filter(|_| !dests.is_empty()),
+                &dests,
+            )
+        }
         None => {
             let dests = origin.map_or_else(Vec::new, |o| snapshot.legal_destinations(o));
             compute_marks(
@@ -584,5 +589,45 @@ mod tests {
             NoticeView::Hidden
         );
         assert_eq!(s.illegal_incidents().len(), 1);
+    }
+
+    /// Modo de estudo (#322): as marcações seguem a Linha de estudo (último Lance, peça
+    /// selecionada e destinos da posição do estudo), não a da Partida.
+    #[test]
+    fn marks_follow_the_study_line() {
+        let mut app = App::new();
+        app.add_plugins(AidsPlugin)
+            .insert_resource(AidSettings::training());
+        let mut s = Session::new();
+        tap(&mut s, "e2");
+        tap(&mut s, "e4");
+        s.set_review_ply(Some(0));
+        app.insert_resource(s);
+        app.update();
+        assert_eq!(
+            *app.world().resource::<Marks>(),
+            Marks::default(),
+            "Revisão comum: nada marcado"
+        );
+
+        // Selecionar d2 na Revisão marca a peça e os destinos, antes de o Lance iniciar o estudo.
+        let mut s = app.world_mut().remove_resource::<Session>().unwrap();
+        tap(&mut s, "d2");
+        assert!(!s.studying());
+        app.insert_resource(s);
+        app.update();
+        let marks = app.world().resource::<Marks>().clone();
+        assert_eq!(marks.selected, Some(sq("d2")));
+        assert!(marks.destinations.contains(&sq("d4")));
+
+        // Um Lance feito na linha: o último Lance marcado é o da linha, não o da Partida.
+        let mut s = app.world_mut().remove_resource::<Session>().unwrap();
+        tap(&mut s, "d4");
+        assert_eq!(s.study_line().unwrap().moves()[0].san, "d4");
+        app.insert_resource(s);
+        app.update();
+        let marks = app.world().resource::<Marks>().clone();
+        assert_eq!(marks.last_move, Some((sq("d2"), sq("d4"))));
+        assert_eq!(marks.selected, None);
     }
 }
