@@ -45,8 +45,8 @@ pub use catalog::{
 };
 pub use config::{EngineConfig, Timeouts};
 pub use controller::{
-    ControllerEvent, EngineController, Failure, FailureKind, SearchRequest, Strength,
-    StrengthApplied,
+    ControllerEvent, EngineController, Failure, FailureKind, NOMINAL_MIN_ELO, SearchRequest,
+    Strength, StrengthApplied,
 };
 pub use detect::{
     DetectedEngine, LC0_ENV, PROBE_TIMEOUT, SearchEnv, app_data_dir, detect_host, detect_in,

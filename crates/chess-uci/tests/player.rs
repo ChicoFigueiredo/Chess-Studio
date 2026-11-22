@@ -137,8 +137,9 @@ fn engine_answers_a_human_move_with_position_from_the_start() {
         sent.contains("position startpos moves e2e4 a7a5 g1f3\n"),
         "{sent}"
     );
-    // Sem relógio na Partida: `movetime`.
-    assert!(sent.contains("go movetime 1000"), "{sent}");
+    // Sem relógio na Partida: `movetime`, e sem teto de profundidade dentro da faixa da Engine.
+    assert!(sent.contains("go movetime 1000\n"), "{sent}");
+    assert!(!sent.contains(" depth "), "{sent}");
     // Força por Elo (a falsa anuncia UCI_Elo 1320..3190).
     assert!(sent.contains("setoption name UCI_LimitStrength value true"));
     assert!(sent.contains("setoption name UCI_Elo value 1500"));
@@ -154,7 +155,7 @@ fn engine_answers_a_human_move_with_position_from_the_start() {
 }
 
 #[test]
-fn elo_outside_the_engine_range_is_clamped_and_skill_level_is_the_fallback() {
+fn elo_below_the_engine_range_is_weakened_and_skill_level_is_the_fallback() {
     let trace = trace_path("clamp");
     let mut game = Game::new(GameSetup::standard(PolicyKind::Assisted));
     let mut low = EnginePlayer::new(black_engine(400), traced("normal", &trace));
@@ -162,9 +163,10 @@ fn elo_outside_the_engine_range_is_clamped_and_skill_level_is_the_fallback() {
     drive_until(&mut low, &mut game, &t, |p, _| p.strength().is_some());
     assert_eq!(
         low.strength(),
-        Some(StrengthApplied::Elo {
+        Some(StrengthApplied::Weakened {
             requested: 400,
-            used: 1320
+            floor: 1320,
+            depth: 1
         })
     );
 
@@ -184,6 +186,63 @@ fn elo_outside_the_engine_range_is_clamped_and_skill_level_is_the_fallback() {
         std::fs::read_to_string(&skill_trace)
             .unwrap()
             .contains("setoption name Skill Level value 10")
+    );
+}
+
+#[test]
+fn elo_below_the_engine_floor_pins_the_floor_and_caps_the_search_depth() {
+    let trace = trace_path("weak");
+    let mut game =
+        Game::new(GameSetup::standard(PolicyKind::Assisted).with_engine(black_engine(400)));
+    let mut player = EnginePlayer::new(black_engine(400), traced("normal", &trace));
+    let t = Clock0(Instant::now());
+    human_move(&mut game, &t, "e2", "e4");
+    drive_until(&mut player, &mut game, &t, |_, g| plies(g) == 2);
+    let sent = std::fs::read_to_string(&trace).unwrap();
+    // Abaixo do piso de `UCI_Elo` (1320), a Engine fica no piso e a busca é rasa.
+    assert!(sent.contains("setoption name UCI_LimitStrength value true"));
+    assert!(sent.contains("setoption name UCI_Elo value 1320"), "{sent}");
+    assert!(sent.contains("go movetime 1000 depth 1\n"), "{sent}");
+}
+
+#[test]
+fn engines_without_elo_use_skill_level_zero_and_a_shallow_search_below_the_mapped_floor() {
+    let trace = trace_path("weak-skill");
+    let mut game =
+        Game::new(GameSetup::standard(PolicyKind::Assisted).with_engine(black_engine(500)));
+    let cfg = config("normal").arg("--trace").arg(trace.as_os_str());
+    let mut player = EnginePlayer::new(black_engine(500), cfg);
+    let t = Clock0(Instant::now());
+    human_move(&mut game, &t, "e2", "e4");
+    drive_until(&mut player, &mut game, &t, |_, g| plies(g) == 2);
+    assert_eq!(
+        player.strength(),
+        Some(StrengthApplied::Weakened {
+            requested: 500,
+            floor: 800,
+            depth: 2
+        })
+    );
+    let sent = std::fs::read_to_string(&trace).unwrap();
+    assert!(
+        sent.contains("setoption name Skill Level value 0"),
+        "{sent}"
+    );
+    assert!(sent.contains("go movetime 1000 depth 2\n"), "{sent}");
+}
+
+#[test]
+fn elo_at_the_engine_floor_is_not_weakened() {
+    let mut game = Game::new(GameSetup::standard(PolicyKind::Assisted));
+    let mut player = EnginePlayer::new(black_engine(1320), traced("normal", &trace_path("floor")));
+    let t = Clock0(Instant::now());
+    drive_until(&mut player, &mut game, &t, |p, _| p.strength().is_some());
+    assert_eq!(
+        player.strength(),
+        Some(StrengthApplied::Elo {
+            requested: 1320,
+            used: 1320
+        })
     );
 }
 

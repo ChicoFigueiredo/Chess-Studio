@@ -117,8 +117,9 @@ pub fn resolve_engine() -> Option<PathBuf> {
     .or_else(|| chess_uci::engines_dir().and_then(|dir| chess_uci::load_preferred(&dir)))
 }
 
-/// Faixa de Elo do controle do painel.
-pub const MIN_ELO: u32 = 800;
+/// Faixa de Elo do controle do painel. Abaixo do piso da Engine (1320 no Stockfish) o Elo é
+/// nominal: a Engine joga no piso e a busca é limitada em profundidade (`StrengthApplied::Weakened`).
+pub const MIN_ELO: u32 = chess_uci::NOMINAL_MIN_ELO;
 pub const MAX_ELO: u32 = 3190;
 
 /// Escolhas do painel (lado, Elo, caminho).
@@ -473,6 +474,17 @@ fn playing_status(
     match engine.strength() {
         Some(StrengthApplied::Elo { requested, used }) if requested != used => {
             ui.small(i18n.t_with("engine-strength-clamped", &[("used", &used.to_string())]));
+        }
+        Some(StrengthApplied::Weakened {
+            requested, floor, ..
+        }) => {
+            ui.small(i18n.t_with(
+                "engine-strength-weakened",
+                &[
+                    ("requested", &requested.to_string()),
+                    ("floor", &floor.to_string()),
+                ],
+            ));
         }
         Some(StrengthApplied::SkillLevel { level, .. }) => {
             ui.small(i18n.t_with("engine-strength-skill", &[("level", &level.to_string())]));
