@@ -86,6 +86,7 @@ mod session;
 mod short_date;
 mod status_bar;
 mod study;
+mod study_view;
 mod table;
 mod training_ui;
 mod ui;
@@ -295,6 +296,7 @@ fn main() {
     ));
     app.add_plugins(actions::ActionsPlugin);
     app.add_plugins(review_nav::ReviewNavPlugin);
+    app.add_plugins(study_view::StudyViewPlugin);
     app.add_plugins((hud::HudPlugin, hud_draw::HudDrawPlugin));
     app.add_plugins(board2d_panel::Board2dPanelPlugin);
     app.add_plugins(coordinates::CoordinatesPlugin);

@@ -254,7 +254,11 @@ pub(crate) fn paint_piece(
     painter.text(at, egui::Align2::CENTER_CENTER, &text, font, tint(fill));
 }
 
-/// Desenha o tabuleiro do painel. Puro egui: sem Bevy.
+/// Largura da moldura tingida do painel no Modo de estudo, em pontos.
+const STUDY_FRAME_WIDTH: f32 = 4.0;
+
+/// Desenha o tabuleiro do painel. Puro egui: sem Bevy. `study_tint` é a tonalidade do Modo de
+/// estudo (`None` fora dele).
 pub fn paint_board(
     painter: &egui::Painter,
     board: Rect,
@@ -263,6 +267,7 @@ pub fn paint_board(
     marks: &Marks,
     dragged: Option<(Square, Pos2)>,
     coordinates: bool,
+    study_tint: Option<Color32>,
 ) {
     let light = to_c32(crate::board2d::LIGHT);
     let dark = to_c32(crate::board2d::DARK);
@@ -270,6 +275,18 @@ pub fn paint_board(
         let rect = square_rect(sq, board, orientation);
         let is_dark = (sq.file() + sq.rank()) % 2 == 0;
         painter.rect_filled(rect, 0.0, if is_dark { dark } else { light });
+    }
+    // Modo de estudo (#324): a tonalidade do Tema sobre as casas e a moldura; as peças, as
+    // marcações e as coordenadas vêm depois e não mudam de cor.
+    if let Some(tint) = study_tint {
+        painter.rect_filled(board, 0.0, tint);
+        painter.rect_stroke(
+            board,
+            0.0,
+            Stroke::new(STUDY_FRAME_WIDTH, tint),
+            // Por dentro: o painter do painel recorta no retângulo do tabuleiro.
+            egui::StrokeKind::Inside,
+        );
     }
     if let Some((from, to)) = marks.last_move {
         for sq in [from, to] {
@@ -416,6 +433,11 @@ fn panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
         )
     };
     let marks = world.get_resource::<Marks>().cloned().unwrap_or_default();
+    // O painel acompanha o tabuleiro principal: a tinta do Tema vale enquanto há estudo.
+    let study_tint = world
+        .resource::<Session>()
+        .studying()
+        .then(|| crate::ui_theme::Palette::from_visuals(ui.visuals()).study_tint);
     let origin = world.resource::<Session>().gesture_visual().origin;
     let dragged = drag_world
         .zip(origin)
@@ -428,6 +450,7 @@ fn panel_ui(ui: &mut egui::Ui, i18n: &I18n, world: &mut World) {
         &marks,
         dragged,
         show_coordinates(world),
+        study_tint,
     );
 
     let frame = world.get_resource::<FrameCount>().map_or(0, |f| f.0);
@@ -754,5 +777,72 @@ mod tests {
         output.textures_delta.clear();
         assert_eq!(app.world().resource::<Session>().snapshot(), &before);
         assert!(!app.world().resource::<Board2dPanel>().play_here);
+    }
+
+    /// O que `paint_board` desenhou, em ordem: cada retângulo (preenchimento, contorno) ou
+    /// texto (as peças são glifos de texto).
+    #[derive(Debug, PartialEq)]
+    enum Drawn {
+        Rect(Color32, Color32),
+        Text,
+    }
+
+    fn painted(tint: Option<Color32>, with_piece: bool) -> Vec<Drawn> {
+        fn collect(shape: &egui::Shape, out: &mut Vec<Drawn>) {
+            match shape {
+                egui::Shape::Vec(v) => v.iter().for_each(|s| collect(s, out)),
+                egui::Shape::Rect(r) => out.push(Drawn::Rect(r.fill, r.stroke.color)),
+                egui::Shape::Text(_) => out.push(Drawn::Text),
+                _ => {}
+            }
+        }
+        let mut pieces = std::collections::HashMap::new();
+        if with_piece {
+            pieces.insert(sq("e4"), (Side::White, Piece::Pawn));
+        }
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            paint_board(
+                ui.painter(),
+                board(),
+                Orientation::WhiteBottom,
+                &pieces,
+                &Marks::default(),
+                None,
+                false,
+                tint,
+            );
+        });
+        output.textures_delta.clear();
+        let mut out = Vec::new();
+        for clipped in &output.shapes {
+            collect(&clipped.shape, &mut out);
+        }
+        out
+    }
+
+    const TINT: Color32 = Color32::from_rgba_premultiplied(62, 90, 120, 115);
+
+    #[test]
+    fn the_study_tint_paints_the_squares_and_the_frame_only_in_the_study_mode() {
+        let with = painted(Some(TINT), false);
+        assert!(with.contains(&Drawn::Rect(TINT, Color32::TRANSPARENT)), "casas");
+        assert!(
+            with.iter().any(|d| matches!(d, Drawn::Rect(_, c) if *c == TINT)),
+            "moldura"
+        );
+        let without = painted(None, false);
+        assert!(!without.iter().any(|d| matches!(d, Drawn::Rect(f, c) if *f == TINT || *c == TINT)));
+    }
+
+    #[test]
+    fn the_study_tint_goes_under_the_pieces_so_they_keep_their_color() {
+        let drawn = painted(Some(TINT), true);
+        let last_tint = drawn
+            .iter()
+            .rposition(|d| matches!(d, Drawn::Rect(f, c) if *f == TINT || *c == TINT))
+            .expect("tinta");
+        let first_piece = drawn.iter().position(|d| *d == Drawn::Text).expect("peça");
+        assert!(last_tint < first_piece, "a peça é desenhada depois da tinta");
     }
 }

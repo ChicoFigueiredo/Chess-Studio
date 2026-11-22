@@ -871,6 +871,7 @@ fn observed_card(
                 &marks,
                 None,
                 true,
+                None,
             );
             ui.vertical(|ui| {
                 let clock = snapshot.clock.as_ref();

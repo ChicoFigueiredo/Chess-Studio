@@ -90,6 +90,13 @@ pub fn scene_label_color(mode: ThemeMode, system_dark: Option<bool>) -> Color {
     Color::srgba_u8(c.r(), c.g(), c.b(), c.a())
 }
 
+/// Tonalidade do Modo de estudo (#324) sobre as casas e a moldura do tabuleiro principal: o
+/// `study-tint` do Tema efetivo (translúcido).
+pub fn scene_study_tint(mode: ThemeMode, system_dark: Option<bool>) -> Color {
+    let c = Palette::of_theme(resolve_theme(mode, system_dark)).study_tint;
+    Color::srgba_u8(c.r(), c.g(), c.b(), c.a())
+}
+
 /// Tema do sistema operacional, quando o Bevy sabe qual é.
 fn system_dark(window: Option<&Window>) -> Option<bool> {
     match window?.window_theme? {
@@ -186,6 +193,26 @@ mod tests {
                 "{key}"
             );
         }
+    }
+
+    #[test]
+    fn the_study_tint_is_the_effective_themes_translucent_study_tint() {
+        for key in ["feltro", "torneio", "dark", "light"] {
+            let id = ThemeId::from_key(key).expect("tema");
+            let p = Palette::of_theme(id).study_tint;
+            let tint = scene_study_tint(ThemeMode::Fixed(id), None).to_srgba();
+            assert_eq!(
+                [tint.red, tint.green, tint.blue, tint.alpha].map(|v| (v * 255.0).round() as u8),
+                [p.r(), p.g(), p.b(), p.a()],
+                "{key}"
+            );
+            assert!(tint.alpha < 1.0, "{key}: a madeira continua à vista");
+        }
+        // "Seguir o sistema" acompanha o claro e o escuro.
+        assert_ne!(
+            rgb(scene_study_tint(ThemeMode::System, Some(true))),
+            rgb(scene_study_tint(ThemeMode::System, Some(false)))
+        );
     }
 
     #[test]
