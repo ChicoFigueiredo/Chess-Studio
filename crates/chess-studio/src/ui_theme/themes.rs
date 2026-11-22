@@ -1,6 +1,6 @@
 //! Catálogo de Temas (`docs/design/themes.json`, `temas.md`), lido em tempo de compilação.
 //! São 22: Escuro e Claro, de fábrica (as bases, em `tokens.json`), e 20 de xadrez. Cada Tema
-//! parte de uma base (Escuro ou Claro) e troca só as 22 cores listadas; o tabuleiro, a barra de
+//! parte de uma base (Escuro ou Claro) e troca só as 23 cores listadas; o tabuleiro, a barra de
 //! avaliação e as sombras vêm sempre da base. Nada aqui depende do Bevy.
 
 use super::tokens::{Palette, ThemeKind, TokenError, Tokens, parse_hex};
@@ -10,8 +10,8 @@ use std::sync::OnceLock;
 
 const EMBEDDED: &str = include_str!("../../../../docs/design/themes.json");
 
-/// As 22 cores que um Tema de xadrez define, na ordem de `themes.json`.
-pub const THEME_COLOR_NAMES: [&str; 22] = [
+/// As 23 cores que um Tema de xadrez define, na ordem de `themes.json`.
+pub const THEME_COLOR_NAMES: [&str; 23] = [
     "surface-0",
     "surface-1",
     "surface-2",
@@ -34,6 +34,7 @@ pub const THEME_COLOR_NAMES: [&str; 22] = [
     "warning",
     "danger",
     "scrim",
+    "study-tint",
 ];
 
 /// Identifica um dos 22 Temas (posição no catálogo). Barato de copiar; o texto estável, que vai
@@ -301,10 +302,10 @@ mod tests {
     }
 
     #[test]
-    fn every_chess_theme_defines_exactly_the_22_colors_and_a_valid_base() {
+    fn every_chess_theme_defines_exactly_the_23_colors_and_a_valid_base() {
         for (_, t) in catalog().iter().filter(|(_, t)| !t.is_factory()) {
             let mut names: Vec<&str> = t.colors().iter().map(|(n, _)| n.as_str()).collect();
-            assert_eq!(names.len(), 22, "{}: {} cores", t.key, names.len());
+            assert_eq!(names.len(), 23, "{}: {} cores", t.key, names.len());
             names.sort_unstable();
             let mut expected = THEME_COLOR_NAMES.to_vec();
             expected.sort_unstable();
@@ -382,6 +383,33 @@ mod tests {
         assert_eq!(feltro.base, ThemeKind::Dark);
         assert_eq!(feltro.surface_1, parse_hex("#111d16").unwrap());
         assert_eq!(feltro.accent, parse_hex("#d5aa55").unwrap());
+    }
+
+    /// A tonalidade do Modo de estudo (#324) existe nos 22 Temas, é translúcida (deixa ver a
+    /// madeira) e muda de verdade a cor de uma casa clara e de uma escura.
+    #[test]
+    fn every_theme_has_a_translucent_study_tint_that_visibly_changes_both_squares() {
+        let tokens = Tokens::embedded();
+        let mut fails = Vec::new();
+        for theme in all_themes() {
+            let tint = Palette::of_theme(theme).study_tint;
+            if !(0x40..=0xA0).contains(&tint.a()) {
+                fails.push(format!("{}: alfa {} fora de 0x40..=0xA0", theme.key(), tint.a()));
+            }
+            for n in ["board-light", "board-dark"] {
+                let square = tokens.color(n, theme.base()).unwrap();
+                let a = f32::from(tint.a()) / 255.0;
+                let mix = |t: u8, s: u8| f32::from(t) * a + f32::from(s) * (1.0 - a);
+                let delta = (mix(tint.r(), square.r()) - f32::from(square.r()))
+                    .abs()
+                    .max((mix(tint.g(), square.g()) - f32::from(square.g())).abs())
+                    .max((mix(tint.b(), square.b()) - f32::from(square.b())).abs());
+                if delta < 32.0 {
+                    fails.push(format!("{} sobre {n}: variação {delta:.0} < 32", theme.key()));
+                }
+            }
+        }
+        assert!(fails.is_empty(), "tonalidade do estudo:\n{}", fails.join("\n"));
     }
 
     // --- Contrato de contraste (temas.md) ---------------------------------------------------
