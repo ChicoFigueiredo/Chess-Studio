@@ -217,6 +217,18 @@ _Evitar_: observar (é o do FICS, num tabuleiro à parte), assistir ao vivo
 Comentário livre do usuário sobre um Lance, fora de Partida competitiva; não altera a Partida e sai no PGN como comentário. Edita-se no Painel Anotações ou, como nota rápida, ao lado do Lance na Notação: é o mesmo texto nas duas vistas.
 _Evitar_: comentário (sozinho), nota rápida (como dado separado)
 
+**Revisão** (_en_: `Review`):
+Ver a Partida numa posição de um Lance anterior, só para olhar: nenhum gesto vira Lance, nada é gravado e o último Lance da lista é a posição ao vivo. Navega-se por clique num Lance da Notação, por botões de início, anterior, próximo e fim, ou pelas setas. Não é a revisão de uma sessão de Treino (resumo de erros e Auxílios usados).
+_Evitar_: replay, histórico (como ação)
+
+**Modo de estudo** (_en_: `StudyMode`):
+Estado em que o usuário move peças a partir de uma posição da Partida, fora de Partida competitiva, sem alterar a Partida. Entra-se movendo uma peça numa posição em Revisão, ou pela Ação Estudar aqui; sai-se com um clique na faixa do estudo, Esc ou o botão de fim, e a posição de jogo volta. Enquanto dura, o tabuleiro ganha uma tonalidade do Tema e um aviso; a Análise, as Aberturas e o Explorador acompanham a posição do estudo, sob a Trava de fair play. Os Lances continuam validados pelo núcleo de regras.
+_Evitar_: variante (já é Chess960 e afins), edição de posição, preview
+
+**Linha de estudo** (_en_: `StudyLine`):
+Sequência de Lances legais feitos no Modo de estudo, mostrada numa lista própria abaixo da lista da Partida na Notação, com os mesmos botões e setas. É uma só linha, sem ramos: um Lance novo no meio dela substitui o resto. Nunca entra no log de eventos nem no PGN, e some ao voltar à Partida.
+_Evitar_: variante, variação, ramo
+
 **Súmula manual** (_en_: `ManualScoresheet`):
 Registro escrito pelo próprio jogador como exercício de competição; diferente da notação automática. É um registro à parte, por perfil local e por Partida, que nunca altera a Partida nem o PGN; enquanto está em anotação a notação automática fica oculta.
 _Evitar_: planilha, scoresheet
