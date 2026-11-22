@@ -259,6 +259,7 @@ const STUDY_FRAME_WIDTH: f32 = 4.0;
 
 /// Desenha o tabuleiro do painel. Puro egui: sem Bevy. `study_tint` é a tonalidade do Modo de
 /// estudo (`None` fora dele).
+#[allow(clippy::too_many_arguments)]
 pub fn paint_board(
     painter: &egui::Painter,
     board: Rect,
