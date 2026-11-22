@@ -414,6 +414,7 @@ Passos:
 1. Percorra as abas Arquivo, Início, Análise, Biblioteca, Treino e Exibir.
 2. Ctrl+K e digite "nova"; Alt e as letras; Ctrl+F1; dois cliques numa aba.
 3. Abra Opções pela Paleta e percorra as categorias.
+4. Com uma Partida de uns 6 Lances, use ← → Home End e os botões do cabeçalho da Notação; depois clique numa nota rápida e digite com as setas.
 
 Critérios de aceite:
 
@@ -421,6 +422,7 @@ Critérios de aceite:
 - [ ] A Paleta acha Ações sem acento, mostra o motivo das desabilitadas e fecha com Esc.
 - [ ] Dois cliques numa aba recolhem e expandem o Ribbon.
 - [ ] Opções cobre o que o painel antigo fazia, sem item sem caminho.
+- [ ] Na Notação, os quatro botões (início, anterior, próximo, posição atual) e as teclas ← → Home End navegam na Revisão; End volta ao vivo; digitando numa nota rápida, as setas não navegam (#321).
 
 Registre:
 
