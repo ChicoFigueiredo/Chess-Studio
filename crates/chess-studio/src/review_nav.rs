@@ -5,6 +5,9 @@
 //!
 //! Só navega na Revisão (`Session::set_review_ply`): nenhum Comando e nenhum Evento. O "fim"
 //! sai da Revisão e volta à Partida ao vivo.
+//!
+//! Em Modo de estudo (#323) os mesmos passos andam pela Linha de estudo (`Session::study_*`) e
+//! nunca a descartam; só o "fim" sai do estudo (`Session::leave_study`).
 
 use crate::i18n::I18n;
 use crate::session::Session;
@@ -39,6 +42,28 @@ pub fn review_target(step: ReviewStep, ply: usize, total: usize) -> Option<Optio
     }
 }
 
+/// Para onde o `step` leva a Linha de estudo (#323), com o cursor em `cursor` numa linha de
+/// `len` Lances.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StudyTarget {
+    /// Fica no estudo e vai ao Lance `n` da linha (`0`: o ponto de partida).
+    Cursor(usize),
+    /// Sai do estudo e volta à Partida ao vivo.
+    Leave,
+}
+
+/// Destino de um passo dentro da Linha de estudo. Só o "fim" sai do estudo (e vale sempre);
+/// início, anterior e próximo ficam na linha e nunca a descartam (decisão 11 da spec #320).
+pub fn study_target(step: ReviewStep, cursor: usize, len: usize) -> Option<StudyTarget> {
+    match step {
+        ReviewStep::First if cursor > 0 => Some(StudyTarget::Cursor(0)),
+        ReviewStep::Prev if cursor > 0 => Some(StudyTarget::Cursor(cursor - 1)),
+        ReviewStep::Next if cursor < len => Some(StudyTarget::Cursor(cursor + 1)),
+        ReviewStep::Last => Some(StudyTarget::Leave),
+        _ => None,
+    }
+}
+
 /// O passo que uma tecla pede: ← → andam um meio-lance; Home e End vão ao início e ao fim.
 pub fn step_for_key(key: KeyCode) -> Option<ReviewStep> {
     match key {
@@ -50,8 +75,22 @@ pub fn step_for_key(key: KeyCode) -> Option<ReviewStep> {
     }
 }
 
-/// Dá o passo na Revisão da `Session`; devolve se algo mudou.
+/// Dá o passo na `Session`; devolve se algo mudou. Em Modo de estudo o passo anda pela Linha
+/// de estudo (só o "fim" a encerra); fora dele, pela Revisão da Partida.
 pub fn step(session: &mut Session, step: ReviewStep) -> bool {
+    if let Some(line) = session.study_line() {
+        return match study_target(step, line.cursor(), line.moves().len()) {
+            Some(StudyTarget::Cursor(cursor)) => {
+                session.study_set_cursor(cursor);
+                true
+            }
+            Some(StudyTarget::Leave) => {
+                session.leave_study();
+                true
+            }
+            None => false,
+        };
+    }
     let total = session.snapshot().history.len();
     let ply = session.review().map_or(total, |r| r.ply);
     match review_target(step, ply, total) {
@@ -112,6 +151,9 @@ impl Plugin for ReviewNavPlugin {
 pub fn buttons(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session) {
     let total = session.snapshot().history.len();
     let ply = session.review().map_or(total, |r| r.ply);
+    let study = session
+        .study_line()
+        .map(|line| (line.cursor(), line.moves().len()));
     ui.horizontal(|ui| {
         for (nav, key) in [
             (ReviewStep::First, "review-first"),
@@ -119,7 +161,10 @@ pub fn buttons(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session) {
             (ReviewStep::Next, "review-next"),
             (ReviewStep::Last, "review-last"),
         ] {
-            let enabled = review_target(nav, ply, total).is_some();
+            let enabled = match study {
+                Some((cursor, len)) => study_target(nav, cursor, len).is_some(),
+                None => review_target(nav, ply, total).is_some(),
+            };
             if nav_button(ui, nav, enabled, &i18n.t(key)).clicked() {
                 step(session, nav);
             }
@@ -234,6 +279,28 @@ mod tests {
     }
 
     #[test]
+    fn study_targets_walk_the_line_and_only_the_last_step_leaves_it() {
+        use ReviewStep::*;
+        use StudyTarget::*;
+        // Linha de 3 Lances, cursor no 2º.
+        assert_eq!(study_target(Prev, 2, 3), Some(Cursor(1)));
+        assert_eq!(study_target(Next, 2, 3), Some(Cursor(3)));
+        assert_eq!(study_target(First, 2, 3), Some(Cursor(0)));
+        assert_eq!(study_target(Last, 2, 3), Some(Leave));
+        // No fim da linha o "próximo" não existe, mas sair continua valendo.
+        assert_eq!(study_target(Next, 3, 3), None);
+        assert_eq!(study_target(Last, 3, 3), Some(Leave));
+        // No ponto de partida não há para onde recuar (e nunca se sai por isso).
+        assert_eq!(study_target(Prev, 0, 3), None);
+        assert_eq!(study_target(First, 0, 3), None);
+        // Linha ainda vazia: só dá para sair.
+        for step in [First, Prev, Next] {
+            assert_eq!(study_target(step, 0, 0), None);
+        }
+        assert_eq!(study_target(Last, 0, 0), Some(Leave));
+    }
+
+    #[test]
     fn keys_map_to_the_four_steps() {
         assert_eq!(step_for_key(KeyCode::ArrowLeft), Some(ReviewStep::Prev));
         assert_eq!(step_for_key(KeyCode::ArrowRight), Some(ReviewStep::Next));
@@ -259,6 +326,76 @@ mod tests {
         assert!(s.review().is_none(), "o fim é a Partida ao vivo");
         assert!(!step(&mut s, ReviewStep::Next));
         assert_eq!(s.game().events().len(), events, "nenhum Evento novo");
+    }
+
+    fn tap(session: &mut Session, name: &str) {
+        let square = Some(name.parse().unwrap());
+        session.gesture(chess_input::GestureEvent::PointerDown {
+            button: chess_input::PointerButton::Primary,
+            square,
+            modifiers: chess_input::Modifiers::default(),
+        });
+        session.gesture(chess_input::GestureEvent::PointerUp { square });
+    }
+
+    /// A Partida de quatro meios-lances, revista após 1.e4 e5, com uma Linha de estudo de três
+    /// Lances (2.d4 d5 3.Nc3), cursor no fim.
+    fn studying_three_moves() -> Session {
+        let mut s = four_plies();
+        s.set_review_ply(Some(2));
+        for (from, to) in [("d2", "d4"), ("d7", "d5"), ("b1", "c3")] {
+            tap(&mut s, from);
+            tap(&mut s, to);
+        }
+        assert_eq!(s.study_line().unwrap().moves().len(), 3);
+        s
+    }
+
+    #[test]
+    fn while_studying_the_steps_walk_the_line_and_never_drop_it() {
+        let mut s = studying_three_moves();
+        let events = s.game().events().len();
+        assert!(step(&mut s, ReviewStep::Prev));
+        assert_eq!(s.study_line().unwrap().cursor(), 2);
+        assert!(step(&mut s, ReviewStep::First));
+        assert_eq!(s.study_line().unwrap().cursor(), 0);
+        assert!(s.studying(), "o início da linha não sai do estudo");
+        assert!(!step(&mut s, ReviewStep::Prev), "no ponto de partida");
+        assert!(step(&mut s, ReviewStep::Next));
+        assert_eq!(s.study_line().unwrap().cursor(), 1);
+        assert!(step(&mut s, ReviewStep::Next));
+        assert!(step(&mut s, ReviewStep::Next));
+        assert!(!step(&mut s, ReviewStep::Next), "no fim da linha");
+        assert_eq!(
+            s.study_line().unwrap().moves().len(),
+            3,
+            "a linha segue inteira"
+        );
+        assert_eq!(s.game().events().len(), events, "nenhum Evento novo");
+    }
+
+    #[test]
+    fn while_studying_the_last_step_leaves_the_study_and_returns_to_the_live_game() {
+        let mut s = studying_three_moves();
+        assert!(step(&mut s, ReviewStep::Last));
+        assert!(!s.studying());
+        assert!(s.review().is_none(), "volta à Partida ao vivo");
+        assert!(!step(&mut s, ReviewStep::Last));
+    }
+
+    #[test]
+    fn arrow_keys_stay_in_the_study_line_and_end_leaves_it() {
+        let mut app = app_with(studying_three_moves());
+        press(&mut app, KeyCode::ArrowLeft);
+        press(&mut app, KeyCode::ArrowLeft);
+        let s = app.world().resource::<Session>();
+        assert_eq!(s.study_line().unwrap().cursor(), 1);
+        press(&mut app, KeyCode::Home);
+        press(&mut app, KeyCode::ArrowLeft);
+        assert!(app.world().resource::<Session>().studying());
+        press(&mut app, KeyCode::End);
+        let s = app.world().resource::<Session>();
+        assert!(!s.studying() && s.review().is_none());
     }
 
     #[test]

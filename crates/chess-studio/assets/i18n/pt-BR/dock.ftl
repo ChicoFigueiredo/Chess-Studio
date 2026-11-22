@@ -17,6 +17,8 @@ dock-panel-board2d = Tabuleiro 2D
 dock-unavailable-competitive = Indisponível em Partida competitiva.
 
 notation-empty = Nenhum lance ainda.
+notation-study-heading = Linha de estudo
+notation-study-empty = Mova uma peça para começar a linha.
 notation-note-add = Anotar este lance (Enter salva, Esc cancela, Shift+Enter abre o painel Anotações)
 notation-note-hint = Nota rápida…
 
