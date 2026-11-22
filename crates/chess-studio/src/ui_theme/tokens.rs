@@ -348,6 +348,8 @@ pub struct Palette {
     pub warning: Color32,
     pub danger: Color32,
     pub scrim: Color32,
+    /// Tonalidade translúcida do tabuleiro principal no Modo de estudo (#324).
+    pub study_tint: Color32,
     /// Contorno de 3px da casa e da peça selecionadas no Tabuleiro 2D (igual em todos os Temas).
     pub board_select: Color32,
     pub eval_white: Color32,
@@ -380,13 +382,14 @@ impl Palette {
             warning: c("warning")?,
             danger: c("danger")?,
             scrim: c("scrim")?,
+            study_tint: c("study-tint")?,
             board_select: c("board-select")?,
             eval_white: c("eval-white")?,
             eval_black: c("eval-black")?,
         })
     }
 
-    /// Troca uma das 22 cores que um Tema pode definir (`themes.json`), pelo nome do token.
+    /// Troca uma das 23 cores que um Tema pode definir (`themes.json`), pelo nome do token.
     pub fn set_color(&mut self, name: &str, color: Color32) -> Result<(), TokenError> {
         let slot = match name {
             "surface-0" => &mut self.surface_0,
@@ -411,6 +414,7 @@ impl Palette {
             "warning" => &mut self.warning,
             "danger" => &mut self.danger,
             "scrim" => &mut self.scrim,
+            "study-tint" => &mut self.study_tint,
             other => return Err(TokenError::Missing(other.to_owned())),
         };
         *slot = color;

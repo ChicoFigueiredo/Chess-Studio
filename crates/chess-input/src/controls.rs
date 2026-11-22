@@ -136,10 +136,13 @@ pub enum Action {
     OpenEngineOnline,
     /// Mostra ou oculta o Painel Partida online.
     PanelOnline,
+    /// Liga o Modo de estudo a partir da posição mostrada (#324): move peças só em leitura, sem
+    /// alterar a Partida. Recusada, com motivo, em Partida competitiva, online e espectador.
+    StudyHere,
 }
 
 impl Action {
-    pub const ALL: [Action; 78] = [
+    pub const ALL: [Action; 79] = [
         Action::Select,
         Action::Adjust,
         Action::Orbit,
@@ -218,6 +221,7 @@ impl Action {
         Action::OnlineGames,
         Action::OpenEngineOnline,
         Action::PanelOnline,
+        Action::StudyHere,
     ];
 
     /// Identificador estável (gravado no banco; nunca muda).
@@ -294,6 +298,7 @@ impl Action {
             Action::OnlineGames => "online-games",
             Action::OpenEngineOnline => "open-engine-online",
             Action::PanelOnline => "panel-online",
+            Action::StudyHere => "study-here",
             Action::ExportPgn => "export-pgn",
             Action::OpenTraining => "open-training",
             Action::OpenPalette => "open-palette",
@@ -620,6 +625,7 @@ fn defaults_for(action: Action) -> Vec<Trigger> {
         Action::OpenPalette => vec![key("KeyK").with_mods(ModSet::CTRL)],
         Action::ToggleRibbonCollapse => vec![key("F1").with_mods(ModSet::CTRL)],
         Action::FlipBoard => vec![key("KeyF")],
+        Action::StudyHere => vec![key("KeyE")],
         // Escala da interface (DS-13): Ctrl+= e Ctrl+- (também no teclado numérico). Segurar
         // Shift junto continua valendo, para os layouts em que o "+" é Shift+=.
         Action::UiZoomIn => vec![

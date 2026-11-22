@@ -21,9 +21,9 @@ pub const PIECE_SCALE: f32 = 1.0 / 0.057_888;
 /// Espessura da moldura do tabuleiro.
 const FRAME_THICKNESS: f32 = 0.4;
 /// A face da moldura fica um pouco abaixo do plano das casas (y = 0).
-const FRAME_TOP: f32 = -0.02;
+pub(crate) const FRAME_TOP: f32 = -0.02;
 /// Largura total da moldura (tabuleiro 8 + borda).
-const FRAME_WIDTH: f32 = BOARD_SIZE + 1.2;
+pub(crate) const FRAME_WIDTH: f32 = BOARD_SIZE + 1.2;
 /// Topo da mesa (fica logo abaixo da moldura).
 const TABLE_TOP: f32 = FRAME_TOP - FRAME_THICKNESS;
 

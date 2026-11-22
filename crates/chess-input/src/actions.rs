@@ -207,6 +207,8 @@ pub fn meta(action: Action) -> ActionMeta {
             "engine",
             "A"
         ),
+        // Modo de estudo (#324): entra a partir da posição mostrada; sair é pela faixa, Esc ou End.
+        A::StudyHere => item!("study-here", "flask", Command, Analysis, "study", "ES"),
         // Explorador: aberturas e finais, no grupo próprio da aba Análise.
         A::OpenExplorer => item!(
             "open-explorer",
@@ -456,6 +458,19 @@ pub enum PresentationId {
     Technical2d,
 }
 
+/// Por que o Modo de estudo não liga (espelho neutro de `StudyRefusal` do app, #324).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StudyBlock {
+    /// Partida competitiva em andamento.
+    Competitive,
+    /// Partida online: quem escreve é o Provedor.
+    Online,
+    /// Modo espectador.
+    Spectator,
+    /// Exercício do Treino na tela.
+    Exercise,
+}
+
 /// Instantâneo do app de que o estado das Ações depende. O app o monta a cada quadro.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ActionContext {
@@ -514,6 +529,10 @@ pub struct ActionContext {
     /// Modo espectador: o tabuleiro mostra a Partida da Engine online só para ver; as Ações de
     /// jogo (abandonar, empate, relógio, desfazer) não valem nela.
     pub spectator: bool,
+    /// O Modo de estudo está ligado (a Linha de estudo existe).
+    pub studying: bool,
+    /// Por que o Modo de estudo não liga agora; `None` se liga.
+    pub study_block: Option<StudyBlock>,
 }
 
 /// Estado de uma Ação num dado [`ActionContext`].
@@ -674,6 +693,13 @@ fn disabled_reason(action: Action, ctx: &ActionContext) -> Option<&'static str> 
         A::OfferDraw if ctx.draw_offer_pending => Some("reason-draw-offer-pending"),
         A::ClaimDraw if !ctx.claimable_draw => Some("reason-no-claimable-draw"),
         A::PauseClock | A::ClockPress if !ctx.has_clock => Some("reason-no-clock"),
+        A::StudyHere if ctx.study_block.is_some() => Some(match ctx.study_block {
+            Some(StudyBlock::Competitive) => "reason-study-competitive",
+            Some(StudyBlock::Online) => "reason-study-online",
+            Some(StudyBlock::Spectator) => "reason-study-spectator",
+            _ => "reason-study-exercise",
+        }),
+        A::StudyHere if ctx.studying => Some("reason-already-studying"),
         A::ToggleAnalysis if ctx.training_on_screen => Some("reason-training-lock"),
         A::ToggleAnalysis if ctx.competitive_in_progress => Some("reason-competitive-lock"),
         A::ToggleAnalysis if !ctx.engine_consented => Some("reason-engine-consent"),

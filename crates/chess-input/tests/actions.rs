@@ -720,3 +720,53 @@ fn the_explorer_has_its_own_actions_and_the_panel_stays_reachable_in_a_competiti
         Some("reason-competitive-lock")
     );
 }
+
+// --- #324: Estudar aqui ---
+
+#[test]
+fn study_here_lives_in_the_analysis_tab_with_its_own_group_and_a_free_shortcut() {
+    let m = meta(Action::StudyHere);
+    assert_eq!(m.tab, Some(RibbonTab::Analysis));
+    assert_eq!(m.group, Some("ribbon-group-study"));
+    assert_eq!(m.kind, ActionKind::Command);
+    let map = ControlMap::default();
+    assert_eq!(map.triggers(Action::StudyHere).len(), 1);
+    // O atalho de fábrica não rouba o de outra Ação.
+    let trigger = map.triggers(Action::StudyHere)[0].clone();
+    assert_eq!(map.conflict(Action::StudyHere, &trigger), None);
+}
+
+#[test]
+fn study_here_is_enabled_in_an_assisted_game() {
+    assert!(state(Action::StudyHere, &assisted()).is_enabled());
+}
+
+#[test]
+fn study_here_is_disabled_with_a_reason_when_the_study_mode_is_refused() {
+    use chess_input::actions::StudyBlock;
+    for (block, reason) in [
+        (StudyBlock::Competitive, "reason-study-competitive"),
+        (StudyBlock::Online, "reason-study-online"),
+        (StudyBlock::Spectator, "reason-study-spectator"),
+        (StudyBlock::Exercise, "reason-study-exercise"),
+    ] {
+        let ctx = ActionContext {
+            study_block: Some(block),
+            ..assisted()
+        };
+        let s = state(Action::StudyHere, &ctx);
+        assert_eq!(s.disabled_reason, Some(reason), "{block:?}");
+    }
+}
+
+#[test]
+fn study_here_is_disabled_while_already_studying() {
+    let ctx = ActionContext {
+        studying: true,
+        ..assisted()
+    };
+    assert_eq!(
+        state(Action::StudyHere, &ctx).disabled_reason,
+        Some("reason-already-studying")
+    );
+}

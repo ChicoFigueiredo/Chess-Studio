@@ -20,7 +20,7 @@ use crate::study::{StudyRefusal, study_mode_available};
 use bevy::prelude::Vec3;
 use chess_core::{CanonicalPosition, Color, Move, Piece, Square};
 use chess_game::{Command, HistoryEntry, PendingPromotion, ProvisionalView, ReviewView};
-use chess_input::GestureEvent;
+use chess_input::{GestureEvent, GestureState};
 
 #[cfg(test)]
 #[path = "study_follow_tests.rs"]
@@ -202,6 +202,20 @@ impl Session {
         self.interpreter
             .handle(GestureEvent::PanelInteraction, &self.snapshot);
         self.revision = self.revision.wrapping_add(1);
+    }
+
+    /// Esc (#324): com um gesto em andamento (peça selecionada ou arrastada, seletor de promoção
+    /// aberto) só o cancela e o estudo fica; sem gesto, no Modo de estudo, volta à Partida.
+    /// Fora do estudo é só o cancelamento do gesto, como sempre.
+    pub fn escape(&mut self) {
+        let gesture_in_progress = self.interpreter.state() != GestureState::Idle
+            || self.study_promotion.is_some()
+            || self.snapshot.provisional.is_some();
+        if self.study.is_some() && !gesture_in_progress {
+            self.leave_study();
+        } else {
+            self.gesture(GestureEvent::Escape);
+        }
     }
 
     /// Gesto vindo do painel Tabuleiro 2D com "Jogar por aqui". Em estudo vai para a Linha de

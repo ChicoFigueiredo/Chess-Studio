@@ -92,9 +92,6 @@ pub struct CaptureScript {
     pub aids: Option<String>,
     /// Entra na revisão neste meio-lance antes das fotos.
     pub review: Option<usize>,
-    /// `--study d2d4,d7d5`: depois da revisão, move estas peças (por gestos) e inicia a Linha de
-    /// estudo (#323).
-    pub study: Vec<String>,
     /// `--policy`, `--time`, `--side`: configuração da Partida de roteiro (B7/B8).
     pub config: Option<NewGameConfig>,
     /// `--hud off|study|analysis`: perfil de HUD da captura (C5).
@@ -106,6 +103,9 @@ pub struct CaptureScript {
     /// `--profile physical|training|study|competition|minimal`: aplica o Perfil de interface de fábrica e tira
     /// uma única foto (C4).
     pub profile: Option<String>,
+    /// `--study [e7e5,...]`: liga o Modo de estudo na posição mostrada e joga estes Lances na
+    /// Linha de estudo (vazio ou `-`: só liga). Mostra a tonalidade e a faixa (#324).
+    pub study: Option<Vec<String>>,
     /// `--single <nome>`: tira uma única foto com este nome (telas novas: Controles,
     /// seletor de perfis, comparação de qualidade).
     pub single: Option<&'static str>,
@@ -276,17 +276,7 @@ fn run_capture(
         if let Some(ply) = mode.script.review {
             session.set_review_ply(Some(ply));
         }
-        for mv in &mode.script.study {
-            for name in [mv.get(0..2), mv.get(2..4)] {
-                let square = name.and_then(|n| n.parse().ok());
-                session.gesture(GestureEvent::PointerDown {
-                    button: PointerButton::Primary,
-                    square,
-                    modifiers: Modifiers::default(),
-                });
-                session.gesture(GestureEvent::PointerUp { square });
-            }
-        }
+        study_script(&mut session, &mode.script);
     }
     let view = if mode.script.inverted && step.view != CameraView::Top {
         CameraView::Inverted
@@ -348,6 +338,39 @@ fn play_script(session: &mut Session, script: &CaptureScript) {
     }
 }
 
+/// Liga o Modo de estudo e joga na Linha de estudo os Lances de `--study` (só evidência). Os
+/// Lances entram pelo mesmo gesto do usuário, então o núcleo de regras os valida.
+fn study_script(session: &mut Session, script: &CaptureScript) {
+    let Some(moves) = &script.study else {
+        return;
+    };
+    if session.study_here().is_err() {
+        warn!("o roteiro pediu --study, mas o Modo de estudo está recusado");
+        return;
+    }
+    for text in moves {
+        let parse =
+            |range: std::ops::Range<usize>| text.get(range).and_then(|t| t.parse::<Square>().ok());
+        let (Some(from), Some(to)) = (parse(0..2), parse(2..4)) else {
+            warn!("lance de estudo inválido: {text}");
+            continue;
+        };
+        for square in [from, to] {
+            session.gesture(GestureEvent::PointerDown {
+                button: PointerButton::Primary,
+                square: Some(square),
+                modifiers: Modifiers::default(),
+            });
+            session.gesture(GestureEvent::PointerUp {
+                square: Some(square),
+            });
+        }
+        if let Some(piece) = text.get(4..5).and_then(promotion_piece) {
+            session.command(Command::ChoosePromotion { piece });
+        }
+    }
+}
+
 /// Seleciona a peça do roteiro (refeito a cada passo: trocar de Apresentação cancela o gesto).
 fn select_script(session: &mut Session, script: &CaptureScript) {
     if let Some(square) = script.select
@@ -403,4 +426,26 @@ pub fn parse_config(
         config.user_side = chess_core::Color::Black;
     }
     Some(config)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_study_script_turns_the_study_on_and_plays_its_moves_on_the_study_line_only() {
+        let mut session = Session::new();
+        let script = CaptureScript {
+            moves: vec!["e2e4".into(), "e7e5".into()],
+            study: Some(vec!["g1f3".into(), "b8c6".into()]),
+            ..Default::default()
+        };
+        play_script(&mut session, &script);
+        study_script(&mut session, &script);
+        assert!(session.studying());
+        let line = session.study_line().expect("linha");
+        let sans: Vec<&str> = line.moves().iter().map(|m| m.san.as_str()).collect();
+        assert_eq!(sans, ["Nf3", "Nc6"]);
+        assert_eq!(session.snapshot().history.len(), 2, "a Partida não andou");
+    }
 }

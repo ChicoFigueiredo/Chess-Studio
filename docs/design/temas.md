@@ -4,9 +4,9 @@ O Chess Studio tem 22 Temas: Escuro e Claro, de fábrica, e mais 20 com temátic
 
 ## Como usar
 
-- Escuro e Claro ficam em `tokens.json`. Os outros 20 ficam em `themes.json`: cada um tem uma `base` (`dark` ou `light`) e a lista `colors`, com as 22 cores que ele troca.
+- Escuro e Claro ficam em `tokens.json`. Os outros 20 ficam em `themes.json`: cada um tem uma `base` (`dark` ou `light`) e a lista `colors`, com as 23 cores que ele troca.
 - Aplique primeiro a base e depois as cores do Tema. Nas prévias: `data-theme="<base>" data-cs-theme="<id>"` no mesmo elemento. No app: o `Visuals` da base com as cores do Tema por cima.
-- Um Tema troca só superfícies, contornos, tintas, `accent`, estados e `scrim`. O tabuleiro (`board-light`, `board-dark`, `board-select`, `last-move`, `hover-ring`), a barra de avaliação e as sombras vêm sempre da base: o tabuleiro não muda com o Tema.
+- Um Tema troca só superfícies, contornos, tintas, `accent`, estados, `scrim` e `study-tint`. O tabuleiro (`board-light`, `board-dark`, `board-select`, `last-move`, `hover-ring`), a barra de avaliação e as sombras vêm sempre da base: o tabuleiro não muda com o Tema.
 - Use sempre o nome do token, nunca o hex de um Tema.
 - A página "Themes" mostra a interface em cada Tema, com os valores e o contraste medido.
 
@@ -46,9 +46,13 @@ Todo Tema, de fábrica ou de xadrez, cumpre os mesmos pares (WCAG 2):
 - **Alto contraste (Pretas e Brancas):** todo texto com 7:1 e também `border` com 3:1, para que Painéis e controles se separem por contorno, não só por tom.
 - `ink-disabled` é isento, e por isso nunca é o único sinal.
 
+## Tonalidade do Modo de estudo
+
+`study-tint` é a única cor de tabuleiro que segue o Tema: um véu translúcido (alfa de 0x40 a 0xA0) sobre as casas e a moldura do tabuleiro principal enquanto o Modo de estudo está ligado, nas três Apresentações e no painel Tabuleiro 2D. Em todos os Temas ela é o `info` do Tema, a 45% nos escuros e a 40% nos claros; as peças não mudam de cor. Um Tema novo precisa de uma tinta que mude de verdade a casa clara e a escura (os testes de `ui_theme::themes` conferem). Veja `componentes/StudyBanner.md`.
+
 ## Regras
 
 - Estados (`success`, `warning`, `danger`, `info`) vêm sempre com ícone ou palavra. Em Temas com `accent` verde, azul ou bordô (Torneio, Blitz, Engine, Escandinava, Súmula, Mármore, Lewis), a cor sozinha não distingue estado de identidade.
 - Onde o `accent` é azul, `info` muda para azul-petróleo ou violeta; onde é verde, `success` vai para o verde-azulado.
-- Para criar um Tema: escolha a base, defina as 22 cores e confira todos os pares do contrato antes de publicar. Um Tema que falha num par não entra.
+- Para criar um Tema: escolha a base, defina as 23 cores e confira todos os pares do contrato antes de publicar. Um Tema que falha num par não entra.
 - Não crie Tema que mude o tabuleiro. Aparência de peças e casas é preferência do Tabuleiro, não do Tema.
