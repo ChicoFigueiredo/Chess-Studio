@@ -326,7 +326,7 @@ const POINTER_ACTIONS: [Action; 5] = [
     Action::Pan,
     Action::Zoom,
 ];
-const KEY_ACTIONS: [Action; 23] = [
+const KEY_ACTIONS: [Action; 24] = [
     Action::Cancel,
     Action::ClockPress,
     Action::ViewTop,
@@ -345,6 +345,7 @@ const KEY_ACTIONS: [Action; 23] = [
     Action::Undo,
     Action::Redo,
     Action::FlipBoard,
+    Action::StudyHere,
     Action::OpenOptions,
     Action::OpenPalette,
     Action::ToggleRibbonCollapse,

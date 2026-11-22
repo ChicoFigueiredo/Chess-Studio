@@ -27,7 +27,7 @@ use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
 use chess_game::Command;
 use chess_input::CameraView;
-use chess_input::actions::{ActionContext, PresentationId, state};
+use chess_input::actions::{ActionContext, PresentationId, StudyBlock, state};
 use chess_input::controls::Action;
 
 /// O conjunto de Painéis que estava aberto quando "Ocultar todos os Painéis" foi acionada
@@ -192,6 +192,17 @@ pub struct ActionEnv<'w> {
     fair: Option<Res<'w, crate::fair_play::FairPlay>>,
 }
 
+/// O motivo do Modo de estudo não ligar, no tipo neutro de `chess-input`.
+fn study_block(refusal: crate::study::StudyRefusal) -> StudyBlock {
+    use crate::study::StudyRefusal;
+    match refusal {
+        StudyRefusal::Competitive => StudyBlock::Competitive,
+        StudyRefusal::Online => StudyBlock::Online,
+        StudyRefusal::Spectator => StudyBlock::Spectator,
+        StudyRefusal::Exercise => StudyBlock::Exercise,
+    }
+}
+
 fn presentation_id(p: Presentation) -> PresentationId {
     match p {
         Presentation::Professional3d => PresentationId::Professional3d,
@@ -226,6 +237,8 @@ impl ActionEnv<'_> {
             analysis_on: self.analysis.is_enabled(),
             training_on_screen: self.training.session_swapped(),
             spectator: self.session.is_spectator(),
+            studying: self.session.studying(),
+            study_block: self.session.study_refusal().map(study_block),
             presentation: presentation_id(*self.presentation),
             camera_view: self.rig.view,
             fullscreen: self.view.fullscreen,
@@ -291,6 +304,10 @@ impl ActionEnv<'_> {
             }
             Action::OpenPalette => self.palette.toggle(),
             Action::Undo => self.session.undo(),
+            // Modo de estudo (#324): só leitura, a Partida não muda (ADR-0001).
+            Action::StudyHere => {
+                let _ = self.session.study_here();
+            }
             Action::Redo => self.session.command(Command::Redo),
             // Online, abandonar pede confirmação (o Lichess registra a derrota).
             Action::Resign if self.session.is_online() => {
@@ -1049,5 +1066,56 @@ mod tests {
             .filter(|a| a.panel().is_some())
             .count();
         assert_eq!(panels, ids.len());
+    }
+
+    // --- #324: Estudar aqui ---
+
+    #[test]
+    fn study_here_turns_the_study_mode_on_without_touching_the_game() {
+        let mut app = test_app();
+        let events = app.world().resource::<Session>().game().events().len();
+        request(&mut app, Action::StudyHere);
+        let session = app.world().resource::<Session>();
+        assert!(session.studying());
+        assert_eq!(session.game().events().len(), events, "nada no log");
+    }
+
+    #[test]
+    fn the_e_key_is_the_factory_shortcut_of_study_here() {
+        let mut app = test_app();
+        press(&mut app, KeyCode::KeyE);
+        assert!(app.world().resource::<Session>().studying());
+    }
+
+    #[test]
+    fn study_here_reports_why_it_is_disabled_and_does_not_run() {
+        use chess_input::actions::state;
+        let mut app = test_app();
+        app.world_mut().resource_mut::<Session>().mark_exercise();
+        let ctx = app
+            .world_mut()
+            .run_system_once(|env: ActionEnv| env.context())
+            .unwrap();
+        assert_eq!(
+            state(Action::StudyHere, &ctx).disabled_reason,
+            Some("reason-study-exercise")
+        );
+        request(&mut app, Action::StudyHere);
+        assert!(!app.world().resource::<Session>().studying());
+    }
+
+    #[test]
+    fn study_here_is_disabled_while_the_study_is_on() {
+        use chess_input::actions::state;
+        let mut app = test_app();
+        request(&mut app, Action::StudyHere);
+        let ctx = app
+            .world_mut()
+            .run_system_once(|env: ActionEnv| env.context())
+            .unwrap();
+        assert_eq!(
+            state(Action::StudyHere, &ctx).disabled_reason,
+            Some("reason-already-studying")
+        );
     }
 }
