@@ -283,14 +283,44 @@ impl Subject {
         })
     }
 
-    /// A Posição que o tabuleiro mostra: a da revisão, a da variante em exibição ou a ao vivo.
+    /// A Posição que o tabuleiro mostra: a da Linha de estudo, a da revisão, a da variante em
+    /// exibição ou a ao vivo.
     pub fn shown(session: &Session) -> Option<Self> {
         let game = session.game();
+        if let Some(line) = session.study_line() {
+            return Self::study(game, line);
+        }
         match session.review() {
             Some(view) if session.showing_variation() => Some(Self::variation(game, view)),
             Some(view) => Self::at(game, view.ply),
             None => Self::at(game, session.snapshot().history.len()),
         }
+    }
+
+    /// A Posição que a Análise, as Aberturas e o Explorador seguem (`followed::Followed`): a da
+    /// Linha de estudo ou a da Revisão, sem a variante em exibição.
+    pub fn followed(session: &Session) -> Option<Self> {
+        match session.study_line() {
+            Some(line) => Self::study(session.game(), line),
+            None => Self::at(session.game(), crate::notation::current_ply(session)),
+        }
+    }
+
+    /// A Posição da Linha de estudo (#325) no Lance mostrado: parte do meio-lance `base_ply` da
+    /// Partida e o caminho passa por **cada** Posição da linha, então uma estrutura travada
+    /// pelo caminho trava o resto da linha, por mais Lances que ela já tenha.
+    fn study(game: &Game, line: &crate::session::StudyLine) -> Option<Self> {
+        let mut subject = Self::at(game, line.base_ply())?;
+        let shown = line.cursor();
+        if shown == 0 {
+            return Some(subject);
+        }
+        subject.lineage.push(subject.structure);
+        for played in &line.moves()[..shown - 1] {
+            subject.lineage.push(Structure::of(&played.position_after));
+        }
+        subject.structure = Structure::of(line.position());
+        Some(subject)
     }
 
     /// Uma variante que parte do meio-lance `view.ply` da Partida (Análise, Explorador).
