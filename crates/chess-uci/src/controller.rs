@@ -53,6 +53,14 @@ pub enum StrengthApplied {
         requested: u32,
         level: u32,
     },
+    /// O pedido ficou abaixo do mais fraco que a Engine permite por opção (`floor`: o piso de
+    /// `UCI_Elo`, ou o Elo mapeado em `Skill Level` 0). A Engine fica nesse piso e cada busca
+    /// recebe um teto de `depth` que cai com o Elo pedido. O Elo é nominal: não foi calibrado.
+    Weakened {
+        requested: u32,
+        floor: u32,
+        depth: u32,
+    },
     /// A Engine não anuncia nenhuma opção de força.
     Unsupported,
 }
@@ -343,6 +351,10 @@ fn worker(
         Ok(a) => a,
         Err(e) => return fail(&e),
     };
+    let depth_limit = match applied {
+        StrengthApplied::Weakened { depth, .. } => Some(depth),
+        _ => None,
+    };
     let _ = out.send(ControllerEvent::Ready {
         name: engine.info().name.clone(),
         strength: applied,
@@ -352,7 +364,7 @@ fn worker(
         if current.load(Ordering::SeqCst) != id {
             continue;
         }
-        match run_search(&mut engine, id, &req, current, timeouts) {
+        match run_search(&mut engine, id, &req, depth_limit, current, timeouts) {
             Ok(BestMove::Move { text, .. }) => {
                 let _ = out.send(ControllerEvent::Move { id, uci: text });
             }
@@ -375,11 +387,16 @@ fn run_search(
     engine: &mut Engine,
     id: u64,
     req: &SearchRequest,
+    depth_limit: Option<u32>,
     current: &AtomicU64,
     timeouts: Timeouts,
 ) -> Result<BestMove, EngineError> {
     engine.set_position(&req.position)?;
-    engine.go(&req.go)?;
+    let mut go = req.go;
+    if let Some(cap) = depth_limit {
+        go.depth = Some(go.depth.map_or(cap, |d| d.min(cap)));
+    }
+    engine.go(&go)?;
     let soft = Instant::now() + req.limit + timeouts.search_slack;
     let mut stop_deadline: Option<Instant> = None;
     loop {
@@ -428,6 +445,20 @@ fn spin_range(details: &str) -> Option<(i64, i64)> {
 const SKILL_ELO_MIN: u32 = 800;
 const SKILL_ELO_MAX: u32 = 2800;
 
+/// O Elo mais baixo que o app oferece. Abaixo do piso da Engine (`UCI_Elo` 1320 no Stockfish)
+/// a força vem do teto de profundidade, e o valor é nominal.
+pub const NOMINAL_MIN_ELO: u32 = 400;
+/// Teto de profundidade logo abaixo do piso da Engine; no `NOMINAL_MIN_ELO` é 1.
+const WEAK_MAX_DEPTH: u32 = 6;
+
+/// Teto de profundidade para um Elo `requested` abaixo de `floor`: de 1 (no mínimo nominal)
+/// até `WEAK_MAX_DEPTH - 1` (um pouco abaixo do piso).
+fn depth_cap(requested: u32, floor: u32) -> u32 {
+    let span = floor.saturating_sub(NOMINAL_MIN_ELO).max(1);
+    let above = requested.saturating_sub(NOMINAL_MIN_ELO).min(span);
+    1 + above * (WEAK_MAX_DEPTH - 1) / span
+}
+
 fn skill_for_elo(elo: u32, max_level: u32) -> u32 {
     let span = SKILL_ELO_MAX - SKILL_ELO_MIN;
     let clamped = elo.clamp(SKILL_ELO_MIN, SKILL_ELO_MAX) - SKILL_ELO_MIN;
@@ -451,12 +482,23 @@ fn apply_strength(engine: &mut Engine, strength: Strength) -> Result<StrengthApp
         }
         Strength::Elo(requested) => {
             if let (Some(_), Some(elo)) = (&limit, &elo_opt) {
-                let used = match spin_range(&elo.details) {
+                let range = spin_range(&elo.details);
+                let used = match range {
                     Some((lo, hi)) => i64::from(requested).clamp(lo, hi),
                     None => i64::from(requested),
                 };
                 engine.set_option("UCI_LimitStrength", Some("true"))?;
                 engine.set_option("UCI_Elo", Some(&used.to_string()))?;
+                if let Some((lo, _)) = range
+                    && i64::from(requested) < lo
+                {
+                    let floor = u32::try_from(lo).unwrap_or(requested);
+                    return Ok(StrengthApplied::Weakened {
+                        requested,
+                        floor,
+                        depth: depth_cap(requested, floor),
+                    });
+                }
                 return Ok(StrengthApplied::Elo {
                     requested,
                     used: u32::try_from(used).unwrap_or(requested),
@@ -468,6 +510,13 @@ fn apply_strength(engine: &mut Engine, strength: Strength) -> Result<StrengthApp
                     .unwrap_or(20);
                 let level = skill_for_elo(requested, max);
                 engine.set_option("Skill Level", Some(&level.to_string()))?;
+                if requested < SKILL_ELO_MIN {
+                    return Ok(StrengthApplied::Weakened {
+                        requested,
+                        floor: SKILL_ELO_MIN,
+                        depth: depth_cap(requested, SKILL_ELO_MIN),
+                    });
+                }
                 return Ok(StrengthApplied::SkillLevel { requested, level });
             }
             Ok(StrengthApplied::Unsupported)
@@ -486,6 +535,17 @@ mod tests {
             Some((1320, 3190))
         );
         assert_eq!(spin_range("default false"), None);
+    }
+
+    #[test]
+    fn depth_cap_falls_with_the_requested_elo() {
+        assert_eq!(depth_cap(400, 1320), 1);
+        assert_eq!(depth_cap(100, 1320), 1);
+        assert_eq!(depth_cap(860, 1320), 3);
+        assert_eq!(depth_cap(1319, 1320), 5);
+        assert_eq!(depth_cap(400, 800), 1);
+        assert_eq!(depth_cap(500, 800), 2);
+        assert_eq!(depth_cap(799, 800), 5);
     }
 
     #[test]

@@ -24,6 +24,7 @@ engine-playing = Contra { $name } (Elo { $elo })
 engine-playing-unnamed = Contra a Engine (Elo { $elo })
 engine-thinking = Engine pensando…
 engine-strength-clamped = Elo ajustado para { $used } (faixa da Engine).
+engine-strength-weakened = Elo { $requested } aproximado: abaixo de { $floor }, a Engine joga o mais fraco que permite e pensa pouco a cada Lance.
 engine-strength-skill = Esta Engine não anuncia Elo: usando Skill Level { $level }.
 engine-strength-unsupported = Esta Engine não permite limitar a força: joga com força total.
 
