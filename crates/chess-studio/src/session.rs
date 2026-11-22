@@ -18,6 +18,9 @@
 //! ([`Session::own`]), e volta ao sair. Nenhum gesto vira Lance nem intenção.
 
 mod spectator;
+mod study_mode;
+
+pub use study_mode::{StudyLine, StudyMove};
 
 use crate::fair_play::{FairPlay, FairPlayLocked, GuardedOpponent};
 use crate::new_game::{NewGameConfig, Opponent};
@@ -138,6 +141,11 @@ pub struct Session {
     review: Option<ReviewView>,
     /// A revisão em curso é uma variante da análise (C8), não um Lance do histórico.
     variation: bool,
+    /// Modo de estudo (#322): a Linha de estudo em curso, só leitura e fora do log.
+    study: Option<StudyLine>,
+    /// A `Session` é a de um Exercício do Treino: não é a Partida do usuário e não tem Modo de
+    /// estudo.
+    exercise: bool,
     /// Configuração da Nova Partida (derivada do `GameSetup` ao reabrir).
     config: NewGameConfig,
     notice: Option<(Notice, Instant)>,
@@ -192,6 +200,8 @@ impl Session {
             epoch: 0,
             review: None,
             variation: false,
+            study: None,
+            exercise: false,
             online,
             config,
             notice: None,
@@ -435,6 +445,11 @@ impl Session {
     /// Evento de gesto -> Comandos do intérprete -> Partida.
     pub fn gesture(&mut self, event: GestureEvent) {
         // Na vez da Engine o ponteiro não move nada (ela joga as próprias peças).
+        // Modo de estudo (#322): numa Revisão ou na Linha de estudo o gesto joga na linha.
+        if let Some(position) = self.study_position() {
+            self.study_gesture(event, &position);
+            return;
+        }
         if self.engine_turn() || self.review.is_some() {
             return;
         }
@@ -1683,5 +1698,178 @@ mod tests {
         b.command(Command::PressClock);
         assert_eq!(a.snapshot().position, b.snapshot().position);
         assert_eq!(a.snapshot().history, b.snapshot().history);
+    }
+
+    // --- Modo de estudo e Linha de estudo (#322) ---------------------------------------
+
+    /// Partida Assistida com `moves` (ex.: "e2e4") jogados por gestos.
+    fn played(moves: &[&str]) -> Session {
+        let mut s = Session::new();
+        for m in moves {
+            tap(&mut s, &m[..2], &m[2..4]);
+        }
+        s
+    }
+
+    /// Três meios-lances jogados (1.e4 e5 2.Cf3), revisando a posição após 1.e4.
+    fn reviewing_after_e4() -> Session {
+        let mut s = played(&["e2e4", "e7e5", "g1f3"]);
+        s.set_review_ply(Some(1));
+        s
+    }
+
+    #[test]
+    fn moving_a_piece_in_review_starts_the_study_line_and_never_writes_the_game() {
+        let mut s = reviewing_after_e4();
+        let events = s.game().events().len();
+        let snapshot = s.snapshot().clone();
+        assert!(!s.studying());
+        tap(&mut s, "c7", "c5");
+        assert!(s.studying());
+        let line = s.study_line().unwrap();
+        assert_eq!(line.base_ply(), 1, "parte da posição revisada");
+        assert_eq!(line.moves().len(), 1);
+        assert_eq!(line.moves()[0].san, "c5");
+        assert_eq!(line.cursor(), 1);
+        // O tabuleiro mostra a posição do estudo; a Partida não muda.
+        assert_eq!(
+            s.review().unwrap().position.piece_at(sq("c5")),
+            Some((Color::Black, Piece::Pawn))
+        );
+        assert_eq!(s.game().events().len(), events);
+        assert_eq!(s.snapshot(), &snapshot);
+    }
+
+    #[test]
+    fn an_illegal_move_is_refused_and_does_not_leave_the_study() {
+        let mut s = reviewing_after_e4();
+        // Em Revisão, Lance ilegal não inicia o estudo.
+        tap(&mut s, "e7", "e3");
+        assert!(!s.studying());
+        tap(&mut s, "c7", "c5");
+        let line = s.study_line().unwrap().clone();
+        // No estudo, a peça volta à origem e a linha fica como estava.
+        s.take_hint();
+        tap(&mut s, "b1", "b4");
+        assert_eq!(s.study_line(), Some(&line));
+        assert_eq!(
+            s.take_hint().map(|h| h.square),
+            Some(sq("b1")),
+            "a peça volta à casa de origem"
+        );
+        // Mover a peça do lado sem a vez (agora é das Brancas) também não faz nada.
+        tap(&mut s, "b8", "c6");
+        assert_eq!(s.study_line(), Some(&line));
+        assert!(s.studying());
+    }
+
+    #[test]
+    fn study_here_enters_the_study_from_the_live_position() {
+        let mut s = played(&["e2e4", "e7e5"]);
+        let events = s.game().events().len();
+        assert_eq!(s.study_here(), Ok(()));
+        assert!(s.studying());
+        let line = s.study_line().unwrap();
+        assert!(line.moves().is_empty());
+        assert_eq!(line.base_ply(), 2, "parte da posição ao vivo");
+        assert!(line.is_at_start() && line.is_at_end());
+        // Mover uma peça já vai para a linha.
+        tap(&mut s, "g1", "f3");
+        assert_eq!(s.study_line().unwrap().moves()[0].san, "Nf3");
+        assert_eq!(s.game().events().len(), events);
+        assert_eq!(s.snapshot().history.len(), 2, "a Partida não andou");
+    }
+
+    #[test]
+    fn study_here_from_a_reviewed_position_starts_at_that_position() {
+        let mut s = played(&["e2e4", "e7e5", "g1f3"]);
+        s.set_review_ply(Some(2));
+        assert_eq!(s.study_here(), Ok(()));
+        assert_eq!(s.study_line().unwrap().base_ply(), 2);
+    }
+
+    #[test]
+    fn study_is_refused_with_a_reason_in_competitive_play_online_and_spectator() {
+        use crate::study::StudyRefusal;
+        // Simulação FIDE em andamento: o gesto numa Revisão não faz nada e a Ação recusa.
+        let mut s = competitive(PolicyKind::FideSimulation);
+        tap(&mut s, "e2", "e4");
+        s.press_clock();
+        s.set_review_ply(Some(0));
+        assert_eq!(s.study_refusal(), Some(StudyRefusal::Competitive));
+        tap(&mut s, "d2", "d4");
+        assert!(!s.studying());
+        assert_eq!(s.study_here(), Err(StudyRefusal::Competitive));
+        assert!(!s.studying());
+
+        // Eliminação Imediata, o mesmo.
+        let s = competitive(PolicyKind::SuddenElimination);
+        assert_eq!(s.study_refusal(), Some(StudyRefusal::Competitive));
+
+        // Partida online.
+        let mut s = online_session(&["e2e4"]);
+        s.set_review_ply(Some(0));
+        assert_eq!(s.study_here(), Err(StudyRefusal::Online));
+        tap(&mut s, "d2", "d4");
+        assert!(!s.studying());
+
+        // Modo espectador.
+        let mut s = Session::new();
+        assert!(s.watch(&watched_engine_game()));
+        assert_eq!(s.study_here(), Err(StudyRefusal::Spectator));
+    }
+
+    #[test]
+    fn study_is_allowed_in_assisted_and_in_finished_competitive_games() {
+        let mut s = played(&["e2e4"]);
+        assert_eq!(s.study_refusal(), None);
+        assert_eq!(s.study_here(), Ok(()));
+
+        let mut s = competitive(PolicyKind::FideSimulation);
+        tap(&mut s, "e2", "e4");
+        s.press_clock();
+        s.command(Command::Resign { side: Color::Black });
+        assert!(s.snapshot().outcome.is_some());
+        s.set_review_ply(Some(1));
+        tap(&mut s, "d7", "d5");
+        assert!(s.studying(), "Partida terminada: o gesto inicia o estudo");
+        assert_eq!(s.study_line().unwrap().moves()[0].san, "d5");
+    }
+
+    /// Partida da Engine online, a que o modo espectador mostra.
+    fn watched_engine_game() -> Game {
+        use chess_game::{OnlineGame, OnlinePlayer, Variant};
+        let setup = GameSetup::online(
+            OnlineGame {
+                provider: "lichess-bot".into(),
+                remote_id: "En9ineQ1".into(),
+                local_color: Color::White,
+                opponent: chess_game::Opponent::Human,
+                white: OnlinePlayer {
+                    name: "Motor".into(),
+                    rating: None,
+                },
+                black: OnlinePlayer {
+                    name: "Salma".into(),
+                    rating: None,
+                },
+                rated: false,
+                days_per_move: None,
+            },
+            Variant::Standard,
+            None,
+        )
+        .unwrap();
+        Game::new(setup)
+    }
+
+    #[test]
+    fn a_training_exercise_session_has_no_study_mode() {
+        let mut s = played(&["e2e4", "e7e5"]);
+        s.mark_exercise();
+        s.set_review_ply(Some(1));
+        assert_eq!(s.study_refusal(), Some(crate::study::StudyRefusal::Exercise));
+        tap(&mut s, "e7", "e5");
+        assert!(!s.studying(), "a apresentação do Treino é só leitura");
     }
 }
