@@ -40,6 +40,7 @@ mod fide_panel;
 mod fide_profile;
 mod file_picker;
 mod focus;
+mod followed;
 mod framing;
 mod highlight;
 mod hover;

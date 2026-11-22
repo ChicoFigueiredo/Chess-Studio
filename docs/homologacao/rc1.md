@@ -378,19 +378,27 @@ Resultado: PASS / FAIL / N/A · Observação: ______
 
 ### RC1-15. Análise: barra de avaliação e Stop
 
-**Critérios:** US-17 · UI-08 · #296 · **Risco:** Integridade · **Precisa de:** Engine local · **Ticket:** #296
+**Critérios:** US-17 · UI-08 · #296 · #325 · **Risco:** Integridade · **Precisa de:** Engine local · **Ticket:** #296, #325
 
 Passos:
 
 1. Abra a Análise com uma Engine registrada e deixe calcular uns 5 segundos.
 2. Pare a análise e confira o uso de CPU (`top`, Monitor de Atividade ou Gerenciador de Tarefas).
 3. Repita ligar e parar umas 20 vezes, rápido.
+4. **Modo de estudo (#325).** Com a Análise ligada e o Explorador e o painel Aberturas abertos, numa Partida Assistida com uns 6 meios-lances jogados, clique num Lance da Notação (Revisão) e mova uma peça no tabuleiro (Lance legal) para iniciar a Linha de estudo; faça mais dois Lances. Acompanhe a Engine, a barra de avaliação, as Aberturas e o Explorador (Biblioteca e, se tiver Provedor ligado, uma fonte online).
+5. Volte um Lance na linha (botão ou seta, quando houver) e confira os painéis; depois saia do estudo (faixa "Estudo" ou Esc) e confira de novo.
+6. Com o Modo de estudo ligado, inicie uma Partida online contra pessoa (ou uma Simulação FIDE): o estudo deve se encerrar e nenhum painel deve calcular com a posição dele.
 
 Critérios de aceite:
 
 - [ ] A barra de avaliação acompanha o tabuleiro.
 - [ ] Depois de Parar, o processo da Engine cai para perto de zero de CPU.
 - [ ] Em nenhuma das 20 vezes a Engine seguiu calculando depois do Stop (é o defeito possível da #296).
+- [ ] No estudo, a Engine avalia a posição da Linha de estudo (não a da Partida) e a barra de avaliação acompanha cada Lance da linha.
+- [ ] No estudo, as Aberturas (nome e estatísticas) e o Explorador seguem a posição da linha, e o Explorador mantém a Origem, o Período e o aviso de amostra.
+- [ ] Clicar num Lance do Explorador, das Aberturas ou da linha da Engine, no estudo, acrescenta o Lance à Linha de estudo (não abre variante) e a Partida não muda.
+- [ ] Ao sair do estudo, Engine, barra, Aberturas e Explorador voltam à posição da Partida.
+- [ ] Com uma Partida competitiva ou online iniciada, o estudo se encerra e nada calcula com a posição dele (Trava de fair play).
 
 Registre:
 

@@ -27,7 +27,7 @@ use chess_core::{CanonicalPosition, Color as Side};
 use chess_game::{HistoryEntry, ReviewView};
 use chess_uci::{
     AnalysisConfig, AnalysisEvent, AnalysisLine, AnalysisUpdate, EngineConfig, Hardware, Limits,
-    LoadMode, OptionGroup, PositionSpec, Score,
+    LoadMode, OptionGroup, Score,
 };
 
 use crate::dock::{PanelAccess, PanelDef, ids};
@@ -246,6 +246,9 @@ struct TargetKey {
     ply: usize,
     total: usize,
     last: Option<chess_core::Move>,
+    /// Os Lances da Linha de estudo até o mostrado (vazio fora do estudo): cada um é outra
+    /// Posição para a Engine.
+    study: Vec<chess_core::Move>,
     multipv: u8,
 }
 
@@ -255,6 +258,31 @@ struct Target {
     base: CanonicalPosition,
     ply: usize,
     total: usize,
+}
+
+/// O que a Análise calcula agora: a Posição que o tabuleiro segue (a da Linha de estudo, no
+/// Modo de estudo; senão, a da Revisão ou a ao vivo), com a chave que diz quando ela mudou.
+fn analysis_target(session: &Session, multipv: u8) -> Option<Target> {
+    let followed = crate::followed::Followed::of(session)?;
+    let snapshot = session.snapshot();
+    let ply = followed.ply;
+    let key = TargetKey {
+        epoch: session.epoch(),
+        ply,
+        total: followed.total,
+        last: ply
+            .checked_sub(1)
+            .and_then(|i| snapshot.history.get(i))
+            .map(|h| h.mv),
+        study: followed.study,
+        multipv,
+    };
+    Some(Target {
+        key,
+        base: followed.position,
+        ply,
+        total: followed.total,
+    })
 }
 
 /// A última atualização, com o contexto para exibi-la.
@@ -752,7 +780,7 @@ impl Analysis {
         if self.demo {
             return;
         }
-        let subject = Subject::at(session.game(), notation::current_ply(session));
+        let subject = Subject::followed(session);
         let refused = subject.as_ref().map_or(fair.any(), |s| {
             fair.check(crate::fair_play::Computation::EngineAnalysis, s)
                 .is_err()
@@ -814,18 +842,11 @@ impl Analysis {
 
     /// Envia a Posição mostrada à Engine quando ela muda.
     fn follow_position(&mut self, session: &Session, fair: &FairPlay, subject: &Subject) {
-        let ply = notation::current_ply(session);
-        let snapshot = session.snapshot();
-        let key = TargetKey {
-            epoch: session.epoch(),
-            ply,
-            total: snapshot.history.len(),
-            last: ply
-                .checked_sub(1)
-                .and_then(|i| snapshot.history.get(i))
-                .map(|h| h.mv),
-            multipv: self.multipv,
+        let Some(target) = analysis_target(session, self.multipv) else {
+            self.target = None;
+            return;
         };
+        let key = target.key.clone();
         if self.target.as_ref().map(|t| &t.key) != Some(&key) {
             if self.launched.as_ref().is_some_and(|l| l.remote) && !self.remote_settle.is_zero() {
                 // Engine remota: só consulta quando a Posição parou (navegação rápida não
@@ -847,24 +868,9 @@ impl Analysis {
             self.remote.set_problem(None);
             self.view = None;
             self.preview = None;
-            let Some(view) = session.game().review_at_ply(ply) else {
-                self.target = None;
-                return;
-            };
-            let start = session.game().review_at_ply(0).map(|v| v.position);
-            let spec = start.map(|start| {
-                PositionSpec::from_fen(start.to_fen())
-                    .with_moves(snapshot.history.iter().take(ply).map(|h| h.mv))
-            });
-            let base = view.position;
-            let total = snapshot.history.len();
-            let has_moves = !base.legal_moves().is_empty();
-            self.target = Some(Target {
-                key,
-                base,
-                ply,
-                total,
-            });
+            let spec = crate::followed::Followed::of(session).and_then(|f| f.spec(session));
+            let has_moves = !target.base.legal_moves().is_empty();
+            self.target = Some(target);
             if let (true, Some(spec), Some(controller)) = (has_moves, spec, &mut self.controller) {
                 match controller.analyze(fair, subject, spec, self.multipv) {
                     Ok(request) => self.request = request,
@@ -951,7 +957,14 @@ impl Plugin for AnalysisPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Analysis>().add_systems(
             Update,
-            (capture_setup, feed_load, drive_analysis, sync_hud_analysis)
+            (
+                // O estudo que deixou de ser permitido fecha antes de qualquer cálculo (#325).
+                crate::followed::end_study_when_refused,
+                capture_setup,
+                feed_load,
+                drive_analysis,
+                sync_hud_analysis,
+            )
                 .chain()
                 .before(crate::hud::HudSet),
         );
@@ -1216,7 +1229,10 @@ fn results(
         ));
     }
     ui.small(facts);
-    if !session.showing_variation() {
+    // No Modo de estudo a linha da Engine não vira variante: ela entra na Linha de estudo e o
+    // tabuleiro segue o estudo (a faixa dele é quem volta à Partida).
+    let studying = session.studying();
+    if !session.showing_variation() || studying {
         analysis.preview = None;
     }
     ui.add_space(4.0);
@@ -1226,12 +1242,20 @@ fn results(
     }
     if let Some((line_index, k)) = clicked
         && let Some(line) = lines.get(line_index)
-        && let Some(view) = variation_view(&shown.base, shown.base_ply, shown.total, line, k)
     {
-        session.show_variation(view);
-        analysis.preview = Some((line_index, k));
+        if studying {
+            for mv in line.pv.iter().take(k + 1) {
+                if !session.study_play(*mv) {
+                    break;
+                }
+            }
+        } else if let Some(view) = variation_view(&shown.base, shown.base_ply, shown.total, line, k)
+        {
+            session.show_variation(view);
+            analysis.preview = Some((line_index, k));
+        }
     }
-    if session.showing_variation() {
+    if session.showing_variation() && !studying {
         ui.small(i18n.t("analysis-showing-line"));
         if ui.button(i18n.t("analysis-back-to-game")).clicked() {
             notation::navigate(session, shown.base_ply);
@@ -1949,6 +1973,75 @@ mod tests {
         session.set_review_ply(None);
         assert!(!session.showing_variation());
         assert!(session.review().is_none());
+    }
+
+    /// Partida Assistida com os Lances `uci` jogados.
+    fn session_playing(uci: &[&str]) -> Session {
+        let mut session = Session::new();
+        for m in uci {
+            let mv: chess_core::Move = m.parse().unwrap();
+            session.command(chess_game::Command::Release {
+                from: mv.from(),
+                to: mv.to(),
+            });
+        }
+        session
+    }
+
+    /// A Posição que a Engine recebe agora (FEN da base do alvo).
+    fn analyzed_fen(session: &Session) -> String {
+        analysis_target(session, 1).unwrap().base.to_fen()
+    }
+
+    #[test]
+    fn the_analysis_follows_the_study_line_and_goes_back_to_the_game_when_it_ends() {
+        let mut session = session_playing(&["e2e4", "e7e5", "g1f3"]);
+        let game_fen = session.snapshot().position.to_fen();
+        assert_eq!(analyzed_fen(&session), game_fen);
+        let game_key = analysis_target(&session, 1).unwrap().key;
+
+        // Revendo o 1.e4 e jogando 1...c5 no estudo: a Engine analisa a linha, não a Partida.
+        session.set_review_ply(Some(1));
+        let review_fen = analyzed_fen(&session);
+        assert!(session.study_play("c7c5".parse().unwrap()));
+        let line_fen = "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2";
+        assert_eq!(analyzed_fen(&session), line_fen);
+        let at_c5 = analysis_target(&session, 1).unwrap();
+        assert_eq!(at_c5.ply, 1, "parte do meio-lance da Partida");
+
+        // Cada Lance da linha é outro alvo (a Engine recalcula), mesmo no mesmo meio-lance.
+        assert!(session.study_play("g1f3".parse().unwrap()));
+        let at_nf3 = analysis_target(&session, 1).unwrap();
+        assert_ne!(at_nf3.key, at_c5.key);
+        // Navegar pela linha também.
+        session.study_step_back();
+        assert_eq!(analysis_target(&session, 1).unwrap().key, at_c5.key);
+        session.study_to_start();
+        assert_eq!(analyzed_fen(&session), review_fen);
+        assert_ne!(analysis_target(&session, 1).unwrap().key, at_c5.key);
+
+        // Sair do estudo: a Engine volta à Posição da Partida.
+        session.leave_study();
+        assert_eq!(analyzed_fen(&session), game_fen);
+        assert_eq!(analysis_target(&session, 1).unwrap().key, game_key);
+    }
+
+    #[test]
+    fn the_fair_play_lock_turning_on_during_a_study_stops_the_analysis_of_the_line() {
+        let guard = chess_net::FairPlayGuard::new();
+        let fair = FairPlay::new(guard.clone());
+        let mut session = session_playing(&["e2e4", "e7e5"]);
+        session.set_review_ply(Some(1));
+        assert!(session.study_play("c7c5".parse().unwrap()));
+        let mut analysis = armed();
+        analysis.drive(&session, false, &fair);
+        assert!(analysis.has_engine(), "sem trava, a linha é analisada");
+        // Uma Partida online contra pessoa abre noutro lugar: nada calcula, nem a linha.
+        let _hold = guard.hold("Partida online contra pessoa");
+        analysis.drive(&session, false, &fair);
+        assert_eq!(analysis.status(), &Status::Locked(Lock::FairPlay));
+        assert!(!analysis.has_engine());
+        assert!(analysis.shown().is_none());
     }
 
     #[test]
