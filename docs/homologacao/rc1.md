@@ -423,6 +423,7 @@ Passos:
 2. Ctrl+K e digite "nova"; Alt e as letras; Ctrl+F1; dois cliques numa aba.
 3. Abra Opções pela Paleta e percorra as categorias.
 4. Com uma Partida de uns 6 Lances, use ← → Home End e os botões do cabeçalho da Notação; depois clique numa nota rápida e digite com as setas.
+5. Modo de estudo (#324), numa Partida Assistida: na aba Análise, clique em "Estudar aqui" (ou aperte E); o tabuleiro ganha uma tonalidade e a faixa "Estudo" aparece no alto. Mova uma peça, aperte Esc com uma peça selecionada (só solta a peça) e Esc de novo (volta à Partida). Entre de novo e clique em "Voltar à Partida". Repita nas três Apresentações (3D profissional, Mesa imersiva, 2D técnico) e com o painel Tabuleiro 2D aberto. Troque de Tema (um claro e um escuro) com o estudo ligado. Em Partida competitiva (Simulação FIDE ou Eliminação Imediata) em andamento e em Partida online, procure "Estudar aqui" no Ribbon e na Paleta. Com a janela em 800x600, veja se a faixa cabe sem corte.
 
 Critérios de aceite:
 
@@ -431,6 +432,8 @@ Critérios de aceite:
 - [ ] Dois cliques numa aba recolhem e expandem o Ribbon.
 - [ ] Opções cobre o que o painel antigo fazia, sem item sem caminho.
 - [ ] Na Notação, os quatro botões (início, anterior, próximo, posição atual) e as teclas ← → Home End navegam na Revisão; End volta ao vivo; digitando numa nota rápida, as setas não navegam (#321).
+- [ ] "Estudar aqui" liga o Modo de estudo: o tabuleiro principal (nas três Apresentações) e o painel Tabuleiro 2D ganham a tonalidade do Tema (nas casas e na moldura, sem mudar a cor das peças) e a faixa "Estudo" aparece com "Voltar à Partida"; um clique na faixa, ou Esc sem peça selecionada, volta à posição de jogo e a tonalidade e a faixa somem. Mover peças e o Método de movimento funcionam como no jogo normal (#324).
+- [ ] Em Partida competitiva em andamento e em Partida online, "Estudar aqui" aparece desabilitada na Paleta e no Ribbon, com o motivo no tooltip. A faixa é legível num Tema claro e num escuro e cabe em 800x600 (#324).
 
 Registre:
 

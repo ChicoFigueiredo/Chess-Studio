@@ -17,7 +17,9 @@ use crate::board2d::UNIT;
 use crate::i18n::I18n;
 use crate::presentation::{Presentation, VisibleIn};
 use crate::session::Session;
-use crate::ui_theme::{Appearance, ButtonVariant, CsButton, Palette, Tokens, scene_study_tint};
+use crate::ui_theme::{
+    Appearance, ButtonVariant, CsButton, Palette, Tokens, icon_job, scene_study_tint, strong_font,
+};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
@@ -213,15 +215,13 @@ fn study_banner(
                 .show(ui, |ui| {
                     ui.set_width(rect.width() - 22.0);
                     ui.horizontal(|ui| {
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "{} {}",
-                                egui_phosphor::regular::FLASK,
-                                i18n.t("study-banner-title")
-                            ))
-                            .strong()
-                            .color(p.accent_ink),
-                        );
+                        ui.label(icon_job(
+                            ui.ctx(),
+                            Some(egui_phosphor::regular::FLASK),
+                            &i18n.t("study-banner-title"),
+                            strong_font(ui.ctx(), 14.0),
+                            p.accent_ink,
+                        ));
                         if rect.width() >= BANNER_HINT_MIN_WIDTH && notice.is_none() {
                             ui.label(
                                 egui::RichText::new(i18n.t("study-banner-hint"))
@@ -229,14 +229,13 @@ fn study_banner(
                             );
                         }
                         if let Some(key) = notice {
-                            ui.label(
-                                egui::RichText::new(format!(
-                                    "{} {}",
-                                    egui_phosphor::regular::WARNING,
-                                    i18n.t(key)
-                                ))
-                                .color(p.warning),
-                            );
+                            ui.label(icon_job(
+                                ui.ctx(),
+                                Some(egui_phosphor::regular::WARNING),
+                                &i18n.t(key),
+                                strong_font(ui.ctx(), 14.0),
+                                p.warning,
+                            ));
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             back = ui

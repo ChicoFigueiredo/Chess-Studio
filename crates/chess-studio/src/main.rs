@@ -3,7 +3,7 @@
 //! Partida a dois no mesmo computador (Assistido): o intérprete de gestos (`chess_input`)
 //! traduz ponteiro em Comandos, a `Session` os envia à Partida e a cena é reconstruída do
 //! `snapshot()`. `--demo-data` abre um Perfil local de exemplo num banco temporário, sem rede (#275). `--screenshot <dir>` gera as capturas de evidência e encerra (com
-//! `--moves`, `--select`, `--panel`, `--aids physical|training|ghosts` e `--review <n>` opcionais); `--benchmark` liga o modo benchmark.
+//! `--moves`, `--select`, `--panel`, `--aids physical|training|ghosts` e `--review <n>` e `--study [lances]` opcionais); `--benchmark` liga o modo benchmark.
 
 mod action_icons;
 mod actions;
@@ -130,6 +130,12 @@ fn capture_script() -> capture::CaptureScript {
         hud: option_value("--hud"),
         inverted: std::env::args().any(|a| a == "--inverted"),
         review: option_value("--review").and_then(|s| s.parse().ok()),
+        study: option_value("--study").map(|m| {
+            m.split(',')
+                .filter(|s| !s.is_empty() && *s != "-")
+                .map(str::to_owned)
+                .collect()
+        }),
         config: capture::parse_config(
             option_value("--policy").as_deref(),
             option_value("--time").as_deref(),
