@@ -36,10 +36,7 @@ impl Followed {
                 position: line.position().clone(),
                 ply,
                 total,
-                study: line.moves()[..line.cursor()]
-                    .iter()
-                    .map(|m| m.mv)
-                    .collect(),
+                study: line.moves()[..line.cursor()].iter().map(|m| m.mv).collect(),
             }),
             None => Some(Self {
                 position: session.game().review_at_ply(ply)?.position,

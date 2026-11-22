@@ -147,7 +147,8 @@ fn rating_tip(i18n: &I18n, floor: u16) -> String {
     }
 }
 
-/// A Posição que o tabuleiro mostra (a da revisão ou a ao vivo), sem a variante.
+/// A Posição que o tabuleiro mostra (a da Linha de estudo, a da revisão ou a ao vivo), sem a
+/// variante.
 struct Shown {
     position: CanonicalPosition,
     fen: String,
@@ -156,14 +157,12 @@ struct Shown {
 }
 
 fn shown(session: &Session) -> Option<Shown> {
-    let ply = notation::current_ply(session);
-    let total = session.snapshot().history.len();
-    let position = session.game().review_at_ply(ply)?.position;
+    let followed = crate::followed::Followed::of(session)?;
     Some(Shown {
-        fen: position.to_fen(),
-        position,
-        ply,
-        total,
+        fen: followed.position.to_fen(),
+        position: followed.position,
+        ply: followed.ply,
+        total: followed.total,
     })
 }
 
@@ -247,7 +246,7 @@ impl ExplorerUi {
         if self.demo.is_none() {
             self.explorer.drive(&input, net);
         }
-        if !session.showing_variation() {
+        if !session.showing_variation() || session.studying() {
             self.preview = None;
         }
         // Trava: o Painel só explica e nada é consultado (o serviço também recusaria).
@@ -264,7 +263,7 @@ impl ExplorerUi {
             }
             Tab::Endgames => self.endgames_tab(ui, i18n, net, &input, actions),
         }
-        if session.showing_variation() {
+        if session.showing_variation() && !session.studying() {
             ui.add_space(12.0);
             view::muted(ui, i18n.t("explorer-showing"));
             ui.add_space(4.0);
@@ -554,11 +553,18 @@ impl ExplorerUi {
         if session.competitive_in_progress() || session.is_online() {
             return;
         }
-        let ply = notation::current_ply(session);
-        let total = session.snapshot().history.len();
-        let Some(base) = session.game().review_at_ply(ply).map(|v| v.position) else {
+        let Some(followed) = crate::followed::Followed::of(session) else {
             return;
         };
+        // No Modo de estudo o Lance entra na Linha de estudo (e o tabuleiro segue o estudo).
+        if session.studying() {
+            if let Ok(mv) = followed.position.parse_san(san) {
+                session.study_play(mv);
+            }
+            self.preview = None;
+            return;
+        }
+        let (ply, total, base) = (followed.ply, followed.total, followed.position);
         if let Some(view) = crate::openings::variation_after(&base, ply, total, san) {
             session.show_variation(view);
             self.preview = Some(san.to_owned());
@@ -888,5 +894,65 @@ mod tests {
             ),
             Some(Lock::Competitive)
         );
+    }
+
+    #[test]
+    fn the_explorer_follows_the_study_line_and_goes_back_to_the_game_when_it_ends() {
+        let mut session = assisted_with_e4();
+        let fair = FairPlay::new(chess_net::FairPlayGuard::new());
+        let game_fen = shown(&session).unwrap().fen;
+        let mut state = ExplorerUi::default();
+        session.study_here().unwrap();
+        // O Lance do painel entra na Linha de estudo (não é variante) e a Partida não muda.
+        let events = session.game().events().len();
+        state.show(&mut session, "e5");
+        state.show(&mut session, "Nf3");
+        assert!(session.studying());
+        assert_eq!(session.study_line().unwrap().moves().len(), 2);
+        assert_eq!(session.game().events().len(), events);
+        let in_study = shown(&session).unwrap();
+        assert_eq!(
+            in_study.fen,
+            "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2"
+        );
+        assert_eq!(in_study.ply, 1, "parte do meio-lance da Partida");
+        assert_eq!(lock_of(&session, false, &fair), None);
+
+        // A trava da rede vale para a linha como para qualquer Posição.
+        let hold = fair.guard().hold("Partida online contra pessoa");
+        assert_eq!(lock_of(&session, false, &fair), Some(Lock::Competitive));
+        drop(hold);
+
+        // Navegar pela linha muda a Posição; sair do estudo volta à da Partida.
+        session.study_step_back();
+        assert_ne!(shown(&session).unwrap().fen, in_study.fen);
+        session.leave_study();
+        assert_eq!(shown(&session).unwrap().fen, game_fen);
+    }
+
+    #[test]
+    fn the_library_table_follows_the_study_line_and_keeps_its_origin() {
+        let mut session = Session::new();
+        session.study_here().unwrap();
+        let mut state = ExplorerUi::default();
+        for san in ["e4", "e5", "Nf3", "Nc6", "Bb5"] {
+            state.show(&mut session, san);
+        }
+        let fair = FairPlay::new(chess_net::FairPlayGuard::new());
+        let here = shown(&session).unwrap();
+        let mut cache = LibraryCache::default();
+        cache.refresh(&session, (&fair, None), None, &here, &mut None);
+        assert_eq!(cache.key.as_ref().unwrap().3, here.fen);
+        let table = cache.table.as_ref().unwrap();
+        assert_eq!(table.opening.as_ref().unwrap().0, "C60", "o nome da linha");
+        assert_eq!(table.origin.how, model::How::Local, "a Origem segue ali");
+        assert_eq!(table.origin.window, model::Window::Library);
+
+        // Sair do estudo: a consulta volta à Posição da Partida (a inicial).
+        session.leave_study();
+        let back = shown(&session).unwrap();
+        cache.refresh(&session, (&fair, None), None, &back, &mut None);
+        assert_eq!(cache.key.as_ref().unwrap().3, back.fen);
+        assert!(cache.table.as_ref().unwrap().opening.is_none());
     }
 }
