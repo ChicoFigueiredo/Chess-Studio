@@ -107,7 +107,8 @@ fn gesture_input(
     // do egui; Esc vale mesmo com um campo de texto em foco.
     let requested: Vec<Action> = requests.read().map(|r| r.0).collect();
     if requested.contains(&Action::Cancel) {
-        session.gesture(GestureEvent::Escape);
+        // No Modo de estudo, sem gesto em andamento, o Esc volta à Partida (#324).
+        session.escape();
     }
     // `is_changed` não serve: o egui toma `&mut` do recurso todo quadro. Compara o valor.
     if last_presentation.is_some_and(|p| p != *presentation) {

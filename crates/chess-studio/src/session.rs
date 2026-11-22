@@ -2210,4 +2210,39 @@ mod tests {
         }
         assert_eq!(s.snapshot().history.len(), plies + 1);
     }
+
+    #[test]
+    fn escape_cancels_a_gesture_first_and_only_then_leaves_the_study() {
+        let mut s = played(&["e2e4", "e7e5"]);
+        s.study_here().unwrap();
+        // Peça selecionada: o primeiro Esc só a solta, o estudo fica.
+        feed(&mut s, &[down("g1"), up("g1")]);
+        s.escape();
+        assert!(s.studying(), "o Esc cancelou o gesto");
+        // Sem gesto em andamento, o Esc volta à Partida.
+        s.escape();
+        assert!(!s.studying());
+        assert!(s.review().is_none());
+        assert_eq!(s.snapshot().history.len(), 2, "a Partida não andou");
+    }
+
+    #[test]
+    fn escape_with_a_promotion_pending_retracts_it_and_keeps_the_study() {
+        let mut s = promoting_study();
+        tap(&mut s, "a7", "a8");
+        assert!(s.promotion_pending().is_some());
+        s.escape();
+        assert!(s.promotion_pending().is_none());
+        assert!(s.studying());
+        s.escape();
+        assert!(!s.studying());
+    }
+
+    #[test]
+    fn escape_outside_the_study_changes_nothing_but_the_gesture() {
+        let mut s = played(&["e2e4"]);
+        s.set_review_ply(Some(0));
+        s.escape();
+        assert_eq!(s.review().map(|r| r.ply), Some(0), "a Revisão fica");
+    }
 }
