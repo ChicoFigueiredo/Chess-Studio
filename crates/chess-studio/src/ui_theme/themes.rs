@@ -394,7 +394,11 @@ mod tests {
         for theme in all_themes() {
             let tint = Palette::of_theme(theme).study_tint;
             if !(0x40..=0xA0).contains(&tint.a()) {
-                fails.push(format!("{}: alfa {} fora de 0x40..=0xA0", theme.key(), tint.a()));
+                fails.push(format!(
+                    "{}: alfa {} fora de 0x40..=0xA0",
+                    theme.key(),
+                    tint.a()
+                ));
             }
             for n in ["board-light", "board-dark"] {
                 let square = tokens.color(n, theme.base()).unwrap();
@@ -405,11 +409,18 @@ mod tests {
                     .max((mix(tint.g(), square.g()) - f32::from(square.g())).abs())
                     .max((mix(tint.b(), square.b()) - f32::from(square.b())).abs());
                 if delta < 32.0 {
-                    fails.push(format!("{} sobre {n}: variação {delta:.0} < 32", theme.key()));
+                    fails.push(format!(
+                        "{} sobre {n}: variação {delta:.0} < 32",
+                        theme.key()
+                    ));
                 }
             }
         }
-        assert!(fails.is_empty(), "tonalidade do estudo:\n{}", fails.join("\n"));
+        assert!(
+            fails.is_empty(),
+            "tonalidade do estudo:\n{}",
+            fails.join("\n")
+        );
     }
 
     // --- Contrato de contraste (temas.md) ---------------------------------------------------

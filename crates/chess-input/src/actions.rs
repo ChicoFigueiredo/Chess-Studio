@@ -208,14 +208,7 @@ pub fn meta(action: Action) -> ActionMeta {
             "A"
         ),
         // Modo de estudo (#324): entra a partir da posição mostrada; sair é pela faixa, Esc ou End.
-        A::StudyHere => item!(
-            "study-here",
-            "flask",
-            Command,
-            Analysis,
-            "study",
-            "ES"
-        ),
+        A::StudyHere => item!("study-here", "flask", Command, Analysis, "study", "ES"),
         // Explorador: aberturas e finais, no grupo próprio da aba Análise.
         A::OpenExplorer => item!(
             "open-explorer",

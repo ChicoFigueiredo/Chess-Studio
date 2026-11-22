@@ -826,13 +826,21 @@ mod tests {
     #[test]
     fn the_study_tint_paints_the_squares_and_the_frame_only_in_the_study_mode() {
         let with = painted(Some(TINT), false);
-        assert!(with.contains(&Drawn::Rect(TINT, Color32::TRANSPARENT)), "casas");
         assert!(
-            with.iter().any(|d| matches!(d, Drawn::Rect(_, c) if *c == TINT)),
+            with.contains(&Drawn::Rect(TINT, Color32::TRANSPARENT)),
+            "casas"
+        );
+        assert!(
+            with.iter()
+                .any(|d| matches!(d, Drawn::Rect(_, c) if *c == TINT)),
             "moldura"
         );
         let without = painted(None, false);
-        assert!(!without.iter().any(|d| matches!(d, Drawn::Rect(f, c) if *f == TINT || *c == TINT)));
+        assert!(
+            !without
+                .iter()
+                .any(|d| matches!(d, Drawn::Rect(f, c) if *f == TINT || *c == TINT))
+        );
     }
 
     #[test]
@@ -843,6 +851,9 @@ mod tests {
             .rposition(|d| matches!(d, Drawn::Rect(f, c) if *f == TINT || *c == TINT))
             .expect("tinta");
         let first_piece = drawn.iter().position(|d| *d == Drawn::Text).expect("peça");
-        assert!(last_tint < first_piece, "a peça é desenhada depois da tinta");
+        assert!(
+            last_tint < first_piece,
+            "a peça é desenhada depois da tinta"
+        );
     }
 }

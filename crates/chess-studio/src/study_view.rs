@@ -224,8 +224,7 @@ fn study_banner(
                         ));
                         if rect.width() >= BANNER_HINT_MIN_WIDTH && notice.is_none() {
                             ui.label(
-                                egui::RichText::new(i18n.t("study-banner-hint"))
-                                    .color(p.ink_muted),
+                                egui::RichText::new(i18n.t("study-banner-hint")).color(p.ink_muted),
                             );
                         }
                         if let Some(key) = notice {
@@ -299,9 +298,16 @@ mod tests {
         app.update();
         assert_eq!(visible_count(&mut app), 0, "fora do estudo, nada aparece");
 
-        app.world_mut().resource_mut::<Session>().study_here().unwrap();
+        app.world_mut()
+            .resource_mut::<Session>()
+            .study_here()
+            .unwrap();
         app.update();
-        assert_eq!(visible_count(&mut app), 2, "3D profissional: casas e moldura");
+        assert_eq!(
+            visible_count(&mut app),
+            2,
+            "3D profissional: casas e moldura"
+        );
         *app.world_mut().resource_mut::<Presentation>() = Presentation::ImmersiveTable;
         app.update();
         assert_eq!(visible_count(&mut app), 2, "Mesa imersiva: casas e moldura");
@@ -327,7 +333,10 @@ mod tests {
             theme: ThemeMode::Fixed(feltro),
             ..Default::default()
         });
-        app.world_mut().resource_mut::<Session>().study_here().unwrap();
+        app.world_mut()
+            .resource_mut::<Session>()
+            .study_here()
+            .unwrap();
         *app.world_mut().resource_mut::<Presentation>() = Presentation::Technical2d;
         app.update();
         app.update();
