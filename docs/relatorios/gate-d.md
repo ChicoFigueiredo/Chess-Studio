@@ -4,8 +4,8 @@ Formato da §19 do prompt mestre. Escopo: issue #57 (D2) e a seção "Gate D" do
 
 ```text
 CHESS_STUDIO_GATE: D (homologação e liberação; issue #57)
-STATUS: PENDENTE (Linux sem bloqueadores conhecidos; release em draft completo; instalação em Windows/macOS, benchmark limpo e homologação visual não verificados)
-REPO / BRANCH / COMMIT: ChicoFigueiredo/Chess-Studio / main / 9caed02e6b31 (#126, C14); este relatório só acrescenta documentação e scripts
+STATUS: PENDENTE (RC-1 publicado como pre-release `v0.1.0-rc1` em 20/11/2026; Linux sem bloqueadores conhecidos; instalação em Windows/macOS, integrações com serviço real, benchmark limpo e homologação visual não verificados; roteiro do RC-1 com 46 itens aguarda você)
+REPO / BRANCH / COMMIT: ChicoFigueiredo/Chess-Studio / main / 0820e535bcf8 (#319, instaladores e release `v0.1.0-rc1`); atualizado em 21/11/2026; este relatório só acrescenta documentação
 ```
 
 ## VERSOES
@@ -33,7 +33,7 @@ Critérios da issue #57 e do Gate D do prompt mestre. `PASS` exige teste ou evid
 | Auditoria de licenças de assets | PASS | Todos os binários registrados em `crates/chess-studio/assets/LICENSES.md` (CC0 Poly Haven, OFL das fontes Noto). [`licencas.md`](licencas.md) §2 |
 | Auditoria de Engines (ADR-0003) | PASS | Nenhum binário de Engine no repositório nem nos pacotes; download só com consentimento; `tests/no_network_without_consent.rs` (4 testes). [`licencas.md`](licencas.md) §3 |
 | Instaladores para os três sistemas: scripts | PASS | `scripts/package-linux.sh`, `package-macos.sh`, `package-windows.ps1`, `.github/workflows/release.yml` (PR #112, D1) |
-| Instaladores para os três sistemas: artefatos gerados | PASS | Run de release [42362640315](https://github.com/ChicoFigueiredo/Chess-Studio/actions/runs/42362640315) (`v0.0.0-rc3`, `main` em `5d4e00e`): linux, windows, macos e draft-release `success`. Draft com `chess-studio-0.1.0-linux-x86_64.tar.gz`, `chess-studio_0.1.0_amd64.deb`, `chess-studio-0.1.0-windows-x86_64.zip`, `chess-studio-0.1.0-macos-arm64.dmg`, `chess-studio-0.1.0-macos-arm64.tar.gz`, `SHA256SUMS` e `THIRD-PARTY-LICENSES`. Tentativas anteriores: `42336357264` (cargo-about sem `cli`, #125) e `42339946088` (`.deb` em `dist/` no draft, #128) |
+| Instaladores para os três sistemas: artefatos gerados | PASS | **Atual: pre-release `v0.1.0-rc1`** (seção RC-1 abaixo): AppImage, `.deb`, `.tar.gz`, `setup.exe` e `.zip` do Windows, `.dmg` do macOS, `SHA256SUMS` e `THIRD-PARTY-LICENSES`. Histórico: run de release [42362640315](https://github.com/ChicoFigueiredo/Chess-Studio/actions/runs/42362640315) (`v0.0.0-rc3`, `main` em `5d4e00e`): linux, windows, macos e draft-release `success`. Draft com `chess-studio-0.1.0-linux-x86_64.tar.gz`, `chess-studio_0.1.0_amd64.deb`, `chess-studio-0.1.0-windows-x86_64.zip`, `chess-studio-0.1.0-macos-arm64.dmg`, `chess-studio-0.1.0-macos-arm64.tar.gz`, `SHA256SUMS` e `THIRD-PARTY-LICENSES`. Tentativas anteriores: `42336357264` (cargo-about sem `cli`, #125) e `42339946088` (`.deb` em `dist/` no draft, #128) |
 | Instalação dos pacotes em Windows/macOS | UNVERIFIED | PENDENTE (usuário): instalar e abrir o pacote em cada sistema. macOS sem assinatura/notarização (ver `docs/instalacao.md`) |
 | Documentação de instalação | PASS | [`docs/instalacao.md`](../instalacao.md), guias de build [`linux`](../build/linux.md), [`windows`](../build/windows.md), [`macos`](../build/macos.md) |
 | Atualização e recuperação documentadas | PASS | [`docs/atualizacao-e-recuperacao.md`](../atualizacao-e-recuperacao.md): pasta de dados por SO, atualização, backup/restauração, banco e Engines corrompidos (PR #124) |
@@ -45,13 +45,56 @@ Critérios da issue #57 e do Gate D do prompt mestre. `PASS` exige teste ou evid
 | Benchmarks reproduzíveis de 5 min, todos os perfis | UNVERIFIED | Instrumento pronto (`--hud`, `--quality`, `--resolution`, `maquina_ocupada`; `scripts/benchmark_matriz.sh`, [`docs/benchmark.md`](../benchmark.md)). A medição UI-12 existente foi feita com a máquina ocupada ([`v1.md`](v1.md)). Falta rodar a matriz com a máquina ociosa e em GPU integrada |
 | Auditoria final da matriz de rastreabilidade | PASS (parcial) | P0: 54 PASS, 14 UNVERIFIED, 0 FAIL em 68 IDs (CORE-07 resolvido pelo #93) ([`p0.md`](p0.md), [`matriz-p0.md`](../homologacao/matriz-p0.md)). V1: 29 PASS, 2 UNVERIFIED em 31 IDs ([`v1.md`](v1.md), [`matriz-v1.md`](../homologacao/matriz-v1.md)). As matrizes são geradas e validadas por script; os UNVERIFIED restantes estão em "O que depende do usuário". |
 | Relatório de riscos | PASS | seção RISCO_RESIDUAL abaixo |
-| V2 entregue (Súmula manual) | PASS (parcial) | V2 está na `main` desde o PR #129 (issues #58 a #60); 3 PASS e 4 UNVERIFIED (visual e decisões do usuário) em [`v2.md`](v2.md) e [`matriz-v2.md`](../homologacao/matriz-v2.md). O draft `v0.0.0-rc3` **não contém** a V2 (nem o B28 e o B29, que vieram depois); um novo release exige nova tag |
+| V2 entregue (Súmula manual) | PASS (parcial) | V2 está na `main` desde o PR #129 (issues #58 a #60); 3 PASS e 4 UNVERIFIED (visual e decisões do usuário) em [`v2.md`](v2.md) e [`matriz-v2.md`](../homologacao/matriz-v2.md). O draft `v0.0.0-rc3` **não contém** a V2 (nem o B28 e o B29, que vieram depois); o `v0.1.0-rc1` contém a V2 e o V4 |
 | GO da V1 (homologação) | UNVERIFIED | `v1.md` termina em `PENDENTE`; aguarda o usuário |
-| Proposta de release com versão, notas e evidência | UNVERIFIED | Depende do release em draft e das homologações; nenhuma tag `v*` foi criada |
+| Proposta de release com versão, notas e evidência | PASS (parcial) | `v0.1.0-rc1` existe como pre-release público (tag no commit `c8aa3d5`; Linux e Windows refeitos de `13fcff4`), com notas e `SHA256SUMS`. O release final `v0.1.0` não existe e só sai com o GO do usuário |
+
+## RC-1 (atualização de 21/11/2026)
+
+Primeiro pacote publicado, em pre-release. Fonte dos números: `gh release view v0.1.0-rc1`, `git diff` entre os commits e o relatório local abaixo.
+
+| Item | Valor |
+|---|---|
+| Tag e página | [`v0.1.0-rc1`](https://github.com/ChicoFigueiredo/Chess-Studio/releases/tag/v0.1.0-rc1), pre-release, publicado em 20/11/2026 (01:19 UTC), com a V2 e o V4 |
+| Origem dos pacotes | `.dmg` do macOS: commit `c8aa3d5`. Linux e Windows: refeitos em 20/11 a partir de `13fcff4` (Linux com glibc 2.39; `.exe` do Windows com o runtime do Visual C++ embutido, `crt-static`) |
+| Código na `main` | `0820e53` (#319, squash). Fora de `.github/`, o código é idêntico ao de `13fcff4`; só mudam `.gitignore` e `docs/prompts/anotacoes`. O `.cargo/config.toml` do Windows entrou depois de `c8aa3d5`, por isso o `.exe` só vale a partir do refeito |
+| Arquivos | AppImage (44,3 MB), `.deb` (47,4 MB), `.tar.gz` (47,3 MB), `setup.exe` (43,7 MB), `.zip` do Windows (43,5 MB), `.dmg` (42,9 MB), `SHA256SUMS`, `THIRD-PARTY-LICENSES` |
+| Assinatura | nenhuma (macOS sem notarização, Windows sem assinatura); ícone provisório |
+| Instalado e aberto em janela real | **ninguém** (nem Linux, nem Windows, nem macOS) fora da CI |
+
+### Roteiro de homologação do RC-1
+
+[`docs/homologacao/rc1.md`](../homologacao/rc1.md): 46 itens em 8 grupos (preparar, instalar e rodar sem rede, jogar, interface, treino e Súmula, Provedores sem conta, Provedores com conta de teste, fechamento), cada um com passos, critérios de aceite, campos de registro e o resultado. A mesma lista, marcável, está no artefato **Partida do Chess Studio**, seção Homologação do RC-1. Os 3 itens de risco mais alto, nesta ordem: autorizar o Lichess (RC1-34), cofre (RC1-33) e a conversão em usuário BOT (RC1-42, só com conta nova).
+
+### Build local do RC-1 (21/11/2026)
+
+Do zero (alvos de build apagados antes), no commit `0820e535bcf8` (a `main` depois do #319), em Linux x86_64 (Ubuntu 26.04). O RC-1 que você homologa é este build ou o pre-release `v0.1.0-rc1`, que tem o mesmo código.
+
+| Passo | Resultado |
+|---|---|
+| `cargo fmt --all --check` | PASS |
+| `cargo deny check licenses` | PASS |
+| `cargo clippy --workspace --all-targets -- -D warnings` | PASS |
+| `cargo test --workspace` | PASS: 2342 aprovados, 0 falhas, 14 ignorados |
+| `cargo build --release -p chess-studio` | PASS |
+| `scripts/package-linux.sh` | PASS: `.tar.gz`, `.deb` e AppImage em `dist/` |
+| `scripts/smoke-offline.sh` (binário release) | PASS: saída 0, 7 capturas, sem rede, nenhuma Engine instalada sozinha |
+| `THIRD-PARTY-LICENSES` regenerado com `cargo about` | igual ao da raiz e ao do release (480357 bytes) |
+| `cargo deny check advisories` | não rodado aqui: falha conhecida SEC-09 (#285) |
+
+Arquivos em `dist/` (não versionados; conferidos com `sha256sum -c dist/SHA256SUMS`):
+
+| Arquivo | SHA-256 |
+|---|---|
+| `chess-studio-0.1.0-linux-x86_64.AppImage` (44,3 MB) | `f0eb47877e6482c6217614d56bfd8e649d9135be93ccd4b68bc0557e056fc078` |
+| `chess-studio_0.1.0_amd64.deb` (47,4 MB) | `13e21d5e38c8f785905e88815f34495897e8929bd43fc653a9b732e0de5bbd1e` |
+| `chess-studio-0.1.0-linux-x86_64.tar.gz` (47,4 MB) | `8a31d329bddcf9de38dcb571de5373dd8baaaccd799ada50351476d59fd5f635` |
+
+Os hashes não batem com os do release porque o build não é reproduzível byte a byte (outra máquina, outro instante); o que se compara é o código, e ele é o mesmo. Não foram testados em janela real nem em Windows e macOS: isso é o roteiro do RC-1. O AppImage e o `.deb` desta máquina foram gerados com o `cargo-packager` 0.11.8, instalado em `~/.cargo/bin` para isso.
 
 ## CI
 
-> **CI/CD desligado (07/11):** por decisão do usuário, a cota do GitHub Actions estourou e os workflows foram desligados; a validação é local (`cargo test --workspace`, `cargo clippy`, `cargo fmt`, `cargo deny`) e nada deve reativar ou disparar workflows sem pedido do usuário. A tabela abaixo é o histórico até então.
+> **CI/CD desligado (07/11):** por decisão do usuário, a cota do GitHub Actions estourou e os workflows foram desligados; a validação é local (`cargo test --workspace`, `cargo clippy`, `cargo fmt`, `cargo deny`) e nada deve reativar ou disparar workflows sem pedido do usuário. O release `v0.1.0-rc1` foi gerado pelo `release.yml` disparado à mão, em 19 e 20/11, fora desta regra de rotina. A tabela abaixo é o histórico até então.
 
 | Workflow | Run | Resultado |
 |---|---|---|
@@ -85,7 +128,8 @@ Estado atual: `gh run list --workflow ci.yml --branch main` e `gh run list --wor
 
 ## O que depende do usuário
 
-1. Builds, testes e smoke nas VMs/máquinas Windows e macOS, seguindo `docs/build/` e `docs/instalacao.md`; instalar os pacotes do draft e abrir o app.
+0. Percorrer o [roteiro do RC-1](../homologacao/rc1.md) (46 itens) e marcar o resultado no artefato.
+1. Builds, testes e smoke nas VMs/máquinas Windows e macOS, seguindo `docs/build/` e `docs/instalacao.md`; instalar os pacotes do `v0.1.0-rc1` e abrir o app.
 2. Smoke offline fora do Linux (rede desligada: 2P, Exercícios, Engine local).
 3. Homologação visual e de interação (VIS-01/02, CAM-01/02, UI-03, UX-09/10) em janela real.
 4. Benchmark limpo do UI-12 e dos perfis (máquina ociosa; GPU integrada): `scripts/benchmark_matriz.sh --minutes 5` (ou `scripts/rodar_benchmark_ui12.sh --matriz`).
