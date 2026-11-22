@@ -128,6 +128,59 @@ impl Session {
         .err()
     }
 
+    /// Vai ao Lance `cursor` da linha (`0`: o ponto de partida); além do fim, vai ao fim.
+    /// Navegar só muda o que se vê: não sai do estudo nem altera a Partida.
+    pub fn study_set_cursor(&mut self, cursor: usize) {
+        let Some(line) = &mut self.study else {
+            return;
+        };
+        let cursor = cursor.min(line.moves.len());
+        if cursor == line.cursor {
+            return;
+        }
+        line.cursor = cursor;
+        self.show_study();
+    }
+
+    /// Um Lance para trás na linha. No primeiro Lance, para no ponto de partida e **permanece
+    /// no estudo**.
+    pub fn study_step_back(&mut self) {
+        if let Some(line) = &self.study {
+            self.study_set_cursor(line.cursor.saturating_sub(1));
+        }
+    }
+
+    /// Um Lance para a frente na linha; no fim, não faz nada.
+    pub fn study_step_forward(&mut self) {
+        if let Some(line) = &self.study {
+            self.study_set_cursor(line.cursor.saturating_add(1));
+        }
+    }
+
+    /// Volta ao ponto de partida da linha (início), ainda no estudo.
+    pub fn study_to_start(&mut self) {
+        self.study_set_cursor(0);
+    }
+
+    /// Vai ao último Lance da linha (fim).
+    pub fn study_to_end(&mut self) {
+        self.study_set_cursor(usize::MAX);
+    }
+
+    /// "Voltar à Partida": limpa a Linha de estudo e restaura a posição de jogo (a ao vivo).
+    /// Clique na faixa, Esc e End chamam isto. Sem estudo em curso, não faz nada.
+    pub fn leave_study(&mut self) {
+        if self.study.take().is_none() {
+            return;
+        }
+        self.study_promotion = None;
+        self.review = None;
+        self.variation = false;
+        self.interpreter
+            .handle(GestureEvent::PanelInteraction, &self.snapshot);
+        self.revision = self.revision.wrapping_add(1);
+    }
+
     /// Marca esta `Session` como a de um Exercício do Treino (que ocupa o lugar da Partida do
     /// usuário): não há Modo de estudo nela, e a apresentação e a revisão do Exercício
     /// continuam só de leitura.
@@ -161,6 +214,24 @@ impl Session {
         });
         self.show_study();
         Ok(())
+    }
+
+    /// A Partida avançou (a Engine adversária jogou) desde que o estudo começou? A faixa do
+    /// estudo avisa "Lance novo na Partida". `false` sem estudo em curso.
+    pub fn study_game_advanced(&self) -> bool {
+        self.study
+            .as_ref()
+            .is_some_and(|line| self.snapshot.history.len() > line.game_plies_at_start)
+    }
+
+    /// Reinicia a seleção do intérprete de gestos contra a posição que o usuário vê: a do
+    /// estudo ou a da Partida.
+    pub(super) fn resync_interpreter(&mut self) {
+        let snapshot = match self.study_position() {
+            Some(position) => self.study_snapshot(&position),
+            None => self.snapshot.clone(),
+        };
+        self.interpreter.handle(GestureEvent::Resync, &snapshot);
     }
 
     /// A posição em que um gesto joga agora: a da Linha de estudo ou, numa Revisão, a

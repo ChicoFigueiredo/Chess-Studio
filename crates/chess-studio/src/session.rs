@@ -146,6 +146,8 @@ pub struct Session {
     /// A `Session` é a de um Exercício do Treino: não é a Partida do usuário e não tem Modo de
     /// estudo.
     exercise: bool,
+    /// Peão na última fileira no estudo: a peça é escolhida antes de o Lance entrar na linha.
+    study_promotion: Option<(Square, Square)>,
     /// Configuração da Nova Partida (derivada do `GameSetup` ao reabrir).
     config: NewGameConfig,
     notice: Option<(Notice, Instant)>,
@@ -202,6 +204,7 @@ impl Session {
             variation: false,
             study: None,
             exercise: false,
+            study_promotion: None,
             online,
             config,
             notice: None,
@@ -241,6 +244,9 @@ impl Session {
 
     /// Entra, navega ou sai (`None`) da revisão. `ply` além do histórico é ignorado.
     pub fn set_review_ply(&mut self, ply: Option<usize>) {
+        // Navegar pela Revisão comum deixa o Modo de estudo (a Linha de estudo se perde).
+        self.study = None;
+        self.study_promotion = None;
         let next = match ply {
             Some(p) => match self.game.review_at_ply(p) {
                 Some(view) => Some(view),
@@ -753,12 +759,7 @@ impl Session {
             return;
         };
         match engine.drive(fair, &mut self.game, at) {
-            Ok(true) => {
-                self.snapshot = self.game.snapshot();
-                self.revision = self.revision.wrapping_add(1);
-                self.interpreter
-                    .handle(GestureEvent::Resync, &self.snapshot);
-            }
+            Ok(true) => self.game_advanced_by_engine(),
             Ok(false) => {}
             Err(locked) => {
                 let seat = engine.seat();
@@ -767,6 +768,14 @@ impl Session {
                 self.engine_locked = Some(locked);
             }
         }
+    }
+
+    /// A Engine adversária jogou: a Partida andou. Um estudo em curso continua onde está (#322):
+    /// só a Partida e o aviso [`Session::study_game_advanced`] mudam.
+    fn game_advanced_by_engine(&mut self) {
+        self.snapshot = self.game.snapshot();
+        self.revision = self.revision.wrapping_add(1);
+        self.resync_interpreter();
     }
 
     fn apply(&mut self, command: Command, start: Option<Vec3>) {
@@ -1871,5 +1880,190 @@ mod tests {
         assert_eq!(s.study_refusal(), Some(crate::study::StudyRefusal::Exercise));
         tap(&mut s, "e7", "e5");
         assert!(!s.studying(), "a apresentação do Treino é só leitura");
+    }
+
+    #[test]
+    fn navigation_walks_inside_the_line_and_stops_at_the_starting_point() {
+        let mut s = reviewing_after_e4();
+        tap(&mut s, "c7", "c5"); // 1...c5
+        tap(&mut s, "g1", "f3"); // 2.Cf3
+        tap(&mut s, "d7", "d6"); // 2...d6
+        assert_eq!(s.study_line().unwrap().cursor(), 3);
+
+        s.study_step_back();
+        assert_eq!(s.study_line().unwrap().cursor(), 2);
+        assert_eq!(s.review().unwrap().last_move.as_ref().unwrap().san, "Nf3");
+        assert_eq!(
+            s.review().unwrap().position.piece_at(sq("d6")),
+            None,
+            "a posição mostrada é a do ponto da linha"
+        );
+        s.study_step_back();
+        s.study_step_back();
+        // O primeiro Lance da linha desfeito: a posição de onde ela partiu, ainda no estudo.
+        assert_eq!(s.study_line().unwrap().cursor(), 0);
+        assert!(s.studying());
+        assert_eq!(s.review().unwrap().ply, 1);
+        assert_eq!(s.review().unwrap().last_move.as_ref().unwrap().san, "e4");
+        assert_eq!(s.review().unwrap().position.piece_at(sq("c5")), None);
+        s.study_step_back();
+        assert!(s.studying(), "anterior no ponto de partida não sai do estudo");
+        assert_eq!(s.study_line().unwrap().cursor(), 0);
+
+        s.study_step_forward();
+        assert_eq!(s.study_line().unwrap().cursor(), 1);
+        s.study_to_end();
+        assert_eq!(s.study_line().unwrap().cursor(), 3);
+        s.study_step_forward();
+        assert_eq!(s.study_line().unwrap().cursor(), 3, "o fim da linha para");
+        s.study_to_start();
+        assert_eq!(s.study_line().unwrap().cursor(), 0);
+        s.study_set_cursor(2);
+        assert_eq!(s.study_line().unwrap().cursor(), 2);
+        s.study_set_cursor(99);
+        assert_eq!(s.study_line().unwrap().cursor(), 3, "fora da linha é o fim");
+    }
+
+    #[test]
+    fn a_new_move_in_the_middle_of_the_line_replaces_the_rest() {
+        let mut s = reviewing_after_e4();
+        tap(&mut s, "c7", "c5");
+        tap(&mut s, "g1", "f3");
+        tap(&mut s, "d7", "d6");
+        s.study_set_cursor(1); // depois de 1...c5
+        tap(&mut s, "b1", "c3"); // 2.Cc3 no lugar de 2.Cf3
+        let line = s.study_line().unwrap();
+        let sans: Vec<&str> = line.moves().iter().map(|m| m.san.as_str()).collect();
+        assert_eq!(sans, ["c5", "Nc3"], "uma só linha: o resto foi descartado");
+        assert_eq!(line.cursor(), 2);
+        assert!(line.is_at_end());
+    }
+
+    #[test]
+    fn leaving_the_study_restores_the_game_position_exactly() {
+        let mut s = reviewing_after_e4();
+        let snapshot = s.snapshot().clone();
+        let events = s.game().events().len();
+        tap(&mut s, "c7", "c5");
+        tap(&mut s, "g1", "f3");
+        s.leave_study();
+        assert!(!s.studying());
+        assert!(s.study_line().is_none());
+        assert!(s.review().is_none(), "volta à posição de jogo, ao vivo");
+        assert!(!s.showing_variation());
+        assert_eq!(s.snapshot(), &snapshot);
+        assert_eq!(s.game().events().len(), events);
+        // Os gestos voltam a jogar a Partida de verdade (a vez é das Pretas).
+        tap(&mut s, "b8", "c6");
+        assert_eq!(s.snapshot().history.len(), 4);
+        // Sair sem estudo não faz nada.
+        s.leave_study();
+        assert_eq!(s.snapshot().history.len(), 4);
+    }
+
+    #[test]
+    fn replacing_the_game_clears_the_study() {
+        let new_game = |s: &mut Session| s.start(&NewGameConfig::for_policy(PolicyKind::Assisted));
+        let other_game = |s: &mut Session| {
+            s.open_game(Game::new(GameSetup::standard(PolicyKind::Assisted)));
+        };
+        let fen = |s: &mut Session| {
+            s.load_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
+        };
+        let library = |s: &mut Session| {
+            s.study_from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
+        };
+        let actions: [&dyn Fn(&mut Session); 4] = [&new_game, &other_game, &fen, &library];
+        for replace in actions {
+            let mut s = reviewing_after_e4();
+            tap(&mut s, "c7", "c5");
+            assert!(s.studying());
+            replace(&mut s);
+            assert!(!s.studying());
+            assert!(s.review().is_none());
+        }
+    }
+
+    #[test]
+    fn navigating_the_plain_review_ends_the_study() {
+        let mut s = reviewing_after_e4();
+        tap(&mut s, "c7", "c5");
+        s.set_review_ply(Some(2));
+        assert!(!s.studying(), "clicar num Lance da Partida deixa o estudo");
+        assert_eq!(s.review().unwrap().ply, 2);
+        tap(&mut s, "c7", "c5");
+        s.set_review_ply(None);
+        assert!(!s.studying());
+        assert!(s.review().is_none());
+    }
+
+    #[test]
+    fn nothing_of_the_study_is_recorded_in_the_log_the_notes_or_the_pgn() {
+        let mut s = reviewing_after_e4();
+        let mut notes = crate::study::StudyNotes::loaded(
+            s.epoch(),
+            std::collections::BTreeMap::from([(1, "Abertura do rei".to_owned())]),
+        );
+        let notes_before = notes.clone();
+        let exported = |s: &Session, notes: &crate::study::StudyNotes| {
+            s.export_pgn(true, &notes.export(s.epoch()))
+        };
+        let pgn_before = exported(&s, &notes);
+        let events_before = s.game().events().to_vec();
+
+        tap(&mut s, "c7", "c5");
+        tap(&mut s, "g1", "f3");
+        s.study_step_back();
+        assert_eq!(exported(&s, &notes), pgn_before, "durante o estudo");
+        assert_eq!(s.game().events(), events_before.as_slice());
+        s.leave_study();
+        assert_eq!(exported(&s, &notes), pgn_before, "depois de voltar");
+        assert_eq!(s.game().events(), events_before.as_slice());
+        notes.follow(s.epoch());
+        assert_eq!(notes, notes_before);
+        assert!(!pgn_before.contains("c5"), "a Linha de estudo nunca vai ao PGN");
+    }
+
+    /// A Engine adversária joga `uci` na Partida, como o faz `tick_engine` (sem processo UCI).
+    fn engine_plays(s: &mut Session, uci: &str) {
+        let at = s.now();
+        s.game
+            .handle(Command::EngineMove { uci: uci.into() }, at)
+            .unwrap();
+        s.game_advanced_by_engine();
+    }
+
+    fn engine_game_as_black() -> Session {
+        let seat = EngineSeat {
+            color: Color::Black,
+            elo: 1500,
+        };
+        let setup = GameSetup::standard(PolicyKind::Assisted).with_engine(seat);
+        Session::from_game(Game::new(setup))
+    }
+
+    #[test]
+    fn the_engine_keeps_playing_the_game_while_the_study_stays_and_the_session_says_so() {
+        let mut s = engine_game_as_black();
+        tap(&mut s, "e2", "e4");
+        s.study_here().unwrap();
+        tap(&mut s, "d7", "d5"); // no estudo as Pretas jogam, mesmo sendo a vez da Engine
+        assert!(!s.study_game_advanced());
+
+        engine_plays(&mut s, "e7e5");
+        // A Partida entrou o Lance da Engine; o estudo continua como estava.
+        assert_eq!(s.snapshot().history.len(), 2);
+        assert_eq!(s.game().snapshot().history[1].san, "e5");
+        assert!(s.studying());
+        assert_eq!(s.study_line().unwrap().moves().len(), 1);
+        assert_eq!(s.study_line().unwrap().base_ply(), 1);
+        assert!(s.study_game_advanced(), "a faixa avisa: Lance novo na Partida");
+
+        // O aviso some com o estudo, e um estudo novo parte da Partida de agora.
+        s.leave_study();
+        assert!(!s.study_game_advanced());
+        s.study_here().unwrap();
+        assert!(!s.study_game_advanced());
+        assert_eq!(s.study_line().unwrap().base_ply(), 2);
     }
 }
