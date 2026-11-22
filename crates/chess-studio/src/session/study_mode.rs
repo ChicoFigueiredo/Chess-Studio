@@ -11,11 +11,11 @@
 //! - Cada Lance é validado pelo núcleo de regras (`chess-core`); o intérprete de gestos é o
 //!   mesmo do jogo normal, alimentado com a posição do estudo.
 
-use super::{Session, SettleHint, lifted};
+use super::{Session, SettleHint, lifted, moved_pieces};
 use crate::study::{StudyRefusal, study_mode_available};
 use bevy::prelude::Vec3;
-use chess_core::{CanonicalPosition, Color, Move, Square};
-use chess_game::{HistoryEntry, ReviewView};
+use chess_core::{CanonicalPosition, Color, Move, Piece, Square};
+use chess_game::{Command, HistoryEntry, PendingPromotion, ProvisionalView, ReviewView};
 use chess_input::GestureEvent;
 
 /// Um Lance da Linha de estudo.
@@ -181,6 +181,16 @@ impl Session {
         self.revision = self.revision.wrapping_add(1);
     }
 
+    /// Gesto vindo do painel Tabuleiro 2D com "Jogar por aqui". Em estudo vai para a Linha de
+    /// estudo; numa Revisão comum **não tem efeito** (só o tabuleiro principal inicia o estudo
+    /// por gesto); sem Revisão joga a Partida, como [`Session::gesture`].
+    pub fn gesture_from_panel(&mut self, event: GestureEvent) {
+        if self.review.is_some() && self.study.is_none() {
+            return;
+        }
+        self.gesture(event);
+    }
+
     /// Marca esta `Session` como a de um Exercício do Treino (que ocupa o lugar da Partida do
     /// usuário): não há Modo de estudo nela, e a apresentação e a revisão do Exercício
     /// continuam só de leitura.
@@ -252,18 +262,89 @@ impl Session {
         let snapshot = self.study_snapshot(position);
         let commands = self.interpreter.handle(event, &snapshot);
         for command in commands {
-            if let chess_game::Command::Release { from, to } = command {
-                let start = visual
-                    .drag_world
-                    .map_or_else(|| lifted(chess_input::square_center(from)), lifted);
-                self.study_release(position, from, to, start);
-                let snapshot = self.study_snapshot(position);
-                self.interpreter
-                    .handle(GestureEvent::Resolved, &snapshot);
+            match command {
+                Command::Release { from, to } => {
+                    let start = visual
+                        .drag_world
+                        .map_or_else(|| lifted(chess_input::square_center(from)), lifted);
+                    self.study_release(position, from, to, start);
+                    let snapshot = self.study_snapshot(position);
+                    self.interpreter.handle(GestureEvent::Resolved, &snapshot);
+                }
+                other => self.study_command(&other),
             }
         }
-        let snapshot = self.study_snapshot(self.study_position().as_ref().unwrap_or(position));
-        self.interpreter.handle(GestureEvent::Resync, &snapshot);
+        self.resync_interpreter();
+    }
+
+    /// Comando da interface numa posição de estudo: só a escolha da peça de uma promoção
+    /// pendente (e a retratação dela, Esc) valem; o resto não existe no estudo.
+    pub(super) fn study_command(&mut self, command: &Command) {
+        let (Some((from, to)), Some(_)) = (self.study_promotion, self.study_position()) else {
+            return;
+        };
+        match command {
+            Command::ChoosePromotion { piece } => {
+                self.study_promotion = None;
+                self.hint = Some(SettleHint {
+                    square: to,
+                    from: lifted(chess_input::square_center(to)),
+                });
+                self.study_push(Move::new(from, to, Some(*piece)));
+            }
+            Command::RetractMove => {
+                self.study_promotion = None;
+                self.hint = Some(SettleHint {
+                    square: from,
+                    from: lifted(chess_input::square_center(from)),
+                });
+                self.revision = self.revision.wrapping_add(1);
+                self.resync_interpreter();
+            }
+            _ => {}
+        }
+    }
+
+    /// Destinos legais da peça em `from` na posição de estudo (a da Linha de estudo ou, numa
+    /// Revisão, a revisada), sem repetição e em ordem de casa. Vazio fora do estudo. Alimenta as
+    /// marcações do tabuleiro (destinos e fantasmas).
+    pub fn study_destinations(&self, from: Square) -> Vec<Square> {
+        let Some(position) = self.study_position() else {
+            return Vec::new();
+        };
+        let mut dests: Vec<Square> = position
+            .legal_moves()
+            .into_iter()
+            .filter(|m| m.from() == from)
+            .map(|m| m.to())
+            .collect();
+        dests.sort_by_key(|s| (s.rank(), s.file()));
+        dests.dedup();
+        dests
+    }
+
+    /// Promoção à espera da escolha da peça: a do estudo ou a da Partida. É o que o seletor de
+    /// promoção (D/T/B/C) observa.
+    pub fn promotion_pending(&self) -> Option<PendingPromotion> {
+        if let (Some((from, to)), Some(position)) = (self.study_promotion, self.study_position()) {
+            return Some(PendingPromotion {
+                side: position.side_to_move(),
+                from,
+                to,
+            });
+        }
+        self.snapshot
+            .provisional
+            .as_ref()
+            .map(|view| view.pending_promotion)
+    }
+
+    /// As peças a desenhar enquanto a promoção do estudo espera a escolha (o peão já na casa de
+    /// promoção, ainda sem a peça), em ordem de casa; `None` fora disso.
+    pub fn study_pending_pieces(&self) -> Option<Vec<(Square, Color, Piece)>> {
+        let (from, to) = self.study_promotion?;
+        let position = self.study_position()?;
+        moved_pieces(&position, from, to).map(|(_, pieces)| pieces)
     }
 
     /// A Partida vista pelo intérprete de gestos: a posição do estudo, sempre como Assistido
@@ -275,7 +356,15 @@ impl Session {
         snapshot.side_to_move = position.side_to_move();
         snapshot.in_check = position.is_check();
         snapshot.outcome = None;
-        snapshot.provisional = None;
+        snapshot.provisional = self
+            .study_promotion
+            .and_then(|(from, to)| {
+                let (side, pieces) = moved_pieces(position, from, to)?;
+                Some(ProvisionalView {
+                    pending_promotion: PendingPromotion { side, from, to },
+                    pieces,
+                })
+            });
         snapshot.paused = false;
         snapshot.touched.clear();
         snapshot.must_move_from.clear();
@@ -309,7 +398,17 @@ impl Session {
             square: to,
             from: start,
         });
-        self.study_push(Move::new(from, to, None));
+        let promotes = matches!(position.piece_at(from), Some((_, Piece::Pawn)))
+            && (to.rank() == 7 || to.rank() == 0);
+        if !promotes {
+            self.study_push(Move::new(from, to, None));
+        } else if self.always_queen && !self.is_competitive() {
+            self.study_push(Move::new(from, to, Some(Piece::Queen)));
+        } else {
+            // A peça é escolhida no seletor de promoção antes de o Lance entrar na linha.
+            self.study_promotion = Some((from, to));
+            self.revision = self.revision.wrapping_add(1);
+        }
     }
 
     /// Acrescenta `mv` à linha, no ponto mostrado: o que vinha depois dele é descartado (uma

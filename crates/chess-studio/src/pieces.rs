@@ -245,7 +245,11 @@ pub(crate) fn visible_pieces(
     if let Some(pieces) = &over.pieces {
         return pieces.clone();
     }
-    // Revisão Lance a Lance: mostra a Posição revisada (somente leitura).
+    // Modo de estudo: o peão na casa de promoção, à espera da escolha da peça (#322).
+    if let Some(pieces) = session.study_pending_pieces() {
+        return pieces.into_iter().map(|(s, c, p)| (s, (c, p))).collect();
+    }
+    // Revisão Lance a Lance (e Linha de estudo): mostra a Posição revisada (somente leitura).
     if let Some(review) = session.review() {
         return chess_input::all_squares()
             .filter_map(|s| review.position.piece_at(s).map(|cp| (s, cp)))
@@ -755,5 +759,35 @@ mod tests {
         );
         go(&mut app, Presentation::ImmersiveTable);
         assert_eq!(view(&app), Some(CameraView::Top));
+    }
+
+    /// Modo de estudo (#322): o que o tabuleiro desenha e as marcações seguem a Linha de
+    /// estudo; ao voltar, é a posição de jogo exatamente.
+    #[test]
+    fn the_visible_pieces_follow_the_study_line_and_return_to_the_game() {
+        use chess_input::{GestureEvent, Modifiers, PointerButton};
+        let over = BoardOverride::default();
+        let mut session = Session::new();
+        session.set_move_method(chess_input::MoveMethod::TwoTaps);
+        let live = visible_pieces(&session, &over);
+        session.set_review_ply(Some(0));
+        let down = |square: &str| GestureEvent::PointerDown {
+            button: PointerButton::Primary,
+            square: Some(sq(square)),
+            modifiers: Modifiers::default(),
+        };
+        let up = |square: &str| GestureEvent::PointerUp {
+            square: Some(sq(square)),
+        };
+        for event in [down("e2"), up("e2"), down("e4"), up("e4")] {
+            session.gesture(event);
+        }
+        assert!(session.studying());
+        let studied = visible_pieces(&session, &over);
+        assert_eq!(studied.get(&sq("e4")), Some(&(Side::White, Piece::Pawn)));
+        assert_eq!(studied.get(&sq("e2")), None);
+        assert_eq!(session.snapshot().history.len(), 0, "a Partida não andou");
+        session.leave_study();
+        assert_eq!(visible_pieces(&session, &over), live);
     }
 }

@@ -267,6 +267,7 @@ impl Session {
     /// nenhum Comando e nenhum Evento. `view.ply` é o meio-lance de onde a variante parte.
     /// Qualquer navegação da revisão (`set_review_ply`) a substitui.
     pub fn show_variation(&mut self, view: ReviewView) {
+        self.study_promotion = None;
         self.review = Some(view);
         self.variation = true;
         self.interpreter
@@ -420,7 +421,7 @@ impl Session {
             return;
         }
         self.always_queen = on;
-        if on && self.snapshot.provisional.is_some() {
+        if on && self.promotion_pending().is_some() {
             self.command(Command::ChoosePromotion {
                 piece: Piece::Queen,
             });
@@ -489,6 +490,8 @@ impl Session {
     /// Comando vindo da interface (painel e seletor de promoção).
     pub fn command(&mut self, command: Command) {
         if self.review.is_some() {
+            // Só a escolha da peça de uma promoção no estudo vale numa Revisão (#322).
+            self.study_command(&command);
             return;
         }
         if self.online.is_some() {
@@ -909,6 +912,23 @@ fn lifted(p: Vec3) -> Vec3 {
     Vec3::new(p.x, DRAG_HEIGHT, p.z)
 }
 
+/// As peças de `position` com a de `from` em `to` (o peão que chegou à casa de promoção, ainda
+/// sem a peça escolhida), em ordem de casa, e a cor dela. `None` se `from` está vazia.
+fn moved_pieces(
+    position: &chess_core::CanonicalPosition,
+    from: Square,
+    to: Square,
+) -> Option<(Color, Vec<(Square, Color, Piece)>)> {
+    let (color, piece) = position.piece_at(from)?;
+    let mut pieces: Vec<(Square, Color, Piece)> = chess_input::all_squares()
+        .filter(|s| *s != from && *s != to)
+        .filter_map(|s| position.piece_at(s).map(|(c, p)| (s, c, p)))
+        .collect();
+    pieces.push((to, color, piece));
+    pieces.sort_by_key(|(s, _, _)| (s.rank(), s.file()));
+    Some((color, pieces))
+}
+
 /// A leitura da Partida online para o tabuleiro: a intenção enviada aparece como o Lance
 /// feito (a peça no destino, ainda fora da Posição canônica) e a promoção em escolha, como a
 /// Posição visual provisória. Nada disso está no log.
@@ -925,14 +945,8 @@ fn online_overlay(mut snapshot: Snapshot, promotion: Option<(Square, Square)>) -
         });
     }
     if let Some((from, to)) = promotion
-        && let Some((color, piece)) = snapshot.position.piece_at(from)
+        && let Some((color, pieces)) = moved_pieces(&snapshot.position, from, to)
     {
-        let mut pieces: Vec<(Square, Color, Piece)> = chess_input::all_squares()
-            .filter(|s| *s != from && *s != to)
-            .filter_map(|s| snapshot.position.piece_at(s).map(|(c, p)| (s, c, p)))
-            .collect();
-        pieces.push((to, color, piece));
-        pieces.sort_by_key(|(s, _, _)| (s.rank(), s.file()));
         snapshot.provisional = Some(ProvisionalView {
             pending_promotion: PendingPromotion {
                 side: color,
@@ -2065,5 +2079,100 @@ mod tests {
         s.study_here().unwrap();
         assert!(!s.study_game_advanced());
         assert_eq!(s.study_line().unwrap().base_ply(), 2);
+    }
+
+    /// Um peão branco em a7 pronto para promover e o Rei de cada lado.
+    fn promoting_study() -> Session {
+        let mut s = Session::new();
+        s.load_fen("4k3/P7/8/8/8/8/8/4K3 w - - 0 1").unwrap();
+        s.study_here().unwrap();
+        s
+    }
+
+    #[test]
+    fn promotion_in_the_study_uses_the_same_chooser_and_the_result_goes_to_the_line() {
+        let mut s = promoting_study();
+        assert_eq!(s.promotion_pending(), None);
+        tap(&mut s, "a7", "a8");
+        // O seletor abre; a linha ainda não tem o Lance e a Partida não sabe de nada.
+        let pending = s.promotion_pending().unwrap();
+        assert_eq!((pending.from, pending.to), (sq("a7"), sq("a8")));
+        assert!(s.study_line().unwrap().moves().is_empty());
+        assert!(s.snapshot().provisional.is_none());
+        let pieces = s.study_pending_pieces().unwrap();
+        assert!(pieces.contains(&(sq("a8"), Color::White, Piece::Pawn)));
+        assert!(!pieces.iter().any(|(sq_, ..)| *sq_ == sq("a7")));
+        // Esc retrata: o peão volta à casa e o seletor fecha, sem sair do estudo.
+        s.gesture(GestureEvent::Escape);
+        assert_eq!(s.promotion_pending(), None);
+        assert!(s.studying() && s.study_line().unwrap().moves().is_empty());
+
+        tap(&mut s, "a7", "a8");
+        s.command(Command::ChoosePromotion { piece: Piece::Knight });
+        assert_eq!(s.promotion_pending(), None);
+        let line = s.study_line().unwrap();
+        assert_eq!(line.moves().len(), 1);
+        assert_eq!(line.moves()[0].san, "a8=N");
+        assert_eq!(
+            s.review().unwrap().position.piece_at(sq("a8")),
+            Some((Color::White, Piece::Knight))
+        );
+        assert!(s.game().events().iter().all(|e| !matches!(
+            e.kind,
+            EventKind::PromotionPending { .. } | EventKind::MoveCompleted { .. }
+        )));
+    }
+
+    #[test]
+    fn always_queen_promotes_in_the_study_without_the_chooser() {
+        let mut s = promoting_study();
+        s.set_always_queen(true);
+        tap(&mut s, "a7", "a8");
+        assert_eq!(s.promotion_pending(), None);
+        assert_eq!(s.study_line().unwrap().moves()[0].san, "a8=Q+");
+        // Ligar a opção com o seletor aberto promove a dama na hora.
+        let mut s = promoting_study();
+        tap(&mut s, "a7", "a8");
+        assert!(s.promotion_pending().is_some());
+        s.set_always_queen(true);
+        assert_eq!(s.study_line().unwrap().moves()[0].san, "a8=Q+");
+    }
+
+    #[test]
+    fn a_promotion_can_start_the_study_from_a_review() {
+        let mut s = Session::new();
+        s.load_fen("4k3/P7/8/8/8/8/8/4K3 w - - 0 1").unwrap();
+        tap(&mut s, "e1", "e2");
+        s.set_review_ply(Some(0));
+        tap(&mut s, "a7", "a8");
+        assert!(s.promotion_pending().is_some());
+        assert!(!s.studying(), "o estudo começa com o Lance, depois da escolha");
+        s.command(Command::ChoosePromotion { piece: Piece::Rook });
+        assert_eq!(s.study_line().unwrap().moves()[0].san, "a8=R+");
+        assert_eq!(s.study_line().unwrap().base_ply(), 0);
+    }
+
+    #[test]
+    fn the_board2d_panel_gestures_go_to_the_study_and_do_nothing_in_a_plain_review() {
+        let mut s = reviewing_after_e4();
+        let plies = s.snapshot().history.len();
+        // Revisão comum: o gesto do painel 2D continua sem efeito (não inicia estudo).
+        for event in [down("c7"), up("c7"), down("c5"), up("c5")] {
+            s.gesture_from_panel(event);
+        }
+        assert!(!s.studying());
+        // Em estudo, o gesto do painel vai para a Linha de estudo.
+        s.study_here().unwrap();
+        for event in [down("c7"), up("c7"), down("c5"), up("c5")] {
+            s.gesture_from_panel(event);
+        }
+        assert_eq!(s.study_line().unwrap().moves()[0].san, "c5");
+        assert_eq!(s.snapshot().history.len(), plies, "a Partida não andou");
+        // Sem Revisão nem estudo, joga a Partida como sempre.
+        s.leave_study();
+        for event in [down("b8"), up("b8"), down("c6"), up("c6")] {
+            s.gesture_from_panel(event);
+        }
+        assert_eq!(s.snapshot().history.len(), plies + 1);
     }
 }
