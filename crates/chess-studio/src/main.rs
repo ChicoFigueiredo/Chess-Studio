@@ -76,6 +76,7 @@ mod provider_consent;
 mod ready;
 mod remote_engine;
 mod responsive;
+mod review_nav;
 mod ribbon;
 mod scoresheet;
 mod screen_layouts;
@@ -292,6 +293,7 @@ fn main() {
         connections::ConnectionsPlugin,
     ));
     app.add_plugins(actions::ActionsPlugin);
+    app.add_plugins(review_nav::ReviewNavPlugin);
     app.add_plugins((hud::HudPlugin, hud_draw::HudDrawPlugin));
     app.add_plugins(board2d_panel::Board2dPanelPlugin);
     app.add_plugins(coordinates::CoordinatesPlugin);

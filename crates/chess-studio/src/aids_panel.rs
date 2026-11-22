@@ -47,71 +47,6 @@ impl Plugin for AidsPanelPlugin {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Nav {
-    First,
-    Prev,
-    Next,
-    Last,
-}
-
-/// Botão de navegação com triângulos desenhados (a fonte da interface não tem ◀ ▶).
-fn nav_button(ui: &mut egui::Ui, nav: Nav, enabled: bool, hover: &str) -> egui::Response {
-    let size = egui::vec2(28.0, 22.0);
-    let sense = if enabled {
-        egui::Sense::click()
-    } else {
-        egui::Sense::hover()
-    };
-    let (rect, response) = ui.allocate_exact_size(size, sense);
-    let visuals = ui.style().interact(&response);
-    if enabled {
-        ui.painter().rect(
-            rect,
-            3.0,
-            visuals.bg_fill,
-            visuals.bg_stroke,
-            egui::StrokeKind::Inside,
-        );
-    }
-    let color = if enabled {
-        visuals.fg_stroke.color
-    } else {
-        ui.visuals()
-            .widgets
-            .noninteractive
-            .fg_stroke
-            .color
-            .gamma_multiply(0.4)
-    };
-    let c = rect.center();
-    let (h, w) = (6.0, 5.0);
-    let left = matches!(nav, Nav::First | Nav::Prev);
-    let dir = if left { -1.0 } else { 1.0 };
-    let tri = |x: f32| {
-        vec![
-            egui::pos2(x + dir * w, c.y),
-            egui::pos2(x - dir * w, c.y - h),
-            egui::pos2(x - dir * w, c.y + h),
-        ]
-    };
-    let bar = matches!(nav, Nav::First | Nav::Last);
-    let tri_x = if bar { c.x + dir * 2.0 } else { c.x };
-    ui.painter().add(egui::Shape::convex_polygon(
-        tri(tri_x),
-        color,
-        egui::Stroke::NONE,
-    ));
-    if bar {
-        let x = c.x - dir * 7.0;
-        ui.painter().line_segment(
-            [egui::pos2(x, c.y - h), egui::pos2(x, c.y + h)],
-            egui::Stroke::new(2.0, color),
-        );
-    }
-    response.on_hover_text(hover)
-}
-
 fn side_name(i18n: &I18n, side: Side) -> String {
     i18n.t(match side {
         Side::White => "aid-side-white",
@@ -366,22 +301,7 @@ fn review_section(ui: &mut egui::Ui, i18n: &I18n, session: &mut Session, hide_no
     let ply = session.review().map_or(total, |r| r.ply);
     let reviewing = session.review().is_some();
     ui.strong(i18n.t("review-heading"));
-    ui.horizontal(|ui| {
-        let can_back = ply > 0;
-        let can_forward = ply < total;
-        if nav_button(ui, Nav::First, can_back, &i18n.t("review-first")).clicked() {
-            session.set_review_ply(Some(0));
-        }
-        if nav_button(ui, Nav::Prev, can_back, &i18n.t("review-prev")).clicked() {
-            session.set_review_ply(Some(ply - 1));
-        }
-        if nav_button(ui, Nav::Next, can_forward, &i18n.t("review-next")).clicked() {
-            session.set_review_ply(Some(ply + 1).filter(|p| *p < total));
-        }
-        if nav_button(ui, Nav::Last, can_forward, &i18n.t("review-last")).clicked() {
-            session.set_review_ply(None);
-        }
-    });
+    crate::review_nav::buttons(ui, i18n, session);
     if reviewing {
         let san = session
             .review()

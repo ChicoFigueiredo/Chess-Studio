@@ -310,6 +310,8 @@ pub fn ui_with_notes(
         ui.weak(i18n.t("notation-empty"));
         return;
     }
+    // Os mesmos quatro botões do Painel Revisão; ← → Home End valem na janela inteira (#321).
+    crate::review_nav::buttons(ui, i18n, session);
     let first_number = session
         .game()
         .review_at_ply(0)
