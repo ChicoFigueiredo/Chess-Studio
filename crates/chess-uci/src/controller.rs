@@ -448,15 +448,16 @@ const SKILL_ELO_MAX: u32 = 2800;
 /// O Elo mais baixo que o app oferece. Abaixo do piso da Engine (`UCI_Elo` 1320 no Stockfish)
 /// a força vem do teto de profundidade, e o valor é nominal.
 pub const NOMINAL_MIN_ELO: u32 = 400;
-/// Teto de profundidade logo abaixo do piso da Engine; no `NOMINAL_MIN_ELO` é 1.
-const WEAK_MAX_DEPTH: u32 = 6;
+/// Profundidade que o próprio piso da Engine daria na rampa: o teto logo abaixo do piso é 5
+/// (`WEAK_RAMP_AT_FLOOR - 1`) e, no `NOMINAL_MIN_ELO`, 1.
+const WEAK_RAMP_AT_FLOOR: u32 = 6;
 
 /// Teto de profundidade para um Elo `requested` abaixo de `floor`: de 1 (no mínimo nominal)
-/// até `WEAK_MAX_DEPTH - 1` (um pouco abaixo do piso).
+/// até `WEAK_RAMP_AT_FLOOR - 1` (um pouco abaixo do piso).
 fn depth_cap(requested: u32, floor: u32) -> u32 {
     let span = floor.saturating_sub(NOMINAL_MIN_ELO).max(1);
     let above = requested.saturating_sub(NOMINAL_MIN_ELO).min(span);
-    1 + above * (WEAK_MAX_DEPTH - 1) / span
+    1 + above * (WEAK_RAMP_AT_FLOOR - 1) / span
 }
 
 fn skill_for_elo(elo: u32, max_level: u32) -> u32 {

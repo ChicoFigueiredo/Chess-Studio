@@ -232,6 +232,21 @@ fn engines_without_elo_use_skill_level_zero_and_a_shallow_search_below_the_mappe
 }
 
 #[test]
+fn elo_at_the_engine_floor_is_not_weakened() {
+    let mut game = Game::new(GameSetup::standard(PolicyKind::Assisted));
+    let mut player = EnginePlayer::new(black_engine(1320), traced("normal", &trace_path("floor")));
+    let t = Clock0(Instant::now());
+    drive_until(&mut player, &mut game, &t, |p, _| p.strength().is_some());
+    assert_eq!(
+        player.strength(),
+        Some(StrengthApplied::Elo {
+            requested: 1320,
+            used: 1320
+        })
+    );
+}
+
+#[test]
 fn engine_receives_the_game_clock_and_presses_its_own() {
     let trace = trace_path("clock");
     let setup = GameSetup::standard(PolicyKind::FideSimulation)
